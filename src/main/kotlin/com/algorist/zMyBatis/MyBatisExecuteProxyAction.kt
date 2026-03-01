@@ -388,9 +388,18 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
         editor: Editor,
         psiFile: PsiFile
     ): String? {
-        editor.selectionModel.selectedText?.takeIf { it.isNotBlank() }?.let { return it }
+        // Always extract the full MyBatis statement regardless of any text selection.
+        // Using selectedText here would return only the dragged portion, which is an
+        // incomplete (and invalid) dynamic SQL fragment.
 
-        var offset = editor.caretModel.offset
+        // Use the selection start offset when text is selected so we locate the PSI
+        // element that the user is pointing at (within the selection).
+        val baseOffset = if (editor.selectionModel.hasSelection()) {
+            editor.selectionModel.selectionStart
+        } else {
+            editor.caretModel.offset
+        }
+        var offset = baseOffset
         if (offset > 0 && offset == psiFile.textLength) offset--
 
         var element = psiFile.findElementAt(offset)
