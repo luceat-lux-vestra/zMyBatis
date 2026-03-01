@@ -1,15 +1,18 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-    <id>com.github.luceatluxvestra.zmybatisprivate</id>
-    <name>zMyBatis-private</name>
-    <vendor>luceat-lux-vestra</vendor>
+    <id>com.algorist.zMyBatis</id>
+    <name>zMyBatis</name>
+    <vendor>algorist</vendor>
 
     <depends>com.intellij.modules.platform</depends>
+
+    <depends>com.intellij.database</depends>
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.luceatluxvestra.zmybatisprivate.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
-        <postStartupActivity implementation="com.github.luceatluxvestra.zmybatisprivate.startup.MyProjectActivity" />
+        <!-- <toolWindow factoryClass="com.github.luceatluxvestra.zmybatisprivate.toolWindow.MyToolWindowFactory" id="MyToolWindow"/> -->
+        <!-- <postStartupActivity implementation="com.github.luceatluxvestra.zmybatisprivate.startup.MyProjectActivity" /> -->
+        <postStartupActivity implementation="com.algorist.zMyBatis.startup.MyBatisActionInterceptorActivity"/>
     </extensions>
 </idea-plugin>

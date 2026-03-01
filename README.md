@@ -18,11 +18,21 @@
 - [ ] Configure the [CODECOV_TOKEN](https://docs.codecov.com/docs/quick-start) secret for automated test coverage reports on PRs
 
 <!-- Plugin description -->
-This Fancy IntelliJ Platform Plugin is going to be your implementation of the brilliant ideas that you have.
+**zMyBatis** is a DataGrip / IntelliJ IDEA Ultimate plugin that lets you execute MyBatis mapper queries directly from your Java/Kotlin source or XML mapper files — without leaving the IDE.
 
-This specific section is a source for the [plugin.xml](/src/main/resources/META-INF/plugin.xml) file which will be extracted by the [Gradle](/build.gradle.kts) during the build process.
+### Features
 
-To keep everything working, do not remove `<!-- ... -->` sections. 
+- **One-click execution** — Press the DataGrip *Execute* shortcut while the caret is inside a MyBatis `<select>`, `<insert>`, `<update>`, or `<delete>` tag (XML mapper), or a `@Select` / `@Insert` / `@Update` / `@Delete` annotation (Java).
+- **Dynamic SQL evaluation** — Fully evaluates MyBatis dynamic SQL tags: `<if>`, `<choose>`, `<when>`, `<otherwise>`, `<foreach>`, `<where>`, `<set>`, `<trim>`, and `<bind>`.
+- **Parameter input dialog** — Automatically detects `#{param}` and OGNL parameters, and prompts you to enter values before execution. Supports `null`, numbers, strings, booleans, and lists (`[1,2,3]`).
+- **Seamless DataGrip integration** — The resolved pure SQL is injected directly into the DataGrip execution pipeline, so all DataGrip features (result grid, export, explain plan, etc.) work as usual.
+- **Annotation support** — Works with multi-line string arrays in `@Select({...})` and resolves constant field references.
+
+### Requirements
+
+- IntelliJ IDEA Ultimate or DataGrip **2025.3** or later
+- Java plugin enabled
+- A configured DataGrip data source / connection
 <!-- Plugin description end -->
 
 ## Installation
