@@ -3,11 +3,11 @@
 package com.algorist.zMyBatis
 
 import com.algorist.zMyBatis.MyBatisContextAnalyzer.analyze
+import com.algorist.zMyBatis.services.ConsoleCacheService
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.console.JdbcConsoleProvider
 import com.intellij.database.model.DasDataSource
 import com.intellij.database.model.DasNamespace
-import com.intellij.database.model.ObjectKind
 import com.intellij.database.psi.DbPsiFacade
 import com.intellij.database.settings.DatabaseSettings
 import com.intellij.database.util.DasUtil
@@ -22,15 +22,13 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.popup.JBPopupListener
 import com.intellij.openapi.ui.popup.LightweightWindowEvent
-import com.intellij.openapi.fileTypes.FileTypeManager
-import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
-import com.intellij.testFramework.LightVirtualFile
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.util.PsiTreeUtil
@@ -38,10 +36,6 @@ import com.intellij.psi.xml.XmlTag
 import java.awt.datatransfer.StringSelection
 import java.util.concurrent.ConcurrentHashMap
 
-/** Cached JdbcConsole per source file path. Reused across invocations. */
-private val consoleCache = ConcurrentHashMap<String, JdbcConsole>()
-/** Stable LightVirtualFile per source file — reused as the console's backing file. */
-private val consoleSqlFileCache = ConcurrentHashMap<String, LightVirtualFile>()
 /** Guard against multiple concurrent console selection dialogs for the same file. */
 private val activeSelections = ConcurrentHashMap.newKeySet<String>()
 
@@ -66,7 +60,6 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
 
     override fun update(e: AnActionEvent) {
         originalAction.update(e)
-        // DataGrip disables the run button in Java files; force-enable it for MyBatis contexts
         if (analyze(e) != MyBatisContextAnalyzer.ContextType.NONE) {
             e.presentation.isEnabledAndVisible = true
         }
@@ -107,19 +100,16 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
             }
 
             val sourceFileKey = psiFile.virtualFile?.path ?: psiFile.name
-
-            // Retrieve cached console if still valid (not disposed / data-source still alive)
-            val cachedConsole = consoleCache[sourceFileKey]?.takeIf { it.isActive }
+            val cache = ConsoleCacheService.getInstance(project)
+            val cachedConsole = cache.get(sourceFileKey)
 
             if (cachedConsole != null) {
                 LOG.info("zMyBatis: reusing cached console for $sourceFileKey")
                 proceedWithParamsAndExecute(e, project, sqlContent, context, cachedConsole)
             } else {
-                // Remove stale entry
-                consoleCache.remove(sourceFileKey)
-                // Show data-source/schema chooser, then proceed in the callback.
+                LOG.info("zMyBatis: no live console for $sourceFileKey, showing data-source chooser")
                 ensureConsole(e, project, sourceFileKey) { console ->
-                    consoleCache[sourceFileKey] = console
+                    cache.put(sourceFileKey, console)
                     proceedWithParamsAndExecute(e, project, sqlContent, context, console)
                 }
             }
@@ -129,9 +119,7 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
         }
     }
 
-    /**
-     * After a console is ready: ask for parameters → evaluate MyBatis SQL → execute.
-     */
+
     @Suppress("TooGenericExceptionCaught")
     private fun proceedWithParamsAndExecute(
         @Suppress("UNUSED_PARAMETER") e: AnActionEvent,
@@ -164,9 +152,6 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
     }
 
     // ── Console acquisition ────────────────────────────────────────────────────────────────
-    //
-    //  Shows a popup with all configured data sources and their schemas.
-    //  On selection, creates a new JdbcConsole via JdbcConsole.Builder and switches the schema.
 
     @Suppress("TooGenericExceptionCaught", "LongMethod")
     private fun ensureConsole(
@@ -194,7 +179,6 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
             val dsGroup = DefaultActionGroup(ds.name, true)
             dsGroup.templatePresentation.icon = ds.icon
 
-            // 1. Option: Use Default Schema
             dsGroup.add(object : AnAction("Use Default Schema") {
                 override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
                 override fun actionPerformed(ignored: AnActionEvent) {
@@ -203,10 +187,8 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
                     buildAndDeliverConsole(project, ds, null, fileKey, onConsoleReady)
                 }
             })
-
             dsGroup.addSeparator()
 
-            // 2. Options: Select Specific Schema
             val schemas = DasUtil.getSchemas(ds).toList()
             if (schemas.isNotEmpty()) {
                 for (schema in schemas) {
@@ -223,7 +205,7 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
                 dsGroup.add(object : AnAction("No schemas found") {
                     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
                     override fun update(e: AnActionEvent) { e.presentation.isEnabled = false }
-                    override fun actionPerformed(e: AnActionEvent) {}
+                    override fun actionPerformed(e: AnActionEvent) { /* disabled */ }
                 })
             }
             group.add(dsGroup)
@@ -246,14 +228,6 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
         }, ModalityState.any())
     }
 
-    /**
-     * Creates a new [JdbcConsole] for [ds] using the public Builder API, then optionally
-     * switches the active schema before invoking [onConsoleReady].
-     *
-     * [fileKey] is the source mapper file path, used to look up (or create) a stable
-     * [LightVirtualFile] that is passed to [JdbcConsole.Builder.forFile] — without this
-     * the builder throws "Parameter specified as non-null is null" in SessionsUtil.
-     */
     @Suppress("TooGenericExceptionCaught")
     private fun buildAndDeliverConsole(
         project: com.intellij.openapi.project.Project,
@@ -263,41 +237,45 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
         onConsoleReady: (JdbcConsole) -> Unit
     ) {
         try {
-            val sqlFileType = FileTypeManager.getInstance().getFileTypeByExtension("sql")
-            val consoleSqlFile = consoleSqlFileCache.computeIfAbsent(fileKey) {
-                val name = fileKey.substringAfterLast('/').substringAfterLast('\\')
-                LightVirtualFile(name, sqlFileType, "")
-            }
+            // LightVirtualFile = in-memory only.
+            // This is intentional: a real on-disk file causes VFS change events whenever
+            // the document is written during execution, which triggers a project reload and
+            // immediately disposes the console.  LightVirtualFile never hits the disk.
+            val sqlFileType = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
+                .getFileTypeByExtension("sql")
+            // Use the original mapper filename (e.g. "CustomerMapper.xml") as the console
+            // title — that is what the user sees in the Services tab.
+            val consoleName = fileKey.substringAfterLast('/').substringAfterLast('\\')
+            val lightFile = com.intellij.testFramework.LightVirtualFile(consoleName, sqlFileType, "")
 
             val console = JdbcConsole.newConsole(project)
                 .fromDataSource(ds)
-                .forFile(consoleSqlFile)
+                .forFile(lightFile)
                 .build()
-            LOG.info("zMyBatis: Console created for ${ds.name}")
+            LOG.info("zMyBatis: console created for ${ds.name} (name=$consoleName)")
 
-            if (schema != null) {
-                switchSchemaOnConsole(console, schema)
-            }
+            if (schema != null) switchSchemaOnConsole(console, schema)
+
+            // Persist ds + schema name so we can silently re-create the console after restart.
+            val schemaName = schema?.name ?: ""
+            ConsoleCacheService.saveSession(fileKey, ds.name, schemaName)
+            ConsoleCacheService.addToIndex(fileKey)
+            LOG.info("zMyBatis: session saved for $fileKey (ds=${ds.name}, schema=$schemaName)")
 
             onConsoleReady(console)
         } catch (ex: Throwable) {
-            LOG.error("zMyBatis: Failed to create console for ${ds.name}", ex)
+            LOG.error("zMyBatis: failed to create console for ${ds.name}", ex)
             Messages.showErrorDialog(project,
                 "Could not create database console for ${ds.name}.\n${ex.message}",
                 "zMyBatis Error")
         }
     }
 
-    /**
-     * Switches the active schema on [console] to the given [schema] using [JdbcConsole.switchSchema].
-     * Builds the [SearchPath] from the schema's name and its [ObjectKind] (obtained via [DasUtil.getKind]).
-     */
     private fun switchSchemaOnConsole(console: JdbcConsole, schema: DasNamespace) {
         try {
             val kind = DasUtil.getKind(schema)
             val path = ObjectPath.create(schema.name, kind)
-            val searchPath = SearchPath.of(path)
-            console.switchSchema(searchPath, false)
+            console.switchSchema(SearchPath.of(path), false)
             LOG.info("zMyBatis: schema '${schema.name}' (kind=$kind) switched on console")
         } catch (ex: Throwable) {
             LOG.warn("zMyBatis: failed to switch schema '${schema.name}': ${ex.message}")
@@ -320,7 +298,6 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
         val consoleDoc = console.document
         val consolePsiFile = console.file
 
-        // Ensure the editor exists
         val existingEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
             .firstOrNull { it is EditorEx } as? EditorEx
 
@@ -357,6 +334,7 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
         val consolePsiFile = console.file
         val originalText = consoleDoc.text
 
+
         try {
             consoleEditor.contentComponent.requestFocusInWindow()
 
@@ -385,8 +363,9 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
 
             LOG.info("zMyBatis: executing on console '${console.title}' with SQL length ${pureSql.length}")
             JdbcConsoleProvider.doRunQueryInConsole(console, info)
-
             CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
+
+
         } catch (ex: Throwable) {
             LOG.error("zMyBatis: execution failed", ex)
             try {
@@ -397,7 +376,9 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
             } catch (restoreEx: Throwable) {
                 LOG.warn("zMyBatis: failed to restore console document: ${restoreEx.message}")
             }
-            Messages.showErrorDialog(project, "Failed to execute SQL:\n${ex.message}", "zMyBatis: Execution Error")
+            Messages.showErrorDialog(project,
+                "Failed to execute SQL:\n${ex.message ?: ex.javaClass.simpleName}",
+                "zMyBatis: Execution Error")
         }
     }
 
@@ -407,25 +388,19 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
         editor: Editor,
         psiFile: PsiFile
     ): String? {
-        editor.selectionModel.selectedText
-            ?.takeIf { it.isNotBlank() }
-            ?.let { return it }
+        editor.selectionModel.selectedText?.takeIf { it.isNotBlank() }?.let { return it }
 
         var offset = editor.caretModel.offset
-        if (offset > 0 && offset == psiFile.textLength) {
-            offset--
-        }
+        if (offset > 0 && offset == psiFile.textLength) offset--
 
         var element = psiFile.findElementAt(offset)
         if (element is com.intellij.psi.PsiWhiteSpace && offset > 0) {
             element = psiFile.findElementAt(offset - 1)
         }
-
         if (element == null) return null
 
         return when (context) {
-            MyBatisContextAnalyzer.ContextType.XML ->
-                findMyBatisStatementTag(element)?.text
+            MyBatisContextAnalyzer.ContextType.XML -> findMyBatisStatementTag(element)?.text
             MyBatisContextAnalyzer.ContextType.ANNOTATION -> {
                 val method = PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
                 val annotation = method?.annotations?.firstOrNull {

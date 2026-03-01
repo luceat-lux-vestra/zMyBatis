@@ -14,5 +14,6 @@
         <!-- <toolWindow factoryClass="com.github.luceatluxvestra.zmybatisprivate.toolWindow.MyToolWindowFactory" id="MyToolWindow"/> -->
         <!-- <postStartupActivity implementation="com.github.luceatluxvestra.zmybatisprivate.startup.MyProjectActivity" /> -->
         <postStartupActivity implementation="com.algorist.zMyBatis.startup.MyBatisActionInterceptorActivity"/>
+        <projectService serviceImplementation="com.algorist.zMyBatis.services.ConsoleCacheService"/>
     </extensions>
 </idea-plugin>
