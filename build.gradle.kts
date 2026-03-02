@@ -1,5 +1,5 @@
 import org.jetbrains.changelog.Changelog
-import org.jetbrains.changelog.markdownToHTML
+
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import java.time.LocalDateTime
@@ -84,6 +84,12 @@ intellijPlatform {
             }
         }
 
+        vendor {
+            name = "algorist"
+            url = "https://github.com/luceat-lux-vestra"
+            email = "heathkimdev@gmail.com"
+        }
+
         ideaVersion {
             sinceBuild = providers.gradleProperty("pluginSinceBuild")
         }
@@ -145,9 +151,8 @@ tasks {
         if (!lines.containsAll(listOf(start, end))) {
             throw GradleException("Plugin description section not found in README.md")
         }
-        val markdown = lines.subList(lines.indexOf(start) + 1, lines.indexOf(end)).joinToString("\n")
-        val html = markdownToHTML(markdown)
-        pluginDescription.set(html)
+        val description = lines.subList(lines.indexOf(start) + 1, lines.indexOf(end)).joinToString("\n").trim()
+        pluginDescription.set(description)
     }
 }
 
