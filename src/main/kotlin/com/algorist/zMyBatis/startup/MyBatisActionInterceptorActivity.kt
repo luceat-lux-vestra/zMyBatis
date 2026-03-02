@@ -31,8 +31,10 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
             ?.templatePresentation
             ?.icon = icons.DatabaseIcons.ConsoleShowPlan
 
-        // Register a project-close listener so ConsoleCacheService knows
-        // when the project is about to close (before JdbcConsoles are disposed).
+        // Register the project-close listener BEFORE scheduling restoreSessionsIntoCache.
+        // If the listener were registered inside the invokeLater lambda there would be a
+        // window between the coroutine suspension point and the EDT dispatch where the
+        // project could already be closing without us having set the shutdown flag.
         ProjectManager.getInstance().addProjectManagerListener(project, object : ProjectManagerListener {
             override fun projectClosing(closingProject: Project) {
                 if (closingProject === project) {
@@ -49,7 +51,9 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
     }
 
     private fun restoreSessionsIntoCache(project: Project) {
-        val fileKeys = ConsoleCacheService.allSavedFileKeys()
+        // allSavedFileKeys() is now project-scoped, so only entries belonging to this
+        // project are returned.  Stale entries from other projects never appear here.
+        val fileKeys = ConsoleCacheService.allSavedFileKeys(project)
         if (fileKeys.isEmpty()) return
         LOG.info("zMyBatis: restoring ${fileKeys.size} saved session(s) on startup")
 
@@ -60,10 +64,21 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
             try {
                 if (cache.get(fileKey) != null) continue   // already live
 
-                val (dsName, searchPathStr) = ConsoleCacheService.loadSession(fileKey) ?: continue
+                val (dsName, searchPathStr) = ConsoleCacheService.loadSession(fileKey) ?: run {
+                    // Session data missing despite being in the index — clean up the index.
+                    LOG.info("zMyBatis: no session data for indexed key $fileKey — removing from index")
+                    ConsoleCacheService.removeFromIndex(project, fileKey)
+                    continue
+                }
+
                 val ds = ConsoleCacheService.findDataSourceByName(project, dsName)
                 if (ds == null) {
-                    LOG.info("zMyBatis: DS '$dsName' not found for $fileKey, skipping restore")
+                    // The data source was renamed or deleted since the last run.
+                    // Remove the stale entry from both the session store and the index so it
+                    // does not accumulate as a zombie that is silently skipped on every startup.
+                    LOG.info("zMyBatis: DS '$dsName' not found for $fileKey — removing stale session")
+                    ConsoleCacheService.clearSession(fileKey)
+                    ConsoleCacheService.removeFromIndex(project, fileKey)
                     continue
                 }
 

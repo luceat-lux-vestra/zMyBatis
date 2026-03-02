@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap
  * IDE-restart recovery strategy:
  *   - When a console is created we persist the chosen DataSource name + SearchPath string
  *     into PropertiesComponent under key "zMyBatis.session.{fileKey}".
- *   - On next startup [MyBatisActionInterceptorActivity] reads those values and silently
+ *   - On next startup [com.algorist.zMyBatis.startup.MyBatisActionInterceptorActivity] reads those values and silently
  *     re-creates the console (no data-source chooser shown to the user).
  *
  * Console dispose strategy:
@@ -33,6 +33,10 @@ import java.util.concurrent.ConcurrentHashMap
  *   - When a console is disposed during IDE/project shutdown (app.isDisposeInProgress or
  *     project.isDisposed/being closed), the callback skips the cleanup and the session
  *     survives for next-startup restore.
+ *
+ * Index scoping:
+ *   - The fileKey index is stored per-project (namespaced by project.basePath) to prevent
+ *     cross-project contamination in multi-project workspaces.
  *
  * Services-tab title: LightVirtualFile.name = mapper filename (e.g. "CustomerMapper.xml")
  *   → title = name = "CustomerMapper.xml"  ✅
@@ -71,35 +75,43 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             PropertiesComponent.getInstance().unsetValue("$PROPS_PREFIX$fileKey")
         }
 
+        // ── Per-project index ────────────────────────────────────────────────
+        // The index is namespaced by the project basePath so that sessions from different
+        // projects never bleed into each other.  Without this, re-opening project A could
+        // try to restore sessions that belong to project B (different datasource names,
+        // different file paths) and leave zombie entries in the index.
+
+        private fun indexKey(project: Project): String {
+            val ns = project.basePath?.hashCode()?.toString() ?: "global"
+            return "${PROPS_PREFIX}__index__.$ns"
+        }
+
         /**
-         * Returns all fileKeys that have a saved session entry.
+         * Returns all fileKeys saved for [project].
          * Used at startup to silently re-create consoles.
          */
-        fun allSavedFileKeys(): List<String> {
-            val store = PropertiesComponent.getInstance()
-            // PropertiesComponent has no "list all keys" API; we rely on callers knowing
-            // the fileKeys. At startup MyBatisActionInterceptorActivity iterates project
-            // files and checks loadSession() per file — but that requires knowing fileKeys.
-            //
-            // Instead we store a side-index: a newline-separated list of fileKeys.
-            val raw = store.getValue("${PROPS_PREFIX}__index__") ?: return emptyList()
+        fun allSavedFileKeys(project: Project): List<String> {
+            val raw = PropertiesComponent.getInstance().getValue(indexKey(project))
+                ?: return emptyList()
             return raw.split("\n").filter { it.isNotBlank() }
         }
 
-        fun addToIndex(fileKey: String) {
+        fun addToIndex(project: Project, fileKey: String) {
             val store = PropertiesComponent.getInstance()
-            val existing = store.getValue("${PROPS_PREFIX}__index__") ?: ""
+            val key = indexKey(project)
+            val existing = store.getValue(key) ?: ""
             val keys = existing.split("\n").filter { it.isNotBlank() }.toMutableSet()
             if (keys.add(fileKey)) {
-                store.setValue("${PROPS_PREFIX}__index__", keys.joinToString("\n"))
+                store.setValue(key, keys.joinToString("\n"))
             }
         }
 
-        fun removeFromIndex(fileKey: String) {
+        fun removeFromIndex(project: Project, fileKey: String) {
             val store = PropertiesComponent.getInstance()
-            val existing = store.getValue("${PROPS_PREFIX}__index__") ?: return
+            val key = indexKey(project)
+            val existing = store.getValue(key) ?: return
             val keys = existing.split("\n").filter { it.isNotBlank() && it != fileKey }
-            store.setValue("${PROPS_PREFIX}__index__", keys.joinToString("\n"))
+            store.setValue(key, keys.joinToString("\n"))
         }
 
         /** Finds a LocalDataSource by name within the project. */
@@ -113,16 +125,17 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     private val cache = ConcurrentHashMap<String, Entry>()
 
     /**
-     * Set to true when [projectClosing] fires (before JdbcConsoles are disposed).
+     * Set to true when [markShuttingDown] fires (before JdbcConsoles are disposed)
+     * OR when our own [dispose] method is called.
      * This is more reliable than checking app.isDisposeInProgress because the project
      * close sequence disposes JdbcConsoles before our service's dispose() is called.
      */
     @Volatile
-    private var projectClosing = false
+    private var shuttingDown = false
 
-    /** Called by [MyBatisActionInterceptorActivity] via ProjectManagerListener.projectClosing */
+    /** Called by [com.algorist.zMyBatis.startup.MyBatisActionInterceptorActivity] via ProjectManagerListener.projectClosing */
     fun markShuttingDown() {
-        projectClosing = true
+        shuttingDown = true
     }
 
     /**
@@ -130,9 +143,9 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
      * In that case, console dispose events should NOT clear the saved session.
      */
     private fun isShuttingDown(): Boolean {
-        if (projectClosing) return true
+        if (shuttingDown) return true
         val app = ApplicationManager.getApplication()
-        if (app == null || app.isDisposed || app.isDisposeInProgress) return true
+        if (app == null || app.isDisposed) return true
         if (project.isDisposed) return true
         return false
     }
@@ -148,9 +161,22 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     }
 
     fun put(fileKey: String, console: JdbcConsole) {
+        // Evict any previous entry.  We do NOT dispose the old sentinel here — it is still
+        // a child of the old console in the Disposer tree and will be cleaned up when that
+        // console is eventually disposed.  We just need to make sure the old callback does
+        // NOT corrupt the new entry or wipe the session.  We achieve that by capturing the
+        // sentinel reference in the closure and checking it is still the active one.
         cache.remove(fileKey)
         val sentinel = Disposer.newCheckedDisposable(console)
         Disposer.register(sentinel) {
+            // Guard: only act if this sentinel belongs to the currently active entry.
+            // If put() was called again before this callback fires, cache[fileKey] will
+            // point to a newer Entry with a different sentinel — skip everything in that case.
+            val current = cache[fileKey]
+            if (current != null && current.sentinel !== sentinel) {
+                LOG.info("zMyBatis: stale sentinel fired for $fileKey — ignoring")
+                return@register
+            }
             cache.remove(fileKey)
             // Only wipe the persistent session when the user explicitly closed the console
             // (application still running and project not being closed).
@@ -159,7 +185,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             if (!isShuttingDown()) {
                 LOG.info("zMyBatis: console closed by user — clearing session for $fileKey")
                 clearSession(fileKey)
-                removeFromIndex(fileKey)
+                removeFromIndex(project, fileKey)
             } else {
                 LOG.info("zMyBatis: console disposed during shutdown — keeping session for $fileKey")
             }
@@ -168,16 +194,39 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         LOG.info("zMyBatis: console cached for $fileKey")
     }
 
+    /**
+     * Silently evicts the cached entry for [fileKey] **without** touching the persistent
+     * session data.  Used internally when a restore attempt fails partway through and we
+     * want to drop the in-memory entry but keep the session for the next startup attempt.
+     */
+    fun evictSilently(fileKey: String) {
+        cache.remove(fileKey)
+        LOG.info("zMyBatis: silently evicted cache entry for $fileKey")
+    }
+
+    /**
+     * Explicitly removes the cached entry AND clears the persistent session.
+     * Call this only when the intent is to permanently forget the console
+     * (e.g. a programmatic "reset" — currently unused externally, but exposed for safety).
+     */
+    @Suppress("unused")
     fun remove(fileKey: String) {
-        cache.remove(fileKey)?.let { entry ->
-            if (!entry.sentinel.isDisposed) Disposer.dispose(entry.sentinel)
-        }
+        // Remove from in-memory cache first so the sentinel callback (if it fires) sees
+        // no current entry and skips the redundant clearSession() call.
+        cache.remove(fileKey)
+        clearSession(fileKey)
+        removeFromIndex(project, fileKey)
+        LOG.info("zMyBatis: explicitly removed session for $fileKey")
     }
 
     override fun dispose() {
-        // Just clear the in-memory cache. Session data in PropertiesComponent is preserved.
-        // The isShuttingDown() check in each sentinel callback handles the logic correctly
-        // because project.isDisposed will be true by the time callbacks fire.
+        // Mark as shutting down BEFORE clearing the cache.
+        // Some JdbcConsoles may still be alive at this point and will be disposed
+        // shortly after by the platform; their sentinel callbacks must NOT clear the
+        // saved session data.  Setting the flag here guarantees isShuttingDown()
+        // returns true even if projectClosing was never triggered (e.g. when the
+        // project.isDisposed check races with an already-running callback).
+        shuttingDown = true
         cache.clear()
     }
 }

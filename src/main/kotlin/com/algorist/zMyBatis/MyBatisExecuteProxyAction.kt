@@ -280,7 +280,7 @@ open class MyBatisExecuteProxyAction(icon: javax.swing.Icon? = null) : AnAction(
             // Persist ds + schema name so we can silently re-create the console after restart.
             val schemaName = schema?.name ?: ""
             ConsoleCacheService.saveSession(fileKey, ds.name, schemaName)
-            ConsoleCacheService.addToIndex(fileKey)
+            ConsoleCacheService.addToIndex(project, fileKey)
             LOG.info("zMyBatis: session saved for $fileKey (ds=${ds.name}, schema=$schemaName)")
 
             onConsoleReady(console)
