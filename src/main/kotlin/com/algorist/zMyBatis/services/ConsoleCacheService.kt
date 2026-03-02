@@ -126,7 +126,11 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         // Guard: if the console is already disposed (e.g. build() failed silently),
         // still persist the session so the next startup can try to restore it,
         // but do not add a dead entry to the in-memory cache.
-        if (Disposer.isDisposed(console)) {
+        // Use a temporary CheckedDisposable to avoid the deprecated Disposer.isDisposed(Disposable).
+        val probe = Disposer.newCheckedDisposable(console)
+        val alreadyDisposed = probe.isDisposed
+        if (!alreadyDisposed) Disposer.dispose(probe) // clean up the probe sentinel
+        if (alreadyDisposed) {
             LOG.warn("zMyBatis: console already disposed at put() for $fileKey — persisting session only")
             saveSession(fileKey, dsName, schemaName)
             addToIndex(project, fileKey)
