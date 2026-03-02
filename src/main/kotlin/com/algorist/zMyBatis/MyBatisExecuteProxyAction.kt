@@ -101,9 +101,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 proceedWithParamsAndExecute(e, project, sqlContent, context, cachedConsole, statementKey)
             } else {
                 LOG.info("zMyBatis: no live console for $sourceFileKey, showing data-source chooser")
-                ensureConsole(e, project, sourceFileKey) { console ->
-                    // Only cache when policy is REUSE
-                    if (!forceNew) cache.put(sourceFileKey, console)
+                ensureConsole(e, project, sourceFileKey, forceNew) { console ->
                     proceedWithParamsAndExecute(e, project, sqlContent, context, console, statementKey)
                 }
             }
@@ -169,6 +167,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         originalEvent: AnActionEvent,
         project: com.intellij.openapi.project.Project,
         fileKey: String,
+        forceNew: Boolean,
         onConsoleReady: (JdbcConsole) -> Unit
     ) {
         if (!activeSelections.add(fileKey)) {
@@ -195,7 +194,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 override fun actionPerformed(ignored: AnActionEvent) {
                     LOG.info("zMyBatis: Default schema selected for DS: ${ds.name}")
                     activeSelections.remove(fileKey)
-                    buildAndDeliverConsole(project, ds, null, fileKey, onConsoleReady)
+                    buildAndDeliverConsole(project, ds, null, fileKey, forceNew, onConsoleReady)
                 }
             })
             dsGroup.addSeparator()
@@ -208,7 +207,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                         override fun actionPerformed(ignored: AnActionEvent) {
                             LOG.info("zMyBatis: Schema selected: ${schema.name} for DS: ${ds.name}")
                             activeSelections.remove(fileKey)
-                            buildAndDeliverConsole(project, ds, schema, fileKey, onConsoleReady)
+                            buildAndDeliverConsole(project, ds, schema, fileKey, forceNew, onConsoleReady)
                         }
                     })
                 }
@@ -245,6 +244,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         ds: DbDataSource,
         schema: DasNamespace?,
         fileKey: String,
+        forceNew: Boolean,
         onConsoleReady: (JdbcConsole) -> Unit
     ) {
         try {
@@ -256,7 +256,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 .getFileTypeByExtension("sql")
             // Use the original mapper filename (e.g. "CustomerMapper.xml") as the console
             // title — that is what the user sees in the Services tab.
-            val consoleName = fileKey.substringAfterLast('/').substringAfterLast('\\')
+            val consoleName = fileKey.substringAfterLast('/').substringAfterLast('\\') + " - zMyBatis"
             val lightFile = com.intellij.testFramework.LightVirtualFile(consoleName, sqlFileType, "")
 
             val console = JdbcConsole.newConsole(project)
@@ -267,13 +267,13 @@ open class MyBatisExecuteProxyAction : AnAction() {
 
             if (schema != null) switchSchemaOnConsole(console, schema)
 
-            // Persist ds + schema name so we can silently re-create the console after restart.
             val schemaName = schema?.name ?: ""
-            ConsoleCacheService.saveSession(fileKey, ds.name, schemaName)
-            ConsoleCacheService.addToIndex(project, fileKey)
-            LOG.info("zMyBatis: session saved for $fileKey (ds=${ds.name}, schema=$schemaName)")
-
             onConsoleReady(console)
+
+            // put() handles saveSession + addToIndex atomically.
+            // Called after onConsoleReady so the console is fully set up before caching.
+            if (!forceNew) ConsoleCacheService.getInstance(project).put(fileKey, console, ds.name, schemaName)
+            LOG.info("zMyBatis: session saved for $fileKey (ds=${ds.name}, schema=$schemaName)")
         } catch (ex: Throwable) {
             LOG.error("zMyBatis: failed to create console for ${ds.name}", ex)
             Messages.showErrorDialog(project,

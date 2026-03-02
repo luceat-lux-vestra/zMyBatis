@@ -44,13 +44,15 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
     }
 
     private fun restoreSessionsIntoCache(project: Project) {
-        // allSavedFileKeys() is now project-scoped, so only entries belonging to this
-        // project are returned.  Stale entries from other projects never appear here.
-        val fileKeys = ConsoleCacheService.allSavedFileKeys(project)
+        val cache = ConsoleCacheService.getInstance(project)
+
+        // pruneStaleIndex() cross-checks the index against saved session data and
+        // removes any entries that have no corresponding session (e.g. the user closed
+        // the console while the IDE was not running, or after a crash).
+        val fileKeys = cache.pruneStaleIndex()
         if (fileKeys.isEmpty()) return
         LOG.info("zMyBatis: restoring ${fileKeys.size} saved session(s) on startup")
 
-        val cache = ConsoleCacheService.getInstance(project)
         val sqlFileType = FileTypeManager.getInstance().getFileTypeByExtension("sql")
 
         for (fileKey in fileKeys) {
@@ -58,7 +60,6 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
                 if (cache.get(fileKey) != null) continue   // already live
 
                 val (dsName, searchPathStr) = ConsoleCacheService.loadSession(fileKey) ?: run {
-                    // Session data missing despite being in the index — clean up the index.
                     LOG.info("zMyBatis: no session data for indexed key $fileKey — removing from index")
                     ConsoleCacheService.removeFromIndex(project, fileKey)
                     continue
@@ -66,16 +67,13 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
 
                 val ds = ConsoleCacheService.findDataSourceByName(project, dsName)
                 if (ds == null) {
-                    // The data source was renamed or deleted since the last run.
-                    // Remove the stale entry from both the session store and the index so it
-                    // does not accumulate as a zombie that is silently skipped on every startup.
                     LOG.info("zMyBatis: DS '$dsName' not found for $fileKey — removing stale session")
                     ConsoleCacheService.clearSession(fileKey)
                     ConsoleCacheService.removeFromIndex(project, fileKey)
                     continue
                 }
 
-                val consoleName = fileKey.substringAfterLast('/').substringAfterLast('\\')
+                val consoleName = fileKey.substringAfterLast('/').substringAfterLast('\\') + " - zMyBatis"
                 val lightFile = LightVirtualFile(consoleName, sqlFileType, "")
 
                 val console = JdbcConsole.newConsole(project)
@@ -94,7 +92,8 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
                     } catch (_: Throwable) { /* best-effort */ }
                 }
 
-                cache.put(fileKey, console)
+                // put() re-saves session data and index entry atomically.
+                cache.put(fileKey, console, dsName, searchPathStr)
                 LOG.info("zMyBatis: session restored for $fileKey (ds=$dsName)")
             } catch (ex: Throwable) {
                 LOG.warn("zMyBatis: failed to restore session for $fileKey: ${ex.message}")

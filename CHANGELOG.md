@@ -6,6 +6,7 @@
 
 ### Changed
 - **Execute (zMyBatis)** is now a standalone action (right-click menu / `Run` context group) instead of overriding DataGrip's built-in Execute action — DataGrip's own Execute, Explain Plan, and all other actions are no longer affected
+- **Session management redesigned** — `ConsoleCacheService.put()` now persists session data (dsName + schemaName) atomically; startup restore uses `pruneStaleIndex()` to cross-check the index against saved session data and drops entries that are no longer valid; `markShuttingDown()` / `dispose()` explicitly re-persist all live sessions before clearing the cache, eliminating the shutdown-flag race condition that caused deleted consoles to reappear after restart
 
 ### Added
 
