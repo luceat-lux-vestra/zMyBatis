@@ -2,7 +2,7 @@
 <idea-plugin>
     <id>com.algorist.zMyBatis</id>
     <name>zMyBatis</name>
-    <vendor url="https://github.com/luceat-lux-vestra">algorist</vendor>
+    <vendor url="https://github.com/luceat-lux-vestra" email="heathkimdev@gmail.com">algorist</vendor>
 
     <!-- Plugin description and change-notes are injected at build time by Gradle (patchPluginXml / intellijPlatform.changeNotes) -->
     <description><![CDATA[zMyBatis evaluates MyBatis dynamic SQL inside the IDE and executes it in DataGrip. ${pluginDescription}]]></description>
