@@ -4,6 +4,8 @@ package com.algorist.zMyBatis
 
 import com.algorist.zMyBatis.MyBatisContextAnalyzer.analyze
 import com.algorist.zMyBatis.services.ConsoleCacheService
+import com.algorist.zMyBatis.settings.ConsoleSessionPolicy
+import com.algorist.zMyBatis.settings.ZMyBatisSettings
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.console.JdbcConsoleProvider
 import com.intellij.database.model.DasDataSource
@@ -102,7 +104,10 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
             val sourceFileKey = psiFile.virtualFile?.path ?: psiFile.name
             val statementKey = extractStatementKey(context, editor, psiFile, sourceFileKey)
             val cache = ConsoleCacheService.getInstance(project)
-            val cachedConsole = cache.get(sourceFileKey)
+
+            // NEW_EACH policy: skip the cache and always open a fresh console
+            val forceNew = ZMyBatisSettings.getInstance().consoleSessionPolicy == ConsoleSessionPolicy.NEW_EACH
+            val cachedConsole = if (forceNew) null else cache.get(sourceFileKey)
 
             if (cachedConsole != null) {
                 LOG.info("zMyBatis: reusing cached console for $sourceFileKey")
@@ -110,7 +115,8 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
             } else {
                 LOG.info("zMyBatis: no live console for $sourceFileKey, showing data-source chooser")
                 ensureConsole(e, project, sourceFileKey) { console ->
-                    cache.put(sourceFileKey, console)
+                    // Only cache when policy is REUSE
+                    if (!forceNew) cache.put(sourceFileKey, console)
                     proceedWithParamsAndExecute(e, project, sqlContent, context, console, statementKey)
                 }
             }
@@ -139,10 +145,26 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
 
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val pureSql = MyBatisEvaluator.evaluate(wrapForEvaluator(sqlContent, context), paramValues)
-                LOG.info("zMyBatis SQL: $pureSql")
+                val rawSql = MyBatisEvaluator.evaluate(wrapForEvaluator(sqlContent, context), paramValues)
+                LOG.info("zMyBatis SQL: $rawSql")
+
+                val settings = ZMyBatisSettings.getInstance()
+
+                // SqlFormatter.format() requires the EDT (PSI write action) — run it inside invokeLater
                 ApplicationManager.getApplication().invokeLater {
-                    executeOnConsole(console, project, pureSql)
+                    val pureSql = if (settings.autoFormatSql) SqlFormatter.format(project, rawSql) else rawSql
+
+                    if (settings.sqlPreview) {
+                        // Show preview dialog on the EDT; execute only if user confirms
+                        val dialog = SqlPreviewDialog(project, pureSql)
+                        if (dialog.showAndGet()) {
+                            executeOnConsole(console, project, pureSql)
+                        } else {
+                            LOG.info("zMyBatis: user cancelled from SQL preview dialog")
+                        }
+                    } else {
+                        executeOnConsole(console, project, pureSql)
+                    }
                 }
             } catch (ex: Throwable) {
                 LOG.error("zMyBatis evaluation failed", ex)
@@ -365,7 +387,9 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
 
             LOG.info("zMyBatis: executing on console '${console.title}' with SQL length ${pureSql.length}")
             JdbcConsoleProvider.doRunQueryInConsole(console, info)
-            CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
+            if (ZMyBatisSettings.getInstance().copyToClipboard) {
+                CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
+            }
 
 
         } catch (ex: Throwable) {
