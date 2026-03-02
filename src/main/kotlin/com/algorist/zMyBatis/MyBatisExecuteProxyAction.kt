@@ -479,7 +479,7 @@ open class MyBatisExecuteProxyAction(icon: javax.swing.Icon? = null) : AnAction(
      */
     private fun extractStatementKey(
         context: MyBatisContextAnalyzer.ContextType,
-        editor: com.intellij.openapi.editor.Editor,
+        editor: Editor,
         psiFile: PsiFile,
         fileKey: String
     ): String {

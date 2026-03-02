@@ -194,15 +194,6 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         LOG.info("zMyBatis: console cached for $fileKey")
     }
 
-    /**
-     * Silently evicts the cached entry for [fileKey] **without** touching the persistent
-     * session data.  Used internally when a restore attempt fails partway through and we
-     * want to drop the in-memory entry but keep the session for the next startup attempt.
-     */
-    fun evictSilently(fileKey: String) {
-        cache.remove(fileKey)
-        LOG.info("zMyBatis: silently evicted cache entry for $fileKey")
-    }
 
     /**
      * Explicitly removes the cached entry AND clears the persistent session.
