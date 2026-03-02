@@ -42,7 +42,14 @@ import java.util.concurrent.ConcurrentHashMap
 private val activeSelections = ConcurrentHashMap.newKeySet<String>()
 
 @Suppress("UnstableApiUsage", "TooManyFunctions")
-class MyBatisExecuteProxyAction : AnAction() {
+open class MyBatisExecuteProxyAction(icon: javax.swing.Icon? = null) : AnAction() {
+
+    init {
+        // The platform does NOT copy the original action's templatePresentation when
+        // overrides="true" is used. Each subclass passes its icon via the constructor
+        // so it is set before the action is registered with ActionManager.
+        if (icon != null) templatePresentation.icon = icon
+    }
 
     companion object {
         private val LOG = Logger.getInstance(MyBatisExecuteProxyAction::class.java)
@@ -51,28 +58,11 @@ class MyBatisExecuteProxyAction : AnAction() {
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        // Guard: editor and project must be present (required for EditorPopupMenu).
-        val editor = e.getData(CommonDataKeys.EDITOR)
-        val project = e.project
-        if (editor == null || project == null) {
-            e.presentation.isEnabledAndVisible = false
-            return
-        }
-        // Hide ourselves when not in a MyBatis context so the platform
-        // falls back to the original overridden action automatically.
-        e.presentation.isEnabledAndVisible = analyze(e) != MyBatisContextAnalyzer.ContextType.NONE
-
-        // Inherit the original action's icon at runtime so we always match
-        // the current IDE theme/version without hardcoding an icon path.
-        if (e.presentation.isEnabledAndVisible) {
-            val actionId = ActionManager.getInstance().getId(this)
-            if (actionId != null) {
-                ActionManager.getInstance().getAction(actionId)
-                    ?.templatePresentation?.icon
-                    ?.let { e.presentation.icon = it }
-            }
-        }
+        // Always keep the action visible so it behaves like the original in all contexts
+        // (DB console toolbar, right-click menu, MyBatis XML/annotation files, etc.).
+        e.presentation.isEnabledAndVisible = true
     }
+
 
     @Suppress("ReturnCount")
     override fun actionPerformed(e: AnActionEvent) {
@@ -530,3 +520,28 @@ class MyBatisExecuteProxyAction : AnAction() {
             sql
         }
 }
+
+// ── Per-action subclasses ─────────────────────────────────────────────────────────────────
+// Each subclass passes its icon directly via super(icon), avoiding any ActionManager.getId()
+// timing issues that arise when overrides="true" instantiates the class before registration.
+//
+// Icon sources confirmed from DatabasePlugin.xml (ideaIU / DatabaseTools plugin).
+
+/** Console.Jdbc.Execute → AllIcons.Actions.Execute */
+class MyBatisExecuteAction : MyBatisExecuteProxyAction(com.intellij.icons.AllIcons.Actions.Execute)
+
+/** Console.Jdbc.ExplainPlan → DatabaseIcons.ConsoleShowPlan */
+class MyBatisExplainPlanAction : MyBatisExecuteProxyAction(icons.DatabaseIcons.ConsoleShowPlan)
+
+/** Console.Jdbc.ExplainPlan.Raw → DatabaseIcons.ConsoleShowPlan */
+class MyBatisExplainPlanRawAction : MyBatisExecuteProxyAction(icons.DatabaseIcons.ConsoleShowPlan)
+
+/** Console.Jdbc.ExplainAnalyse → DatabaseIcons.ConsoleShowPlan */
+class MyBatisExplainAnalyseAction : MyBatisExecuteProxyAction(icons.DatabaseIcons.ConsoleShowPlan)
+
+/** Console.Jdbc.ExplainAnalyse.Raw → DatabaseIcons.ConsoleShowPlan */
+class MyBatisExplainAnalyseRawAction : MyBatisExecuteProxyAction(icons.DatabaseIcons.ConsoleShowPlan)
+
+/** Console.TableResult.ShowDumpDialogAction → AllIcons.Actions.Download */
+class MyBatisShowDumpAction : MyBatisExecuteProxyAction(com.intellij.icons.AllIcons.Actions.Download)
+

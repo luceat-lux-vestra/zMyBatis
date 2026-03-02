@@ -4,24 +4,17 @@
     <name>zMyBatis</name>
     <vendor url="https://github.com/luceat-lux-vestra" email="heathkimdev@gmail.com">algorist</vendor>
 
-    <!-- Plugin description and change-notes are injected at build time by Gradle (patchPluginXml / intellijPlatform.changeNotes) -->
     <description><![CDATA[zMyBatis evaluates MyBatis dynamic SQL inside the IDE and executes it in DataGrip. ${pluginDescription}]]></description>
     <change-notes><![CDATA[${changeNotes}]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
-
     <depends>com.intellij.database</depends>
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
-        <!-- <toolWindow factoryClass="com.github.luceatluxvestra.zmybatisprivate.toolWindow.MyToolWindowFactory" id="MyToolWindow"/> -->
-        <!-- <postStartupActivity implementation="com.github.luceatluxvestra.zmybatisprivate.startup.MyProjectActivity" /> -->
         <postStartupActivity implementation="com.algorist.zMyBatis.startup.MyBatisActionInterceptorActivity"/>
 
-        <!-- ConsoleCacheService and ParameterHistoryService are annotated with @Service in code; do not register them here. -->
-
-        <!-- Settings -->
         <applicationService serviceImplementation="com.algorist.zMyBatis.settings.ZMyBatisSettings"/>
         <applicationConfigurable
             parentId="tools"
@@ -31,47 +24,55 @@
     </extensions>
 
     <actions>
-        <!--
-            Declarative overrides: MyBatisExecuteProxyAction replaces each target DB console
-            action at plugin load time — no runtime replaceAction() call needed.
+        <!-- overrides="true" replaces the original action under the same ID, preserving all
+             existing shortcuts and menu positions. Each action class is a subclass of
+             MyBatisExecuteProxyAction that injects the correct icon via its constructor,
+             since the platform does NOT copy templatePresentation when using overrides="true". -->
 
-            The original action ID is reused as-is with overrides="true". The platform
-            substitutes our class for the original at load time while preserving the action's
-            existing shortcuts, menu position, and icon.
-
-            When update() returns isEnabledAndVisible=false (non-MyBatis context) the platform
-            automatically falls back to the original action, so normal SQL console behaviour
-            is fully preserved.
-        -->
         <action id="Console.Jdbc.Execute"
-                class="com.algorist.zMyBatis.MyBatisExecuteProxyAction"
+                class="com.algorist.zMyBatis.MyBatisExecuteAction"
                 text="Execute"
                 overrides="true">
             <add-to-group group-id="EditorPopupMenu" anchor="first"/>
         </action>
 
         <action id="Console.Jdbc.ExplainPlan"
-                class="com.algorist.zMyBatis.MyBatisExecuteProxyAction"
+                class="com.algorist.zMyBatis.MyBatisExplainPlanAction"
                 text="Explain Plan"
                 overrides="true"/>
 
         <action id="Console.Jdbc.ExplainPlan.Raw"
-                class="com.algorist.zMyBatis.MyBatisExecuteProxyAction"
+                class="com.algorist.zMyBatis.MyBatisExplainPlanRawAction"
                 text="Explain Plan (Raw)"
                 overrides="true"/>
 
         <action id="Console.Jdbc.ExplainAnalyse"
-                class="com.algorist.zMyBatis.MyBatisExecuteProxyAction"
+                class="com.algorist.zMyBatis.MyBatisExplainAnalyseAction"
                 text="Explain Analyse"
                 overrides="true"/>
 
         <action id="Console.Jdbc.ExplainAnalyse.Raw"
-                class="com.algorist.zMyBatis.MyBatisExecuteProxyAction"
+                class="com.algorist.zMyBatis.MyBatisExplainAnalyseRawAction"
                 text="Explain Analyse (Raw)"
                 overrides="true"/>
 
+        <!-- Mirrors the original Console.Jdbc.ExplainGroup (SmartPopupActionGroup).
+             The group icon (ConsoleShowPlan) is set programmatically in
+             MyBatisActionInterceptorActivity because plugin.xml only accepts resource
+             paths for icons, not class references. -->
+        <group id="zMyBatis.ExplainGroup"
+               class="com.intellij.ide.actions.SmartPopupActionGroup"
+               text="Explain Plan"
+               popup="true">
+            <reference ref="Console.Jdbc.ExplainPlan"/>
+            <reference ref="Console.Jdbc.ExplainPlan.Raw"/>
+            <reference ref="Console.Jdbc.ExplainAnalyse"/>
+            <reference ref="Console.Jdbc.ExplainAnalyse.Raw"/>
+            <add-to-group group-id="RunContextGroup" anchor="last"/>
+        </group>
+
         <action id="Console.TableResult.ShowDumpDialogAction"
-                class="com.algorist.zMyBatis.MyBatisExecuteProxyAction"
+                class="com.algorist.zMyBatis.MyBatisShowDumpAction"
                 text="Export Data"
                 overrides="true"/>
     </actions>

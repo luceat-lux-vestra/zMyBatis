@@ -5,6 +5,7 @@ import com.intellij.database.console.JdbcConsole
 import com.intellij.database.util.DasUtil
 import com.intellij.database.util.ObjectPath
 import com.intellij.database.util.SearchPath
+import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileTypes.FileTypeManager
@@ -21,7 +22,14 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
     }
 
     override suspend fun execute(project: Project) {
-        LOG.info("zMyBatis: startup activity running (declarative overrides handle interception)")
+        LOG.info("zMyBatis: startup activity running")
+
+        // Set the icon for zMyBatis.ExplainGroup. The icon= attribute in plugin.xml only
+        // accepts resource paths, not class references, so we set it programmatically here.
+        ActionManager.getInstance()
+            .getAction("zMyBatis.ExplainGroup")
+            ?.templatePresentation
+            ?.icon = icons.DatabaseIcons.ConsoleShowPlan
 
         // Register a project-close listener so ConsoleCacheService knows
         // when the project is about to close (before JdbcConsoles are disposed).
