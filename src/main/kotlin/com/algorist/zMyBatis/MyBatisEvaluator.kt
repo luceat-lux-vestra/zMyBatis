@@ -3,6 +3,7 @@
 package com.algorist.zMyBatis
 
 import com.algorist.zMyBatis.settings.ZMyBatisSettings
+import com.intellij.openapi.application.ApplicationManager
 import org.apache.ibatis.builder.BuilderException
 import org.apache.ibatis.ognl.OgnlContext
 import org.apache.ibatis.ognl.OgnlRuntime
@@ -66,7 +67,13 @@ object MyBatisEvaluator {
 
     @Suppress("TooGenericExceptionCaught", "NestedBlockDepth")
     fun evaluate(xmlContent: String, params: Map<String, Any?>): String {
-        val settings = ZMyBatisSettings.getInstance()
+        // Settings may be unavailable in unit-test environments where ApplicationManager
+        // is not initialised.  Fall back to safe defaults (all options OFF) in that case.
+        val settings = ApplicationManager.getApplication()
+            ?.getService(ZMyBatisSettings::class.java)
+        val ignoreUnknown = settings?.ignoreUnknownTags ?: false
+        val strictOgnl    = settings?.strictOgnlMode    ?: false
+
         return try {
             var cleanedXml = xmlContent
                 .replace(Regex("<\\?xml.*\\?>", RegexOption.IGNORE_CASE), "")
@@ -78,7 +85,7 @@ object MyBatisEvaluator {
             // XMLScriptBuilder throws BuilderException("Unknown element <X>") for any
             // tag not in its nodeHandlerMap.  When this option is ON we pre-remove those
             // tags (preserving their text content) so parsing can continue.
-            if (settings.ignoreUnknownTags) {
+            if (ignoreUnknown) {
                 cleanedXml = stripUnknownTags(cleanedXml)
             }
 
@@ -125,7 +132,7 @@ object MyBatisEvaluator {
             // BuilderException wraps OgnlException when an OGNL expression fails.
             // Strict ON  → rethrow so the caller shows an error dialog immediately.
             // Strict OFF → fall through to the error-comment SQL (existing behaviour).
-            if (settings.strictOgnlMode && isOgnlError(e)) throw e
+            if (strictOgnl && isOgnlError(e)) throw e
 
             """
             -- [MyBatis Plugin Error]
