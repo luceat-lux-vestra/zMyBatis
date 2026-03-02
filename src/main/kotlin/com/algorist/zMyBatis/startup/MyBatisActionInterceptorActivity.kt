@@ -1,14 +1,11 @@
 package com.algorist.zMyBatis.startup
 
-import com.algorist.zMyBatis.MyBatisExecuteProxyAction
 import com.algorist.zMyBatis.services.ConsoleCacheService
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.util.DasUtil
 import com.intellij.database.util.ObjectPath
 import com.intellij.database.util.SearchPath
 import com.intellij.openapi.actionSystem.ActionManager
-import com.intellij.openapi.actionSystem.AnAction
-import com.intellij.openapi.actionSystem.impl.ActionManagerImpl
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileTypes.FileTypeManager
@@ -22,26 +19,35 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
 
     companion object {
         private val LOG = Logger.getInstance(MyBatisActionInterceptorActivity::class.java)
-    }
 
-    private val targetActions = arrayOf(
-        "Console.Jdbc.ExplainPlan",
-        "Console.Jdbc.ExplainPlan.Raw",
-        "Console.Jdbc.ExplainAnalyse",
-        "Console.Jdbc.ExplainAnalyse.Raw",
-        "Console.Jdbc.Execute",
-        "Console.TableResult.ShowDumpDialogAction"
-    )
+        private val TARGET_ACTION_IDS = listOf(
+            "Console.Jdbc.ExplainPlan",
+            "Console.Jdbc.ExplainPlan.Raw",
+            "Console.Jdbc.ExplainAnalyse",
+            "Console.Jdbc.ExplainAnalyse.Raw",
+            "Console.Jdbc.Execute",
+            "Console.TableResult.ShowDumpDialogAction"
+        )
 
-    override suspend fun execute(project: Project) {
-        val actionManager = ActionManager.getInstance() as ActionManagerImpl
-        for (actionId in targetActions) {
-            val originalAction: AnAction? = actionManager.getAction(actionId)
-            if (originalAction != null && originalAction !is MyBatisExecuteProxyAction) {
-                actionManager.replaceAction(actionId, MyBatisExecuteProxyAction(originalAction))
+        /** Replaces each target action with a [MyBatisActionWrapper]. Idempotent. */
+        private fun registerActionWrappers() {
+            val actionManager = ActionManager.getInstance()
+            for (id in TARGET_ACTION_IDS) {
+                val current = actionManager.getAction(id) ?: continue
+                if (current is MyBatisActionWrapper) continue   // already wrapped
+                actionManager.replaceAction(id, MyBatisActionWrapper(current))
+                LOG.info("zMyBatis: replaced action '$id' with MyBatisActionWrapper")
             }
         }
-        LOG.info("zMyBatis: actions intercepted")
+    }
+
+    override suspend fun execute(project: Project) {
+        LOG.info("zMyBatis: action-wrapper interception active")
+
+        // Replace target DB actions with our wrapper on the EDT (ActionManager requires EDT).
+        ApplicationManager.getApplication().invokeAndWait {
+            registerActionWrappers()
+        }
 
         // Register a project-close listener so ConsoleCacheService knows
         // when the project is about to close (before JdbcConsoles are disposed).
