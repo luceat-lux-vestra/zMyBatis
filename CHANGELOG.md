@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **Execute (zMyBatis)** is now a standalone action (right-click menu / `Run` context group) instead of overriding DataGrip's built-in Execute action — DataGrip's own Execute, Explain Plan, and all other actions are no longer affected
+
 ### Added
 
 #### Core Execution

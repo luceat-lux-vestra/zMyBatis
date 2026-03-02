@@ -24,56 +24,12 @@
     </extensions>
 
     <actions>
-        <!-- overrides="true" replaces the original action under the same ID, preserving all
-             existing shortcuts and menu positions. Each action class is a subclass of
-             MyBatisExecuteProxyAction that injects the correct icon via its constructor,
-             since the platform does NOT copy templatePresentation when using overrides="true". -->
-
-        <action id="Console.Jdbc.Execute"
+        <action id="zMyBatis.Execute"
                 class="com.algorist.zMyBatis.MyBatisExecuteAction"
-                text="Execute"
-                overrides="true">
-            <!-- <add-to-group group-id="EditorPopupMenu" anchor="first"/> -->
+                text="Execute (zMyBatis)"
+                description="Evaluate MyBatis dynamic SQL and execute on a JDBC console">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+            <add-to-group group-id="RunContextGroup" anchor="first"/>
         </action>
-
-        <action id="Console.Jdbc.ExplainPlan"
-                class="com.algorist.zMyBatis.MyBatisExplainPlanAction"
-                text="Explain Plan"
-                overrides="true"/>
-
-        <action id="Console.Jdbc.ExplainPlan.Raw"
-                class="com.algorist.zMyBatis.MyBatisExplainPlanRawAction"
-                text="Explain Plan (Raw)"
-                overrides="true"/>
-
-        <action id="Console.Jdbc.ExplainAnalyse"
-                class="com.algorist.zMyBatis.MyBatisExplainAnalyseAction"
-                text="Explain Analyse"
-                overrides="true"/>
-
-        <action id="Console.Jdbc.ExplainAnalyse.Raw"
-                class="com.algorist.zMyBatis.MyBatisExplainAnalyseRawAction"
-                text="Explain Analyse (Raw)"
-                overrides="true"/>
-
-        <!-- Mirrors the original Console.Jdbc.ExplainGroup (SmartPopupActionGroup).
-             The group icon (ConsoleShowPlan) is set programmatically in
-             MyBatisActionInterceptorActivity because plugin.xml only accepts resource
-             paths for icons, not class references. -->
-        <group id="zMyBatis.ExplainGroup"
-               class="com.intellij.ide.actions.SmartPopupActionGroup"
-               text="Explain Plan"
-               popup="true">
-            <reference ref="Console.Jdbc.ExplainPlan"/>
-            <reference ref="Console.Jdbc.ExplainPlan.Raw"/>
-            <reference ref="Console.Jdbc.ExplainAnalyse"/>
-            <reference ref="Console.Jdbc.ExplainAnalyse.Raw"/>
-            <add-to-group group-id="RunContextGroup" anchor="last"/>
-        </group>
-
-        <action id="Console.TableResult.ShowDumpDialogAction"
-                class="com.algorist.zMyBatis.MyBatisShowDumpAction"
-                text="Export Data"
-                overrides="true"/>
     </actions>
 </idea-plugin>

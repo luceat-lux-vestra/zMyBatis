@@ -15,9 +15,7 @@ import com.intellij.database.settings.DatabaseSettings
 import com.intellij.database.util.DasUtil
 import com.intellij.database.util.ObjectPath
 import com.intellij.database.util.SearchPath
-import com.intellij.ide.DataManager
 import com.intellij.openapi.actionSystem.*
-import com.intellij.openapi.actionSystem.CustomizedDataContext
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.command.WriteCommandAction
@@ -44,17 +42,7 @@ import java.util.concurrent.ConcurrentHashMap
 private val activeSelections = ConcurrentHashMap.newKeySet<String>()
 
 @Suppress("UnstableApiUsage", "TooManyFunctions")
-open class MyBatisExecuteProxyAction(
-    private val targetActionId: String,
-    icon: javax.swing.Icon? = null
-) : AnAction() {
-
-    init {
-        // The platform does NOT copy the original action's templatePresentation when
-        // overrides="true" is used. Each subclass passes its icon via the constructor
-        // so it is set before the action is registered with ActionManager.
-        if (icon != null) templatePresentation.icon = icon
-    }
+open class MyBatisExecuteProxyAction : AnAction() {
 
     companion object {
         private val LOG = Logger.getInstance(MyBatisExecuteProxyAction::class.java)
@@ -72,10 +60,7 @@ open class MyBatisExecuteProxyAction(
     @Suppress("ReturnCount")
     override fun actionPerformed(e: AnActionEvent) {
         when (val context = analyze(e)) {
-            MyBatisContextAnalyzer.ContextType.NONE -> {
-                // update() hides us in NONE context — this branch is a safety guard only.
-                return
-            }
+            MyBatisContextAnalyzer.ContextType.NONE -> return
             MyBatisContextAnalyzer.ContextType.PROVIDER -> {
                 Messages.showInfoMessage(
                     e.project,
@@ -370,49 +355,22 @@ open class MyBatisExecuteProxyAction(
                 PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
             })
 
-            if (targetActionId == "Console.Jdbc.Execute") {
-                // ── Execute: proven doRunQueryInConsole path (same as before Explain PR) ──
-                val fullRange = TextRange(0, consoleDoc.textLength)
-                val info = JdbcConsoleProvider.findScriptModelNoInject(
-                    project, consolePsiFile, consoleEditor,
-                    fullRange, DatabaseSettings.getDefaultExecOption()
-                )
-                if (info == null) {
-                    LOG.warn("zMyBatis: findScriptModelNoInject returned null (SQL length=${pureSql.length})")
-                    WriteCommandAction.runWriteCommandAction(project) {
-                        consoleDoc.setText(originalText)
-                        PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
-                    }
-                    Messages.showErrorDialog(project, "Failed to parse SQL for execution.", "zMyBatis Error")
-                    return
+            val fullRange = TextRange(0, consoleDoc.textLength)
+            val info = JdbcConsoleProvider.findScriptModelNoInject(
+                project, consolePsiFile, consoleEditor,
+                fullRange, DatabaseSettings.getDefaultExecOption()
+            )
+            if (info == null) {
+                LOG.warn("zMyBatis: findScriptModelNoInject returned null (SQL length=${pureSql.length})")
+                WriteCommandAction.runWriteCommandAction(project) {
+                    consoleDoc.setText(originalText)
+                    PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
                 }
-                LOG.info("zMyBatis: executing on console '${console.title}'")
-                JdbcConsoleProvider.doRunQueryInConsole(console, info)
-            } else {
-                // ── Explain Plan / Analyse / Raw: delegate to the original DataGrip action ──
-                // ExplainActionBase.getConsole(event) → JdbcConsole.findConsole(event):
-                //   1. findVirtualFile(event) reads VIRTUAL_FILE from DataContext
-                //   2. JdbcConsoleProvider.getValidConsole(project, vFile) → looks up our console
-                // sink.set() is the correct DataSink API — sink[key]=value is NOT valid.
-                val targetAction = ActionManager.getInstance().getAction(targetActionId)
-                if (targetAction == null) {
-                    LOG.warn("zMyBatis: target action '$targetActionId' not found")
-                    Messages.showErrorDialog(project, "Cannot find action '$targetActionId'.", "zMyBatis Error")
-                    return
-                }
-                LOG.info("zMyBatis: delegating '$targetActionId' to console '${console.title}'")
-                val baseContext = DataManager.getInstance().getDataContext(consoleEditor.component)
-                val delegateContext = CustomizedDataContext.withSnapshot(baseContext) { sink ->
-                    sink.set(CommonDataKeys.EDITOR, consoleEditor)
-                    sink.set(CommonDataKeys.PSI_FILE, consolePsiFile)
-                    sink.set(CommonDataKeys.VIRTUAL_FILE, console.virtualFile)
-                }
-                val delegateEvent = AnActionEvent.createEvent(
-                    delegateContext, null, ActionPlaces.EDITOR_TOOLBAR, ActionUiKind.NONE, null
-                )
-                @Suppress("CallToAction")
-                targetAction.actionPerformed(delegateEvent)
+                Messages.showErrorDialog(project, "Failed to parse SQL for execution.", "zMyBatis Error")
+                return
             }
+            LOG.info("zMyBatis: executing on console '${console.title}'")
+            JdbcConsoleProvider.doRunQueryInConsole(console, info)
 
             if (ZMyBatisSettings.getInstance().copyToClipboard) {
                 CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
@@ -551,27 +509,6 @@ open class MyBatisExecuteProxyAction(
         }
 }
 
-// ── Per-action subclasses ─────────────────────────────────────────────────────────────────
-// Each subclass passes its icon directly via super(icon), avoiding any ActionManager.getId()
-// timing issues that arise when overrides="true" instantiates the class before registration.
-//
-// Icon sources confirmed from DatabasePlugin.xml (ideaIU / DatabaseTools plugin).
+class MyBatisExecuteAction : MyBatisExecuteProxyAction()
 
-/** Console.Jdbc.Execute → AllIcons.Actions.Execute */
-class MyBatisExecuteAction : MyBatisExecuteProxyAction("Console.Jdbc.Execute", com.intellij.icons.AllIcons.Actions.Execute)
-
-/** Console.Jdbc.ExplainPlan → DatabaseIcons.ConsoleShowPlan */
-class MyBatisExplainPlanAction : MyBatisExecuteProxyAction("Console.Jdbc.ExplainPlan", icons.DatabaseIcons.ConsoleShowPlan)
-
-/** Console.Jdbc.ExplainPlan.Raw → DatabaseIcons.ConsoleShowPlan */
-class MyBatisExplainPlanRawAction : MyBatisExecuteProxyAction("Console.Jdbc.ExplainPlan.Raw", icons.DatabaseIcons.ConsoleShowPlan)
-
-/** Console.Jdbc.ExplainAnalyse → DatabaseIcons.ConsoleShowPlan */
-class MyBatisExplainAnalyseAction : MyBatisExecuteProxyAction("Console.Jdbc.ExplainAnalyse", icons.DatabaseIcons.ConsoleShowPlan)
-
-/** Console.Jdbc.ExplainAnalyse.Raw → DatabaseIcons.ConsoleShowPlan */
-class MyBatisExplainAnalyseRawAction : MyBatisExecuteProxyAction("Console.Jdbc.ExplainAnalyse.Raw", icons.DatabaseIcons.ConsoleShowPlan)
-
-/** Console.TableResult.ShowDumpDialogAction → AllIcons.Actions.Download */
-class MyBatisShowDumpAction : MyBatisExecuteProxyAction("Console.TableResult.ShowDumpDialogAction", com.intellij.icons.AllIcons.Actions.Download)
 
