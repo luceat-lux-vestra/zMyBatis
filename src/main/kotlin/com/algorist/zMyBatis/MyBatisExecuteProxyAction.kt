@@ -100,17 +100,18 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
             }
 
             val sourceFileKey = psiFile.virtualFile?.path ?: psiFile.name
+            val statementKey = extractStatementKey(context, editor, psiFile, sourceFileKey)
             val cache = ConsoleCacheService.getInstance(project)
             val cachedConsole = cache.get(sourceFileKey)
 
             if (cachedConsole != null) {
                 LOG.info("zMyBatis: reusing cached console for $sourceFileKey")
-                proceedWithParamsAndExecute(e, project, sqlContent, context, cachedConsole)
+                proceedWithParamsAndExecute(e, project, sqlContent, context, cachedConsole, statementKey)
             } else {
                 LOG.info("zMyBatis: no live console for $sourceFileKey, showing data-source chooser")
                 ensureConsole(e, project, sourceFileKey) { console ->
                     cache.put(sourceFileKey, console)
-                    proceedWithParamsAndExecute(e, project, sqlContent, context, console)
+                    proceedWithParamsAndExecute(e, project, sqlContent, context, console, statementKey)
                 }
             }
         } catch (ex: Throwable) {
@@ -126,9 +127,10 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
         project: com.intellij.openapi.project.Project,
         sqlContent: String,
         context: MyBatisContextAnalyzer.ContextType,
-        console: JdbcConsole
+        console: JdbcConsole,
+        statementKey: String? = null
     ) {
-        val paramValues = resolveParameters(project, sqlContent)
+        val paramValues = resolveParameters(project, sqlContent, statementKey)
         if (paramValues == null) {
             LOG.info("zMyBatis: resolveParameters returned null (user cancelled or failed)")
             return
@@ -424,12 +426,13 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
     @Suppress("ReturnCount")
     private fun resolveParameters(
         project: com.intellij.openapi.project.Project,
-        sqlContent: String
+        sqlContent: String,
+        statementKey: String?
     ): Map<String, Any?>? {
         val extracted = ParameterExtractor.extractResult(sqlContent)
         LOG.info("zMyBatis extractResult — params: ${extracted.params}, objectParams: ${extracted.objectParams}")
         if (extracted.params.isEmpty()) return emptyMap()
-        val dialog = ParameterInputDialog(project, extracted.params, extracted.objectParams)
+        val dialog = ParameterInputDialog(project, extracted.params, extracted.objectParams, statementKey)
         if (!dialog.showAndGet()) return null
         val values = dialog.getValues()
         LOG.info("zMyBatis getValues — keys: ${values.keys}, values: $values")
@@ -444,6 +447,49 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
             tag = tag.parentTag
         }
         return null
+    }
+
+    /**
+     * Builds a stable key that identifies the specific Mapper statement the user invoked.
+     * Format:
+     *  - XML mapper    : "{fileKey}::{id attribute of the statement tag}"
+     *  - Annotation    : "{fileKey}::{ClassName}#{methodName}"
+     * Falls back to [fileKey] alone if the statement ID cannot be determined.
+     */
+    private fun extractStatementKey(
+        context: MyBatisContextAnalyzer.ContextType,
+        editor: com.intellij.openapi.editor.Editor,
+        psiFile: PsiFile,
+        fileKey: String
+    ): String {
+        val baseOffset = if (editor.selectionModel.hasSelection()) {
+            editor.selectionModel.selectionStart
+        } else {
+            editor.caretModel.offset
+        }
+        var offset = baseOffset
+        if (offset > 0 && offset == psiFile.textLength) offset--
+
+        var element = psiFile.findElementAt(offset)
+        if (element is com.intellij.psi.PsiWhiteSpace && offset > 0) {
+            element = psiFile.findElementAt(offset - 1)
+        }
+        if (element == null) return fileKey
+
+        return when (context) {
+            MyBatisContextAnalyzer.ContextType.XML -> {
+                val tag = findMyBatisStatementTag(element)
+                val id = tag?.getAttributeValue("id") ?: return fileKey
+                "$fileKey::$id"
+            }
+            MyBatisContextAnalyzer.ContextType.ANNOTATION -> {
+                val method = PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
+                    ?: return fileKey
+                val className = method.containingClass?.name ?: ""
+                "$fileKey::$className#${method.name}"
+            }
+            else -> fileKey
+        }
     }
 
     private fun wrapForEvaluator(sql: String, context: MyBatisContextAnalyzer.ContextType): String =

@@ -17,6 +17,29 @@
 - [ ] Click the <kbd>Watch</kbd> button on the top of the [IntelliJ Platform Plugin Template][template] to be notified about releases containing new features and fixes.
 - [ ] Configure the [CODECOV_TOKEN](https://docs.codecov.com/docs/quick-start) secret for automated test coverage reports on PRs
 
+## 🛠 To-Do: Configuration & Options
+사용자 경험 개선을 위한 설정 메뉴(`Settings > Tools > zMyBatis`) 추가 개발 목록입니다.
+
+### 1. 실행 및 결과 제어 (Execution & Output)
+- [ ] **Generate Configurable UI**: IntelliJ 설정 창에 플러그인 설정 페이지 UI 껍데기 생성 (Kotlin UI DSL 사용 권장)
+- [ ] **SQL Preview Option**: `[Checkbox]` 변환된 Native SQL을 바로 실행하지 않고 미리보기 창을 띄울지 여부
+- [ ] **Auto Format SQL**: `[Checkbox]` 실행 전 변환된 SQL을 IntelliJ Formatter로 정렬(Pretty Print) 기능 개발
+- [ ] **Console Session Policy**: `[Radio/Select]` DB 콘솔 세션 처리 방식 (기존 세션 재사용 vs 항상 새 탭 열기)
+
+### 2. 파라미터 입력 편의성 (Parameter Dialog)
+- [x] **Persist State Component**: 마지막 입력값을 저장하기 위한 IntelliJ 영속성(State Persistence) 서비스 구현 (`ZMyBatisSettings`, `ParameterHistoryService`)
+- [x] **Remember Last Inputs**: `[Checkbox]` 동일한 Mapper ID 실행 시 직전 입력값 자동 바인딩 기능
+- [x] **Empty String Handling**: `[Select]` 입력란 공란 처리 정책 (빈 문자열 `""` vs `NULL`)
+- [ ] **List Delimiter**: `[Input]` `<foreach>` 바인딩을 위한 리스트 입력 구분자 설정 (기본값 `,`)
+
+### 3. 파싱 엔진 설정 (Parsing Engine)
+- [ ] **Strict OGNL Mode**: `[Checkbox]` OGNL 표현식 엄격 모드 활성화/비활성화 (Type Safety 관련)
+- [ ] **Ignore Unknown Tags**: `[Checkbox]` 비표준/커스텀 태그 만났을 때 에러 무시하고 텍스트로 렌더링하도록 처리
+
+### 4. 기타 및 디버깅 (Misc)
+- [ ] **Show Parsed SQL in Event Log**: `[Checkbox]` 실행 여부와 관계없이 최종 파싱된 SQL을 IDE Event Log에 출력
+
+
 <!-- Plugin description -->
 **zMyBatis** is a DataGrip / IntelliJ IDEA Ultimate plugin that lets you execute MyBatis mapper queries directly from your Java/Kotlin source or XML mapper files — without leaving the IDE.
 

@@ -15,5 +15,14 @@
         <!-- <postStartupActivity implementation="com.github.luceatluxvestra.zmybatisprivate.startup.MyProjectActivity" /> -->
         <postStartupActivity implementation="com.algorist.zMyBatis.startup.MyBatisActionInterceptorActivity"/>
         <projectService serviceImplementation="com.algorist.zMyBatis.services.ConsoleCacheService"/>
+
+        <!-- Settings -->
+        <applicationService serviceImplementation="com.algorist.zMyBatis.settings.ZMyBatisSettings"/>
+        <projectService serviceImplementation="com.algorist.zMyBatis.settings.ParameterHistoryService"/>
+        <applicationConfigurable
+            parentId="tools"
+            instance="com.algorist.zMyBatis.settings.ZMyBatisConfigurable"
+            id="com.algorist.zMyBatis.settings.ZMyBatisConfigurable"
+            displayName="zMyBatis"/>
     </extensions>
 </idea-plugin>
