@@ -29,4 +29,50 @@
             id="com.algorist.zMyBatis.settings.ZMyBatisConfigurable"
             displayName="zMyBatis - Dynamic SQL Runner with Parameters"/>
     </extensions>
+
+    <actions>
+        <!--
+            Declarative overrides: MyBatisExecuteProxyAction replaces each target DB console
+            action at plugin load time — no runtime replaceAction() call needed.
+
+            The original action ID is reused as-is with overrides="true". The platform
+            substitutes our class for the original at load time while preserving the action's
+            existing shortcuts, menu position, and icon.
+
+            When update() returns isEnabledAndVisible=false (non-MyBatis context) the platform
+            automatically falls back to the original action, so normal SQL console behaviour
+            is fully preserved.
+        -->
+        <action id="Console.Jdbc.Execute"
+                class="com.algorist.zMyBatis.MyBatisExecuteProxyAction"
+                text="Execute"
+                overrides="true">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+        </action>
+
+        <action id="Console.Jdbc.ExplainPlan"
+                class="com.algorist.zMyBatis.MyBatisExecuteProxyAction"
+                text="Explain Plan"
+                overrides="true"/>
+
+        <action id="Console.Jdbc.ExplainPlan.Raw"
+                class="com.algorist.zMyBatis.MyBatisExecuteProxyAction"
+                text="Explain Plan (Raw)"
+                overrides="true"/>
+
+        <action id="Console.Jdbc.ExplainAnalyse"
+                class="com.algorist.zMyBatis.MyBatisExecuteProxyAction"
+                text="Explain Analyse"
+                overrides="true"/>
+
+        <action id="Console.Jdbc.ExplainAnalyse.Raw"
+                class="com.algorist.zMyBatis.MyBatisExecuteProxyAction"
+                text="Explain Analyse (Raw)"
+                overrides="true"/>
+
+        <action id="Console.TableResult.ShowDumpDialogAction"
+                class="com.algorist.zMyBatis.MyBatisExecuteProxyAction"
+                text="Export Data"
+                overrides="true"/>
+    </actions>
 </idea-plugin>

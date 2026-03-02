@@ -42,28 +42,35 @@ import java.util.concurrent.ConcurrentHashMap
 private val activeSelections = ConcurrentHashMap.newKeySet<String>()
 
 @Suppress("UnstableApiUsage", "TooManyFunctions")
-class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction() {
+class MyBatisExecuteProxyAction : AnAction() {
 
     companion object {
         private val LOG = Logger.getInstance(MyBatisExecuteProxyAction::class.java)
     }
 
-    init {
-        templatePresentation.icon = originalAction.templatePresentation.icon
-        templatePresentation.text = originalAction.templatePresentation.text
-        templatePresentation.description = originalAction.templatePresentation.description
-    }
-
-    override fun setShortcutSet(shortcutSet: ShortcutSet) {
-        // Intentionally left blank — prevents IntelliJ from reassigning shortcuts
-    }
-
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        originalAction.update(e)
-        if (analyze(e) != MyBatisContextAnalyzer.ContextType.NONE) {
-            e.presentation.isEnabledAndVisible = true
+        // Guard: editor and project must be present (required for EditorPopupMenu).
+        val editor = e.getData(CommonDataKeys.EDITOR)
+        val project = e.project
+        if (editor == null || project == null) {
+            e.presentation.isEnabledAndVisible = false
+            return
+        }
+        // Hide ourselves when not in a MyBatis context so the platform
+        // falls back to the original overridden action automatically.
+        e.presentation.isEnabledAndVisible = analyze(e) != MyBatisContextAnalyzer.ContextType.NONE
+
+        // Inherit the original action's icon at runtime so we always match
+        // the current IDE theme/version without hardcoding an icon path.
+        if (e.presentation.isEnabledAndVisible) {
+            val actionId = ActionManager.getInstance().getId(this)
+            if (actionId != null) {
+                ActionManager.getInstance().getAction(actionId)
+                    ?.templatePresentation?.icon
+                    ?.let { e.presentation.icon = it }
+            }
         }
     }
 
@@ -71,8 +78,8 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
     override fun actionPerformed(e: AnActionEvent) {
         when (val context = analyze(e)) {
             MyBatisContextAnalyzer.ContextType.NONE -> {
-                @Suppress("CallToAction")
-                originalAction.actionPerformed(e)
+                // update() hides us in NONE context — this branch is a safety guard only.
+                return
             }
             MyBatisContextAnalyzer.ContextType.PROVIDER -> {
                 Messages.showInfoMessage(

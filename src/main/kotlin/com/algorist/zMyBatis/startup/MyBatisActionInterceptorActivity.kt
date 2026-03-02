@@ -5,7 +5,6 @@ import com.intellij.database.console.JdbcConsole
 import com.intellij.database.util.DasUtil
 import com.intellij.database.util.ObjectPath
 import com.intellij.database.util.SearchPath
-import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileTypes.FileTypeManager
@@ -19,40 +18,13 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
 
     companion object {
         private val LOG = Logger.getInstance(MyBatisActionInterceptorActivity::class.java)
-
-        private val TARGET_ACTION_IDS = listOf(
-            "Console.Jdbc.ExplainPlan",
-            "Console.Jdbc.ExplainPlan.Raw",
-            "Console.Jdbc.ExplainAnalyse",
-            "Console.Jdbc.ExplainAnalyse.Raw",
-            "Console.Jdbc.Execute",
-            "Console.TableResult.ShowDumpDialogAction"
-        )
-
-        /** Replaces each target action with a [MyBatisActionWrapper]. Idempotent. */
-        private fun registerActionWrappers() {
-            val actionManager = ActionManager.getInstance()
-            for (id in TARGET_ACTION_IDS) {
-                val current = actionManager.getAction(id) ?: continue
-                if (current is MyBatisActionWrapper) continue   // already wrapped
-                actionManager.replaceAction(id, MyBatisActionWrapper(current))
-                LOG.info("zMyBatis: replaced action '$id' with MyBatisActionWrapper")
-            }
-        }
     }
 
     override suspend fun execute(project: Project) {
-        LOG.info("zMyBatis: action-wrapper interception active")
-
-        // Replace target DB actions with our wrapper on the EDT (ActionManager requires EDT).
-        ApplicationManager.getApplication().invokeAndWait {
-            registerActionWrappers()
-        }
+        LOG.info("zMyBatis: startup activity running (declarative overrides handle interception)")
 
         // Register a project-close listener so ConsoleCacheService knows
         // when the project is about to close (before JdbcConsoles are disposed).
-        // This is more reliable than checking app.isDisposeInProgress in the sentinel callback,
-        // because JdbcConsoles can be disposed before our service's dispose() is called.
         ProjectManager.getInstance().addProjectManagerListener(project, object : ProjectManagerListener {
             override fun projectClosing(closingProject: Project) {
                 if (closingProject === project) {
@@ -63,8 +35,6 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
         })
 
         // After restart: silently re-create consoles from saved session data.
-        // LightVirtualFile consoles are not persisted by IntelliJ, so we re-create them
-        // from the (dsName, searchPath) we saved in PropertiesComponent at creation time.
         ApplicationManager.getApplication().invokeLater {
             restoreSessionsIntoCache(project)
         }
