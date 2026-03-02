@@ -2,7 +2,11 @@
 <idea-plugin>
     <id>com.algorist.zMyBatis</id>
     <name>zMyBatis</name>
-    <vendor>algorist</vendor>
+    <vendor url="https://github.com/luceat-lux-vestra">algorist</vendor>
+
+    <!-- Plugin description and change-notes are injected at build time by Gradle (patchPluginXml / intellijPlatform.changeNotes) -->
+    <description><![CDATA[zMyBatis evaluates MyBatis dynamic SQL inside the IDE and executes it in DataGrip. ${pluginDescription}]]></description>
+    <change-notes><![CDATA[${changeNotes}]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
 
@@ -14,5 +18,15 @@
         <!-- <toolWindow factoryClass="com.github.luceatluxvestra.zmybatisprivate.toolWindow.MyToolWindowFactory" id="MyToolWindow"/> -->
         <!-- <postStartupActivity implementation="com.github.luceatluxvestra.zmybatisprivate.startup.MyProjectActivity" /> -->
         <postStartupActivity implementation="com.algorist.zMyBatis.startup.MyBatisActionInterceptorActivity"/>
+
+        <!-- ConsoleCacheService and ParameterHistoryService are annotated with @Service in code; do not register them here. -->
+
+        <!-- Settings -->
+        <applicationService serviceImplementation="com.algorist.zMyBatis.settings.ZMyBatisSettings"/>
+        <applicationConfigurable
+            parentId="tools"
+            instance="com.algorist.zMyBatis.settings.ZMyBatisConfigurable"
+            id="com.algorist.zMyBatis.settings.ZMyBatisConfigurable"
+            displayName="zMyBatis - Dynamic SQL Runner with Parameters"/>
     </extensions>
 </idea-plugin>

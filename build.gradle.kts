@@ -70,25 +70,13 @@ intellijPlatform {
         // version = providers.gradleProperty("pluginVersion")
         version = currentVersion
 
-        // Extract the <!-- Plugin description --> section from README.md and provide for the plugin's manifest
-        description = providers.fileContents(layout.projectDirectory.file("README.md")).asText.map {
-            val start = "<!-- Plugin description -->"
-            val end = "<!-- Plugin description end -->"
-
-            with(it.lines()) {
-                if (!containsAll(listOf(start, end))) {
-                    throw GradleException("Plugin description section not found in README.md:\n$start ... $end")
-                }
-                subList(indexOf(start) + 1, indexOf(end)).joinToString("\n").let(::markdownToHTML)
-            }
-        }
 
         val changelog = project.changelog // local variable for configuration cache compatibility
         // Get the latest available change notes from the changelog file
-        changeNotes = providers.gradleProperty("pluginVersion").map { pluginVersion ->
+        changeNotes = provider {
             with(changelog) {
                 renderItem(
-                    (getOrNull(pluginVersion) ?: getUnreleased())
+                    (runCatching { getLatest() }.getOrNull() ?: getUnreleased())
                         .withHeader(false)
                         .withEmptySections(false),
                     Changelog.OutputType.HTML,
@@ -147,6 +135,19 @@ tasks {
 
     publishPlugin {
         dependsOn(patchChangelog)
+    }
+
+    patchPluginXml {
+        val readme = projectDir.resolve("README.md").readText()
+        val start = "<!-- Plugin description -->"
+        val end = "<!-- Plugin description end -->"
+        val lines = readme.lines()
+        if (!lines.containsAll(listOf(start, end))) {
+            throw GradleException("Plugin description section not found in README.md")
+        }
+        val markdown = lines.subList(lines.indexOf(start) + 1, lines.indexOf(end)).joinToString("\n")
+        val html = markdownToHTML(markdown)
+        pluginDescription.set(html)
     }
 }
 

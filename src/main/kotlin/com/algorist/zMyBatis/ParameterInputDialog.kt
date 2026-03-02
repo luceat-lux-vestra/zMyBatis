@@ -1,5 +1,8 @@
 package com.algorist.zMyBatis
 
+import com.algorist.zMyBatis.settings.EmptyInputPolicy
+import com.algorist.zMyBatis.settings.ParameterHistoryService
+import com.algorist.zMyBatis.settings.ZMyBatisSettings
 import com.google.gson.JsonSyntaxException
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.project.Project
@@ -30,10 +33,16 @@ import javax.swing.JSeparator
  */
 @Suppress("MagicNumber")
 class ParameterInputDialog(
-    project: Project,
+    private val project: Project,
     paramNames: List<String>,
     /** Root parameter names accessed via dot-notation. */
-    private val objectParams: Set<String> = emptySet()
+    private val objectParams: Set<String> = emptySet(),
+    /**
+     * Unique key identifying the Mapper statement (e.g. "UserMapper.xml::selectById").
+     * Used to persist and restore last-used parameter values.
+     * Pass null to disable history for this dialog.
+     */
+    private val statementKey: String? = null
 ) : DialogWrapper(project, true) {
 
     companion object {
@@ -68,6 +77,14 @@ class ParameterInputDialog(
     init {
         title = "Enter MyBatis Parameters"
         init()
+        // Pre-fill fields with last-used values if the setting is enabled
+        if (statementKey != null && ZMyBatisSettings.getInstance().rememberLastInputs) {
+            val saved = ParameterHistoryService.getInstance(project).load(statementKey)
+            for ((name, raw) in saved) {
+                simpleFields[name]?.text = raw
+                jsonFields[name]?.text = raw
+            }
+        }
     }
 
     // ── UI construction ───────────────────────────────────────────────────────
@@ -153,23 +170,42 @@ class ParameterInputDialog(
      * Returns the parameter map collecting all visible fields:
      *  - Scalar params → parsed via [parseSimpleValue]
      *  - Object params → parsed via [JsonParameterParser.parseValue] as nested Maps
+     *
+     * Empty inputs are treated according to [ZMyBatisSettings.emptyInputPolicy]:
+     *  - [EmptyInputPolicy.NULL]         → key is included with value `null`
+     *  - [EmptyInputPolicy.EMPTY_STRING] → key is included with value `""`
+     *
+     * After collecting values, the raw text of each field is persisted via
+     * [ParameterHistoryService] if [statementKey] is set and [ZMyBatisSettings.rememberLastInputs] is true.
      */
     fun getValues(): Map<String, Any?> {
         val result = LinkedHashMap<String, Any?>()
+        val rawForHistory = LinkedHashMap<String, String>()
 
         for (name in scalarParamNames) {
             val text = simpleFields[name]?.text?.trim() ?: continue
-            if (text.isEmpty()) continue
-            result[name] = parseSimpleValue(text)
+            rawForHistory[name] = text
+            result[name] = if (text.isEmpty()) emptyValue() else parseSimpleValue(text)
         }
 
         for (name in objectParamNames) {
             val text = jsonFields[name]?.text?.trim() ?: continue
-            if (text.isEmpty()) continue
-            result[name] = JsonParameterParser.parseValue(text)
+            rawForHistory[name] = text
+            result[name] = if (text.isEmpty()) emptyValue() else JsonParameterParser.parseValue(text)
+        }
+
+        // Persist raw inputs for next invocation
+        if (statementKey != null && ZMyBatisSettings.getInstance().rememberLastInputs) {
+            ParameterHistoryService.getInstance(project).save(statementKey, rawForHistory)
         }
 
         return result
+    }
+
+    /** Returns the value to use for an empty input field, based on the current [ZMyBatisSettings.emptyInputPolicy]. */
+    private fun emptyValue(): Any? = when (ZMyBatisSettings.getInstance().emptyInputPolicy) {
+        EmptyInputPolicy.NULL         -> null
+        EmptyInputPolicy.EMPTY_STRING -> ""
     }
 
     // ── Simple value parser ───────────────────────────────────────────────────
