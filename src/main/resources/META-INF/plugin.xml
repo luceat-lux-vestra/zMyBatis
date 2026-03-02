@@ -33,7 +33,7 @@
                 class="com.algorist.zMyBatis.MyBatisExecuteAction"
                 text="Execute"
                 overrides="true">
-            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+            <!-- <add-to-group group-id="EditorPopupMenu" anchor="first"/> -->
         </action>
 
         <action id="Console.Jdbc.ExplainPlan"
