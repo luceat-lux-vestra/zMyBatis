@@ -3,7 +3,6 @@ package com.algorist.zMyBatis.services
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.psi.DbPsiFacade
 import com.intellij.ide.util.PropertiesComponent
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -15,27 +14,14 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Project-level service that owns the JdbcConsole cache.
  *
- * Backing file strategy: **LightVirtualFile** (in-memory only).
- *   - Never touches the disk → no VFS events → no project-reload → no console dispose.
- *   - The downside is LightVirtualFile consoles are NOT restored by IntelliJ after restart.
- *
- * IDE-restart recovery strategy:
- *   - When a console is created we persist the chosen DataSource name + SearchPath string
- *     into PropertiesComponent under key "zMyBatis.session.{fileKey}".
- *   - On next startup [MyBatisActionInterceptorActivity] reads those values and silently
- *     re-creates the console (no data-source chooser shown to the user).
- *
- * Console dispose strategy:
- *   - When a console is disposed while the application is still alive and the project is
- *     not being closed (i.e. the user explicitly closed/deleted it from the Services tab),
- *     the persistent session data is also cleaned up so the console is NOT restored on the
- *     next startup.
- *   - When a console is disposed during IDE/project shutdown (app.isDisposeInProgress or
- *     project.isDisposed/being closed), the callback skips the cleanup and the session
- *     survives for next-startup restore.
- *
- * Services-tab title: LightVirtualFile.name = mapper filename (e.g. "CustomerMapper.xml")
- *   → title = name = "CustomerMapper.xml"  ✅
+ * Session lifecycle:
+ *   - [put] creates the in-memory cache entry AND persists session data (dsName + schemaName)
+ *     so no caller needs to call saveSession/addToIndex separately.
+ *   - Sentinel callback always clears session on dispose (no shutdown-flag race condition).
+ *   - [markShuttingDown] / [dispose] re-persist all still-live sessions so they survive
+ *     the upcoming restart even after the sentinels fire and call clearSession.
+ *   - [pruneStaleIndex] is called at startup to remove index entries whose consoles were
+ *     closed while the IDE was not running (or after a crash).
  */
 @Service(Service.Level.PROJECT)
 class ConsoleCacheService(private val project: Project) : com.intellij.openapi.Disposable {
@@ -47,17 +33,13 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
 
         fun getInstance(project: Project): ConsoleCacheService = project.service()
 
-        // ── Persistence (DataSource + SearchPath) ───────────────────────────
+        // ── Persistence ──────────────────────────────────────────────────────
 
-        /** Persists the DataSource name and SearchPath string for [fileKey]. */
-        fun saveSession(fileKey: String, dsName: String, searchPathStr: String) {
+        fun saveSession(fileKey: String, dsName: String, schemaName: String) {
             PropertiesComponent.getInstance()
-                .setValue("$PROPS_PREFIX$fileKey", "$dsName$SEP$searchPathStr")
+                .setValue("$PROPS_PREFIX$fileKey", "$dsName$SEP$schemaName")
         }
 
-        /**
-         * Returns the saved (dsName, searchPathStr) for [fileKey], or null if absent.
-         */
         fun loadSession(fileKey: String): Pair<String, String>? {
             val raw = PropertiesComponent.getInstance().getValue("$PROPS_PREFIX$fileKey")
                 ?: return null
@@ -66,76 +48,63 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             return raw.substring(0, idx) to raw.substring(idx + SEP.length)
         }
 
-        /** Removes the saved session entry for [fileKey]. */
         fun clearSession(fileKey: String) {
             PropertiesComponent.getInstance().unsetValue("$PROPS_PREFIX$fileKey")
         }
 
-        /**
-         * Returns all fileKeys that have a saved session entry.
-         * Used at startup to silently re-create consoles.
-         */
-        fun allSavedFileKeys(): List<String> {
-            val store = PropertiesComponent.getInstance()
-            // PropertiesComponent has no "list all keys" API; we rely on callers knowing
-            // the fileKeys. At startup MyBatisActionInterceptorActivity iterates project
-            // files and checks loadSession() per file — but that requires knowing fileKeys.
-            //
-            // Instead we store a side-index: a newline-separated list of fileKeys.
-            val raw = store.getValue("${PROPS_PREFIX}__index__") ?: return emptyList()
+        // ── Per-project index ────────────────────────────────────────────────
+
+        private fun indexKey(project: Project): String {
+            val ns = project.basePath?.hashCode()?.toString() ?: "global"
+            return "${PROPS_PREFIX}__index__.$ns"
+        }
+
+        fun allSavedFileKeys(project: Project): List<String> {
+            val raw = PropertiesComponent.getInstance().getValue(indexKey(project))
+                ?: return emptyList()
             return raw.split("\n").filter { it.isNotBlank() }
         }
 
-        fun addToIndex(fileKey: String) {
+        fun addToIndex(project: Project, fileKey: String) {
             val store = PropertiesComponent.getInstance()
-            val existing = store.getValue("${PROPS_PREFIX}__index__") ?: ""
+            val key = indexKey(project)
+            val existing = store.getValue(key) ?: ""
             val keys = existing.split("\n").filter { it.isNotBlank() }.toMutableSet()
-            if (keys.add(fileKey)) {
-                store.setValue("${PROPS_PREFIX}__index__", keys.joinToString("\n"))
-            }
+            if (keys.add(fileKey)) store.setValue(key, keys.joinToString("\n"))
         }
 
-        fun removeFromIndex(fileKey: String) {
+        fun removeFromIndex(project: Project, fileKey: String) {
             val store = PropertiesComponent.getInstance()
-            val existing = store.getValue("${PROPS_PREFIX}__index__") ?: return
+            val key = indexKey(project)
+            val existing = store.getValue(key) ?: return
             val keys = existing.split("\n").filter { it.isNotBlank() && it != fileKey }
-            store.setValue("${PROPS_PREFIX}__index__", keys.joinToString("\n"))
+            store.setValue(key, keys.joinToString("\n"))
         }
 
-        /** Finds a LocalDataSource by name within the project. */
         fun findDataSourceByName(project: Project, dsName: String) =
             DbPsiFacade.getInstance(project).dataSources
                 .firstOrNull { it.name == dsName }
     }
 
-    private data class Entry(val console: JdbcConsole, val sentinel: CheckedDisposable)
+    // Entry now carries the session data needed to re-persist on shutdown.
+    private data class Entry(
+        val console: JdbcConsole,
+        val sentinel: CheckedDisposable,
+        val dsName: String,
+        val schemaName: String
+    )
 
     private val cache = ConcurrentHashMap<String, Entry>()
 
     /**
-     * Set to true when [projectClosing] fires (before JdbcConsoles are disposed).
-     * This is more reliable than checking app.isDisposeInProgress because the project
-     * close sequence disposes JdbcConsoles before our service's dispose() is called.
+     * Set AFTER persistAllLiveSessions() has already written everything to disk.
+     * Sentinel callbacks check this flag and skip clearSession/removeFromIndex when true,
+     * because the session data has already been re-persisted and must survive the restart.
      */
     @Volatile
-    private var projectClosing = false
+    private var shuttingDown = false
 
-    /** Called by [MyBatisActionInterceptorActivity] via ProjectManagerListener.projectClosing */
-    fun markShuttingDown() {
-        projectClosing = true
-    }
-
-    /**
-     * Returns true when the IDE or this project is in the process of shutting down.
-     * In that case, console dispose events should NOT clear the saved session.
-     */
-    private fun isShuttingDown(): Boolean {
-        if (projectClosing) return true
-        val app = ApplicationManager.getApplication()
-        if (app == null || app.isDisposed || app.isDisposeInProgress) return true
-        if (project.isDisposed) return true
-        return false
-    }
+    // ── Public API ───────────────────────────────────────────────────────────
 
     fun get(fileKey: String): JdbcConsole? {
         val entry = cache[fileKey] ?: return null
@@ -147,37 +116,112 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         return entry.console
     }
 
-    fun put(fileKey: String, console: JdbcConsole) {
+    /**
+     * Registers [console] in the cache and persists session data atomically.
+     * Callers no longer need to call saveSession / addToIndex separately.
+     */
+    fun put(fileKey: String, console: JdbcConsole, dsName: String, schemaName: String) {
         cache.remove(fileKey)
+
+        // Guard: if the console is already disposed (e.g. build() failed silently),
+        // still persist the session so the next startup can try to restore it,
+        // but do not add a dead entry to the in-memory cache.
+        // Use a temporary CheckedDisposable to avoid the deprecated Disposer.isDisposed(Disposable).
+        val probe = Disposer.newCheckedDisposable(console)
+        val alreadyDisposed = probe.isDisposed
+        if (!alreadyDisposed) Disposer.dispose(probe) // clean up the probe sentinel
+        if (alreadyDisposed) {
+            LOG.warn("zMyBatis: console already disposed at put() for $fileKey — persisting session only")
+            saveSession(fileKey, dsName, schemaName)
+            addToIndex(project, fileKey)
+            return
+        }
+
+        // Persist immediately so the session survives even if the sentinel fires quickly.
+        saveSession(fileKey, dsName, schemaName)
+        addToIndex(project, fileKey)
+
         val sentinel = Disposer.newCheckedDisposable(console)
         Disposer.register(sentinel) {
+            val current = cache[fileKey]
+            if (current != null && current.sentinel !== sentinel) {
+                LOG.info("zMyBatis: stale sentinel fired for $fileKey — ignoring")
+                return@register
+            }
             cache.remove(fileKey)
-            // Only wipe the persistent session when the user explicitly closed the console
-            // (application still running and project not being closed).
-            // During IDE/project shutdown isShuttingDown() returns true, so we leave the
-            // session data intact for the next-startup restore.
-            if (!isShuttingDown()) {
+            if (shuttingDown) {
+                // Session was already re-persisted in markShuttingDown() / dispose().
+                // Do NOT clear it — it must survive for the next startup restore.
+                LOG.info("zMyBatis: console disposed during shutdown — keeping session for $fileKey")
+            } else {
+                // User explicitly closed the console — remove session so it is not restored.
                 LOG.info("zMyBatis: console closed by user — clearing session for $fileKey")
                 clearSession(fileKey)
-                removeFromIndex(fileKey)
-            } else {
-                LOG.info("zMyBatis: console disposed during shutdown — keeping session for $fileKey")
+                removeFromIndex(project, fileKey)
             }
         }
-        cache[fileKey] = Entry(console, sentinel)
-        LOG.info("zMyBatis: console cached for $fileKey")
+
+        cache[fileKey] = Entry(console, sentinel, dsName, schemaName)
+        LOG.info("zMyBatis: console cached for $fileKey (ds=$dsName, schema=$schemaName)")
     }
 
-    fun remove(fileKey: String) {
-        cache.remove(fileKey)?.let { entry ->
-            if (!entry.sentinel.isDisposed) Disposer.dispose(entry.sentinel)
+    /**
+     * Called by ProjectManagerListener.projectClosing.
+     * Persists all live sessions FIRST, then sets shuttingDown=true so that
+     * subsequent sentinel callbacks skip clearSession/removeFromIndex.
+     */
+    fun markShuttingDown() {
+        // Order matters: persist before setting the flag so that any sentinel callback
+        // that already started (but hasn't checked the flag yet) does not race with us.
+        persistAllLiveSessions()
+        shuttingDown = true
+        LOG.info("zMyBatis: markShuttingDown — persisted ${cache.size} live session(s)")
+    }
+
+    /**
+     * Called at startup to remove index entries that no longer have a live console
+     * (e.g. user closed them while IDE was shut down, or after a crash).
+     * Returns the pruned list of valid fileKeys.
+     */
+    fun pruneStaleIndex(): List<String> {
+        val saved = allSavedFileKeys(project)
+        if (saved.isEmpty()) return emptyList()
+
+        val valid = mutableListOf<String>()
+        for (fileKey in saved) {
+            val sessionExists = loadSession(fileKey) != null
+            if (sessionExists) {
+                valid.add(fileKey)
+            } else {
+                LOG.info("zMyBatis: pruning stale index entry (no session data) — $fileKey")
+                removeFromIndex(project, fileKey)
+            }
         }
+        return valid
+    }
+
+    @Suppress("unused")
+    fun remove(fileKey: String) {
+        cache.remove(fileKey)
+        clearSession(fileKey)
+        removeFromIndex(project, fileKey)
+        LOG.info("zMyBatis: explicitly removed session for $fileKey")
     }
 
     override fun dispose() {
-        // Just clear the in-memory cache. Session data in PropertiesComponent is preserved.
-        // The isShuttingDown() check in each sentinel callback handles the logic correctly
-        // because project.isDisposed will be true by the time callbacks fire.
+        persistAllLiveSessions()
+        shuttingDown = true
         cache.clear()
+    }
+
+    // ── Private ──────────────────────────────────────────────────────────────
+
+    private fun persistAllLiveSessions() {
+        for ((fileKey, entry) in cache) {
+            if (entry.sentinel.isDisposed) continue
+            saveSession(fileKey, entry.dsName, entry.schemaName)
+            addToIndex(project, fileKey)
+            LOG.info("zMyBatis: re-persisted session for $fileKey")
+        }
     }
 }

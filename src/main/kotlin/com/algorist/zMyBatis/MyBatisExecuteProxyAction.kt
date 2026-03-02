@@ -8,8 +8,8 @@ import com.algorist.zMyBatis.settings.ConsoleSessionPolicy
 import com.algorist.zMyBatis.settings.ZMyBatisSettings
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.console.JdbcConsoleProvider
-import com.intellij.database.model.DasDataSource
 import com.intellij.database.model.DasNamespace
+import com.intellij.database.psi.DbDataSource
 import com.intellij.database.psi.DbPsiFacade
 import com.intellij.database.settings.DatabaseSettings
 import com.intellij.database.util.DasUtil
@@ -42,38 +42,25 @@ import java.util.concurrent.ConcurrentHashMap
 private val activeSelections = ConcurrentHashMap.newKeySet<String>()
 
 @Suppress("UnstableApiUsage", "TooManyFunctions")
-class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction() {
+open class MyBatisExecuteProxyAction : AnAction() {
 
     companion object {
         private val LOG = Logger.getInstance(MyBatisExecuteProxyAction::class.java)
     }
 
-    init {
-        templatePresentation.icon = originalAction.templatePresentation.icon
-        templatePresentation.text = originalAction.templatePresentation.text
-        templatePresentation.description = originalAction.templatePresentation.description
-    }
-
-    override fun setShortcutSet(shortcutSet: ShortcutSet) {
-        // Intentionally left blank — prevents IntelliJ from reassigning shortcuts
-    }
-
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        originalAction.update(e)
-        if (analyze(e) != MyBatisContextAnalyzer.ContextType.NONE) {
-            e.presentation.isEnabledAndVisible = true
-        }
+        // Always keep the action visible so it behaves like the original in all contexts
+        // (DB console toolbar, right-click menu, MyBatis XML/annotation files, etc.).
+        e.presentation.isEnabledAndVisible = true
     }
+
 
     @Suppress("ReturnCount")
     override fun actionPerformed(e: AnActionEvent) {
         when (val context = analyze(e)) {
-            MyBatisContextAnalyzer.ContextType.NONE -> {
-                @Suppress("CallToAction")
-                originalAction.actionPerformed(e)
-            }
+            MyBatisContextAnalyzer.ContextType.NONE -> return
             MyBatisContextAnalyzer.ContextType.PROVIDER -> {
                 Messages.showInfoMessage(
                     e.project,
@@ -114,9 +101,7 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
                 proceedWithParamsAndExecute(e, project, sqlContent, context, cachedConsole, statementKey)
             } else {
                 LOG.info("zMyBatis: no live console for $sourceFileKey, showing data-source chooser")
-                ensureConsole(e, project, sourceFileKey) { console ->
-                    // Only cache when policy is REUSE
-                    if (!forceNew) cache.put(sourceFileKey, console)
+                ensureConsole(e, project, sourceFileKey, forceNew) { console ->
                     proceedWithParamsAndExecute(e, project, sqlContent, context, console, statementKey)
                 }
             }
@@ -182,6 +167,7 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
         originalEvent: AnActionEvent,
         project: com.intellij.openapi.project.Project,
         fileKey: String,
+        forceNew: Boolean,
         onConsoleReady: (JdbcConsole) -> Unit
     ) {
         if (!activeSelections.add(fileKey)) {
@@ -208,7 +194,7 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
                 override fun actionPerformed(ignored: AnActionEvent) {
                     LOG.info("zMyBatis: Default schema selected for DS: ${ds.name}")
                     activeSelections.remove(fileKey)
-                    buildAndDeliverConsole(project, ds, null, fileKey, onConsoleReady)
+                    buildAndDeliverConsole(project, ds, null, fileKey, forceNew, onConsoleReady)
                 }
             })
             dsGroup.addSeparator()
@@ -221,7 +207,7 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
                         override fun actionPerformed(ignored: AnActionEvent) {
                             LOG.info("zMyBatis: Schema selected: ${schema.name} for DS: ${ds.name}")
                             activeSelections.remove(fileKey)
-                            buildAndDeliverConsole(project, ds, schema, fileKey, onConsoleReady)
+                            buildAndDeliverConsole(project, ds, schema, fileKey, forceNew, onConsoleReady)
                         }
                     })
                 }
@@ -255,9 +241,10 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
     @Suppress("TooGenericExceptionCaught")
     private fun buildAndDeliverConsole(
         project: com.intellij.openapi.project.Project,
-        ds: DasDataSource,
+        ds: DbDataSource,
         schema: DasNamespace?,
         fileKey: String,
+        forceNew: Boolean,
         onConsoleReady: (JdbcConsole) -> Unit
     ) {
         try {
@@ -269,7 +256,7 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
                 .getFileTypeByExtension("sql")
             // Use the original mapper filename (e.g. "CustomerMapper.xml") as the console
             // title — that is what the user sees in the Services tab.
-            val consoleName = fileKey.substringAfterLast('/').substringAfterLast('\\')
+            val consoleName = fileKey.substringAfterLast('/').substringAfterLast('\\') + " - zMyBatis"
             val lightFile = com.intellij.testFramework.LightVirtualFile(consoleName, sqlFileType, "")
 
             val console = JdbcConsole.newConsole(project)
@@ -280,13 +267,13 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
 
             if (schema != null) switchSchemaOnConsole(console, schema)
 
-            // Persist ds + schema name so we can silently re-create the console after restart.
             val schemaName = schema?.name ?: ""
-            ConsoleCacheService.saveSession(fileKey, ds.name, schemaName)
-            ConsoleCacheService.addToIndex(fileKey)
-            LOG.info("zMyBatis: session saved for $fileKey (ds=${ds.name}, schema=$schemaName)")
-
             onConsoleReady(console)
+
+            // put() handles saveSession + addToIndex atomically.
+            // Called after onConsoleReady so the console is fully set up before caching.
+            if (!forceNew) ConsoleCacheService.getInstance(project).put(fileKey, console, ds.name, schemaName)
+            LOG.info("zMyBatis: session saved for $fileKey (ds=${ds.name}, schema=$schemaName)")
         } catch (ex: Throwable) {
             LOG.error("zMyBatis: failed to create console for ${ds.name}", ex)
             Messages.showErrorDialog(project,
@@ -358,12 +345,12 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
         val consolePsiFile = console.file
         val originalText = consoleDoc.text
 
-
         try {
             consoleEditor.contentComponent.requestFocusInWindow()
 
             WriteCommandAction.runWriteCommandAction(project, "zMyBatis: inject SQL", null, {
                 consoleDoc.setText(pureSql)
+                consoleEditor.selectionModel.setSelection(0, pureSql.length)
                 consoleEditor.caretModel.moveToOffset(0)
                 PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
             })
@@ -371,12 +358,10 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
             val fullRange = TextRange(0, consoleDoc.textLength)
             val info = JdbcConsoleProvider.findScriptModelNoInject(
                 project, consolePsiFile, consoleEditor,
-                fullRange,
-                DatabaseSettings.getDefaultExecOption()
+                fullRange, DatabaseSettings.getDefaultExecOption()
             )
-
             if (info == null) {
-                LOG.warn("zMyBatis: findScriptModelNoInject returned null for SQL length ${pureSql.length}")
+                LOG.warn("zMyBatis: findScriptModelNoInject returned null (SQL length=${pureSql.length})")
                 WriteCommandAction.runWriteCommandAction(project) {
                     consoleDoc.setText(originalText)
                     PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
@@ -384,9 +369,9 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
                 Messages.showErrorDialog(project, "Failed to parse SQL for execution.", "zMyBatis Error")
                 return
             }
-
-            LOG.info("zMyBatis: executing on console '${console.title}' with SQL length ${pureSql.length}")
+            LOG.info("zMyBatis: executing on console '${console.title}'")
             JdbcConsoleProvider.doRunQueryInConsole(console, info)
+
             if (ZMyBatisSettings.getInstance().copyToClipboard) {
                 CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
             }
@@ -482,7 +467,7 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
      */
     private fun extractStatementKey(
         context: MyBatisContextAnalyzer.ContextType,
-        editor: com.intellij.openapi.editor.Editor,
+        editor: Editor,
         psiFile: PsiFile,
         fileKey: String
     ): String {
@@ -523,3 +508,7 @@ class MyBatisExecuteProxyAction(private val originalAction: AnAction) : AnAction
             sql
         }
 }
+
+class MyBatisExecuteAction : MyBatisExecuteProxyAction()
+
+

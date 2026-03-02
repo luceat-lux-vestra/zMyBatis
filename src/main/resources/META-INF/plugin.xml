@@ -4,24 +4,17 @@
     <name>zMyBatis</name>
     <vendor url="https://github.com/luceat-lux-vestra" email="heathkimdev@gmail.com">algorist</vendor>
 
-    <!-- Plugin description and change-notes are injected at build time by Gradle (patchPluginXml / intellijPlatform.changeNotes) -->
     <description><![CDATA[zMyBatis evaluates MyBatis dynamic SQL inside the IDE and executes it in DataGrip. ${pluginDescription}]]></description>
     <change-notes><![CDATA[${changeNotes}]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
-
     <depends>com.intellij.database</depends>
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
-        <!-- <toolWindow factoryClass="com.github.luceatluxvestra.zmybatisprivate.toolWindow.MyToolWindowFactory" id="MyToolWindow"/> -->
-        <!-- <postStartupActivity implementation="com.github.luceatluxvestra.zmybatisprivate.startup.MyProjectActivity" /> -->
         <postStartupActivity implementation="com.algorist.zMyBatis.startup.MyBatisActionInterceptorActivity"/>
 
-        <!-- ConsoleCacheService and ParameterHistoryService are annotated with @Service in code; do not register them here. -->
-
-        <!-- Settings -->
         <applicationService serviceImplementation="com.algorist.zMyBatis.settings.ZMyBatisSettings"/>
         <applicationConfigurable
             parentId="tools"
@@ -29,4 +22,14 @@
             id="com.algorist.zMyBatis.settings.ZMyBatisConfigurable"
             displayName="zMyBatis - Dynamic SQL Runner with Parameters"/>
     </extensions>
+
+    <actions>
+        <action id="zMyBatis.Execute"
+                class="com.algorist.zMyBatis.MyBatisExecuteAction"
+                text="Execute (zMyBatis)"
+                description="Evaluate MyBatis dynamic SQL and execute on a JDBC console">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+            <add-to-group group-id="RunContextGroup" anchor="first"/>
+        </action>
+    </actions>
 </idea-plugin>

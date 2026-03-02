@@ -5,7 +5,6 @@ import com.intellij.database.console.JdbcConsole
 import com.intellij.database.util.DasUtil
 import com.intellij.database.util.ObjectPath
 import com.intellij.database.util.SearchPath
-import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileTypes.FileTypeManager
@@ -19,40 +18,16 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
 
     companion object {
         private val LOG = Logger.getInstance(MyBatisActionInterceptorActivity::class.java)
-
-        private val TARGET_ACTION_IDS = listOf(
-            "Console.Jdbc.ExplainPlan",
-            "Console.Jdbc.ExplainPlan.Raw",
-            "Console.Jdbc.ExplainAnalyse",
-            "Console.Jdbc.ExplainAnalyse.Raw",
-            "Console.Jdbc.Execute",
-            "Console.TableResult.ShowDumpDialogAction"
-        )
-
-        /** Replaces each target action with a [MyBatisActionWrapper]. Idempotent. */
-        private fun registerActionWrappers() {
-            val actionManager = ActionManager.getInstance()
-            for (id in TARGET_ACTION_IDS) {
-                val current = actionManager.getAction(id) ?: continue
-                if (current is MyBatisActionWrapper) continue   // already wrapped
-                actionManager.replaceAction(id, MyBatisActionWrapper(current))
-                LOG.info("zMyBatis: replaced action '$id' with MyBatisActionWrapper")
-            }
-        }
     }
 
     override suspend fun execute(project: Project) {
-        LOG.info("zMyBatis: action-wrapper interception active")
+        LOG.info("zMyBatis: startup activity running")
 
-        // Replace target DB actions with our wrapper on the EDT (ActionManager requires EDT).
-        ApplicationManager.getApplication().invokeAndWait {
-            registerActionWrappers()
-        }
 
-        // Register a project-close listener so ConsoleCacheService knows
-        // when the project is about to close (before JdbcConsoles are disposed).
-        // This is more reliable than checking app.isDisposeInProgress in the sentinel callback,
-        // because JdbcConsoles can be disposed before our service's dispose() is called.
+        // Register the project-close listener BEFORE scheduling restoreSessionsIntoCache.
+        // If the listener were registered inside the invokeLater lambda there would be a
+        // window between the coroutine suspension point and the EDT dispatch where the
+        // project could already be closing without us having set the shutdown flag.
         ProjectManager.getInstance().addProjectManagerListener(project, object : ProjectManagerListener {
             override fun projectClosing(closingProject: Project) {
                 if (closingProject === project) {
@@ -63,33 +38,42 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
         })
 
         // After restart: silently re-create consoles from saved session data.
-        // LightVirtualFile consoles are not persisted by IntelliJ, so we re-create them
-        // from the (dsName, searchPath) we saved in PropertiesComponent at creation time.
         ApplicationManager.getApplication().invokeLater {
             restoreSessionsIntoCache(project)
         }
     }
 
     private fun restoreSessionsIntoCache(project: Project) {
-        val fileKeys = ConsoleCacheService.allSavedFileKeys()
+        val cache = ConsoleCacheService.getInstance(project)
+
+        // pruneStaleIndex() cross-checks the index against saved session data and
+        // removes any entries that have no corresponding session (e.g. the user closed
+        // the console while the IDE was not running, or after a crash).
+        val fileKeys = cache.pruneStaleIndex()
         if (fileKeys.isEmpty()) return
         LOG.info("zMyBatis: restoring ${fileKeys.size} saved session(s) on startup")
 
-        val cache = ConsoleCacheService.getInstance(project)
         val sqlFileType = FileTypeManager.getInstance().getFileTypeByExtension("sql")
 
         for (fileKey in fileKeys) {
             try {
                 if (cache.get(fileKey) != null) continue   // already live
 
-                val (dsName, searchPathStr) = ConsoleCacheService.loadSession(fileKey) ?: continue
-                val ds = ConsoleCacheService.findDataSourceByName(project, dsName)
-                if (ds == null) {
-                    LOG.info("zMyBatis: DS '$dsName' not found for $fileKey, skipping restore")
+                val (dsName, searchPathStr) = ConsoleCacheService.loadSession(fileKey) ?: run {
+                    LOG.info("zMyBatis: no session data for indexed key $fileKey — removing from index")
+                    ConsoleCacheService.removeFromIndex(project, fileKey)
                     continue
                 }
 
-                val consoleName = fileKey.substringAfterLast('/').substringAfterLast('\\')
+                val ds = ConsoleCacheService.findDataSourceByName(project, dsName)
+                if (ds == null) {
+                    LOG.info("zMyBatis: DS '$dsName' not found for $fileKey — removing stale session")
+                    ConsoleCacheService.clearSession(fileKey)
+                    ConsoleCacheService.removeFromIndex(project, fileKey)
+                    continue
+                }
+
+                val consoleName = fileKey.substringAfterLast('/').substringAfterLast('\\') + " - zMyBatis"
                 val lightFile = LightVirtualFile(consoleName, sqlFileType, "")
 
                 val console = JdbcConsole.newConsole(project)
@@ -108,7 +92,8 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
                     } catch (_: Throwable) { /* best-effort */ }
                 }
 
-                cache.put(fileKey, console)
+                // put() re-saves session data and index entry atomically.
+                cache.put(fileKey, console, dsName, searchPathStr)
                 LOG.info("zMyBatis: session restored for $fileKey (ds=$dsName)")
             } catch (ex: Throwable) {
                 LOG.warn("zMyBatis: failed to restore session for $fileKey: ${ex.message}")
