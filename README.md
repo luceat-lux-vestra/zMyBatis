@@ -33,8 +33,8 @@
 - [ ] **List Delimiter**: `[Input]` `<foreach>` 바인딩을 위한 리스트 입력 구분자 설정 (기본값 `,`)
 
 ### 3. 파싱 엔진 설정 (Parsing Engine)
-- [ ] **Strict OGNL Mode**: `[Checkbox]` OGNL 표현식 엄격 모드 활성화/비활성화 (Type Safety 관련)
-- [ ] **Ignore Unknown Tags**: `[Checkbox]` 비표준/커스텀 태그 만났을 때 에러 무시하고 텍스트로 렌더링하도록 처리
+- [x] **Strict OGNL Mode**: `[Checkbox]` OGNL 표현식 엄격 모드 활성화/비활성화 (기본값: OFF)
+- [x] **Ignore Unknown Tags**: `[Checkbox]` 비표준/커스텀 태그 만났을 때 에러 무시하고 텍스트로 렌더링하도록 처리 (기본값: OFF)
 
 <!-- Plugin description -->
 **zMyBatis** is a DataGrip / IntelliJ IDEA Ultimate plugin that lets you execute MyBatis mapper queries directly from your Java/Kotlin source or XML mapper files — without leaving the IDE.

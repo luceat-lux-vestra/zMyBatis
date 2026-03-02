@@ -81,5 +81,34 @@ class ZMyBatisConfigurable : BoundConfigurable("zMyBatis") {
                 )
             }
         }
+
+        group("Parsing Engine") {
+            row {
+                checkBox("Strict OGNL mode")
+                    .bindSelected(
+                        getter = { settings.strictOgnlMode },
+                        setter = { settings.strictOgnlMode = it }
+                    )
+                contextHelp(
+                    "ON  — OGNL evaluation errors are propagated immediately.\n" +
+                    "      Use this to catch type mismatches or typos in test= expressions.\n" +
+                    "OFF — (default) An OGNL error causes the enclosing <if>/<when> block\n" +
+                    "      to be silently skipped, matching lenient runtime behaviour."
+                )
+            }
+            row {
+                checkBox("Ignore unknown tags")
+                    .bindSelected(
+                        getter = { settings.ignoreUnknownTags },
+                        setter = { settings.ignoreUnknownTags = it }
+                    )
+                contextHelp(
+                    "ON  — Unrecognised XML elements (e.g. custom / 3rd-party tags) are\n" +
+                    "      stripped before parsing; their text content is preserved.\n" +
+                    "OFF — (default) An unknown tag causes a BuilderException, making the\n" +
+                    "      problem visible immediately."
+                )
+            }
+        }
     }
 }

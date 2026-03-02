@@ -18,6 +18,9 @@ import com.intellij.util.xmlb.XmlSerializerUtil
  *  - [sqlPreview]            : Show a preview dialog before executing the resolved SQL.
  *  - [autoFormatSql]         : Reformat the resolved SQL before executing/previewing.
  *  - [consoleSessionPolicy]  : Whether to reuse an existing console or always open a new one.
+ *  - [copyToClipboard]       : Copy the resolved SQL to clipboard after execution.
+ *  - [strictOgnlMode]        : Propagate OGNL evaluation errors instead of silently skipping blocks.
+ *  - [ignoreUnknownTags]     : Strip unrecognised XML tags before parsing instead of throwing an error.
  */
 @Service(Service.Level.APP)
 @State(
@@ -32,7 +35,9 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
         var sqlPreview: Boolean = false,
         var autoFormatSql: Boolean = true,
         var consoleSessionPolicy: ConsoleSessionPolicy = ConsoleSessionPolicy.REUSE,
-        var copyToClipboard: Boolean = true
+        var copyToClipboard: Boolean = true,
+        var strictOgnlMode: Boolean = false,
+        var ignoreUnknownTags: Boolean = false
     )
 
     private var myState = State()
@@ -68,6 +73,14 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
     var copyToClipboard: Boolean
         get() = myState.copyToClipboard
         set(value) { myState.copyToClipboard = value }
+
+    var strictOgnlMode: Boolean
+        get() = myState.strictOgnlMode
+        set(value) { myState.strictOgnlMode = value }
+
+    var ignoreUnknownTags: Boolean
+        get() = myState.ignoreUnknownTags
+        set(value) { myState.ignoreUnknownTags = value }
 
     companion object {
         fun getInstance(): ZMyBatisSettings =
