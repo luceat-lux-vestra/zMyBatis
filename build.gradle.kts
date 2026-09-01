@@ -6,12 +6,12 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 plugins {
-    id("java") // Java support
-    alias(libs.plugins.kotlin) // Kotlin support
-    alias(libs.plugins.intelliJPlatform) // IntelliJ Platform Gradle Plugin
-    alias(libs.plugins.changelog) // Gradle Changelog Plugin
-    alias(libs.plugins.qodana) // Gradle Qodana Plugin
-    alias(libs.plugins.kover) // Gradle Kover Plugin
+    id("java")
+    alias(libs.plugins.kotlin)
+    alias(libs.plugins.intelliJPlatform)
+    alias(libs.plugins.changelog)
+    alias(libs.plugins.qodana)
+    alias(libs.plugins.kover)
 }
 
 group = providers.gradleProperty("pluginGroup").get()
@@ -22,7 +22,6 @@ val currentVersion = providers.gradleProperty("buildVersion").orNull
     ?: LocalDateTime.now().format(DateTimeFormatter.ofPattern("yy.MM.dd.HHmmss"))
 version = currentVersion
 
-// Set the JVM language level used to build the project.
 kotlin {
     jvmToolchain(21)
 }
@@ -88,8 +87,10 @@ intellijPlatform {
 
     publishing {
         token = providers.environmentVariable("PUBLISH_TOKEN")
-        channels = providers.gradleProperty("pluginVersion").map {
-            listOf(it.substringAfter('-', "").substringBefore('.').ifEmpty { "default" })
+        // Use the same effective version as plugin metadata. A prerelease suffix
+        // selects its channel; timestamp/stable versions publish to default.
+        channels = provider {
+            listOf(currentVersion.substringAfter('-', "").substringBefore('.').ifEmpty { "default" })
         }
     }
 
