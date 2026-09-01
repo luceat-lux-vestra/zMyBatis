@@ -1,245 +1,170 @@
-# AGENTS.md — engineering contract for zMyBatis
+# zMyBatis Engineering Contract
 
-This file is the working contract for anyone (human or agent) changing this repository. It is
-deliberately about *this* plugin, not about IDE plugins in general. If a rule here does not
-mention a MyBatis, DataGrip, or IntelliJ Platform concept, it probably does not belong here.
+This is the authoritative engineering and review contract for zMyBatis. It is deliberately about this plugin's real failure modes: MyBatis parsing/evaluation, SQL fidelity, DataGrip integration, datasource/schema/session identity, lifecycle, and release integrity.
 
-## What zMyBatis is
+CI green is necessary evidence, never sufficient approval. Every PASS belongs to one exact final PR HEAD SHA.
 
-zMyBatis is a JetBrains **Database/DataGrip** plugin. `plugin.xml` hard-`depends` on
-`com.intellij.database`; the plugin does not function without it.
+## Product boundary
 
-The end-to-end path is:
+zMyBatis is an IntelliJ/DataGrip database plugin. `plugin.xml` depends on `com.intellij.database`.
 
-```
-XML mapper statement  ─┐
-                       ├─► extract statement text ─► detect parameters ─► prompt user
-@Select/@Insert/… ─────┘        (ParameterExtractor,      (ParameterInputDialog,
-                                 MyBatisContextAnalyzer,   JsonParameterParser)
-                                 AnnotationSqlExtractor)
-                                          │
-                                          ▼
-                        evaluate dynamic SQL via MyBatis XMLScriptBuilder
-                                    (MyBatisEvaluator)
-                                          │
-                                          ▼
-                        bind values into literal SQL ─► optional format/preview
-                                    (SqlFormatter, SqlPreviewDialog)
-                                          │
-                                          ▼
-                        resolve datasource + schema, reuse or create JdbcConsole,
-                        execute (MyBatisExecuteProxyAction, ConsoleCacheService)
-```
+The execution path is:
 
-Source layout:
+1. extract a mapper statement from XML or MyBatis annotations;
+2. identify user-supplied parameters;
+3. evaluate dynamic SQL through MyBatis itself;
+4. render literal SQL for preview/execution;
+5. resolve datasource + schema and reuse/create the correct JDBC console;
+6. execute only after the explicit zMyBatis action.
 
-| Area | Files |
-|---|---|
-| Statement extraction | `AnnotationSqlExtractor.kt`, `MyBatisContextAnalyzer.kt` |
-| Parameters | `ParameterExtractor.kt`, `JsonParameterParser.kt`, `ParameterInputDialog.kt`, `settings/ParameterHistoryService.kt` |
-| SQL evaluation / rendering | `MyBatisEvaluator.kt`, `SqlFormatter.kt`, `SqlPreviewDialog.kt` |
-| Execution & DataGrip integration | `MyBatisExecuteProxyAction.kt` |
-| Session identity & lifecycle | `services/ConsoleCacheService.kt`, `startup/MyBatisActionInterceptorActivity.kt` |
-| Settings | `settings/ZMyBatisSettings.kt`, `settings/ZMyBatisConfigurable.kt` |
+Key ownership areas:
 
-## Correctness boundaries
+- statement extraction: `AnnotationSqlExtractor`, `MyBatisContextAnalyzer`;
+- parameters: `ParameterExtractor`, `JsonParameterParser`, parameter UI/history;
+- dynamic SQL/rendering: `MyBatisEvaluator`, `SqlFormatter`, preview;
+- execution/DataGrip integration: `MyBatisExecuteProxyAction`;
+- session identity/lifecycle: `ConsoleCacheService`, startup restoration;
+- settings: `ZMyBatisSettings`, configurable UI.
 
-These are the places where a bug is expensive rather than annoying. A change that crosses one
-of these lines needs an explicit justification in the pull request description, and a test or
-a described manual reproduction — not just a green CI run.
+## 1. Mapper / XML extraction
 
-### 1. MyBatis mapper / XML parsing correctness
+- Recover the whole intended statement and nothing else, including nested MyBatis dynamic tags and multi-line annotation forms.
+- Do not implement a second dynamic-SQL engine. Evaluation goes through MyBatis `XMLScriptBuilder` so zMyBatis and the application use the same semantics.
+- `Ignore Unknown Tags` may ignore an unknown wrapper but must preserve its text content.
+- `Strict OGNL Mode` must not silently turn evaluation errors into plausible-but-wrong SQL.
+- PSI access follows IntelliJ read-action rules. Partially edited mapper files fail with a useful diagnostic rather than a truncated statement or generic exception.
 
-Statement extraction must recover the *whole* statement and nothing else: the full body of a
-`<select>/<insert>/<update>/<delete>` including nested `<if>`, `<choose>/<when>/<otherwise>`,
-`<foreach>`, `<where>`, `<set>`, `<trim>`, `<bind>`, and the full string for annotation
-mappers — including multi-line `@Select({...})` arrays and constant references such as
-`@Select(SqlConstants.FIND_USER)`.
+## 2. Parameter binding / rendered SQL fidelity
 
-- Do not hand-roll a second dynamic-SQL engine. Evaluation goes through MyBatis'
-  `XMLScriptBuilder` (`org.mybatis:mybatis:3.5.x`) so that zMyBatis and the application agree.
-- `Ignore Unknown Tags` strips unrecognised tags but **preserves their text content**. Any
-  change to that behaviour changes the rendered SQL and must be treated as a correctness change.
-- `Strict OGNL Mode` decides whether an OGNL failure propagates or the block is skipped.
-  Silently skipping a block that the application would have included produces SQL that looks
-  fine and is wrong. Never widen a `catch` in the evaluation path to "make it work".
-- Extraction runs against PSI. Read PSI under a read action, and do not assume a mapper file
-  is well-formed — a partially typed statement must produce a clear message, not an exception
-  dialog or a truncated statement.
+Literal SQL is a correctness and safety boundary.
 
-### 2. Parameter binding / rendered SQL fidelity
+- `#{...}` and `${...}` are not interchangeable. Never silently turn a bound value into raw textual interpolation.
+- Strings, numbers, booleans, `null`, collections, nested objects, and arrays must be rendered with correct SQL quoting/escaping semantics.
+- Internal MyBatis variables such as `<bind>` names and `foreach` item/index stay out of user prompts.
+- Empty-input policy changes (`NULL` vs empty string) are behavioral changes and require tests.
+- The previewed SQL and the SQL handed to the JDBC console must be byte-for-byte the same authoritative rendered statement. A divergence is a merge blocker.
+- Do not log parameter values or rendered production SQL at `info` or above.
 
-zMyBatis substitutes **literal values** into the SQL it hands to the console. That means every
-binding decision is a correctness *and* a safety decision.
+## 3. DataGrip action isolation
 
-- `#{...}` and `${...}` are not interchangeable. `#{}` is a bound value; `${}` is textual
-  interpolation. Rendering must preserve that distinction and must never silently upgrade a
-  `#{}` into a raw text splice.
-- Literal rendering must be type- and quote-correct: strings, numbers, booleans, `null`,
-  lists (`[1,2,3]`), nested objects and object arrays from the JSON editor. Quoting/escaping
-  bugs here are SQL injection in the user's own hands — treat them as security bugs.
-- `Empty Input Handling` (`NULL` vs `EMPTY_STRING`) changes result sets. Changing the default,
-  or the set of inputs it applies to, is a behavioural change.
-- Internal variables (`<bind>` names, `foreach` item/index) must stay excluded from the prompt.
-  Prompting for them, or failing to exclude a newly supported construct, corrupts evaluation.
-- What the preview dialog shows must be **exactly** what is executed. If preview and execution
-  can diverge, that is a bug regardless of which one is "right".
+zMyBatis adds its own Execute action. It must not replace, wrap, unregister, reorder, or intercept DataGrip's built-in Execute/Explain/console actions.
 
-### 3. Separation from DataGrip's built-in actions
+- Platform action IDs remain untouched.
+- `MyBatisActionInterceptorActivity` is session-restoration infrastructure despite its historical name; do not turn it into a global action interceptor.
+- `update()` stays cheap and disables zMyBatis outside a valid MyBatis context.
+- Declare the appropriate `ActionUpdateThread`.
 
-zMyBatis adds `zMyBatis.Execute`. It does **not** replace, wrap, or reorder DataGrip's own
-Execute, Explain Plan, or console actions, and the README promises exactly that.
+A regression that changes DataGrip's own behavior is more severe than zMyBatis failing explicitly.
 
-- Do not override or unregister platform action IDs. Do not install global action interceptors
-  that can change what DataGrip's own actions do.
-- `MyBatisActionInterceptorActivity` is a startup activity for **session restoration**. Despite
-  the name it must not become a mechanism for intercepting platform actions; if it grows that
-  behaviour, rename it and justify it.
-- `update()` must be cheap and must disable the action outside a MyBatis context, so the entry
-  does not appear in unrelated editors. Declare the correct `ActionUpdateThread`.
-- A regression here is user-visible as "DataGrip's Execute stopped behaving normally", which is
-  far worse than zMyBatis failing outright.
+## 4. IntelliJ / Database API compatibility
 
-### 4. Database API compatibility across IDE versions
+The plugin uses `com.intellij.database.*`, including APIs that can move between IDE releases.
 
-The plugin uses `com.intellij.database.*` — `JdbcConsole`, `DbPsiFacade`, `DasUtil`,
-`ObjectPath`, `SearchPath`. This API is not a stability-guaranteed public API and it moves
-between releases.
+- `pluginSinceBuild`, platform version/type, and bundled database plugin declarations form one compatibility contract.
+- The `Verify plugin` CI context is authoritative compatibility evidence. Do not lower verifier failure severity or narrow the intended supported range merely to get green CI.
+- Raising the minimum IDE build is an API/product decision, not a routine dependency bump.
+- Isolate new Database API usage so a future platform break has a bounded repair surface.
+- Compile success alone does not prove runtime compatibility.
 
-- `gradle.properties` declares the target: `pluginSinceBuild = 253`, `platformType =
-  IntellijIdeaUltimate`, `platformVersion = 2025.3.3`, with `com.intellij.database` as a
-  bundled plugin dependency.
-- The **Plugin Verifier** (`Verify plugin` job, `./gradlew verifyPlugin`, IDEs from
-  `pluginVerification { ides { recommended() } }`) is the compatibility gate. Never lower its
-  `failureLevel`, and never narrow the verified IDE set, to get past a failure. A verifier
-  failure means the plugin would break on a supported IDE.
-- Raising `pluginSinceBuild` or changing `platformVersion` is a compatibility decision, not a
-  dependency bump. Say so in the PR.
-- Prefer the narrowest Database API that does the job, and isolate new Database API calls so a
-  future breaking change has one place to fix rather than fifteen.
+## 5. Datasource / schema / session identity
 
-### 5. Datasource / schema / session identity
+The authoritative execution identity is `(project, mapper file, datasource, schema)`.
 
-`ConsoleCacheService` keys a cached `JdbcConsole` by a **file key** derived from the mapper
-file, and persists `dsName ||| schemaName` in `PropertiesComponent` under
-`zMyBatis.session.<fileKey>`, with a per-project index namespaced by `project.basePath.hashCode()`.
+Executing correct SQL against the wrong datasource/schema is the highest-severity product failure because it can affect production data.
 
-- Identity must be `(project, mapper file, datasource, schema)`. Executing a statement against
-  the wrong datasource or the wrong schema is the single worst failure this plugin can have —
-  it can mean writing to production. Any change to key derivation, to the `|||` separator, to
-  the `PropertiesComponent` key format, or to the index namespace is an identity change and
-  needs a migration story for values already on disk.
-- `basePath.hashCode()` is a collision-prone namespace and `PropertiesComponent` is
-  application-level. Two projects can share a namespace. Do not make this worse; prefer moving
-  toward a project-scoped `PersistentStateComponent` over adding more keys to the flat store.
-- `put()` deliberately creates the in-memory entry **and** persists in one call. Keep that
-  atomicity — do not reintroduce separate `saveSession` / `addToIndex` call sites that can
-  leave the index and the session data disagreeing.
-- `findDataSourceByName` matches on the display name. Duplicate or renamed datasources
-  therefore resolve ambiguously; treat any fix as an identity change per the rule above.
+Current known risks:
 
-### 6. Session persistence across restart, and stale-session cleanup
+- session persistence historically namespaces application-level `PropertiesComponent` data with `project.basePath.hashCode()`, which can collide;
+- datasource restoration historically resolves by display name, which can be ambiguous after duplicate names or renames.
 
-- On startup, `pruneStaleIndex()` reconciles the index against saved session data and drops
-  entries with no session (console closed while the IDE was down, or a crash). Restoration then
-  re-creates consoles for the surviving keys.
-- If the datasource named in a saved session no longer exists, the session and index entry are
-  removed rather than restored against something else. Preserve that: **never fall back to a
-  different datasource.**
-- `projectClosing` sets the shutdown flag *before* restoration is scheduled, on purpose — the
-  comment in `MyBatisActionInterceptorActivity` explains the window it closes. Do not move that
-  registration inside the `invokeLater` lambda.
-- Console dispose sentinels always clear the session; `markShuttingDown()`/`dispose()`
-  re-persist still-live sessions so a restart restores them. Changing either half without the
-  other produces sessions that either vanish on restart or accumulate forever.
-- New persisted state must be prunable. Anything written under `zMyBatis.` must have a path
-  that removes it.
+Rules:
 
-### 7. Project disposal / plugin lifecycle
+- Any key/namespace/datasource-lookup change is an identity migration and needs explicit backward-compatibility handling for persisted state.
+- Never silently fall back to another datasource when the saved datasource is missing or ambiguous.
+- `ConsoleCacheService.put()` keeps in-memory and persisted session state atomic; do not split it back into independently failing save/index operations.
+- Prefer project-scoped persistent state and stable platform identities over adding more application-global string keys.
 
-- `ConsoleCacheService` is a project-level `Disposable`. Everything it creates —
-  `JdbcConsole`s, `CheckedDisposable` sentinels, listeners — must be parented to a disposable
-  that dies with the project. A retained `Project`, `Editor`, `PsiFile`, or `JdbcConsole` is a
-  memory leak that the platform will report as a leaked project in tests.
-- `ProjectManagerListener` is registered with the project as parent disposable. Keep it that
-  way; an application-level listener without a parent outlives the project.
-- Check `project.isDisposed` before touching project services from anything scheduled
-  (`invokeLater`, coroutines, callbacks). Restoration in particular runs after a suspension
-  point and can land on a closing project.
-- Respect threading: EDT for UI and console creation, read actions for PSI, and no blocking
-  I/O on the EDT.
-- The dialogs (`ParameterInputDialog`, `SqlPreviewDialog`) must not leak the editor or project
-  after `dispose()`.
+## 6. Restart, cleanup, and lifecycle
 
-### 8. SQL execution safety
+- `pruneStaleIndex()` must reconcile persisted index/session data before restoration.
+- Missing datasource/session data is removed, never redirected to a different datasource.
+- Shutdown ordering is intentional: the project-closing flag must be established before delayed restoration can race with disposal.
+- Console disposal clears its persisted session; shutdown persistence preserves still-live sessions for the next restart. Change both halves together.
+- Every new persisted key has a deterministic cleanup path.
+- `ConsoleCacheService` is project-scoped. Consoles, listeners, sentinels, callbacks, dialogs, and scheduled work must not retain disposed `Project`, `Editor`, `PsiFile`, or `JdbcConsole` instances.
+- Re-check `project.isDisposed` after asynchronous/scheduled boundaries.
+- UI/console work belongs on the EDT; PSI reads use read actions; blocking I/O does not run on the EDT.
 
-- The user's explicit `Execute (zMyBatis)` invocation is the only thing that may cause SQL to
-  run. Nothing in extraction, parameter detection, evaluation, preview, formatting, settings,
-  or startup restoration may execute SQL as a side effect. **Startup session restoration
-  re-creates consoles; it must never run a statement.**
-- zMyBatis does not restrict statement types — `insert`, `update`, and `delete` mappers are
-  executed as written. That makes the datasource/schema identity rules in §5 and the preview
-  fidelity rule in §2 the actual safety mechanism, not a convenience.
-- Never auto-confirm, auto-retry, or re-execute on failure.
-- Errors must be attributable: say whether the failure came from statement extraction, OGNL
-  evaluation, parameter parsing, datasource resolution, or the database itself, and include the
-  statement id where available. A generic "failed to execute" makes every one of the boundaries
-  above unverifiable in the field. Log through `Logger.getInstance(...)`; never log parameter
-  values or rendered SQL that may contain production data at `info` or above.
+## 7. SQL execution safety
 
-## Working rules
+Only the user's explicit `Execute (zMyBatis)` action may execute SQL.
 
-- **Scope.** Fix the reported defect. No speculative features, no broad refactors, no new
-  abstraction layers in a bug fix.
-- **Tests.** `./gradlew check` must pass. Do not delete, `@Ignore`, or weaken an assertion to
-  get a green run. Parsing, parameter extraction, and SQL rendering changes are unit-testable
-  without an IDE — test them (`ParameterExtractorTest`, `JsonParameterTest`, `OgnlEvalTest`).
-  Note that `MyPluginTest` and `src/test/testData/rename/` are still template leftovers and
-  test nothing about zMyBatis; replacing them is welcome, deleting them without replacement
-  is not.
-- **Static analysis.** Qodana runs on every PR and is configured to fail on Critical findings
-  (`qodana.yml`). Suppressing a finding requires a comment saying why it is a false positive.
-  Raising a threshold to get a green build is not an acceptable fix.
-- **Versioning.** `build.gradle.kts` derives the version from `LocalDateTime.now()`
-  (`yy.MM.dd.HHmmss`), so builds are not reproducible and the version does not identify a
-  commit. Do not build release automation that assumes the version is stable or meaningful.
-- **Release boundary.** `build.yml` validates and must never mutate release state. `release.yml`
-  is the only workflow that publishes, and it runs only from a human-published GitHub Release.
-  Distribution for this plugin is `zMyBatis-public` (`pluginRepositoryUrl` in
-  `gradle.properties`), not this repository.
-- **Changelog.** User-visible changes go in `CHANGELOG.md` under `Unreleased`; the plugin's
-  `change-notes` are generated from it.
-- **README is load-bearing.** `patchPluginXml` fails the build if the
-  `<!-- Plugin description -->` markers are missing, and the text between them becomes the
-  Marketplace description.
+Extraction, parameter detection, OGNL evaluation, preview, formatting, settings, and startup restoration must not execute a statement as a side effect.
 
-## CI and workflow security rules
+- Startup restoration may recreate consoles but never run SQL.
+- Do not auto-confirm, auto-retry, or auto-reexecute failed statements.
+- Errors identify the stage that failed: extraction, parameter parsing, OGNL/evaluation, datasource/schema resolution, console setup, or database execution.
+- Include mapper/statement identity where safe, but redact sensitive parameter/rendered SQL content.
 
-- All third-party actions are pinned to **full-length commit SHAs** with the tag in a trailing
-  comment. Dependabot updates both. Never reintroduce a mutable tag.
-- Workflows default to `permissions: contents: read`. A write scope is added only at job level
-  and only with a comment saying which step needs it.
-- **`inspectCode` executes pull-request-authored build logic** (Qodana runs the project's own
-  Gradle build). It must never hold a write scope. That is why the Qodana action no longer
-  publishes its own check run or PR comment — the job conclusion is the gate.
-- Checkouts set `persist-credentials: false` unless a trusted step genuinely needs to push;
-  `release.yml` is the only justified exception and says so inline.
-- Never interpolate `${{ ... }}` into a `run:` block. Pass through `env:` and quote it.
-- `Workflow Lint` (`actionlint` + `zizmor`, every severity blocking) enforces the above and is
-  fail-closed. Do not add `continue-on-error` to it or raise its severity floor.
+## 8. Tests and evidence
 
-## Reviewing a change
+Run the narrowest evidence that can falsify the changed contract.
 
-Review the **exact final HEAD**, not an intermediate commit. Check, in order:
+Baseline for ordinary code changes:
 
-1. Which of the eight boundaries above the diff touches, and whether the PR says so.
-2. Rendered-SQL fidelity: does preview still equal execution?
-3. Datasource/schema identity: can this route a statement to the wrong target?
-4. Lifecycle: is everything new parented to a disposable, and is `isDisposed` checked?
-5. Database API surface: anything new from `com.intellij.database.*`, and did the Plugin
-   Verifier actually run against it?
-6. Error paths: is a failure attributable to a stage, and does it avoid logging user data?
-7. Workflow diffs: permissions, pins, and credential exposure.
-8. Diff scope: anything in here that is not the stated fix?
+- `./gradlew check`;
+- `./gradlew buildPlugin`;
+- `./gradlew verifyPlugin` where platform compatibility is relevant;
+- required workflow/static-analysis gates.
 
-CI passing is a precondition for review, not a substitute for it.
+Parsing, parameter extraction, OGNL, and SQL rendering are unit-testable without a live IDE and should be tested there. Session/DataGrip lifecycle changes require platform/manual evidence appropriate to the behavior.
+
+`MyPluginTest` and `src/test/testData/rename/` are template leftovers and do not count as zMyBatis correctness coverage. Replace them with meaningful tests rather than citing their existence as evidence.
+
+Do not delete, ignore, or weaken assertions to obtain green CI.
+
+## 9. CI / GitHub Actions
+
+- Third-party actions use immutable full commit SHAs with readable version comments.
+- Workflows default to `contents: read`; write permission is job-scoped and justified.
+- Checkout uses `persist-credentials: false` unless a narrowly trusted later step genuinely needs an ambient credential.
+- A privileged workflow must never execute PR-head code with elevated permissions.
+- `Inspect code` is the authoritative Qodana gate; annotation/comment side effects are not merge evidence.
+- Qodana/scanner internal failure must fail the authoritative job. Thresholds are policy, not numbers to raise until green.
+- Workflow static analysis itself is fail-closed and has a negative control.
+- Required contexts must be emitted on every ordinary PR and must not disappear behind top-level path filters.
+
+## 10. Version and release contract
+
+Ordinary development builds may retain the historical timestamp fallback. Release builds are different: the release workflow passes `-PbuildVersion=<release-tag>`, and that effective version must control plugin metadata, the built distribution, Marketplace publication, and release metadata.
+
+The release tag is therefore an immutable provenance identifier, not a convenient label.
+
+- `build.yml` validates code and never mutates releases or publishes.
+- `.github/workflows/release.yml` is the only JetBrains Marketplace publication path in this repository.
+- GitHub release downloads are exposed through `zMyBatis-public`; the relationship between that public release channel and this private source/Marketplace publication must remain explicit.
+- Before publication, the release workflow verifies required signing/publishing secrets, exact tag checkout, reachability from reviewed `main`, and built artifact/version identity.
+- Artifact/version verification happens **before** `publishPlugin` because Marketplace publication is irreversible.
+- Release tags must be protected against update/deletion before this contract is considered complete.
+- Never rewrite a published tag or version as a recovery mechanism.
+- No SBOM/attestation/release machinery is added solely for parity; provenance controls must protect a real distributed artifact.
+
+## 11. Review discipline
+
+Review the exact final PR HEAD for:
+
+- functional correctness and regressions;
+- mapper/dynamic-SQL and parameter-binding fidelity;
+- datasource/schema/session identity;
+- restart/rollback/disposal semantics;
+- IntelliJ/DataGrip compatibility;
+- architecture and ownership boundaries;
+- error handling and diagnostics;
+- SQL/privacy/security boundaries;
+- performance/resource retention;
+- abstractions, duplication, complexity, dead code, and hacks;
+- edge cases and meaningful test coverage;
+- workflow/release integrity;
+- diff scope and documentation consistency.
+
+A PASS applies only to the reviewed HEAD SHA. Any commit after review invalidates the PASS. Squash merge only after exact-HEAD approval. Publication remains a separate explicit gate.
