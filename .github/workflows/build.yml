@@ -1,259 +1,232 @@
-# GitHub Actions Workflow is created for testing and preparing the plugin release in the following steps:
-# - Validate Gradle Wrapper.
-# - Run 'test' and 'verifyPlugin' tasks.
-# - Run Qodana inspections.
-# - Run the 'buildPlugin' task and prepare artifact for further tests.
-# - Run the 'runPluginVerifier' task.
-# - Create a draft release.
+# PR validation for the zMyBatis DataGrip/IntelliJ plugin.
 #
-# The workflow is triggered on push and pull_request events.
+# Gates, in dependency order:
+# - build:       assembles the distributable plugin ZIP and keeps it as an artifact.
+# - test:        ./gradlew check (unit tests + Kover). Coverage upload is informational by
+#                design (see codecov.yml); the Gradle `check` result is the blocking part.
+# - inspectCode: Qodana static analysis of the exact PR head commit.
+# - verify:      plugin structure verification + IntelliJ Plugin Verifier against the IDEs
+#                declared by `pluginVerification { ides { recommended() } }` in build.gradle.kts.
 #
-# GitHub Actions reference: https://help.github.com/en/actions
+# Security posture:
+# - Every third-party action is pinned to an immutable full-length commit SHA. The trailing
+#   comment records the human-readable tag that SHA corresponded to; Dependabot keeps both in sync.
+# - The workflow default is `contents: read`. No job in this file needs a write scope, so none
+#   grants one. In particular `inspectCode` checks out and builds PR-authored code, so it must
+#   never hold a writable token (see the note on that job).
+# - Checkouts use `persist-credentials: false` so no job leaves a usable token in .git/config.
 #
-## JBIJPPTPL
+# This workflow validates. It must never mutate release state - see release.yml.
 
 name: Build
+
 on:
-  # Trigger the workflow on pushes to only the 'main' branch (this avoids duplicate checks being run e.g., for dependabot pull requests)
+  # Pushes to main only, so Dependabot branches are not validated twice.
   push:
     branches: [ main ]
-  # Trigger the workflow on any pull request
   pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
 
-  # Prepare the environment and build the plugin
+  # Assemble the plugin distribution and publish it as a build artifact.
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
 
-      # Free GitHub Actions Environment Disk Space
+      # The IntelliJ Platform SDK download plus the Gradle cache is large enough that the
+      # default runner image needs headroom.
       - name: Maximize Build Space
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           large-packages: false
 
-      # Check out the current repository
       - name: Fetch Sources
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      # Set up the Java environment for the next steps
       - name: Setup Java
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6
         with:
           distribution: zulu
           java-version: 21
 
-      # Setup Gradle
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6.3.0
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
 
-      # Build plugin
       - name: Build plugin
         run: ./gradlew buildPlugin
 
-      # Prepare plugin archive content for creating artifact
+      # Unpack the distribution so the uploaded artifact is browsable in the GitHub UI.
       - name: Prepare Plugin Artifact
         id: artifact
         shell: bash
         run: |
-          cd ${{ github.workspace }}/build/distributions
-          FILENAME=`ls *.zip`
+          cd "$GITHUB_WORKSPACE/build/distributions"
+          FILENAME=$(ls -- *.zip)
           unzip "$FILENAME" -d content
+          echo "filename=${FILENAME%.zip}" >> "$GITHUB_OUTPUT"
 
-          echo "filename=${FILENAME:0:-4}" >> $GITHUB_OUTPUT
-
-      # Store an already-built plugin as an artifact for downloading
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ steps.artifact.outputs.filename }}
           path: ./build/distributions/content/*/*
 
-  # Run tests and upload a code coverage report
+  # Unit tests. `./gradlew check` failing fails this job; that is the authoritative signal.
   test:
     name: Test
     needs: [ build ]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
 
-      # Free GitHub Actions Environment Disk Space
       - name: Maximize Build Space
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           large-packages: false
 
-      # Check out the current repository
       - name: Fetch Sources
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      # Set up the Java environment for the next steps
       - name: Setup Java
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6
         with:
           distribution: zulu
           java-version: 21
 
-      # Setup Gradle
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6.3.0
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-read-only: true
 
-      # Run tests
       - name: Run Tests
         run: ./gradlew check
 
-      # Collect Tests Result of failed tests
+      # Retain the HTML/XML reports so a failing MyBatis evaluation or parameter-binding
+      # assertion can be diagnosed without re-running locally.
       - name: Collect Tests Result
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tests-result
           path: ${{ github.workspace }}/build/reports/tests
 
-      # Upload the Kover report to CodeCov
+      # Informational only - codecov.yml sets `informational: true` for project and patch.
+      # Do not treat the Codecov context as a merge gate.
       - name: Upload Code Coverage Report
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7
         with:
           files: ${{ github.workspace }}/build/reports/kover/report.xml
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  # Run Qodana inspections and provide a report
+  # Static analysis of the PR head commit.
+  #
+  # SECURITY: this job checks out PR-authored source and runs the project's own Gradle build
+  # underneath Qodana. It therefore executes untrusted code and must run with the workflow
+  # default `contents: read` and nothing more. The previous `contents: write` + `checks: write`
+  # + `pull-requests: write` grant handed a fully writable token to that execution context.
+  # Consequence: the action no longer publishes its own "Qodana Community for JVM" check run or
+  # a PR comment. The authoritative signal is this job's own conclusion, which needs no token.
   inspectCode:
     name: Inspect code
     needs: [ build ]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      checks: write
-      pull-requests: write
+    timeout-minutes: 45
     steps:
 
-      # Free GitHub Actions Environment Disk Space
       - name: Maximize Build Space
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           large-packages: false
 
-      # Check out the current repository
       - name: Fetch Sources
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.pull_request.head.sha }} # to check out the actual pull request commit, not the merge commit
-          fetch-depth: 0 # a full history is required for pull request analysis
+          # Analyse the real PR commit, not the synthetic merge commit.
+          ref: ${{ github.event.pull_request.head.sha }}
+          # Full history is required for Qodana's pull request analysis.
+          fetch-depth: 0
+          persist-credentials: false
 
-      # Set up the Java environment for the next steps
       - name: Setup Java
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6
         with:
           distribution: zulu
           java-version: 21
 
-      # Run Qodana inspections
+      # Fails this job when Qodana itself errors, or when qodana.yml's failure conditions
+      # are exceeded. Reporting back to the PR is disabled because it would require write scopes.
       - name: Qodana - Code Inspection
-        uses: JetBrains/qodana-action@v2026.2.0
+        uses: JetBrains/qodana-action@b588768b6e7e6da579e518bc584f79de0d243692 # v2026.2.0
         with:
           cache-default-branch-only: true
+          post-pr-comment: false
+          use-annotations: false
 
-  # Run plugin structure verification along with IntelliJ Plugin Verifier
+      - name: Collect Qodana Result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: qodana-result
+          path: ${{ runner.temp }}/qodana/results
+          if-no-files-found: ignore
+
+  # Plugin structure verification and IntelliJ Plugin Verifier.
+  #
+  # This is the compatibility gate for the Database API surface zMyBatis depends on
+  # (com.intellij.database.*). A verifier failure means the plugin would break on a supported
+  # IDE build - never downgrade `failureLevel` to get past it.
   verify:
     name: Verify plugin
     needs: [ build ]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
 
-      # Free GitHub Actions Environment Disk Space
       - name: Maximize Build Space
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           large-packages: false
 
-      # Check out the current repository
       - name: Fetch Sources
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      # Set up the Java environment for the next steps
       - name: Setup Java
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6
         with:
           distribution: zulu
           java-version: 21
 
-      # Setup Gradle
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6.3.0
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-read-only: true
 
-      # Run Verify Plugin task and IntelliJ Plugin Verifier tool
       - name: Run Plugin Verification tasks
         run: ./gradlew verifyPlugin
 
-      # Collect Plugin Verifier Result
       - name: Collect Plugin Verifier Result
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: pluginVerifier-result
           path: ${{ github.workspace }}/build/reports/pluginVerifier
-
-  # Prepare a draft release for GitHub Releases page for the manual verification
-  # If accepted and published, the release workflow would be triggered
-  releaseDraft:
-    name: Release draft
-    if: github.event_name != 'pull_request'
-    needs: [ build, test, inspectCode, verify ]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-
-      # Check out the current repository
-      - name: Fetch Sources
-        uses: actions/checkout@v7
-
-      # Set up the Java environment for the next steps
-      - name: Setup Java
-        uses: actions/setup-java@v6
-        with:
-          distribution: zulu
-          java-version: 21
-
-      # Setup Gradle
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6.3.0
-        with:
-          cache-read-only: true
-
-      # Remove old release drafts by using the curl request for the available releases with a draft flag
-      - name: Remove Old Release Drafts
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api repos/{owner}/{repo}/releases \
-            --jq '.[] | select(.draft == true) | .id' \
-            | xargs -I '{}' gh api -X DELETE repos/{owner}/{repo}/releases/{}
-
-      # Create a new release draft which is not publicly visible and requires manual acceptance
-      - name: Create Release Draft
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION=$(./gradlew properties --property version --quiet --console=plain | tail -n 1 | cut -f2- -d ' ')
-          RELEASE_NOTE="./build/tmp/release_note.txt"
-          ./gradlew getChangelog --unreleased --no-header --quiet --console=plain --output-file=$RELEASE_NOTE
-
-          gh release create $VERSION \
-            --draft \
-            --title $VERSION \
-            --notes-file $RELEASE_NOTE
+          if-no-files-found: ignore

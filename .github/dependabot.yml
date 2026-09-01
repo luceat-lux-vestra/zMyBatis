@@ -1,15 +1,40 @@
 # Dependabot configuration:
-# https://docs.github.com/en/free-pro-team@latest/github/administering-a-repository/configuration-options-for-dependency-updates
+# https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+#
+# Note: this is a private repository without GitHub Advanced Security, so Dependabot *alerts*,
+# the dependency graph and dependency-review are unavailable here. Only version updates run.
+# That makes keeping these PRs reviewable more important, not less - hence weekly batches and
+# grouping instead of a daily per-dependency stream.
 
 version: 2
 updates:
-  # Maintain dependencies for Gradle dependencies
+
+  # Gradle: the IntelliJ Platform Gradle Plugin, Kotlin, MyBatis, and the test stack.
+  # Platform/IDE-version bumps land here and must clear the Plugin Verifier before merging.
   - package-ecosystem: "gradle"
     directory: "/"
     schedule:
-      interval: "daily"
-  # Maintain dependencies for GitHub Actions
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    groups:
+      gradle-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions are pinned to commit SHAs; Dependabot updates the SHA and the trailing
+  # version comment together. Keeping this enabled is what makes SHA pinning maintainable.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github_actions"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

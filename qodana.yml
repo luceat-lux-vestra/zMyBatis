@@ -2,10 +2,23 @@
 # https://www.jetbrains.com/help/qodana/qodana-yaml.html
 
 version: "1.0"
-linter: jetbrains/qodana-jvm-community:2024.3
+# Kept in step with the qodana Gradle plugin and JetBrains/qodana-action versions
+# (gradle/libs.versions.toml: qodana = "2026.2"); a stale linter image analyses this project
+# with a different inspection set than the one the IDE and the action expect.
+linter: jetbrains/qodana-jvm-community:2026.2
 projectJDK: "21"
 profile:
   name: qodana.recommended
+
+# Make the scanner an actual gate rather than an advisory report. Without a failure condition
+# Qodana exits 0 no matter what it finds, and the "Inspect code" job reports green.
+#
+# Starting point is Critical only. Ratchet High/Moderate down as the existing findings are
+# burned off - never raise a threshold to get a green build.
+failureConditions:
+  severityThresholds:
+    critical: 0
+
 exclude:
   - name: All
     paths:

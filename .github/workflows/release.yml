@@ -1,50 +1,72 @@
-# GitHub Actions Workflow created for handling the release process based on the draft release prepared with the Build workflow.
-# Running the publishPlugin task requires all the following secrets to be provided: PUBLISH_TOKEN, PRIVATE_KEY, PRIVATE_KEY_PASSWORD, CERTIFICATE_CHAIN.
-# See https://plugins.jetbrains.com/docs/intellij/plugin-signing.html for more information.
+# Publishing gate for zMyBatis.
+#
+# This is the ONLY workflow allowed to mutate release state or publish to JetBrains Marketplace.
+# It runs exclusively off an already-published GitHub Release, i.e. a deliberate human action.
+# PR validation (build.yml) must never create, delete, or modify releases.
+#
+# Requires the secrets PUBLISH_TOKEN, PRIVATE_KEY, PRIVATE_KEY_PASSWORD, CERTIFICATE_CHAIN.
+# See https://plugins.jetbrains.com/docs/intellij/plugin-signing.html
+#
+# Security posture:
+# - Third-party actions are pinned to immutable full-length commit SHAs.
+# - The release tag name is attacker-influenceable text, so it is passed through `env:` and
+#   quoted in shell rather than interpolated into a `run:` block, which would let a crafted
+#   tag execute arbitrary code in a job that holds the signing key and publish token.
+# - The Gradle cache is disabled here: a cache entry poisoned by an ordinary PR run must not
+#   be able to reach the signing/publishing step.
 
 name: Release
+
 on:
   release:
     types: [ prereleased, released ]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
 
-  # Prepare and publish the plugin to JetBrains Marketplace repository
   release:
     name: Publish Plugin
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
+      # Upload the release asset and push the changelog branch.
       contents: write
+      # Open the changelog pull request.
       pull-requests: write
     steps:
 
-      # Free GitHub Actions Environment Disk Space
       - name: Maximize Build Space
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           large-packages: false
 
-      # Check out the current repository
+      # No ambient credential in .git/config: the one step that needs to push (the changelog
+      # pull request) supplies the token explicitly, so the signing/publishing steps in between
+      # never run with a usable write credential sitting in the working tree.
       - name: Fetch Sources
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
 
-      # Set up the Java environment for the next steps
       - name: Setup Java
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6
         with:
           distribution: zulu
           java-version: 21
 
-      # Setup Gradle
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6.3.0
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          cache-read-only: true
+          cache-disabled: true
 
-      # Update the Unreleased section with the current release note
       - name: Patch Changelog
         if: ${{ github.event.release.body != '' }}
         env:
@@ -52,11 +74,10 @@ jobs:
         run: |
           RELEASE_NOTE="./build/tmp/release_note.txt"
           mkdir -p "$(dirname "$RELEASE_NOTE")"
-          echo "$CHANGELOG" > $RELEASE_NOTE
+          echo "$CHANGELOG" > "$RELEASE_NOTE"
 
-          ./gradlew patchChangelog --release-note-file=$RELEASE_NOTE
+          ./gradlew patchChangelog --release-note-file="$RELEASE_NOTE"
 
-      # Publish the plugin to JetBrains Marketplace
       - name: Publish Plugin
         env:
           PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
@@ -65,28 +86,29 @@ jobs:
           PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
         run: ./gradlew publishPlugin
 
-      # Upload an artifact as a release asset
       - name: Upload Release Asset
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.event.release.tag_name }} ./build/distributions/*
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" ./build/distributions/*
 
-      # Create a pull request
       - name: Create Pull Request
         if: ${{ github.event.release.body != '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          BRANCH="changelog-update-$VERSION"
+          BRANCH="changelog-update-$RELEASE_TAG"
           LABEL="release changelog"
 
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
 
-          git checkout -b $BRANCH
-          git commit -am "Changelog update - $VERSION"
-          git push --set-upstream origin $BRANCH
+          git checkout -b "$BRANCH"
+          git commit -am "Changelog update - $RELEASE_TAG"
+          # Credential is scoped to this one command rather than persisted by the checkout.
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/$BRANCH"
 
           gh label create "$LABEL" \
             --description "Pull requests with release changelog update" \
@@ -94,7 +116,7 @@ jobs:
             || true
 
           gh pr create \
-            --title "Changelog update - \`$VERSION\`" \
-            --body "Current pull request contains patched \`CHANGELOG.md\` file for the \`$VERSION\` version." \
+            --title "Changelog update - \`$RELEASE_TAG\`" \
+            --body "Current pull request contains patched \`CHANGELOG.md\` file for the \`$RELEASE_TAG\` version." \
             --label "$LABEL" \
-            --head $BRANCH
+            --head "$BRANCH"

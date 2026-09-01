@@ -1,0 +1,57 @@
+# Fail-closed static security review of this repository's own GitHub Actions workflows.
+#
+# Exists so that the hardening applied in build.yml / release.yml cannot silently regress:
+# an unpinned action, a `${{ }}` interpolation inside a `run:` block, or a re-introduced write
+# scope fails this job and therefore fails the pull request.
+#
+# - actionlint: workflow schema, expression, and (via bundled shellcheck) inline-script checks.
+#               Run from an image pinned by digest, so no third-party action is trusted here.
+# - zizmor:     GitHub Actions security audits, pinned by version and run offline (no token).
+#               Run at the default severity floor, i.e. every finding is blocking. The tree is
+#               clean at all severities as of this workflow being added (it started at
+#               34 high / 5 medium / 7 low), so there is no baseline to carry.
+#
+# Do not add `continue-on-error` here, and do not add `--min-severity` to make a finding go
+# away - fix the workflow instead.
+
+name: Workflow Lint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+
+  lint:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: actionlint
+        run: |
+          docker run --rm \
+            --volume "$PWD:/repo" \
+            --workdir /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -color
+
+      # pipx is preinstalled on the GitHub-hosted ubuntu runner images.
+      - name: zizmor
+        run: |
+          pipx install "zizmor==1.30.0"
+          zizmor --offline --persona regular .github/workflows/
