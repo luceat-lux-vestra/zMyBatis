@@ -72,7 +72,6 @@ intellijPlatform {
 
 
         val changelog = project.changelog // local variable for configuration cache compatibility
-        // Get the latest available change notes from the changelog file
         changeNotes = provider {
             with(changelog) {
                 renderItem(
@@ -103,15 +102,16 @@ intellijPlatform {
 
     publishing {
         token = providers.environmentVariable("PUBLISH_TOKEN")
-        // The pluginVersion is based on the SemVer (https://semver.org) and supports pre-release labels, like 2.1.7-alpha.3
-        // Specify pre-release label to publish the plugin in a custom Release Channel automatically. Read more:
-        // https://plugins.jetbrains.com/docs/intellij/publishing-plugin.html#specifying-a-release-channel
         channels = providers.gradleProperty("pluginVersion").map { listOf(it.substringAfter('-', "").substringBefore('.').ifEmpty { "default" }) }
     }
 
+    // Keep compatibility verification deterministic. `recommended()` drifts as
+    // JetBrains publishes new IDE builds and can turn the merge gate into a
+    // moving target. Broader IDEA/DataGrip coverage must be added explicitly
+    // with evidence rather than inferred from this single maintained target.
     pluginVerification {
         ides {
-            recommended()
+            create(IntelliJPlatformType.IntellijIdeaUltimate, "2025.3.3")
         }
     }
 }
