@@ -1,5 +1,5 @@
 # GitHub Actions Workflow is created for testing and preparing the plugin release in the following steps:
-# - Validate Gradle Wrapper.
+# - Validate workflow action pinning.
 # - Run 'test' and 'verifyPlugin' tasks.
 # - Run Qodana inspections.
 # - Run the 'buildPlugin' task and prepare artifact for further tests.
@@ -23,6 +23,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  workflowLint:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Require immutable action pins
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          pin = re.compile(r"^\s*uses:\s*[^#\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
+          failures = []
+          for path in sorted(Path('.github/workflows').glob('*.y*ml')):
+              for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+                  if 'uses:' in line and not pin.match(line):
+                      failures.append(f"{path}:{number}: {line.strip()}")
+          if failures:
+              raise SystemExit("Unpinned workflow actions:\n" + "\n".join(failures))
+
   build:
     name: Build
     runs-on: ubuntu-latest
