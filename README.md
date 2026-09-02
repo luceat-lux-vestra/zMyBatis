@@ -5,9 +5,9 @@
 > **Distribution status:** zMyBatis is not yet published to JetBrains Marketplace and no public GitHub Release is available. Marketplace publication and repository consolidation are still in progress.
 
 <!-- Plugin description -->
-<p><b>zMyBatis</b> is a JetBrains IDE plugin that lets you execute MyBatis mapper queries directly from XML mapper files or Java/Kotlin annotation-based mappers — without leaving the IDE.</p>
+<p><b>zMyBatis</b> is a JetBrains IDE plugin that lets you execute MyBatis mapper queries directly from XML mapper files or supported Java annotation-based mappers — without leaving the IDE.</p>
 
-<p>It evaluates MyBatis dynamic SQL, prompts you for parameter values, converts the result to native SQL, and runs it on a DataGrip database console in one step.</p>
+<p>It evaluates supported MyBatis dynamic SQL, prompts you for parameter values, converts the result to executable SQL using zMyBatis-owned parameter/literalization rules, and runs it on a DataGrip database console in one step.</p>
 
 <h2>Features</h2>
 
@@ -15,19 +15,20 @@
 <p>Right-click → <b>Execute (zMyBatis)</b> while the caret is inside:</p>
 <ul>
   <li>A MyBatis XML mapper statement tag (select, insert, update, delete)</li>
-  <li>A @Select / @Insert / @Update / @Delete annotation method (Java/Kotlin)</li>
+  <li>A supported @Select / @Insert / @Update / @Delete annotation method in Java</li>
 </ul>
-<p>The plugin evaluates the MyBatis dynamic SQL and runs it through the DataGrip execution pipeline. DataGrip's own Execute and Explain Plan actions are untouched and work as usual.</p>
+<p>Kotlin annotation-source support is not currently claimed without fresh compatibility evidence.</p>
+<p>The plugin evaluates the supported MyBatis dynamic SQL and runs the resulting SQL through the DataGrip execution pipeline. DataGrip's own Execute and Explain Plan actions are untouched and work as usual.</p>
 
 <h3>Dynamic SQL Evaluation</h3>
-<p>Fully evaluates all MyBatis dynamic SQL tags:<br/>
+<p>Uses MyBatis <code>XMLScriptBuilder</code> for supported dynamic SQL tags including:<br/>
 <code>if</code>, <code>choose</code> / <code>when</code> / <code>otherwise</code>, <code>foreach</code>, <code>where</code>, <code>set</code>, <code>trim</code>, <code>bind</code></p>
-<p>Powered by the actual MyBatis XMLScriptBuilder engine (mybatis 3.5.x) for accurate results.</p>
+<p>zMyBatis also owns parameter discovery, compatibility transformations, OGNL handling around that engine, and conversion of MyBatis parameter mappings to literal SQL. Using MyBatis for parsing therefore does <b>not</b> imply stock JDBC/TypeHandler semantics or arbitrary application-runtime parity.</p>
 
 <h3>Parameter Input Dialog</h3>
 <ul>
-  <li>Automatically detects <code>#{param}</code>, <code>${param}</code>, and OGNL expression parameters</li>
-  <li>Excludes internal variables (bind, foreach item, foreach index) — only user-supplied parameters are prompted</li>
+  <li>Detects <code>#{param}</code>, <code>${param}</code>, and OGNL-driven inputs within the currently supported extraction rules</li>
+  <li>Filters known internal bind/foreach variables before prompting; generated-name and application-specific edge cases remain part of the active compatibility work</li>
   <li><b>Scalar parameters</b> — one-line input: null, numbers, strings, booleans, lists (e.g. <code>[1,2,3]</code>)</li>
   <li><b>Object / nested parameters</b> — multi-line JSON editor for dot-notation params (e.g. <code>#{user.name}</code> -&gt; enter <code>{"name":"Alice","id":1}</code>)</li>
   <li>Supports nested objects (<code>{key:{nestedKey:value}}</code>), and object arrays (<code>[{key:value},{key:value}]</code>)</li>
@@ -39,17 +40,20 @@
 
 <h3>Annotation Support</h3>
 <ul>
-  <li>Works with multi-line string arrays in <code>@Select({...})</code></li>
-  <li>Resolves constant field references (e.g. <code>@Select(SqlConstants.FIND_USER)</code>)</li>
+  <li>Works with supported Java annotation SQL, including multi-line string arrays in <code>@Select({...})</code></li>
+  <li>Resolves supported constant field references (e.g. <code>@Select(SqlConstants.FIND_USER)</code>)</li>
   <li>Shows a clear notice for unsupported <code>@SelectProvider</code> / <code>@InsertProvider</code> / <code>@UpdateProvider</code> / <code>@DeleteProvider</code> annotations</li>
 </ul>
 
 <h3>Seamless DataGrip Integration</h3>
-<p>The resolved native SQL is injected directly into the DataGrip execution pipeline, so all DataGrip features work as usual:</p>
+<p>The resolved SQL is injected into the DataGrip execution pipeline, so the normal database-console workflow remains available:</p>
 <ul>
   <li>Result grid, export, explain plan</li>
   <li>SQL history and console tabs</li>
 </ul>
+
+<h2>Current Semantic Boundary</h2>
+<p>The current implementation combines MyBatis parsing with zMyBatis-owned parameter extraction, compatibility transformations, OGNL behavior, and literal rendering. Until the active evaluation/execution contract work is complete, do not interpret this plugin as a drop-in reproduction of an application's MyBatis/JDBC runtime, custom TypeHandlers, provider methods, or every dialect-specific binding rule.</p>
 
 <h2>Settings</h2>
 <p>Configure via <b>Settings -> Tools -> zMyBatis</b>:</p>
@@ -68,8 +72,8 @@
 
 <h2>Requirements</h2>
 <ul>
-  <li><b>IntelliJ IDEA Ultimate</b>, <b>DataGrip</b>, or any JetBrains IDE with the <b>Database</b> plugin</li>
-  <li>IDE version <b>2025.3</b> or later</li>
+  <li><b>IntelliJ IDEA Ultimate</b>, <b>DataGrip</b>, or a compatible JetBrains IDE with database tooling</li>
+  <li>IDE build line <b>2025.3</b> or later; the maintained automated verifier target is pinned separately and broader host/version claims require release evidence</li>
   <li>A configured data source (database connection) in the Database tool window</li>
 </ul>
 <!-- Plugin description end -->
@@ -86,14 +90,14 @@ Marketplace and public-release installation instructions will be added only afte
 
 ## 🏗 How It Works
 
-1. Place the caret inside a MyBatis XML statement tag or a `@Select` / `@Insert` / `@Update` / `@Delete` annotation method.
+1. Place the caret inside a MyBatis XML statement tag or a supported Java `@Select` / `@Insert` / `@Update` / `@Delete` annotation method.
 2. Right-click and choose **Execute (zMyBatis)**.
 3. The plugin:
-   - Extracts the full MyBatis statement (XML body or annotation SQL string)
-   - Parses `#{…}`, `${…}`, and OGNL expressions to identify required parameters
+   - Extracts the supported mapper statement source
+   - Discovers required inputs using zMyBatis-owned extraction rules
    - Opens the **Parameter Input Dialog** with previously used values pre-filled
-   - Evaluates dynamic SQL through the MyBatis XMLScriptBuilder engine
-   - Binds parameter values into native SQL (replacing `?` placeholders with literals)
+   - Evaluates supported dynamic SQL through MyBatis `XMLScriptBuilder` plus zMyBatis compatibility handling
+   - Converts the resulting parameter mappings to literal SQL using zMyBatis-owned rendering rules
    - Optionally formats the SQL and shows a preview
    - Injects the result into a DataGrip console and executes it
 4. DataGrip's own Execute, Explain Plan, and all other actions are **not overridden** and continue to work normally.
