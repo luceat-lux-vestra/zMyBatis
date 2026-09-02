@@ -1,7 +1,5 @@
 # zMyBatis — Dynamic SQL Runner with Parameters
 
-![Build](https://github.com/luceat-lux-vestra/zMyBatis-public/workflows/Build/badge.svg)
-
 > **Distribution status:** zMyBatis is not yet published to JetBrains Marketplace and no public GitHub Release is available. Marketplace publication and repository consolidation are still in progress.
 
 <!-- Plugin description -->
