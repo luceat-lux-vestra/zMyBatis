@@ -1,10 +1,8 @@
 # zMyBatis — Dynamic SQL Runner with Parameters
 
 ![Build](https://github.com/luceat-lux-vestra/zMyBatis-public/workflows/Build/badge.svg)
-[![Version](https://img.shields.io/jetbrains/plugin/v/MARKETPLACE_ID.svg)](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID)
-[![Downloads](https://img.shields.io/jetbrains/plugin/d/MARKETPLACE_ID.svg)](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID)
 
-> **Note:** Replace MARKETPLACE_ID in the badge URLs above with the actual plugin ID after publishing to JetBrains Marketplace.
+> **Distribution status:** zMyBatis is not yet published to JetBrains Marketplace and no public GitHub Release is available. Marketplace publication and repository consolidation are still in progress.
 
 <!-- Plugin description -->
 <p><b>zMyBatis</b> is a JetBrains IDE plugin that lets you execute MyBatis mapper queries directly from XML mapper files or Java/Kotlin annotation-based mappers — without leaving the IDE.</p>
@@ -78,18 +76,13 @@
 
 ## 🚀 Installation
 
-- **From the IDE:**
+zMyBatis is currently a development build. There is no Marketplace listing or public release artifact yet.
 
-  <kbd>Settings/Preferences</kbd> → <kbd>Plugins</kbd> → <kbd>Marketplace</kbd> → Search for **"zMyBatis"** → <kbd>Install</kbd>
+For development/testing, build the plugin from this repository and install the generated distribution through:
 
-- **From JetBrains Marketplace:**
+<kbd>Settings/Preferences</kbd> → <kbd>Plugins</kbd> → <kbd>⚙️</kbd> → <kbd>Install plugin from disk…</kbd>
 
-  Go to [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID) and click <kbd>Install to …</kbd>.
-
-- **Manual install:**
-
-  Download the [latest release](https://github.com/luceat-lux-vestra/zMyBatis-public/releases/latest) and install via
-  <kbd>Settings/Preferences</kbd> → <kbd>Plugins</kbd> → <kbd>⚙️</kbd> → <kbd>Install plugin from disk…</kbd>
+Marketplace and public-release installation instructions will be added only after those channels are actually published.
 
 ## 🏗 How It Works
 
