@@ -36,12 +36,13 @@ jobs:
           from pathlib import Path
           import re
 
-          pin = re.compile(r"^\s*uses:\s*[^#\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
+          pin = re.compile(r"^uses:\s*[^#\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
           failures = []
           for path in sorted(Path('.github/workflows').glob('*.y*ml')):
               for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
-                  if 'uses:' in line and not pin.match(line):
-                      failures.append(f"{path}:{number}: {line.strip()}")
+                  stripped = line.strip()
+                  if stripped.startswith('uses:') and not pin.match(stripped):
+                      failures.append(f"{path}:{number}: {stripped}")
           if failures:
               raise SystemExit("Unpinned workflow actions:\n" + "\n".join(failures))
 
