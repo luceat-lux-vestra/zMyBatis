@@ -53,6 +53,21 @@
 <h2>Current Semantic Boundary</h2>
 <p>The current implementation combines MyBatis parsing with zMyBatis-owned parameter extraction, compatibility transformations, OGNL behavior, and literal rendering. Do not interpret this plugin as a drop-in reproduction of an application's MyBatis/JDBC runtime, custom TypeHandlers, provider methods, or every dialect-specific binding rule.</p>
 
+<h2>Settings</h2>
+<p>Configure via <b>Settings -> Tools -> zMyBatis</b>:</p>
+
+<table>
+  <tr><th>Category</th><th>Option</th><th>Description</th></tr>
+  <tr><td><b>Execution and Output</b></td><td>SQL Preview</td><td>Show a preview dialog to review resolved SQL before execution</td></tr>
+  <tr><td></td><td>Auto-format SQL</td><td>Reformat resolved SQL using IntelliJ's built-in SQL code style</td></tr>
+  <tr><td></td><td>Copy to Clipboard</td><td>Auto-copy the final SQL to clipboard after execution</td></tr>
+  <tr><td></td><td>Console Session Policy</td><td>REUSE (default) — reuse existing console per mapper file / NEW_EACH — always open a new console</td></tr>
+  <tr><td><b>Parameter Dialog</b></td><td>Remember Last Inputs</td><td>Pre-fill the parameter dialog with last-used values per Mapper statement</td></tr>
+  <tr><td></td><td>Empty Input Handling</td><td>NULL (default) — blank fields bind as SQL NULL / EMPTY_STRING — blank fields bind as empty string</td></tr>
+  <tr><td><b>Parsing Engine</b></td><td>Strict OGNL Mode</td><td>Propagate OGNL evaluation errors immediately instead of silently skipping blocks</td></tr>
+  <tr><td></td><td>Ignore Unknown Tags</td><td>Strip unrecognised/custom XML tags before parsing (preserves their text content)</td></tr>
+</table>
+
 <h2>Requirements</h2>
 <ul>
   <li><b>IntelliJ IDEA Ultimate</b>, <b>DataGrip</b>, or a compatible JetBrains IDE with database tooling</li>
