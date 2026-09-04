@@ -45,6 +45,7 @@ PERMISSION_ENTRY = re.compile(r"^(?P<scope>[A-Za-z0-9_-]+):\s*(?P<level>read|wri
 WRITE_ALL = re.compile(r"^permissions:\s*write-all\s*$")
 READ_ALL = re.compile(r"^permissions:\s*read-all\s*$")
 EMPTY_PERMISSIONS = re.compile(r"^permissions:\s*\{\s*\}\s*$")
+INLINE_PERMISSIONS = re.compile(r"^permissions:\s*\{(?P<body>.*)\}\s*$")
 JOB_HEADER = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 CHECKOUT_USES = re.compile(r"^\s*uses:\s*actions/checkout@")
 PERSIST_CREDENTIALS_FALSE = re.compile(r"^\s*persist-credentials:\s*false\s*$")
@@ -149,6 +150,17 @@ def extract_write_grants(lines: list[str], header_key: str) -> tuple[set[str], b
             return set(WRITE_SCOPES), True, False
         if READ_ALL.match(stripped) or EMPTY_PERMISSIONS.match(stripped):
             return set(), True, False
+        inline = INLINE_PERMISSIONS.match(stripped)
+        if inline:
+            grants: set[str] = set()
+            unsupported = False
+            for item in inline.group("body").split(","):
+                match = PERMISSION_ENTRY.match(item.strip())
+                if not match or match.group("scope") not in KNOWN_PERMISSION_SCOPES:
+                    unsupported = True
+                elif match.group("level") == "write":
+                    grants.add(match.group("scope"))
+            return grants, True, unsupported
         if stripped.startswith("permissions:"):
             return set(), True, True
     return set(), False, False
