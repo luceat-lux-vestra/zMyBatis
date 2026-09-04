@@ -5,7 +5,7 @@
 This covers two distinct things, because they have different blast radii:
 
 1. **The zMyBatis plugin itself** - SQL rendering/parameter-binding fidelity, DataGrip action isolation, datasource/schema/session identity, and execution safety. See [AGENTS.md](AGENTS.md) sections 2, 3, 5, and 7 for the specific correctness/safety invariants a vulnerability here would violate (for example: `#{...}` being rendered as unescaped `${...}`-style interpolation, or SQL executing against the wrong datasource).
-2. **This repository's CI/GitHub Actions configuration** - the trust-boundary rules in `.github/workflow-policy/` and `.github/merge-gate-policy.yml` (immutable action pinning, no privileged job executing pull-request-authored source, `persist-credentials: false` on read-only jobs). A bypass of one of these rules, or a gap the automated checks don't catch, is a valid report even though it never touches the plugin's own code.
+2. **This repository's CI/GitHub Actions configuration** - the trust-boundary rules in `.github/workflow-policy/` and `.github/merge-gate-policy.yml` (immutable action pinning, no privileged job checking out source in a `pull_request` workflow, `persist-credentials: false` on read-only jobs). A bypass of one of these rules, or a gap the automated checks don't catch, is a valid report even though it never touches the plugin's own code.
 
 ## Reporting a vulnerability
 
@@ -24,12 +24,12 @@ We do not currently offer a bug bounty. We will acknowledge reports and work wit
 
 ## What this repository does and does not have
 
-This is a private repository without GitHub Advanced Security, so Dependabot security alerts, the dependency graph, and secret scanning alerts are not available here (see `.github/dependabot.yml`'s own note on this). Dependency version-update PRs still run; a maintainer reviewing one should not assume an absent security alert means an absent vulnerability.
+Dependabot version-update PRs are enabled and grouped weekly as a maintenance/noise policy. Do not infer the availability or absence of any dependency, alert, or advanced-security capability from this configuration; a maintainer reviewing an update should not assume an absent security alert means an absent vulnerability.
 
 CI-side mitigations that do exist and are enforced automatically (see `.github/merge-gate-policy.yml` and `AGENTS.md` section 9):
 
 - every third-party GitHub Action is pinned to an immutable commit SHA;
-- no job that checks out pull-request-authored source holds a write-scoped `GITHUB_TOKEN` permission;
+- no job that checks out source in a `pull_request` workflow holds a write-scoped `GITHUB_TOKEN` permission;
 - validation jobs disable credential persistence on checkout;
 - the workflow static-analysis gate (`actionlint`, `zizmor`, and this repository's own trust-boundary checks) is fail-closed and covered by deterministic negative controls, not just documentation.
 

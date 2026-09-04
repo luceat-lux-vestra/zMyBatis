@@ -14,7 +14,10 @@ trustworthy if every entry:
 3. comes from a workflow whose `pull_request:` trigger has no
    `paths`/`paths-ignore` filter (a required check that some PRs never
    trigger is the same footgun as (2), just triggered by the diff instead
-   of a condition).
+   of a condition); and
+4. comes from a workflow that actually declares a `pull_request` trigger.
+   A missing trigger otherwise fails open: the required context simply stops
+   being produced on PRs while the drift checker still passes.
 
 This does not use a YAML parser, matching the rest of `.github/workflow-
 policy/` - see check_trust_boundary.py's module docstring for why.
@@ -29,7 +32,12 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check_trust_boundary import Job, indent_of, split_jobs  # noqa: E402
+from check_trust_boundary import (  # noqa: E402
+    Job,
+    indent_of,
+    workflow_has_pull_request_trigger,
+    split_jobs,
+)
 
 ENTRY_PATTERN = re.compile(
     r"^\s*-\s*context:\s*(?P<context>.+?)\s*\n"
@@ -130,7 +138,12 @@ def check_entry(entry: dict[str, str], repo_root: Path) -> list[str]:
             "context must run unconditionally on every pull request"
         )
 
-    if pull_request_trigger_has_path_filter(all_lines):
+    if not workflow_has_pull_request_trigger(all_lines):
+        failures.append(
+            f"'{context}': {produced_by} has no pull_request trigger - a required context "
+            "must be produced for every pull request"
+        )
+    elif pull_request_trigger_has_path_filter(all_lines):
         failures.append(
             f"'{context}': {produced_by}'s pull_request trigger has a paths/paths-ignore "
             "filter - a required context must not be skippable by diff shape"

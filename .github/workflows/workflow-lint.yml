@@ -1,8 +1,8 @@
 # Fail-closed static security review of this repository's own GitHub Actions workflows.
 #
 # Exists so the hardening applied in build.yml/run-ui-tests.yml cannot silently regress: an
-# unpinned action, a re-introduced write permission alongside a PR-head checkout, a checkout
-# that stops disabling persist-credentials, or an actionlint/zizmor-detectable issue fails this
+# unpinned action, a re-introduced write permission alongside source checkout in a PR workflow, a
+# checkout that stops disabling persist-credentials, or an actionlint/zizmor-detectable issue fails this
 # job and therefore fails the pull request. `.github/workflow-policy/test_policy.py` proves this
 # is actually fail-closed by running every check below against deterministic bad/good fixtures
 # and asserting the expected pass/fail outcome - see that file and `.github/merge-gate-policy.yml`.

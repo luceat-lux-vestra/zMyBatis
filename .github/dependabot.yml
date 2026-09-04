@@ -1,12 +1,10 @@
 # Dependabot configuration:
 # https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
 #
-# This is a private repository without GitHub Advanced Security, so Dependabot security alerts,
-# the dependency graph, and dependency review are not available here - only version-update PRs
-# run. That is a deliberate reason to keep those PRs reviewable rather than a reason to relax
-# their review: daily, one-PR-per-dependency updates were pure noise with no compensating signal
-# from GHAS, so this reconciles to weekly, grouped updates instead. This intentionally does not
-# copy stale PR #55's Dependabot config verbatim - see the rationale below and issue #70.
+# Dependabot updates are grouped and scheduled weekly as a maintenance/noise policy: one PR per
+# dependency per day was unnecessarily noisy for this repository. This setting does not make any
+# claim about dependency-graph, alert, or advanced-security availability. This intentionally does
+# not copy stale PR #55's Dependabot config verbatim - see the rationale below and issue #70.
 
 version: 2
 updates:

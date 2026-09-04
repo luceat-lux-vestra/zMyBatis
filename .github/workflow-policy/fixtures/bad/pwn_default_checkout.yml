@@ -1,0 +1,25 @@
+# Negative fixture (R1): a write-scoped job in a pull_request workflow uses
+# the default actions/checkout ref. The synthetic merge ref still contains
+# PR-controlled code, so ref spelling cannot make privileged execution safe.
+
+name: bad-default-checkout
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Run inspection
+        run: echo "executes PR-controlled source with a writable token"

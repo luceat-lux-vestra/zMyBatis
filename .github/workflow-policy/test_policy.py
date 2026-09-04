@@ -3,8 +3,11 @@
 
 Every tool wired into `.github/workflows/workflow-lint.yml` (the two local
 checkers here, plus actionlint and zizmor) must reject the known-bad
-fixtures under `fixtures/bad/` and accept both the known-good fixture under
-`fixtures/good/` and this repository's real workflows. Without this file,
+fixtures under `fixtures/bad/` according to the invariant each fixture
+targets, and accept both the known-good fixture under `fixtures/good/` and
+this repository's real workflows. Some repository-specific fixtures are
+intentionally local-checker-only because zizmor does not model those rules.
+Without this file,
 someone could quietly weaken or delete a rule and `workflow-lint.yml` would
 keep passing - a fail-open regression in the thing that is supposed to be
 the fail-closed gate.
@@ -28,6 +31,11 @@ POLICY_DIR = Path(__file__).resolve().parent
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 BAD_FIXTURES = sorted((POLICY_DIR / "fixtures" / "bad").glob("*.yml"))
 GOOD_FIXTURES = sorted((POLICY_DIR / "fixtures" / "good").glob("*.yml"))
+REQUIRED_CONTEXTS_BAD_FIXTURE = POLICY_DIR / "fixtures" / "bad" / "required_contexts_missing_pull_request"
+# These fixtures target repository-specific invariants that zizmor does not
+# model (for example, a write-scoped checkout in a PR workflow using the
+# default synthetic merge ref). The local checker remains the required oracle.
+ZIZMOR_LOCAL_ONLY_FIXTURES = {"pwn_default_checkout.yml"}
 
 # Must match the hardcoded file lists in workflow-lint.yml's
 # "Require sound permission/credential trust boundaries", "actionlint", and
@@ -101,6 +109,18 @@ def check_pins_and_boundary(failures: list[str]) -> None:
     ])
     expect("check_required_contexts.py accepts merge-gate-policy.yml as-is", rc == 0, failures)
 
+    fixture_policy = REQUIRED_CONTEXTS_BAD_FIXTURE / "merge-gate-policy.yml"
+    fixture_root = REQUIRED_CONTEXTS_BAD_FIXTURE
+    rc = run([
+        "python3", str(POLICY_DIR / "check_required_contexts.py"),
+        str(fixture_policy), str(fixture_root),
+    ])
+    expect(
+        "check_required_contexts.py rejects a producing workflow with no pull_request trigger",
+        rc != 0,
+        failures,
+    )
+
 
 def check_actionlint(failures: list[str]) -> None:
     actionlint = resolve_actionlint()
@@ -124,6 +144,8 @@ def check_zizmor(failures: list[str]) -> None:
         return
 
     for fixture in BAD_FIXTURES:
+        if fixture.name in ZIZMOR_LOCAL_ONLY_FIXTURES:
+            continue
         rc = run(["zizmor", "--offline", "--persona", "regular", str(fixture)])
         expect(f"zizmor rejects {fixture.relative_to(REPO_ROOT)}", rc != 0, failures)
 

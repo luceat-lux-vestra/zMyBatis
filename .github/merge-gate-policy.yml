@@ -10,11 +10,12 @@
 # does not cover JetBrains Marketplace publication/version-provenance policy, which belongs to
 # the separate release-provenance track (issue #56) once that lands.
 #
-# Applying this to live branch protection is a separate, explicit repository-admin action (a
-# `gh api` call against /repos/.../rulesets or branch protection) - this file documents the
-# intended policy; it does not itself change GitHub settings. `main` currently has no branch
-# protection configured live; reconciling that is tracked as follow-up under #59, not silently
-# done by this file's presence.
+# Live authority (read back 2026-09-05): repository ruleset `main protection` (ID `22024054`) is
+# active on the default branch. It enforces deletion and non-fast-forward protection, required
+# linear history, squash-only PR merges, strict required status checks, required thread
+# resolution, and no bypass actors. Its required contexts are exactly the five entries below.
+# Keep this checked-in policy aligned with that ruleset; do not create a duplicate follow-up for
+# protection that already exists.
 
 version: 1
 
@@ -70,9 +71,11 @@ trustBoundary:
   rules:
     - id: R1
       statement: >-
-        A job must never hold contents:write, checks:write, or pull-requests:write while
-        checking out github.event.pull_request.head.* (PR-authored source rather than the
-        synthetic merge ref).
+        A job in a pull_request workflow must never hold contents:write, checks:write, or
+        pull-requests:write while checking out source. The default synthetic merge ref still
+        contains PR-controlled code, so this invariant is about privileged PR code execution,
+        not one particular checkout ref spelling. Jobs explicitly excluded from pull_request
+        execution must keep that exclusion auditable.
     - id: R2
       statement: >-
         A job holding none of contents:write, checks:write, or pull-requests:write (a
