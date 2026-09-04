@@ -1,5 +1,5 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
-<idea-plugin>
+<idea-plugin url="https://github.com/luceat-lux-vestra/zMyBatis">
     <id>com.algorist.zMyBatis</id>
     <name>zMyBatis</name>
     <vendor url="https://github.com/luceat-lux-vestra" email="heathkimdev@gmail.com">algorist</vendor>
