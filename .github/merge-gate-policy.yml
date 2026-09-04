@@ -30,10 +30,9 @@ mergeStrategy:
 # status-check context, and that job must run unconditionally for every ordinary pull_request
 # targeting main - no `if:` guard that can skip it, and no `paths`/`paths-ignore` filter on that
 # workflow's `pull_request:` trigger. A required context that can legitimately not run leaves an
-# indefinitely pending, unmergeable PR. `check_required_contexts.py` enforces the first part of
-# that invariant (the job actually exists and matches); the absence of path filters on `build.yml`
-# and `workflow-lint.yml`'s `pull_request:` triggers is verified by inspection and must be kept
-# true by any future edit to those triggers.
+# indefinitely pending, unmergeable PR. `check_required_contexts.py` enforces the workflow/job
+# existence, trigger-presence, name, and unconditional-run parts of that invariant; it also rejects
+# path filters on required producers. Keep those trigger properties true on every future edit.
 requiredStatusChecks:
   - context: Build
     producedBy: .github/workflows/build.yml
