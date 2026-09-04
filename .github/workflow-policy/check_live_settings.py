@@ -221,8 +221,15 @@ def check_workflow(policy: dict[str, Any], text: str) -> list[str]:
         failures.append(f"workflow cron: expected {[policy.get('scheduleCron')]!r}, got {crons!r}")
     if re.search(r"(?m)^\s*continue-on-error\s*:", text):
         failures.append("workflow must not use continue-on-error")
-    if "python3 .github/workflow-policy/check_live_settings.py .github/merge-gate-policy.yml" not in text:
-        failures.append("workflow must invoke the canonical live-settings checker")
+    if re.search(r"(?m)^\s*if\s*:", text):
+        failures.append("workflow must not gate the audit behind any if condition")
+    invocation = (
+        "python3 .github/workflow-policy/check_live_settings.py "
+        ".github/merge-gate-policy.yml"
+    )
+    run_lines = re.findall(r"(?m)^\s*run:\s*(.+?)\s*$", text)
+    if invocation not in run_lines:
+        failures.append("workflow must execute the canonical live-settings checker directly")
     return failures
 
 
