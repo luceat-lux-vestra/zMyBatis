@@ -1,38 +1,28 @@
 # Canonical repository / merge-gate policy for zMyBatis-private.
 #
-# This is the single source of truth for "what must be true before main advances." It exists
-# because a required-status-check list configured only in GitHub's branch protection UI has no
-# history, no review, and can silently drift from what the workflows actually produce (a renamed
-# job quietly stops being required; a job gated behind a path filter becomes a permanently
-# pending check on PRs that don't touch that path). This file is version-controlled instead.
+# This is the single source of truth for what must be true before main advances.
+# Scope: repository/CI trust-boundary policy owned by issue #59. JetBrains
+# Marketplace publication/version provenance remains owned by issue #56.
 #
-# Scope: this is the repository/CI trust-boundary policy owned by issue #59. It intentionally
-# does not cover JetBrains Marketplace publication/version-provenance policy, which belongs to
-# the separate release-provenance track (issue #56) once that lands.
+# Live authority (read back 2026-09-05): repository ruleset `main protection`
+# (ID `22024054`) is active on the default branch. It enforces deletion and
+# non-fast-forward protection, required linear history, squash-only PR merges,
+# strict required status checks, required thread resolution, and no bypass
+# actors. Its required contexts are exactly the five entries below.
 #
-# Live authority (read back 2026-09-05): repository ruleset `main protection` (ID `22024054`) is
-# active on the default branch. It enforces deletion and non-fast-forward protection, required
-# linear history, squash-only PR merges, strict required status checks, required thread
-# resolution, and no bypass actors. Its required contexts are exactly the five entries below.
-# Keep this checked-in policy aligned with that ruleset; do not create a duplicate follow-up for
-# protection that already exists.
+# Keep this checked-in policy aligned with the live ruleset.
 
 version: 1
 
 mergeStrategy:
-  # squash-only: the linear history and single-commit-per-PR shape is what makes "review applies
-  # to one exact final HEAD SHA" (see AGENTS.md) a meaningful, checkable statement after merge.
   allowed: [ squash ]
   requireBranchUpToDate: true
   requireLinearHistory: true
 
-# Every entry here must name a job whose `name:` (not its job id) is what GitHub records as the
-# status-check context, and that job must run unconditionally for every ordinary pull_request
-# targeting main - no `if:` guard that can skip it, and no `paths`/`paths-ignore` filter on that
-# workflow's `pull_request:` trigger. A required context that can legitimately not run leaves an
-# indefinitely pending, unmergeable PR. `check_required_contexts.py` enforces the workflow/job
-# existence, trigger-presence, name, and unconditional-run parts of that invariant; it also rejects
-# path filters on required producers. Keep those trigger properties true on every future edit.
+# Every required context must be produced unconditionally for every ordinary
+# pull_request targeting main. `check_required_contexts.py` verifies workflow/job
+# existence, pull_request trigger presence, job name, absence of job-level if,
+# and absence of paths/paths-ignore filters on required producers.
 requiredStatusChecks:
   - context: Build
     producedBy: .github/workflows/build.yml
@@ -50,54 +40,57 @@ requiredStatusChecks:
     producedBy: .github/workflows/workflow-lint.yml
     job: lint
 
-# Jobs that are deliberately NOT required contexts, and why - so a reviewer doesn't "fix" this
-# file by adding them.
 excludedFromRequiredChecks:
   - job: build.yml#releaseDraft
     reason: >-
-      Guarded by `if: github.event_name != 'pull_request'`; it never runs on a pull_request
-      event, so it can never satisfy a required-check gate for a PR.
+      Guarded by an exact event-name exclusion from pull_request execution;
+      it never satisfies a PR merge gate.
   - workflow: release.yml
     reason: >-
-      Runs only on a published GitHub Release event, never on a pull_request; publication
-      trust-boundary policy for this workflow belongs to the release-provenance track (#56).
+      Runs only on a published GitHub Release event. Publication trust-boundary
+      policy belongs to the separate release-provenance track (#56).
 
-# Trust-boundary invariants this repository's workflows must maintain. Enforced automatically by
-# `.github/workflow-policy/check_trust_boundary.py` (rules R1/R2) and by zizmor, wired into
-# `.github/workflows/workflow-lint.yml`; restated here so the policy itself - not just its
-# enforcement mechanism - is discoverable in one place.
+# Enforced by `.github/workflow-policy/check_trust_boundary.py`.
 trustBoundary:
   rules:
+    - id: R0
+      statement: >-
+        Every scanned job must have an explicit effective `permissions`
+        declaration, inherited from an explicit workflow-level declaration or
+        provided as a job-level override. Missing declarations must never fall
+        back to mutable repository/organization GITHUB_TOKEN defaults.
     - id: R1
       statement: >-
-        A job in a pull_request workflow must never hold contents:write, checks:write, or
-        pull-requests:write while checking out source. The default synthetic merge ref still
-        contains PR-controlled code, so this invariant is about privileged PR code execution,
-        not one particular checkout ref spelling. Jobs explicitly excluded from pull_request
-        execution must keep that exclusion auditable.
+        A job in a pull_request workflow must never hold any effective
+        `*:write` permission while checking out source, unless the job is
+        provably excluded from pull_request execution by one exact audited
+        event-name condition. The default synthetic merge ref contains
+        PR-controlled code, so the invariant is about code provenance rather
+        than one checkout ref spelling.
     - id: R2
       statement: >-
-        A job holding none of contents:write, checks:write, or pull-requests:write (a
-        "validation job") must set persist-credentials:false on every actions/checkout step.
+        A job with no effective write permission must set
+        `persist-credentials:false` on every actions/checkout step.
     - id: pins
       statement: >-
-        Every `uses:` reference must be pinned to a full 40-hex-character commit SHA, never a
-        floating tag or branch.
+        Every `uses:` reference must be pinned to a full 40-hex-character
+        commit SHA, never a floating tag or branch.
   workflowDefault: contents:read
+  explicitPermissionsRequired: true
   privilegedJobs:
     - workflow: .github/workflows/build.yml
       job: releaseDraft
       permissions: [ contents:write ]
       justification: >-
-        Creates/replaces a draft GitHub Release from main after all validation jobs pass.
-        Never runs for a pull_request event (see excludedFromRequiredChecks above).
+        Creates/replaces a draft GitHub Release from main after validation
+        succeeds. It is exactly excluded from pull_request execution.
     - workflow: .github/workflows/release.yml
       job: release
       permissions: [ contents:write, pull-requests:write ]
       justification: >-
-        Publishes to JetBrains Marketplace and opens the post-release changelog PR, triggered
-        only by a maintainer publishing a GitHub Release. Governed by the release-provenance
-        track (#56), not this policy's requiredStatusChecks.
+        Publishes to JetBrains Marketplace and opens the post-release changelog
+        PR. This workflow is governed by release-provenance issue #56 and is
+        intentionally outside this PR's validation-workflow hardening scope.
 
 labels:
   taxonomy:
@@ -106,6 +99,5 @@ labels:
     - name: github_actions
       description: Dependabot update to a GitHub Actions workflow dependency.
   automation: >-
-    Applied by .github/dependabot.yml's `labels:` keys on the PRs it opens. No other
-    label-creation automation exists in this repository; do not assume a workflow will
-    create a label on demand unless it is listed here.
+    Applied by `.github/dependabot.yml` to Dependabot PRs. No other
+    label-creation automation exists in this repository.

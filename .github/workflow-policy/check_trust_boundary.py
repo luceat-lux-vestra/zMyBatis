@@ -1,38 +1,26 @@
 #!/usr/bin/env python3
 """Fail-closed trust-boundary checks for GitHub Actions workflows.
 
-This intentionally does not try to be a general-purpose GitHub Actions linter
-(actionlint and zizmor already cover schema/expression/known-audit territory
-- see workflow-lint.yml). It enforces two narrow, concrete rules that match
-this repository's actual incident class: a validation job that checks out
-pull-request-authored source while holding a mutating token.
+This checker enforces repository-specific invariants that complement actionlint
+and zizmor.
 
-Rule R1 - no privileged execution of untrusted PR content:
-    A job in a `pull_request` workflow must not both (a) hold `contents: write`,
-    `checks: write`, or `pull-requests: write` (via a job-level `permissions:`
-    block, or a workflow-level block the job does not override) and (b) check
-    out source. The default synthetic merge ref still contains PR-controlled
-    changes, so the invariant is about privileged PR code execution rather than
-    one `github.event.pull_request.head.*` spelling. Jobs explicitly excluded
-    from PR execution must keep that exclusion auditable.
+R0 - explicit token authority:
+    Every scanned job must have an explicit effective `permissions` declaration,
+    either at workflow level or as a job-level override. Missing declarations
+    must not fall back to mutable repository/organization defaults.
 
-Rule R2 - explicit credential hygiene for validation jobs:
-    A job that holds none of `contents: write`, `checks: write`, or
-    `pull-requests: write` (i.e. it is read-only / a "validation job") must
-    set `persist-credentials: false` on every `actions/checkout` step it
-    uses. Relying on the default (`true`) leaves a usable repository token
-    sitting in `.git/config` for the rest of that job for no reason.
+R1 - no privileged execution of PR-controlled source:
+    In a workflow that runs on `pull_request`, a job that checks out source must
+    not hold any effective `*: write` permission unless the job is provably
+    excluded from pull-request execution by one exact, audited event-name
+    condition. The default synthetic merge ref still contains PR-controlled
+    changes, so this rule is about code provenance rather than one ref spelling.
 
-This is line/regex based, matching the style of check_pins.py, rather than a
-full YAML parser: workflow files in this repository are hand-authored with
-consistent indentation and no anchors/aliases, and a regex-based checker is
-easier to audit for correctness than a YAML+GitHub-Actions semantic model
-would be. Block membership is always decided by comparing indentation levels
-relative to the enclosing header line, never by an assumed absolute column,
-so the same logic works for both the workflow-level and job-level blocks.
+R2 - explicit checkout credential hygiene:
+    A job with no effective write permission must set
+    `persist-credentials: false` on every `actions/checkout` step.
 
-Usage:
-    check_trust_boundary.py <workflow-file-or-directory> [...]
+Unsupported permission syntax fails closed.
 """
 from __future__ import annotations
 
@@ -41,16 +29,19 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-PERMISSION_ENTRY = re.compile(r"^(?P<scope>[A-Za-z0-9_-]+):\s*(?P<level>read|write|none)\s*$")
+PERMISSION_ENTRY = re.compile(
+    r"^(?P<scope>[A-Za-z0-9_-]+):\s*(?P<level>read|write|none)\s*$"
+)
 WRITE_ALL = re.compile(r"^permissions:\s*write-all\s*$")
 READ_ALL = re.compile(r"^permissions:\s*read-all\s*$")
 EMPTY_PERMISSIONS = re.compile(r"^permissions:\s*\{\s*\}\s*$")
 INLINE_PERMISSIONS = re.compile(r"^permissions:\s*\{(?P<body>.*)\}\s*$")
 JOB_HEADER = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 CHECKOUT_USES = re.compile(r"^\s*uses:\s*actions/checkout@")
-PERSIST_CREDENTIALS_FALSE = re.compile(r"^\s*persist-credentials:\s*false\s*$")
+PERSIST_CREDENTIALS_FALSE = re.compile(
+    r"^\s*persist-credentials:\s*false\s*$"
+)
 
-WRITE_SCOPES = {"contents", "checks", "pull-requests"}
 KNOWN_PERMISSION_SCOPES = {
     "actions",
     "attestations",
@@ -68,6 +59,13 @@ KNOWN_PERMISSION_SCOPES = {
     "statuses",
 }
 
+SAFE_PR_EXCLUSIONS = {
+    "github.event_name != 'pull_request'",
+    'github.event_name != "pull_request"',
+    "github.event_name == 'push'",
+    'github.event_name == "push"',
+}
+
 
 def indent_of(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
@@ -79,18 +77,15 @@ class Job:
     start: int
     lines: list[str] = field(default_factory=list)
 
-    def text(self) -> str:
-        return "\n".join(self.lines)
+
+@dataclass(frozen=True)
+class PermissionState:
+    write_grants: frozenset[str]
+    declared: bool
+    unsupported: bool
 
 
 def split_jobs(lines: list[str]) -> list[Job]:
-    """Split a workflow file into its top-level `jobs:` blocks.
-
-    Assumes the conventional two-space job indentation used throughout this
-    repository's workflows (`jobs:` at column 0, `  <job-id>:` at column 2,
-    job body indented further). `job.lines` holds everything strictly inside
-    the job (not the `  <job-id>:` header line itself).
-    """
     jobs: list[Job] = []
     in_jobs = False
     current: Job | None = None
@@ -115,179 +110,251 @@ def split_jobs(lines: list[str]) -> list[Job]:
     return jobs
 
 
-def extract_write_grants(lines: list[str], header_key: str) -> tuple[set[str], bool, bool]:
-    """Find `<header_key>:` in `lines` and collect write-scope children.
+def parse_permission_value(scope: str, level: str) -> tuple[set[str], bool]:
+    if scope not in KNOWN_PERMISSION_SCOPES:
+        return set(), True
+    return ({scope} if level == "write" else set()), False
 
-    Block membership is decided purely by indentation relative to the header
-    line, so this works whether the header sits at column 0 (workflow-level
-    `permissions:`) or deeper (job-level `permissions:`).
 
-    Returns (grants, declared, unsupported). `unsupported` is true for a
-    permission form this narrow checker cannot interpret safely; callers must
-    fail closed instead of treating it as read-only.
-    """
+def extract_permissions(lines: list[str], header_key: str) -> PermissionState:
     for index, line in enumerate(lines):
         stripped = line.strip()
+
         if stripped == f"{header_key}:":
             header_indent = indent_of(line)
-            grants: set[str] = set()
+            write_grants: set[str] = set()
             unsupported = False
-            for child in lines[index + 1:]:
+            saw_entry = False
+
+            for child in lines[index + 1 :]:
                 if not child.strip():
                     continue
                 if indent_of(child) <= header_indent:
                     break
+                if child.strip().startswith("#"):
+                    continue
+
+                saw_entry = True
                 match = PERMISSION_ENTRY.match(child.strip())
-                if match:
-                    if match.group("scope") not in KNOWN_PERMISSION_SCOPES:
-                        unsupported = True
-                    elif match.group("level") == "write":
-                        grants.add(match.group("scope"))
-                elif not child.strip().startswith("#"):
+                if not match:
                     unsupported = True
-            return grants, True, unsupported
+                    continue
+
+                grants, bad = parse_permission_value(
+                    match.group("scope"), match.group("level")
+                )
+                write_grants.update(grants)
+                unsupported |= bad
+
+            if not saw_entry:
+                unsupported = True
+            return PermissionState(
+                frozenset(write_grants), declared=True, unsupported=unsupported
+            )
+
         if WRITE_ALL.match(stripped):
-            return set(WRITE_SCOPES), True, False
+            return PermissionState(
+                frozenset(KNOWN_PERMISSION_SCOPES),
+                declared=True,
+                unsupported=False,
+            )
+
         if READ_ALL.match(stripped) or EMPTY_PERMISSIONS.match(stripped):
-            return set(), True, False
+            return PermissionState(frozenset(), declared=True, unsupported=False)
+
         inline = INLINE_PERMISSIONS.match(stripped)
         if inline:
-            grants: set[str] = set()
+            body = inline.group("body").strip()
+            if not body:
+                return PermissionState(
+                    frozenset(), declared=True, unsupported=False
+                )
+
+            write_grants: set[str] = set()
             unsupported = False
-            for item in inline.group("body").split(","):
+            for item in body.split(","):
                 match = PERMISSION_ENTRY.match(item.strip())
-                if not match or match.group("scope") not in KNOWN_PERMISSION_SCOPES:
+                if not match:
                     unsupported = True
-                elif match.group("level") == "write":
-                    grants.add(match.group("scope"))
-            return grants, True, unsupported
+                    continue
+                grants, bad = parse_permission_value(
+                    match.group("scope"), match.group("level")
+                )
+                write_grants.update(grants)
+                unsupported |= bad
+
+            return PermissionState(
+                frozenset(write_grants), declared=True, unsupported=unsupported
+            )
+
         if stripped.startswith("permissions:"):
-            return set(), True, True
-    return set(), False, False
+            return PermissionState(
+                frozenset(), declared=True, unsupported=True
+            )
+
+    return PermissionState(frozenset(), declared=False, unsupported=False)
 
 
-def workflow_level_permissions(lines: list[str]) -> tuple[set[str], bool]:
+def workflow_level_permissions(lines: list[str]) -> PermissionState:
     try:
-        jobs_index = next(i for i, line in enumerate(lines) if line.rstrip() == "jobs:")
+        jobs_index = next(
+            i for i, line in enumerate(lines) if line.rstrip() == "jobs:"
+        )
     except StopIteration:
         jobs_index = len(lines)
-    grants, _declared, unsupported = extract_write_grants(lines[:jobs_index], "permissions")
-    return grants, unsupported
+    return extract_permissions(lines[:jobs_index], "permissions")
 
 
-def job_permissions(job: Job, workflow_defaults: set[str]) -> tuple[set[str], bool]:
-    grants, declared, unsupported = extract_write_grants(job.lines, "permissions")
-    return (grants if declared else set(workflow_defaults)), unsupported
+def effective_job_permissions(
+    job: Job, workflow_permissions: PermissionState
+) -> PermissionState:
+    job_permissions = extract_permissions(job.lines, "permissions")
+    if job_permissions.declared:
+        return job_permissions
+    return workflow_permissions
 
 
 def workflow_has_pull_request_trigger(lines: list[str]) -> bool:
-    """Recognize block, scalar, and flow-sequence PR trigger forms."""
+    """Recognize block, scalar, and flow-sequence pull_request trigger forms."""
     for index, line in enumerate(lines):
         stripped = line.strip()
-        if indent_of(line) == 0 and re.match(r"^on:\s*(?:pull_request|\[.*\bpull_request\b.*\])\s*$", stripped):
+        if indent_of(line) == 0 and re.match(
+            r"^on:\s*(?:pull_request|\[.*\bpull_request\b.*\])\s*$",
+            stripped,
+        ):
             return True
+
         if indent_of(line) == 0 and stripped == "on:":
-            for child in lines[index + 1:]:
+            for child in lines[index + 1 :]:
                 if child.strip() and indent_of(child) == 0:
                     break
                 if child.strip() in {"pull_request:", "pull_request"}:
                     return True
+
     return False
 
 
+def normalize_if_expression(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped.startswith("if:"):
+        return None
+
+    expression = stripped[len("if:") :].strip()
+    if expression.startswith("${{") and expression.endswith("}}"):
+        expression = expression[3:-2].strip()
+    return expression
+
+
 def job_excluded_from_pull_request(job: Job) -> bool:
-    """Recognize only explicit, auditable conditions that cannot run on PRs."""
-    baseline = next((indent_of(line) for line in job.lines if line.strip()), None)
+    """Accept only exact event-name exclusions; compound expressions fail closed."""
+    baseline = next(
+        (indent_of(line) for line in job.lines if line.strip()), None
+    )
     if baseline is None:
         return False
-    return any(
-        re.search(
-            r"github\.event_name\s*(?:!=|==)\s*['\"](?:pull_request|push)['\"]",
-            line,
-        )
-        and (
-            "github.event_name != 'pull_request'" in line
-            or 'github.event_name != \"pull_request\"' in line
-            or "github.event_name == 'push'" in line
-            or 'github.event_name == "push"' in line
-        )
+
+    job_level_if = [
+        normalize_if_expression(line)
         for line in job.lines
         if line.strip().startswith("if:") and indent_of(line) == baseline
-    )
+    ]
+    expressions = [expr for expr in job_level_if if expr is not None]
+
+    return len(expressions) == 1 and expressions[0] in SAFE_PR_EXCLUSIONS
 
 
 def checkout_steps_missing_persist_credentials_false(job: Job) -> list[int]:
-    """Return 1-based line numbers (within the file) of `actions/checkout`
-    steps in this job that never set `persist-credentials: false`.
-    """
     offending: list[int] = []
     lines = job.lines
+
     for i, line in enumerate(lines):
         if not CHECKOUT_USES.search(line):
             continue
-        step_indent = indent_of(line)
+
+        uses_indent = indent_of(line)
         found = False
-        for later in lines[i + 1:]:
+        for later in lines[i + 1 :]:
             if not later.strip():
                 continue
-            if indent_of(later) < step_indent:
+            if indent_of(later) < uses_indent:
                 break
             if PERSIST_CREDENTIALS_FALSE.match(later):
                 found = True
                 break
+
         if not found:
             offending.append(job.start + i + 1)
+
     return offending
 
 
 def check_file(path: Path) -> list[str]:
     all_lines = path.read_text(encoding="utf-8").splitlines()
-    defaults, workflow_permissions_unsupported = workflow_level_permissions(all_lines)
+    workflow_permissions = workflow_level_permissions(all_lines)
     failures: list[str] = []
 
-    if workflow_permissions_unsupported:
+    if workflow_permissions.unsupported:
         failures.append(
-            f"{path}: workflow-level permissions use unsupported syntax; refusing to interpret "
-            "it as read-only"
+            f"{path}: workflow-level permissions use unsupported syntax; "
+            "refusing to infer token authority"
         )
 
-    # Re-split with absolute line numbers so `job.start` yields file-accurate
-    # line numbers in diagnostics.
-    jobs_index = next((i for i, line in enumerate(all_lines) if line.rstrip() == "jobs:"), None)
+    jobs_index = next(
+        (i for i, line in enumerate(all_lines) if line.rstrip() == "jobs:"),
+        None,
+    )
     if jobs_index is None:
         return failures
+
+    is_pr_workflow = workflow_has_pull_request_trigger(all_lines)
+
     for job in split_jobs(all_lines):
-        # Locate this job's header line to know its absolute start offset.
         header_line = f"  {job.name}:"
         job.start = next(
-            i for i in range(jobs_index, len(all_lines)) if all_lines[i].rstrip() == header_line
+            i
+            for i in range(jobs_index, len(all_lines))
+            if all_lines[i].rstrip() == header_line
         )
 
-        grants, job_permissions_unsupported = job_permissions(job, defaults)
-        if job_permissions_unsupported:
+        effective = effective_job_permissions(job, workflow_permissions)
+
+        if not effective.declared:
             failures.append(
-                f"{path}: job '{job.name}' uses unsupported permissions syntax; refusing to "
-                "interpret it as read-only"
+                f"{path}: job '{job.name}' has no explicit effective permissions "
+                "declaration; refusing to fall back to repository/organization "
+                "GITHUB_TOKEN defaults (R0)"
             )
-        privileged = grants & WRITE_SCOPES
+            continue
+
+        if effective.unsupported:
+            failures.append(
+                f"{path}: job '{job.name}' uses unsupported effective permissions "
+                "syntax; refusing to infer token authority"
+            )
+            continue
+
+        write_grants = set(effective.write_grants)
+        has_checkout = any(CHECKOUT_USES.search(line) for line in job.lines)
 
         if (
-            privileged
-            and workflow_has_pull_request_trigger(all_lines)
+            write_grants
+            and is_pr_workflow
             and not job_excluded_from_pull_request(job)
-            and any(CHECKOUT_USES.search(line) for line in job.lines)
+            and has_checkout
         ):
             failures.append(
-                f"{path}: job '{job.name}' holds write permission(s) {sorted(privileged)} "
-                "and checks out source in a pull_request workflow - a privileged job must "
-                "never execute PR-controlled code (R1)"
+                f"{path}: job '{job.name}' holds write permission(s) "
+                f"{sorted(write_grants)} and checks out source in a pull_request "
+                "workflow - privileged PR-controlled execution is forbidden (R1)"
             )
 
-        if not privileged:
-            for line_number in checkout_steps_missing_persist_credentials_false(job):
+        if not write_grants:
+            for line_number in checkout_steps_missing_persist_credentials_false(
+                job
+            ):
                 failures.append(
-                    f"{path}:{line_number}: job '{job.name}' is a validation job (no write "
-                    "permissions) but its actions/checkout step does not set "
+                    f"{path}:{line_number}: job '{job.name}' has no write "
+                    "permissions but its actions/checkout step does not set "
                     "persist-credentials: false (R2)"
                 )
 
@@ -308,12 +375,18 @@ def iter_workflow_files(targets: list[str]) -> list[Path]:
 
 def main(argv: list[str]) -> int:
     if not argv:
-        print("usage: check_trust_boundary.py <workflow-file-or-directory> [...]", file=sys.stderr)
+        print(
+            "usage: check_trust_boundary.py <workflow-file-or-directory> [...]",
+            file=sys.stderr,
+        )
         return 2
 
     files = iter_workflow_files(argv)
     if not files:
-        print(f"no workflow files found under: {' '.join(argv)}", file=sys.stderr)
+        print(
+            f"no workflow files found under: {' '.join(argv)}",
+            file=sys.stderr,
+        )
         return 2
 
     failures: list[str] = []
@@ -326,7 +399,10 @@ def main(argv: list[str]) -> int:
             print(f"  {failure}")
         return 1
 
-    print(f"OK: {len(files)} file(s) satisfy the R1/R2 trust-boundary rules.")
+    print(
+        f"OK: {len(files)} file(s) satisfy the R0/R1/R2 "
+        "trust-boundary rules."
+    )
     return 0
 
 

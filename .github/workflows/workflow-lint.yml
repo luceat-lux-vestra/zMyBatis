@@ -1,11 +1,11 @@
 # Fail-closed static security review of this repository's own GitHub Actions workflows.
 #
 # Exists so the hardening applied in build.yml/run-ui-tests.yml cannot silently regress: an
-# unpinned action, a re-introduced write permission alongside source checkout in a PR workflow, a
-# checkout that stops disabling persist-credentials, or an actionlint/zizmor-detectable issue fails this
-# job and therefore fails the pull request. `.github/workflow-policy/test_policy.py` proves this
-# is actually fail-closed by running every check below against deterministic bad/good fixtures
-# and asserting the expected pass/fail outcome - see that file and `.github/merge-gate-policy.yml`.
+# unpinned action, implicit token authority, a re-introduced write permission alongside source
+# checkout in a PR workflow, a checkout that stops disabling persist-credentials, or an
+# actionlint/zizmor-detectable issue fails this job and therefore fails the pull request.
+# `.github/workflow-policy/test_policy.py` proves this is actually fail-closed by running every
+# check below against deterministic bad/good fixtures and asserting the expected pass/fail outcome.
 #
 # Scope note: `release.yml` is intentionally NOT scanned by the actionlint/zizmor/trust-boundary
 # steps below (the three paths hardcoded into each step - keep them in sync if that set ever
@@ -16,18 +16,13 @@
 # immutable action pinning is a zero-risk, zero-behavior-change check it already satisfies.
 #
 # - check_pins.py:              immutable action pin enforcement (every workflow file).
-# - check_trust_boundary.py:    this repo's own R1/R2 permission/credential trust-boundary
-#                               rules (validation workflows only - see scope note above).
+# - check_trust_boundary.py:    this repo's R0/R1/R2 explicit-authority, privileged-PR-execution,
+#                               and checkout-credential rules (validation workflows only).
 # - check_required_contexts.py: proves merge-gate-policy.yml's requiredStatusChecks still match
-#                               real job names/conditions, so the canonical policy cannot
-#                               silently drift from what the workflows actually produce.
-# - actionlint:              workflow schema, expression, and (via bundled shellcheck)
-#                            inline-script checks (validation workflows only). The binary is
-#                            downloaded from a pinned release version and verified against its
-#                            published sha256 checksum before being executed - not a GitHub
-#                            Action, so this is this file's equivalent of SHA-pinning one.
-# - zizmor:                  GitHub Actions security audits, pinned by exact PyPI version and
-#                            run offline, no token (validation workflows only).
+#                               real job names/conditions and pull_request producers.
+# - actionlint:                 workflow schema, expression, and shellcheck coverage.
+# - zizmor:                     GitHub Actions security audits, pinned by exact PyPI version and
+#                               run offline, no token (validation workflows only).
 #
 # Do not add `continue-on-error` here, and do not narrow a check's inputs to make a finding go
 # away - fix the workflow instead, or make the release.yml exclusion above explicit if a new

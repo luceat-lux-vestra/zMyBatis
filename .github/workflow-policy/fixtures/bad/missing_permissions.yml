@@ -1,0 +1,16 @@
+# Negative fixture (R0): no workflow-level or job-level permissions.
+# The checker must not fall back to repository/organization token defaults.
+
+name: bad-missing-permissions
+on:
+  pull_request:
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
