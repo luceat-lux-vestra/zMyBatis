@@ -1,0 +1,40 @@
+# Recurring fail-closed readback of the live GitHub repository/ruleset state.
+#
+# This workflow intentionally has no pull_request or workflow_dispatch trigger:
+# it may use a dedicated token with enough ruleset visibility to prove that
+# bypass_actors is empty, so only reviewed main and GitHub's scheduler may run it.
+#
+# If the ordinary GITHUB_TOKEN cannot see bypass_actors, the checker fails with
+# insufficient evidence. Configure the repository secret
+# LIVE_SETTINGS_AUDIT_TOKEN with the minimum ruleset write visibility required
+# by GitHub to expose bypass_actors; the workflow itself performs GET requests only.
+name: Repository Settings Drift
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '23 2 * * *'
+
+concurrency:
+  group: repository-settings-drift
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Audit repository settings
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Compare live settings with checked-in policy
+        env:
+          LIVE_SETTINGS_AUDIT_TOKEN: ${{ secrets.LIVE_SETTINGS_AUDIT_TOKEN || github.token }}
+        run: python3 .github/workflow-policy/check_live_settings.py .github/merge-gate-policy.yml
