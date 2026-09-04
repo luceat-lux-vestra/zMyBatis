@@ -1,6 +1,6 @@
 # zMyBatis — Dynamic SQL Runner with Parameters
 
-> **Distribution status:** zMyBatis is published on [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30447-zmybatis--mybatis-dynamic-sql-runner-with-parameters-mybatis). No public GitHub Release artifact is currently published. Repository consolidation is still in progress.
+> **Distribution status:** zMyBatis is published on [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30447-zmybatis--mybatis-dynamic-sql-runner-with-parameters-mybatis). This GitHub repository is the canonical public source repository. No public GitHub Release artifact is currently published.
 
 <!-- Plugin description -->
 <p><b>zMyBatis</b> is a JetBrains IDE plugin that lets you execute MyBatis mapper queries directly from XML mapper files or supported Java annotation-based mappers — without leaving the IDE.</p>
@@ -95,9 +95,13 @@ For development/testing, a locally built distribution can also be installed thro
 
 ## Distribution
 
+- **Canonical source:** https://github.com/luceat-lux-vestra/zMyBatis
 - **JetBrains Marketplace:** published.
-- **GitHub Releases:** no public release artifacts are currently published from the public repository.
-- **Repository consolidation:** still in progress.
+- **GitHub Releases:** no public release artifacts are currently published from this repository.
+
+## License
+
+zMyBatis is licensed under the [Apache License 2.0](./LICENSE).
 
 ## Changelog
 
