@@ -185,6 +185,9 @@ def workflow_has_pull_request_trigger(lines: list[str]) -> bool:
 
 def job_excluded_from_pull_request(job: Job) -> bool:
     """Recognize only explicit, auditable conditions that cannot run on PRs."""
+    baseline = next((indent_of(line) for line in job.lines if line.strip()), None)
+    if baseline is None:
+        return False
     return any(
         re.search(
             r"github\.event_name\s*(?:!=|==)\s*['\"](?:pull_request|push)['\"]",
@@ -197,7 +200,7 @@ def job_excluded_from_pull_request(job: Job) -> bool:
             or 'github.event_name == "push"' in line
         )
         for line in job.lines
-        if line.strip().startswith("if:")
+        if line.strip().startswith("if:") and indent_of(line) == baseline
     )
 
 
