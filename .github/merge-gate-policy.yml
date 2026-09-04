@@ -1,4 +1,4 @@
-# Canonical repository / merge-gate policy for zMyBatis-private.
+# Canonical repository / merge-gate policy for zMyBatis.
 #
 # This is the single source of truth for what must be true before main advances.
 # Scope: repository/CI trust-boundary policy owned by issue #59. JetBrains
