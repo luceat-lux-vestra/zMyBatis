@@ -127,6 +127,23 @@ class LiveSettingsPolicyTest(unittest.TestCase):
         text = WORKFLOW_PATH.read_text(encoding="utf-8").replace("23 2 * * *", "23 2 * * 1", 1)
         self.assertTrue(live.check_workflow(POLICY, text))
 
+    def test_if_guard_disabling_audit_is_rejected(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8").replace(
+            "    name: Audit repository settings\n",
+            "    name: Audit repository settings\n    if: false\n",
+            1,
+        )
+        self.assertTrue(live.check_workflow(POLICY, text))
+
+    def test_checker_name_in_comment_does_not_count_as_execution(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8").replace(
+            "        run: python3 .github/workflow-policy/check_live_settings.py .github/merge-gate-policy.yml",
+            "        # python3 .github/workflow-policy/check_live_settings.py .github/merge-gate-policy.yml\n"
+            "        run: echo skipped",
+            1,
+        )
+        self.assertTrue(live.check_workflow(POLICY, text))
+
 
 if __name__ == "__main__":
     unittest.main()
