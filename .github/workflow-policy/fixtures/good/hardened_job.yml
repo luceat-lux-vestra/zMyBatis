@@ -1,0 +1,42 @@
+# Positive control: mirrors the fixed `inspectCode` job shape (checks out
+# the PR-authored head commit, but holds no write permissions and disables
+# credential persistence). Every checker in this directory must accept this
+# file cleanly - if a rule ever starts failing it, the rule has a false
+# positive, not this fixture a real problem. See test_policy.py.
+
+name: good-hardened-job
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  inspectCode:
+    name: Inspect code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run inspection
+        run: echo "inspects PR-authored code with a read-only token"
+
+  releaseDraft:
+    name: Release draft
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Create Release Draft
+        run: echo "mutation job - write permission is explicit and justified"
