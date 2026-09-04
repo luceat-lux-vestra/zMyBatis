@@ -1,0 +1,22 @@
+# Negative fixture (R1): a compound condition mentioning push is not a
+# sound exclusion from pull_request execution.
+
+name: bad-compound-pr-condition
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  mutate:
+    name: Mutate
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false

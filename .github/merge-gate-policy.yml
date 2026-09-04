@@ -1,0 +1,103 @@
+# Canonical repository / merge-gate policy for zMyBatis.
+#
+# This is the single source of truth for what must be true before main advances.
+# Scope: repository/CI trust-boundary policy owned by issue #59. JetBrains
+# Marketplace publication/version provenance remains owned by issue #56.
+#
+# Live authority (read back 2026-09-05): repository ruleset `main protection`
+# (ID `22024054`) is active on the default branch. It enforces deletion and
+# non-fast-forward protection, required linear history, squash-only PR merges,
+# strict required status checks, required thread resolution, and no bypass
+# actors. Its required contexts are exactly the five entries below.
+#
+# Keep this checked-in policy aligned with the live ruleset.
+
+version: 1
+
+mergeStrategy:
+  allowed: [ squash ]
+  requireBranchUpToDate: true
+  requireLinearHistory: true
+
+# Every required context must be produced unconditionally for every ordinary
+# pull_request targeting main. `check_required_contexts.py` verifies workflow/job
+# existence, pull_request trigger presence, job name, absence of job-level if,
+# and absence of paths/paths-ignore filters on required producers.
+requiredStatusChecks:
+  - context: Build
+    producedBy: .github/workflows/build.yml
+    job: build
+  - context: Test
+    producedBy: .github/workflows/build.yml
+    job: test
+  - context: Inspect code
+    producedBy: .github/workflows/build.yml
+    job: inspectCode
+  - context: Verify plugin
+    producedBy: .github/workflows/build.yml
+    job: verify
+  - context: Lint workflows
+    producedBy: .github/workflows/workflow-lint.yml
+    job: lint
+
+excludedFromRequiredChecks:
+  - job: build.yml#releaseDraft
+    reason: >-
+      Guarded by an exact event-name exclusion from pull_request execution;
+      it never satisfies a PR merge gate.
+  - workflow: release.yml
+    reason: >-
+      Runs only on a published GitHub Release event. Publication trust-boundary
+      policy belongs to the separate release-provenance track (#56).
+
+# Enforced by `.github/workflow-policy/check_trust_boundary.py`.
+trustBoundary:
+  rules:
+    - id: R0
+      statement: >-
+        Every scanned job must have an explicit effective `permissions`
+        declaration, inherited from an explicit workflow-level declaration or
+        provided as a job-level override. Missing declarations must never fall
+        back to mutable repository/organization GITHUB_TOKEN defaults.
+    - id: R1
+      statement: >-
+        A job in a pull_request workflow must never hold any effective
+        `*:write` permission while checking out source, unless the job is
+        provably excluded from pull_request execution by one exact audited
+        event-name condition. The default synthetic merge ref contains
+        PR-controlled code, so the invariant is about code provenance rather
+        than one checkout ref spelling.
+    - id: R2
+      statement: >-
+        A job with no effective write permission must set
+        `persist-credentials:false` on every actions/checkout step.
+    - id: pins
+      statement: >-
+        Every `uses:` reference must be pinned to a full 40-hex-character
+        commit SHA, never a floating tag or branch.
+  workflowDefault: contents:read
+  explicitPermissionsRequired: true
+  privilegedJobs:
+    - workflow: .github/workflows/build.yml
+      job: releaseDraft
+      permissions: [ contents:write ]
+      justification: >-
+        Creates/replaces a draft GitHub Release from main after validation
+        succeeds. It is exactly excluded from pull_request execution.
+    - workflow: .github/workflows/release.yml
+      job: release
+      permissions: [ contents:write, pull-requests:write ]
+      justification: >-
+        Publishes to JetBrains Marketplace and opens the post-release changelog
+        PR. This workflow is governed by release-provenance issue #56 and is
+        intentionally outside this PR's validation-workflow hardening scope.
+
+labels:
+  taxonomy:
+    - name: dependencies
+      description: Automated dependency update (Dependabot).
+    - name: github_actions
+      description: Dependabot update to a GitHub Actions workflow dependency.
+  automation: >-
+    Applied by `.github/dependabot.yml` to Dependabot PRs. No other
+    label-creation automation exists in this repository.

@@ -1,0 +1,26 @@
+# Negative fixture (R1): a job holds a write permission while checking out
+# the pull-request-authored head commit. This is the exact pattern the
+# Qodana `Inspect code` job had before this policy existed. It must never
+# validate clean - see test_policy.py.
+
+name: bad-pwn-request
+on:
+  pull_request:
+
+jobs:
+  inspectCode:
+    name: Inspect code
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      checks: write
+      pull-requests: write
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Run inspection
+        run: echo "inspects PR-authored code with a writable token"

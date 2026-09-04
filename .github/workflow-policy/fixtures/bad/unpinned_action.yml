@@ -1,0 +1,21 @@
+# Negative fixture (immutable action pin enforcement): `uses:` references a
+# floating tag instead of a 40-hex-character commit SHA. A tag can be moved
+# by the action owner (or anyone who compromises that account) to point at
+# different, unreviewed code. Must never validate clean - see test_policy.py.
+
+name: bad-unpinned-action
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false

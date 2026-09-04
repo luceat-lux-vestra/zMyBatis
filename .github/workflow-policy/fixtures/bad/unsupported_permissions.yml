@@ -1,0 +1,19 @@
+# Negative fixture: unsupported permission syntax must fail closed rather than
+# being treated as read-only by the trust-boundary checker.
+
+name: bad-unsupported-permissions
+on:
+  pull_request:
+
+permissions:
+  contents: ${{ vars.CONTENT_PERMISSION }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false

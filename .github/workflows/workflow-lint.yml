@@ -1,0 +1,95 @@
+# Fail-closed static security review of this repository's own GitHub Actions workflows.
+#
+# Exists so the hardening applied in build.yml/run-ui-tests.yml cannot silently regress: an
+# unpinned action, implicit token authority, a re-introduced write permission alongside source
+# checkout in a PR workflow, a checkout that stops disabling persist-credentials, or an
+# actionlint/zizmor-detectable issue fails this job and therefore fails the pull request.
+# `.github/workflow-policy/test_policy.py` proves this is actually fail-closed by running every
+# check below against deterministic bad/good fixtures and asserting the expected pass/fail outcome.
+#
+# Scope note: `release.yml` is intentionally NOT scanned by the actionlint/zizmor/trust-boundary
+# steps below (the three paths hardcoded into each step - keep them in sync if that set ever
+# changes). It is Marketplace-publication-adjacent and has known, real zizmor findings
+# (template-injection, cache-poisoning) whose fix is explicitly owned by the separate release-
+# provenance PR (tracked under issue #56), not this repository/CI trust-boundary slice - see
+# AGENTS.md and merge-gate-policy.yml. release.yml IS covered by check_pins.py below, since
+# immutable action pinning is a zero-risk, zero-behavior-change check it already satisfies.
+#
+# - check_pins.py:              immutable action pin enforcement (every workflow file).
+# - check_trust_boundary.py:    this repo's R0/R1/R2 explicit-authority, privileged-PR-execution,
+#                               and checkout-credential rules (validation workflows only).
+# - check_required_contexts.py: proves merge-gate-policy.yml's requiredStatusChecks still match
+#                               real job names/conditions and pull_request producers.
+# - actionlint:                 workflow schema, expression, and shellcheck coverage.
+# - zizmor:                     GitHub Actions security audits, pinned by exact PyPI version and
+#                               run offline, no token (validation workflows only).
+#
+# Do not add `continue-on-error` here, and do not narrow a check's inputs to make a finding go
+# away - fix the workflow instead, or make the release.yml exclusion above explicit if a new
+# file genuinely belongs on that side of the boundary.
+
+name: Workflow Lint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Require immutable action pins
+        run: python3 .github/workflow-policy/check_pins.py .github/workflows
+
+      - name: Require sound permission/credential trust boundaries
+        run: |
+          python3 .github/workflow-policy/check_trust_boundary.py \
+            .github/workflows/build.yml \
+            .github/workflows/run-ui-tests.yml \
+            .github/workflows/workflow-lint.yml
+
+      - name: Require merge-gate-policy.yml to match its producing workflows
+        run: python3 .github/workflow-policy/check_required_contexts.py .github/merge-gate-policy.yml .
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          curl -sSLO https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint_1.7.12_linux_amd64.tar.gz" | sha256sum -c -
+          tar -xzf actionlint_1.7.12_linux_amd64.tar.gz actionlint
+
+      - name: actionlint
+        run: |
+          ./actionlint \
+            .github/workflows/build.yml \
+            .github/workflows/run-ui-tests.yml \
+            .github/workflows/workflow-lint.yml
+
+      # pipx is preinstalled on the GitHub-hosted ubuntu runner images.
+      - name: zizmor
+        run: |
+          set -euo pipefail
+          pipx install "zizmor==1.30.0"
+          zizmor --offline --persona regular \
+            .github/workflows/build.yml \
+            .github/workflows/run-ui-tests.yml \
+            .github/workflows/workflow-lint.yml
+
+      - name: Prove the checks above are actually fail-closed
+        run: python3 .github/workflow-policy/test_policy.py
