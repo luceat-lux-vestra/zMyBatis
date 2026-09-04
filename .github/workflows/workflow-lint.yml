@@ -8,21 +8,26 @@
 # check below against deterministic bad/good fixtures and asserting the expected pass/fail outcome.
 #
 # Scope note: `release.yml` is intentionally NOT scanned by the actionlint/zizmor/trust-boundary
-# steps below (the three paths hardcoded into each step - keep them in sync if that set ever
-# changes). It is Marketplace-publication-adjacent and has known, real zizmor findings
+# steps below. It is Marketplace-publication-adjacent and has known, real zizmor findings
 # (template-injection, cache-poisoning) whose fix is explicitly owned by the separate release-
 # provenance PR (tracked under issue #56), not this repository/CI trust-boundary slice - see
 # AGENTS.md and merge-gate-policy.yml. release.yml IS covered by check_pins.py below, since
 # immutable action pinning is a zero-risk, zero-behavior-change check it already satisfies.
 #
+# repository-settings-drift.yml is scanned here even though it never runs on PRs. That keeps
+# its explicit authority, checkout hygiene, syntax/security posture, and recurring-ownership
+# contract protected by the required `Lint workflows` PR gate.
+#
 # - check_pins.py:              immutable action pin enforcement (every workflow file).
 # - check_trust_boundary.py:    this repo's R0/R1/R2 explicit-authority, privileged-PR-execution,
-#                               and checkout-credential rules (validation workflows only).
+#                               and checkout-credential rules (validation/audit workflows).
 # - check_required_contexts.py: proves merge-gate-policy.yml's requiredStatusChecks still match
 #                               real job names/conditions and pull_request producers.
+# - check_live_settings.py:     statically proves recurring drift-audit ownership/triggers and,
+#                               when run by repository-settings-drift.yml, compares live settings.
 # - actionlint:                 workflow schema, expression, and shellcheck coverage.
 # - zizmor:                     GitHub Actions security audits, pinned by exact PyPI version and
-#                               run offline, no token (validation workflows only).
+#                               run offline, no token (validation/audit workflows).
 #
 # Do not add `continue-on-error` here, and do not narrow a check's inputs to make a finding go
 # away - fix the workflow instead, or make the release.yml exclusion above explicit if a new
@@ -62,10 +67,14 @@ jobs:
           python3 .github/workflow-policy/check_trust_boundary.py \
             .github/workflows/build.yml \
             .github/workflows/run-ui-tests.yml \
-            .github/workflows/workflow-lint.yml
+            .github/workflows/workflow-lint.yml \
+            .github/workflows/repository-settings-drift.yml
 
       - name: Require merge-gate-policy.yml to match its producing workflows
         run: python3 .github/workflow-policy/check_required_contexts.py .github/merge-gate-policy.yml .
+
+      - name: Require recurring live-settings audit ownership
+        run: python3 .github/workflow-policy/check_live_settings.py .github/merge-gate-policy.yml --static-only
 
       - name: Install actionlint
         run: |
@@ -79,7 +88,8 @@ jobs:
           ./actionlint \
             .github/workflows/build.yml \
             .github/workflows/run-ui-tests.yml \
-            .github/workflows/workflow-lint.yml
+            .github/workflows/workflow-lint.yml \
+            .github/workflows/repository-settings-drift.yml
 
       # pipx is preinstalled on the GitHub-hosted ubuntu runner images.
       - name: zizmor
@@ -89,7 +99,10 @@ jobs:
           zizmor --offline --persona regular \
             .github/workflows/build.yml \
             .github/workflows/run-ui-tests.yml \
-            .github/workflows/workflow-lint.yml
+            .github/workflows/workflow-lint.yml \
+            .github/workflows/repository-settings-drift.yml
 
       - name: Prove the checks above are actually fail-closed
-        run: python3 .github/workflow-policy/test_policy.py
+        run: |
+          python3 .github/workflow-policy/test_policy.py
+          python3 .github/workflow-policy/test_live_settings.py
