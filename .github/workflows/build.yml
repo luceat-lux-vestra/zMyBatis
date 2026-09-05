@@ -218,7 +218,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          EPOCH="$(git show -s --format=%ct \"$GITHUB_SHA\")"
+          EPOCH="$(git show -s --format=%ct "$GITHUB_SHA")"
           VERSION="$(date -u -d "@$EPOCH" +'%y.%m.%d.%H%M%S')"
           python3 .github/workflow-policy/check_release_provenance.py tag "$VERSION"
           RELEASE_NOTE="./build/tmp/release_note.txt"
