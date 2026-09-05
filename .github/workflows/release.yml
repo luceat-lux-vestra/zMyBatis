@@ -1,19 +1,21 @@
-# GitHub Actions Workflow created for handling the release process based on the draft release prepared with the Build workflow.
-# Running the publishPlugin task requires all the following secrets to be provided: PUBLISH_TOKEN, PRIVATE_KEY, PRIVATE_KEY_PASSWORD, CERTIFICATE_CHAIN.
-# See https://plugins.jetbrains.com/docs/intellij/plugin-signing.html for more information.
+# Publishes only a GitHub Release whose tag resolves to reviewed main history.
+# The protected release tag is the single effective plugin version used for build,
+# plugin metadata, artifact validation, signing, Marketplace publication, and release asset identity.
 
 name: Release
+
 on:
   release:
     types: [ prereleased, released ]
+
+permissions:
+  contents: write
 
 jobs:
   release:
     name: Publish Plugin
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
+    timeout-minutes: 60
     steps:
       - name: Maximize Build Space
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
@@ -21,10 +23,22 @@ jobs:
           tool-cache: false
           large-packages: false
 
-      - name: Fetch Sources
+      - name: Fetch tagged sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove release tag provenance
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          python3 .github/workflow-policy/check_release_provenance.py tag "$RELEASE_TAG"
+          TAG_COMMIT="$(git rev-parse HEAD)"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$TAG_COMMIT" origin/main
 
       - name: Setup Java
         uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6
@@ -37,53 +51,43 @@ jobs:
         with:
           cache-read-only: true
 
-      - name: Patch Changelog
-        if: ${{ github.event.release.body != '' }}
+      - name: Build and verify exact release version
         env:
-          CHANGELOG: ${{ github.event.release.body }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          RELEASE_NOTE="./build/tmp/release_note.txt"
-          mkdir -p "$(dirname "$RELEASE_NOTE")"
-          echo "$CHANGELOG" > $RELEASE_NOTE
+          set -euo pipefail
+          ./gradlew clean buildPlugin verifyPlugin -PpluginVersion="$RELEASE_TAG"
+          python3 .github/workflow-policy/check_release_provenance.py artifact "$RELEASE_TAG" build/distributions
 
-          ./gradlew patchChangelog --release-note-file=$RELEASE_NOTE
+      - name: Capture validated release asset
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t ARCHIVES < <(find build/distributions -maxdepth 1 -type f -name '*.zip' -print)
+          test "${#ARCHIVES[@]}" -eq 1
+          echo "path=${ARCHIVES[0]}" >> "$GITHUB_OUTPUT"
 
-      - name: Publish Plugin
+      - name: Sign exact release version
         env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
+        run: ./gradlew signPlugin -PpluginVersion="$RELEASE_TAG"
+
+      - name: Publish exact release version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
           PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
           CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
-        run: ./gradlew publishPlugin
+        run: ./gradlew publishPlugin -PpluginVersion="$RELEASE_TAG"
 
-      - name: Upload Release Asset
+      - name: Upload validated release asset
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.event.release.tag_name }} ./build/distributions/*
-
-      - name: Create Pull Request
-        if: ${{ github.event.release.body != '' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          BRANCH="changelog-update-$VERSION"
-          LABEL="release changelog"
-
-          git config user.email "action@github.com"
-          git config user.name "GitHub Action"
-
-          git checkout -b $BRANCH
-          git commit -am "Changelog update - $VERSION"
-          git push --set-upstream origin $BRANCH
-
-          gh label create "$LABEL" \
-            --description "Pull requests with release changelog update" \
-            --force \
-            || true
-
-          gh pr create \
-            --title "Changelog update - \`$VERSION\`" \
-            --body "Current pull request contains patched \`CHANGELOG.md\` file for the \`$VERSION\` version." \
-            --label "$LABEL" \
-            --head $BRANCH
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_ASSET: ${{ steps.artifact.outputs.path }}
+        run: gh release upload "$RELEASE_TAG" "$RELEASE_ASSET"
