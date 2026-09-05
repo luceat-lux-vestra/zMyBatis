@@ -8,8 +8,8 @@ object ParameterExtractor {
      * Result of parameter extraction.
      *
      * @param params      All unique root parameter names found in the SQL/XML.
-     * @param objectParams Subset of [params] that are accessed via dot-notation (e.g. `user` in `#{user.name}`).
-     *                     These require an object/map value; simple scalars are not enough.
+     * @param objectParams Subset of [params] that require structured input because they are accessed
+     *                     through a property/index path (e.g. `user` in `#{user.name}` or `items[0]`).
      */
     data class ExtractionResult(
         val params: List<String>,
@@ -26,7 +26,7 @@ object ParameterExtractor {
      */
     fun extractResult(xmlContent: String): ExtractionResult {
         val params = mutableSetOf<String>()
-        val objectParams = mutableSetOf<String>()   // root params accessed via dot-notation
+        val objectParams = mutableSetOf<String>()   // root params requiring structured input
         val boundVariables = mutableSetOf<String>()
 
         // 0a. Find <bind name="..."> variables to exclude them
@@ -56,9 +56,12 @@ object ParameterExtractor {
         ).matcher(xmlContent)
         while (foreachCollectionMatcher.find()) {
             val collectionName = foreachCollectionMatcher.group(1).trim()
-            val rootName = collectionName.substringBefore(".")
+            val rootName = rootName(collectionName)
             if (isValidParam(rootName)) {
                 params.add(rootName)
+                if (requiresStructuredInput(collectionName)) {
+                    objectParams.add(rootName)
+                }
             }
         }
 
@@ -66,12 +69,11 @@ object ParameterExtractor {
         val sqlParamMatcher = Pattern.compile("[#$]\\{\\s*([^},]+)[^}]*}").matcher(xmlContent)
         while (sqlParamMatcher.find()) {
             val paramName = sqlParamMatcher.group(1).trim()
-            // Strip nested property access: "user.id" -> "user"
-            val rootName = paramName.substringBefore(".")
+            // Strip nested property/index access: "user.id" -> "user", "items[0].id" -> "items"
+            val rootName = rootName(paramName)
             if (isValidParam(rootName) && !boundVariables.contains(rootName)) {
                 params.add(rootName)
-                // If the original expression contains a dot, this root is an object-accessed param
-                if (paramName.contains('.')) {
+                if (requiresStructuredInput(paramName)) {
                     objectParams.add(rootName)
                 }
             }
@@ -97,7 +99,7 @@ object ParameterExtractor {
     /**
      * Result of OGNL expression parsing.
      * @param roots      All valid root parameter names found.
-     * @param objectRoots Subset of [roots] accessed via dot-notation (e.g. `user` in `user.name != null`).
+     * @param objectRoots Subset of [roots] accessed through property/index navigation.
      */
     private data class OgnlResult(val roots: Set<String>, val objectRoots: Set<String>)
 
@@ -111,11 +113,10 @@ object ParameterExtractor {
         // Remove @ClassName@staticField/method references  e.g. @com.example.Status@ACTIVE
         val noStatic = noStrings.replace(Regex("@[^@]+@[a-zA-Z_][a-zA-Z0-9_]*"), " ")
 
-        // Match identifier paths like "user", "user.name", "user.address.city", "list.size()"
-        // group(0) = full match (e.g. "user.name"), group(1) = root only (e.g. "user")
-        // If group(0) != group(1), the path had dot-notation → root is an object-accessed param.
+        // Match identifier paths, including safe numeric list indexes, such as
+        // "user.name", "items[0].id", "user.addresses[1].city", or "list.size()".
         val pathMatcher = Pattern.compile(
-            "\\b([a-zA-Z_][a-zA-Z0-9_]*)(?:\\.[a-zA-Z_][a-zA-Z0-9_]*(?:\\(\\))?)*"
+            "\\b([a-zA-Z_][a-zA-Z0-9_]*)(?:(?:\\[\\d+])|(?:\\.[a-zA-Z_][a-zA-Z0-9_]*(?:\\(\\))?))*"
         ).matcher(noStatic)
 
         while (pathMatcher.find()) {
@@ -123,7 +124,7 @@ object ParameterExtractor {
             val fullPath = pathMatcher.group(0)
             if (!OGNL_KEYWORDS.contains(root) && isValidParam(root)) {
                 roots.add(root)
-                if (fullPath != root) {   // dot-notation detected
+                if (fullPath != root) {
                     objectRoots.add(root)
                 }
             }
@@ -131,6 +132,12 @@ object ParameterExtractor {
 
         return OgnlResult(roots, objectRoots)
     }
+
+    private fun rootName(path: String): String =
+        path.substringBefore('.').substringBefore('[')
+
+    private fun requiresStructuredInput(path: String): Boolean =
+        path.contains('.') || path.contains('[')
 
     private fun isValidParam(name: String): Boolean {
         return name.isNotBlank() &&

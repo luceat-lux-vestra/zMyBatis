@@ -200,22 +200,52 @@ object MyBatisEvaluator {
     /**
      * Resolves a property path against the parameter map.
      *
-     * Tries two strategies:
-     *  1. **Flat key** — look up `propName` as-is (e.g. `"cust.id"` → `params["cust.id"]`)
-     *  2. **Nested navigation** — split by `.` and walk nested Maps
-     *     (e.g. `"user.name"` → `params["user"]["name"]`)
+     * Resolution keeps exact-key compatibility before interpreting navigation:
+     *  1. **Full flat key** — look up `propName` as-is (e.g. `"cust.id"` → `params["cust.id"]`).
+     *  2. **Exact segment key** — each nested Map may still contain a literal key such as `"items[0]"`.
+     *  3. **Nested navigation** — walk nested Maps and numeric List/Array indexes
+     *     (e.g. `"user.name"` → `params["user"]["name"]`,
+     *     `"items[0].id"` → `params["items"][0]["id"]`).
      */
     private fun resolveProperty(params: Map<String, Any?>, propName: String): Any? {
         if (params.containsKey(propName)) return params[propName]
 
-        val segments = propName.split(".")
         var current: Any? = params
-        for (segment in segments) {
+        for (segment in propName.split(".")) {
+            current = resolvePropertySegment(current, segment) ?: return null
+        }
+        return current
+    }
+
+    private fun resolvePropertySegment(target: Any?, segment: String): Any? {
+        if (target is Map<*, *> && target.containsKey(segment)) {
+            return target[segment]
+        }
+
+        var current = target
+        var cursor = 0
+        val firstBracket = segment.indexOf('[')
+        val propertyName = if (firstBracket >= 0) segment.substring(0, firstBracket) else segment
+
+        if (propertyName.isNotEmpty()) {
+            current = (current as? Map<*, *>)?.get(propertyName) ?: return null
+            cursor = propertyName.length
+        }
+
+        while (cursor < segment.length) {
+            if (segment[cursor] != '[') return null
+            val close = segment.indexOf(']', cursor + 1)
+            if (close < 0) return null
+            val index = segment.substring(cursor + 1, close).toIntOrNull() ?: return null
+            if (index < 0) return null
             current = when (current) {
-                is Map<*, *> -> current[segment]
+                is List<*> -> current.getOrNull(index)
+                is Array<*> -> current.getOrNull(index)
                 else -> return null
             }
+            cursor = close + 1
         }
+
         return current
     }
 
