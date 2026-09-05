@@ -18,10 +18,7 @@ WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "repository-settings-drift
 POLICY_TEXT = POLICY_PATH.read_text(encoding="utf-8")
 POLICY = live.parse_policy(POLICY_TEXT)
 
-PUBLICATION_PATTERN = (
-    "refs/tags/[0-9][0-9].[0-9][0-9].[0-9][0-9]."
-    "[0-9][0-9][0-9][0-9][0-9][0-9]"
-)
+PUBLICATION_PATTERN = "refs/tags/v*"
 
 GOOD_REPOSITORY = {
     "visibility": "public",
