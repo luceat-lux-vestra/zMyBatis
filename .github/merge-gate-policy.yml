@@ -10,7 +10,7 @@
 # strict required status checks, required thread resolution, and no bypass
 # actors. Its required contexts are exactly the five entries below.
 #
-# Keep this checked-in policy aligned with the live ruleset.
+# Keep this checked-in policy aligned with the live rulesets.
 
 version: 1
 
@@ -86,11 +86,11 @@ trustBoundary:
         succeeds. It is exactly excluded from pull_request execution.
     - workflow: .github/workflows/release.yml
       job: release
-      permissions: [ contents:write, pull-requests:write ]
+      permissions: [ contents:write ]
       justification: >-
-        Publishes to JetBrains Marketplace and opens the post-release changelog
-        PR. This workflow is governed by release-provenance issue #56 and is
-        intentionally outside this PR's validation-workflow hardening scope.
+        Publishes the validated release artifact to JetBrains Marketplace and
+        uploads that artifact to the already-published GitHub Release. This
+        release-event-only workflow is governed by release-provenance issue #56.
 
 labels:
   taxonomy:
@@ -104,7 +104,8 @@ labels:
 
 # Recurring ownership for live repository/ruleset drift. `Lint workflows`
 # statically proves this workflow still exists, runs on main+schedule, and
-# invokes the fail-closed checker. The live checker performs GET-only API reads.
+# invokes the fail-closed checker. The live checker performs GET-only API reads
+# and validates both main governance and immutable publication-tag governance.
 liveSettingsAudit:
   workflow: .github/workflows/repository-settings-drift.yml
   scheduleCron: "23 2 * * *"
@@ -143,3 +144,14 @@ liveSettingsAudit:
     required_status_checks:
       strict_required_status_checks_policy: true
       do_not_enforce_on_create: false
+  publicationTagRuleset:
+    name: publication tags
+    target: tag
+    source_type: Repository
+    source: luceat-lux-vestra/zMyBatis
+    enforcement: active
+    ref_name:
+      include: [ "refs/tags/[0-9][0-9].[0-9][0-9].[0-9][0-9].[0-9][0-9][0-9][0-9][0-9][0-9]" ]
+      exclude: []
+    bypass_actors: []
+    rule_types: [ deletion, update ]
