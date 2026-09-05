@@ -25,6 +25,8 @@ Legacy application-level records are also left untouched rather than bulk-delete
 
 At startup zMyBatis removes a v2 session when its mapper no longer exists, its datasource UUID is missing/ambiguous, or its named schema is missing/ambiguous. A malformed/stale index record is pruned. Transient console construction failures leave the valid session un-restored so a later startup can retry without redirecting it to a different identity.
 
-Closing a live console removes its v2 session. Project/IDE shutdown marks the project-scoped cache as shutting down under the lifecycle lock before re-persisting live sessions. After that marker, new datasource selections and console registrations are rejected; a queued startup restoration therefore cannot recreate a session while the project is closing.
+Persistence replacement keeps the session ID indexed, invalidates the previous payload, and only then writes the replacement. If the replacement is interrupted after invalidation, the next startup sees an indexed-but-missing record and prunes it instead of restoring the older datasource/schema identity.
+
+Closing a live console removes its v2 session. Project/IDE shutdown marks the project-scoped cache as shutting down under the lifecycle lock before re-persisting live sessions. After that marker, new datasource selections and console registrations are rejected; a queued startup restoration therefore cannot recreate a session while the project is closing. If startup stale cleanup races with project close, whichever operation acquires the lifecycle lock first defines the result: active cleanup may remove proven-stale state, but once shutdown has begun later cleanup is deferred and the persisted state is re-evaluated on the next startup rather than deleted during close.
 
 Startup restoration only reconstructs console state. It never injects SQL into the console and never invokes query execution.
