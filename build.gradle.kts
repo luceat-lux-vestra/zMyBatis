@@ -2,8 +2,6 @@ import org.jetbrains.changelog.Changelog
 
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 plugins {
     id("java") // Java support
@@ -15,9 +13,8 @@ plugins {
 }
 
 group = providers.gradleProperty("pluginGroup").get()
-// version = providers.gradleProperty("pluginVersion").get()
-val currentVersion = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yy.MM.dd.HHmmss"))
-version = currentVersion
+val effectivePluginVersion = providers.gradleProperty("pluginVersion").orElse("0.0.0-dev")
+version = effectivePluginVersion.get()
 
 // Set the JVM language level used to build the project.
 kotlin {
@@ -41,19 +38,14 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)
 
-    // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
+    // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
     intellijPlatform {
         intellijIdea(providers.gradleProperty("platformVersion")) {
             type.set(providers.gradleProperty("platformType").map(IntelliJPlatformType::valueOf))
         }
 
-        // Plugin Dependencies. Uses `platformBundledPlugins` property from the gradle.properties file for bundled IntelliJ Platform plugins.
         bundledPlugins(providers.gradleProperty("platformBundledPlugins").map { it.split(',') })
-
-        // Plugin Dependencies. Uses `platformPlugins` property from the gradle.properties file for plugin from JetBrains Marketplace.
         plugins(providers.gradleProperty("platformPlugins").map { it.split(',') })
-
-        // Module Dependencies. Uses `platformBundledModules` property from the gradle.properties file for bundled IntelliJ Platform modules.
         bundledModules(providers.gradleProperty("platformBundledModules").map { it.split(',') })
 
         testFramework(TestFrameworkType.Platform)
@@ -62,14 +54,12 @@ dependencies {
     }
 }
 
-// Configure IntelliJ Platform Gradle Plugin - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html
+// Configure IntelliJ Platform Gradle Plugin.
 intellijPlatform {
     buildSearchableOptions = true
     pluginConfiguration {
         name = providers.gradleProperty("pluginName")
-        // version = providers.gradleProperty("pluginVersion")
-        version = currentVersion
-
+        version = effectivePluginVersion
 
         val changelog = project.changelog // local variable for configuration cache compatibility
         changeNotes = provider {
@@ -85,7 +75,7 @@ intellijPlatform {
 
         vendor {
             name = "algorist"
-            url = "https://github.com/luceat-lux-vestra"
+            url = "https://github.com/luceat-lux-vestra/zMyBatis"
             email = "heathkimdev@gmail.com"
         }
 
@@ -102,7 +92,9 @@ intellijPlatform {
 
     publishing {
         token = providers.environmentVariable("PUBLISH_TOKEN")
-        channels = providers.gradleProperty("pluginVersion").map { listOf(it.substringAfter('-', "").substringBefore('.').ifEmpty { "default" }) }
+        channels = effectivePluginVersion.map {
+            listOf(it.substringAfter('-', "").substringBefore('.').ifEmpty { "default" })
+        }
     }
 
     // Keep compatibility verification deterministic. `recommended()` drifts as
@@ -116,14 +108,14 @@ intellijPlatform {
     }
 }
 
-// Configure Gradle Changelog Plugin - read more: https://github.com/JetBrains/gradle-changelog-plugin
+// Configure Gradle Changelog Plugin.
 changelog {
     groups.empty()
     repositoryUrl = providers.gradleProperty("pluginRepositoryUrl")
     versionPrefix = ""
 }
 
-// Configure Gradle Kover Plugin - read more: https://kotlin.github.io/kotlinx-kover/gradle-plugin/#configuration-details
+// Configure Gradle Kover Plugin.
 kover {
     reports {
         total {
@@ -137,10 +129,6 @@ kover {
 tasks {
     wrapper {
         gradleVersion = providers.gradleProperty("gradleVersion").get()
-    }
-
-    publishPlugin {
-        dependsOn(patchChangelog)
     }
 
     patchPluginXml {
