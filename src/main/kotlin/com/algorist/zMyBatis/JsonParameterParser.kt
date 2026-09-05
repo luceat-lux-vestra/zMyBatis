@@ -6,6 +6,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.JsonPrimitive
 import com.google.gson.JsonSyntaxException
+import java.math.BigDecimal
 
 /**
  * Parses JSON strings into Kotlin/Java types that MyBatis MetaObject can traverse.
@@ -17,7 +18,7 @@ import com.google.gson.JsonSyntaxException
  *   JSON object  → LinkedHashMap<String, Any?>   (MetaObject traverses via dot notation: user.name)
  *   JSON array   → ArrayList<Any?>               (MetaObject traverses via index: items[0])
  *   JSON string  → String
- *   JSON number  → Long (whole numbers) / Double (decimals)
+ *   JSON number  → Long (whole numbers in Long range) / Double (decimals or larger numbers)
  *   JSON boolean → Boolean
  *   JSON null    → null
  */
@@ -138,10 +139,29 @@ object JsonParameterParser {
     private fun convertPrimitive(prim: JsonPrimitive): Any? = when {
         prim.isBoolean -> prim.asBoolean
         prim.isString  -> prim.asString
-        prim.isNumber  -> {
-            val d = prim.asDouble
-            if (d == kotlin.math.floor(d) && !d.isInfinite()) d.toLong() else d
-        }
+        prim.isNumber  -> convertNumber(prim)
         else -> prim.asString
+    }
+
+    /**
+     * Preserves integral JSON values exactly while they fit in [Long]. Converting through Double
+     * first loses precision above 2^53 (for example 9007199254740993 became 9007199254740992).
+     * Decimal values keep the existing Double contract; integers outside Long range also fall back
+     * to Double rather than silently wrapping.
+     */
+    private fun convertNumber(prim: JsonPrimitive): Number {
+        val decimal = try {
+            BigDecimal(prim.asString)
+        } catch (_: NumberFormatException) {
+            return prim.asDouble
+        }
+        if (decimal.stripTrailingZeros().scale() <= 0) {
+            try {
+                return decimal.longValueExact()
+            } catch (_: ArithmeticException) {
+                // Outside Long range; preserve the existing broad-number fallback.
+            }
+        }
+        return prim.asDouble
     }
 }
