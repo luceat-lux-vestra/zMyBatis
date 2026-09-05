@@ -6,6 +6,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.JsonPrimitive
 import com.google.gson.JsonSyntaxException
+import java.math.BigDecimal
 
 /**
  * Parses JSON strings into Kotlin/Java types that MyBatis MetaObject can traverse.
@@ -13,11 +14,12 @@ import com.google.gson.JsonSyntaxException
  * Uses Gson's JsonParser (tree API) instead of TypeToken-based deserialization to avoid
  * ClassCastException issues in IntelliJ plugin sandbox environments.
  *
- * JSON → Kotlin type mapping:
+ * JSON → Kotlin/Java type mapping:
  *   JSON object  → LinkedHashMap<String, Any?>   (MetaObject traverses via dot notation: user.name)
  *   JSON array   → ArrayList<Any?>               (MetaObject traverses via index: items[0])
  *   JSON string  → String
- *   JSON number  → Long (whole numbers) / Double (decimals)
+ *   JSON numeric value with no fractional part → Long when it fits, otherwise BigInteger
+ *   JSON numeric value with a fractional part   → Double
  *   JSON boolean → Boolean
  *   JSON null    → null
  */
@@ -138,10 +140,19 @@ object JsonParameterParser {
     private fun convertPrimitive(prim: JsonPrimitive): Any? = when {
         prim.isBoolean -> prim.asBoolean
         prim.isString  -> prim.asString
-        prim.isNumber  -> {
-            val d = prim.asDouble
-            if (d == kotlin.math.floor(d) && !d.isInfinite()) d.toLong() else d
-        }
+        prim.isNumber  -> convertNumber(prim)
         else -> prim.asString
+    }
+
+    private fun convertNumber(prim: JsonPrimitive): Number {
+        val decimal = BigDecimal(prim.asString)
+        if (decimal.stripTrailingZeros().scale() <= 0) {
+            return try {
+                decimal.longValueExact()
+            } catch (_: ArithmeticException) {
+                decimal.toBigIntegerExact()
+            }
+        }
+        return decimal.toDouble()
     }
 }
