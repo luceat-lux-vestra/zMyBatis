@@ -110,6 +110,28 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
         assertFalse(cache.beginSelection(mapperKey))
     }
 
+    fun testShutdownGatePreservesPersistedStateAgainstLateCleanup() {
+        val mapperKey = "file:///tmp/zmybatis/ClosingRestoreMapper.xml"
+        val session = PersistedConsoleSession(
+            mapperKey = mapperKey,
+            dataSourceId = "550e8400-e29b-41d4-a716-446655440099",
+            dataSourceName = "orders",
+            schemaName = "public"
+        )
+        val id = ConsoleSessionPersistenceFormat.sessionId(mapperKey)
+        val projectStore = PropertiesComponent.getInstance(project)
+        val raw = ConsoleSessionPersistenceFormat.encode(session)
+        projectStore.setValue(V2_INDEX, id)
+        projectStore.setValue("$V2_RECORD_PREFIX$id", raw)
+        val cache = ConsoleCacheService.getInstance(project)
+
+        cache.markShuttingDown()
+        cache.clearSession(mapperKey)
+
+        assertEquals(id, projectStore.getValue(V2_INDEX))
+        assertEquals(raw, projectStore.getValue("$V2_RECORD_PREFIX$id"))
+    }
+
     override fun tearDown() {
         try {
             val projectStore = PropertiesComponent.getInstance(project)
