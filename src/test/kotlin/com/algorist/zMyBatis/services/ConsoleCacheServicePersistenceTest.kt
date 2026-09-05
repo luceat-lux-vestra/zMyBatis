@@ -97,7 +97,9 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
     }
 
     fun testShutdownGateRejectsNewSelection() {
-        val cache = ConsoleCacheService.getInstance(project)
+        // Shutdown is irreversible in production. Use a fresh service instance so this test cannot
+        // leak the shutdown marker into other platform tests that share the project fixture.
+        val cache = ConsoleCacheService(project)
         val mapperKey = "file:///tmp/zmybatis/ClosingMapper.xml"
 
         assertFalse(cache.isShuttingDown())
@@ -123,7 +125,8 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
         val raw = ConsoleSessionPersistenceFormat.encode(session)
         projectStore.setValue(V2_INDEX, id)
         projectStore.setValue("$V2_RECORD_PREFIX$id", raw)
-        val cache = ConsoleCacheService.getInstance(project)
+        // Keep the irreversible shutdown state local to this test instance.
+        val cache = ConsoleCacheService(project)
 
         cache.markShuttingDown()
         cache.clearSession(mapperKey)
