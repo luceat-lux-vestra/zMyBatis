@@ -29,6 +29,7 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.popup.JBPopupListener
 import com.intellij.openapi.ui.popup.LightweightWindowEvent
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
@@ -36,10 +37,6 @@ import com.intellij.psi.PsiMethod
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.xml.XmlTag
 import java.awt.datatransfer.StringSelection
-import java.util.concurrent.ConcurrentHashMap
-
-/** Guard against multiple concurrent console selection dialogs for the same file. */
-private val activeSelections = ConcurrentHashMap.newKeySet<String>()
 
 @Suppress("UnstableApiUsage", "TooManyFunctions")
 open class MyBatisExecuteProxyAction : AnAction() {
@@ -51,11 +48,11 @@ open class MyBatisExecuteProxyAction : AnAction() {
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        // Always keep the action visible so it behaves like the original in all contexts
-        // (DB console toolbar, right-click menu, MyBatis XML/annotation files, etc.).
         e.presentation.isEnabledAndVisible = true
     }
 
+    private fun isProjectUnavailable(project: com.intellij.openapi.project.Project): Boolean =
+        project.isDisposed || ConsoleCacheService.getInstance(project).isShuttingDown()
 
     @Suppress("ReturnCount")
     override fun actionPerformed(e: AnActionEvent) {
@@ -65,9 +62,9 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 Messages.showInfoMessage(
                     e.project,
                     "@SelectProvider / @InsertProvider / @UpdateProvider / @DeleteProvider\n" +
-                    "generate SQL dynamically at runtime.\n\n" +
-                    "zMyBatis cannot statically extract the SQL from a Provider class.\n" +
-                    "Please run the query directly from the generated SQL or a mapper XML.",
+                        "generate SQL dynamically at runtime.\n\n" +
+                        "zMyBatis cannot statically extract the SQL from a Provider class.\n" +
+                        "Please run the query directly from the generated SQL or a mapper XML.",
                     "zMyBatis: Provider Not Supported"
                 )
             }
@@ -79,6 +76,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
     private fun runMyBatisQuery(e: AnActionEvent, context: MyBatisContextAnalyzer.ContextType) {
         try {
             val project = e.project ?: return
+            if (isProjectUnavailable(project)) return
             val editor = e.getData(CommonDataKeys.EDITOR) ?: return
             val psiFile = e.getData(CommonDataKeys.PSI_FILE) ?: return
 
@@ -88,20 +86,20 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 return
             }
 
-            val sourceFileKey = psiFile.virtualFile?.path ?: psiFile.name
-            val statementKey = extractStatementKey(context, editor, psiFile, sourceFileKey)
+            val historyFileKey = psiFile.virtualFile?.path ?: psiFile.name
+            val mapperKey = psiFile.viewProvider.virtualFile.url
+            val statementKey = extractStatementKey(context, editor, psiFile, historyFileKey)
             val cache = ConsoleCacheService.getInstance(project)
 
-            // NEW_EACH policy: skip the cache and always open a fresh console
             val forceNew = ZMyBatisSettings.getInstance().consoleSessionPolicy == ConsoleSessionPolicy.NEW_EACH
-            val cachedConsole = if (forceNew) null else cache.get(sourceFileKey)
+            val cachedConsole = if (forceNew) null else cache.get(mapperKey)
 
             if (cachedConsole != null) {
-                LOG.info("zMyBatis: reusing cached console for $sourceFileKey")
+                LOG.info("zMyBatis: reusing cached console for $mapperKey")
                 proceedWithParamsAndExecute(e, project, sqlContent, context, cachedConsole, statementKey)
             } else {
-                LOG.info("zMyBatis: no live console for $sourceFileKey, showing data-source chooser")
-                ensureConsole(e, project, sourceFileKey, forceNew) { console ->
+                LOG.info("zMyBatis: no live console for $mapperKey, showing data-source chooser")
+                ensureConsole(e, project, mapperKey, forceNew) { console ->
                     proceedWithParamsAndExecute(e, project, sqlContent, context, console, statementKey)
                 }
             }
@@ -110,7 +108,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
             Messages.showErrorDialog(e.project, "Error preparing MyBatis query:\n${ex.message}", "zMyBatis Error")
         }
     }
-
 
     @Suppress("TooGenericExceptionCaught")
     private fun proceedWithParamsAndExecute(
@@ -121,6 +118,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         console: JdbcConsole,
         statementKey: String? = null
     ) {
+        if (isProjectUnavailable(project)) return
         val paramValues = resolveParameters(project, sqlContent, statementKey)
         if (paramValues == null) {
             LOG.info("zMyBatis: resolveParameters returned null (user cancelled or failed)")
@@ -129,18 +127,16 @@ open class MyBatisExecuteProxyAction : AnAction() {
         LOG.info("zMyBatis params: $paramValues")
 
         ApplicationManager.getApplication().executeOnPooledThread {
+            if (isProjectUnavailable(project)) return@executeOnPooledThread
             try {
                 val rawSql = MyBatisEvaluator.evaluate(wrapForEvaluator(sqlContent, context), paramValues)
                 LOG.info("zMyBatis SQL: $rawSql")
-
                 val settings = ZMyBatisSettings.getInstance()
 
-                // SqlFormatter.format() requires the EDT (PSI write action) — run it inside invokeLater
                 ApplicationManager.getApplication().invokeLater {
+                    if (isProjectUnavailable(project)) return@invokeLater
                     val pureSql = if (settings.autoFormatSql) SqlFormatter.format(project, rawSql) else rawSql
-
                     if (settings.sqlPreview) {
-                        // Show preview dialog on the EDT; execute only if user confirms
                         val dialog = SqlPreviewDialog(project, pureSql)
                         if (dialog.showAndGet()) {
                             executeOnConsole(console, project, pureSql)
@@ -154,13 +150,12 @@ open class MyBatisExecuteProxyAction : AnAction() {
             } catch (ex: Throwable) {
                 LOG.error("zMyBatis evaluation failed", ex)
                 ApplicationManager.getApplication().invokeLater {
+                    if (isProjectUnavailable(project)) return@invokeLater
                     Messages.showErrorDialog(project, "Error evaluating MyBatis SQL:\n${ex.message}", "zMyBatis Error")
                 }
             }
         }
     }
-
-    // ── Console acquisition ────────────────────────────────────────────────────────────────
 
     @Suppress("TooGenericExceptionCaught", "LongMethod")
     private fun ensureConsole(
@@ -170,72 +165,89 @@ open class MyBatisExecuteProxyAction : AnAction() {
         forceNew: Boolean,
         onConsoleReady: (JdbcConsole) -> Unit
     ) {
-        if (!activeSelections.add(fileKey)) {
+        val cache = ConsoleCacheService.getInstance(project)
+        if (!cache.beginSelection(fileKey)) {
             LOG.info("zMyBatis: console selection already in progress for $fileKey")
             return
         }
 
-        val dataSources = DbPsiFacade.getInstance(project).dataSources.toList()
-        if (dataSources.isEmpty()) {
-            activeSelections.remove(fileKey)
-            Messages.showErrorDialog(project,
-                "No data sources configured.\nPlease add a data source in the Database tool window first.",
-                "zMyBatis: No Data Source")
-            return
-        }
+        try {
+            val dataSources = DbPsiFacade.getInstance(project).dataSources.toList()
+            if (dataSources.isEmpty()) {
+                cache.endSelection(fileKey)
+                Messages.showErrorDialog(
+                    project,
+                    "No data sources configured.\nPlease add a data source in the Database tool window first.",
+                    "zMyBatis: No Data Source"
+                )
+                return
+            }
 
-        val group = DefaultActionGroup()
-        for (ds in dataSources) {
-            val dsGroup = DefaultActionGroup(ds.name, true)
-            dsGroup.templatePresentation.icon = ds.icon
+            val group = DefaultActionGroup()
+            for (ds in dataSources) {
+                val dsGroup = DefaultActionGroup(ds.name, true)
+                dsGroup.templatePresentation.icon = ds.icon
 
-            dsGroup.add(object : AnAction("Use Default Schema") {
-                override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
-                override fun actionPerformed(ignored: AnActionEvent) {
-                    LOG.info("zMyBatis: Default schema selected for DS: ${ds.name}")
-                    activeSelections.remove(fileKey)
-                    buildAndDeliverConsole(project, ds, null, fileKey, forceNew, onConsoleReady)
-                }
-            })
-            dsGroup.addSeparator()
+                dsGroup.add(object : AnAction("Use Default Schema") {
+                    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
+                    override fun actionPerformed(ignored: AnActionEvent) {
+                        LOG.info("zMyBatis: Default schema selected for DS: ${ds.name}")
+                        cache.endSelection(fileKey)
+                        buildAndDeliverConsole(project, ds, null, fileKey, forceNew, onConsoleReady)
+                    }
+                })
+                dsGroup.addSeparator()
 
-            val schemas = DasUtil.getSchemas(ds).toList()
-            if (schemas.isNotEmpty()) {
-                for (schema in schemas) {
-                    dsGroup.add(object : AnAction(schema.name) {
+                val schemas = DasUtil.getSchemas(ds).toList()
+                if (schemas.isNotEmpty()) {
+                    for (schema in schemas) {
+                        dsGroup.add(object : AnAction(schema.name) {
+                            override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
+                            override fun actionPerformed(ignored: AnActionEvent) {
+                                LOG.info("zMyBatis: Schema selected: ${schema.name} for DS: ${ds.name}")
+                                cache.endSelection(fileKey)
+                                buildAndDeliverConsole(project, ds, schema, fileKey, forceNew, onConsoleReady)
+                            }
+                        })
+                    }
+                } else {
+                    dsGroup.add(object : AnAction("No schemas found") {
                         override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
-                        override fun actionPerformed(ignored: AnActionEvent) {
-                            LOG.info("zMyBatis: Schema selected: ${schema.name} for DS: ${ds.name}")
-                            activeSelections.remove(fileKey)
-                            buildAndDeliverConsole(project, ds, schema, fileKey, forceNew, onConsoleReady)
-                        }
+                        override fun update(e: AnActionEvent) { e.presentation.isEnabled = false }
+                        override fun actionPerformed(e: AnActionEvent) { }
                     })
                 }
-            } else {
-                dsGroup.add(object : AnAction("No schemas found") {
-                    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
-                    override fun update(e: AnActionEvent) { e.presentation.isEnabled = false }
-                    override fun actionPerformed(e: AnActionEvent) { /* disabled */ }
-                })
+                group.add(dsGroup)
             }
-            group.add(dsGroup)
-        }
 
-        ApplicationManager.getApplication().invokeLater({
-            val popup = JBPopupFactory.getInstance().createActionGroupPopup(
-                "Choose Data Source & Schema",
-                group,
-                originalEvent.dataContext,
-                JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
-                true
-            )
-            popup.addListener(object : JBPopupListener {
-                override fun onClosed(event: LightweightWindowEvent) {
-                    if (!event.isOk) activeSelections.remove(fileKey)
+            ApplicationManager.getApplication().invokeLater({
+                if (isProjectUnavailable(project)) {
+                    cache.endSelection(fileKey)
+                    return@invokeLater
                 }
-            })
-            popup.showInBestPositionFor(originalEvent.dataContext)
-        }, ModalityState.any())
+                try {
+                    val popup = JBPopupFactory.getInstance().createActionGroupPopup(
+                        "Choose Data Source & Schema",
+                        group,
+                        originalEvent.dataContext,
+                        JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
+                        true
+                    )
+                    popup.addListener(object : JBPopupListener {
+                        override fun onClosed(event: LightweightWindowEvent) {
+                            if (!event.isOk) cache.endSelection(fileKey)
+                        }
+                    })
+                    popup.showInBestPositionFor(originalEvent.dataContext)
+                } catch (ex: Throwable) {
+                    cache.endSelection(fileKey)
+                    LOG.error("zMyBatis: failed to show datasource chooser for $fileKey", ex)
+                }
+            }, ModalityState.any())
+        } catch (ex: Throwable) {
+            cache.endSelection(fileKey)
+            throw ex
+        }
     }
 
     @Suppress("TooGenericExceptionCaught")
@@ -247,53 +259,86 @@ open class MyBatisExecuteProxyAction : AnAction() {
         forceNew: Boolean,
         onConsoleReady: (JdbcConsole) -> Unit
     ) {
+        var console: JdbcConsole? = null
         try {
-            // LightVirtualFile = in-memory only.
-            // This is intentional: a real on-disk file causes VFS change events whenever
-            // the document is written during execution, which triggers a project reload and
-            // immediately disposes the console.  LightVirtualFile never hits the disk.
+            if (isProjectUnavailable(project)) return
+            val cache = ConsoleCacheService.getInstance(project)
             val sqlFileType = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
                 .getFileTypeByExtension("sql")
-            // Use the original mapper filename (e.g. "CustomerMapper.xml") as the console
-            // title — that is what the user sees in the Services tab.
             val consoleName = fileKey.substringAfterLast('/').substringAfterLast('\\') + " - zMyBatis"
             val lightFile = com.intellij.testFramework.LightVirtualFile(consoleName, sqlFileType, "")
 
-            val console = JdbcConsole.newConsole(project)
+            console = JdbcConsole.newConsole(project)
                 .fromDataSource(ds)
                 .forFile(lightFile)
                 .build()
             LOG.info("zMyBatis: console created for ${ds.name} (name=$consoleName)")
 
-            if (schema != null) switchSchemaOnConsole(console, schema)
+            if (schema != null && !switchSchemaOnConsole(console, schema)) {
+                Messages.showErrorDialog(
+                    project,
+                    "Could not switch database console to schema '${schema.name}'.\n" +
+                        "The query was not executed because using the default schema would be unsafe.",
+                    "zMyBatis: Schema Switch Failed"
+                )
+                Disposer.dispose(console)
+                console = null
+                return
+            }
 
             val schemaName = schema?.name ?: ""
-            onConsoleReady(console)
+            val dataSourceId = ConsoleCacheService.stableDataSourceId(ds)
+            if (!forceNew) {
+                cache.put(
+                    mapperKey = fileKey,
+                    console = console,
+                    dataSourceId = dataSourceId,
+                    dataSourceName = ds.name,
+                    schemaName = schemaName
+                )
+                if (cache.get(fileKey) !== console) {
+                    LOG.warn("zMyBatis: console was not live after cache registration for $fileKey — skipping query")
+                    Disposer.dispose(console)
+                    console = null
+                    return
+                }
+            }
 
-            // put() handles saveSession + addToIndex atomically.
-            // Called after onConsoleReady so the console is fully set up before caching.
-            if (!forceNew) ConsoleCacheService.getInstance(project).put(fileKey, console, ds.name, schemaName)
-            LOG.info("zMyBatis: session saved for $fileKey (ds=${ds.name}, schema=$schemaName)")
+            if (isProjectUnavailable(project)) {
+                Disposer.dispose(console)
+                console = null
+                return
+            }
+            onConsoleReady(console)
+            console = null
+            LOG.info(
+                "zMyBatis: session prepared for $fileKey " +
+                    "(ds=${ds.name}, dsId=${dataSourceId ?: "<unpersisted>"}, schema=$schemaName)"
+            )
         } catch (ex: Throwable) {
+            console?.let { Disposer.dispose(it) }
             LOG.error("zMyBatis: failed to create console for ${ds.name}", ex)
-            Messages.showErrorDialog(project,
-                "Could not create database console for ${ds.name}.\n${ex.message}",
-                "zMyBatis Error")
+            if (!isProjectUnavailable(project)) {
+                Messages.showErrorDialog(
+                    project,
+                    "Could not create database console for ${ds.name}.\n${ex.message}",
+                    "zMyBatis Error"
+                )
+            }
         }
     }
 
-    private fun switchSchemaOnConsole(console: JdbcConsole, schema: DasNamespace) {
+    private fun switchSchemaOnConsole(console: JdbcConsole, schema: DasNamespace): Boolean =
         try {
             val kind = DasUtil.getKind(schema)
             val path = ObjectPath.create(schema.name, kind)
             console.switchSchema(SearchPath.of(path), false)
             LOG.info("zMyBatis: schema '${schema.name}' (kind=$kind) switched on console")
+            true
         } catch (ex: Throwable) {
-            LOG.warn("zMyBatis: failed to switch schema '${schema.name}': ${ex.message}")
+            LOG.warn("zMyBatis: failed to switch schema '${schema.name}'", ex)
+            false
         }
-    }
-
-    // ── Execute on an existing console ───────────────────────────────────────────────────
 
     @Suppress("TooGenericExceptionCaught")
     private fun executeOnConsole(
@@ -301,6 +346,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         project: com.intellij.openapi.project.Project,
         pureSql: String
     ) {
+        if (isProjectUnavailable(project)) return
         if (pureSql.isBlank()) {
             LOG.warn("zMyBatis: pureSql is blank, skipping execution")
             return
@@ -308,7 +354,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
 
         val consoleDoc = console.document
         val consolePsiFile = console.file
-
         val existingEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
             .firstOrNull { it is EditorEx } as? EditorEx
 
@@ -318,6 +363,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
             if (vFile != null) {
                 FileEditorManager.getInstance(project).openFile(vFile, true)
                 ApplicationManager.getApplication().invokeLater({
+                    if (isProjectUnavailable(project)) return@invokeLater
                     val retryEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
                         .firstOrNull { it is EditorEx } as? EditorEx
                     if (retryEditor != null) {
@@ -341,6 +387,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         pureSql: String,
         consoleEditor: EditorEx
     ) {
+        if (isProjectUnavailable(project)) return
         val consoleDoc = console.document
         val consolePsiFile = console.file
         val originalText = consoleDoc.text
@@ -369,14 +416,13 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 Messages.showErrorDialog(project, "Failed to parse SQL for execution.", "zMyBatis Error")
                 return
             }
+            if (isProjectUnavailable(project)) return
             LOG.info("zMyBatis: executing on console '${console.title}'")
             JdbcConsoleProvider.doRunQueryInConsole(console, info)
 
             if (ZMyBatisSettings.getInstance().copyToClipboard) {
                 CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
             }
-
-
         } catch (ex: Throwable) {
             LOG.error("zMyBatis: execution failed", ex)
             try {
@@ -387,9 +433,13 @@ open class MyBatisExecuteProxyAction : AnAction() {
             } catch (restoreEx: Throwable) {
                 LOG.warn("zMyBatis: failed to restore console document: ${restoreEx.message}")
             }
-            Messages.showErrorDialog(project,
-                "Failed to execute SQL:\n${ex.message ?: ex.javaClass.simpleName}",
-                "zMyBatis: Execution Error")
+            if (!isProjectUnavailable(project)) {
+                Messages.showErrorDialog(
+                    project,
+                    "Failed to execute SQL:\n${ex.message ?: ex.javaClass.simpleName}",
+                    "zMyBatis: Execution Error"
+                )
+            }
         }
     }
 
@@ -399,12 +449,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
         editor: Editor,
         psiFile: PsiFile
     ): String? {
-        // Always extract the full MyBatis statement regardless of any text selection.
-        // Using selectedText here would return only the dragged portion, which is an
-        // incomplete (and invalid) dynamic SQL fragment.
-
-        // Use the selection start offset when text is selected so we locate the PSI
-        // element that the user is pointing at (within the selection).
         val baseOffset = if (editor.selectionModel.hasSelection()) {
             editor.selectionModel.selectionStart
         } else {
@@ -458,13 +502,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
         return null
     }
 
-    /**
-     * Builds a stable key that identifies the specific Mapper statement the user invoked.
-     * Format:
-     *  - XML mapper    : "{fileKey}::{id attribute of the statement tag}"
-     *  - Annotation    : "{fileKey}::{ClassName}#{methodName}"
-     * Falls back to [fileKey] alone if the statement ID cannot be determined.
-     */
     private fun extractStatementKey(
         context: MyBatisContextAnalyzer.ContextType,
         editor: Editor,
@@ -510,5 +547,3 @@ open class MyBatisExecuteProxyAction : AnAction() {
 }
 
 class MyBatisExecuteAction : MyBatisExecuteProxyAction()
-
-
