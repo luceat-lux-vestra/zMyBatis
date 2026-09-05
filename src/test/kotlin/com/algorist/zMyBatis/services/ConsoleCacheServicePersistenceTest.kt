@@ -54,6 +54,18 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
         assertNull(projectStore.getValue(V2_INDEX))
     }
 
+    fun testIndexedMissingRecordIsPrunedFailClosed() {
+        val mapperKey = "file:///tmp/zmybatis/InterruptedWriteMapper.xml"
+        val id = ConsoleSessionPersistenceFormat.sessionId(mapperKey)
+        val projectStore = PropertiesComponent.getInstance(project)
+        projectStore.setValue(V2_INDEX, id)
+        projectStore.unsetValue("$V2_RECORD_PREFIX$id")
+
+        assertTrue(ConsoleCacheService.getInstance(project).pruneStaleIndex().isEmpty())
+        assertNull(projectStore.getValue(V2_INDEX))
+        assertNull(projectStore.getValue("$V2_RECORD_PREFIX$id"))
+    }
+
     fun testImplicitDefaultSchemaRecordIsPruned() {
         val mapperKey = "file:///tmp/zmybatis/DefaultMapper.xml"
         val id = ConsoleSessionPersistenceFormat.sessionId(mapperKey)

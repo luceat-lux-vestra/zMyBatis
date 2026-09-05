@@ -278,9 +278,12 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     private fun saveSession(session: PersistedConsoleSession) {
         val id = ConsoleSessionPersistenceFormat.sessionId(session.mapperKey)
         synchronized(persistenceLock) {
-            // Index-first guarantees every newly written record has a discoverable cleanup path.
-            // Existing ids make addToIndexLocked() a no-op, so updates go straight to the record.
+            // Keep the id indexed first so every partial write remains discoverable for cleanup.
+            // Then invalidate any older payload before writing the replacement. If the final write
+            // is interrupted, startup sees an indexed-but-missing record and prunes it rather than
+            // restoring stale datasource/schema identity.
             addToIndexLocked(id)
+            store.unsetValue(recordKey(id))
             store.setValue(recordKey(id), ConsoleSessionPersistenceFormat.encode(session))
         }
     }
