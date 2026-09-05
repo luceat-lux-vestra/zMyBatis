@@ -229,8 +229,17 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         }
     }
 
+    /**
+     * Removes stale persisted state only while the project lifecycle is active. A restore may
+     * discover stale-looking state just as project close begins; if shutdown wins the lifecycle
+     * lock, preservation takes precedence and the next startup re-evaluates the state safely.
+     */
     fun clearSession(mapperKey: String) {
         synchronized(lifecycleLock) {
+            if (shuttingDown) {
+                LOG.info("zMyBatis: skipping session cleanup during shutdown for $mapperKey")
+                return@synchronized
+            }
             clearSessionLocked(mapperKey)
         }
     }
