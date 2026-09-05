@@ -9,7 +9,7 @@ The required `Test` CI context is product evidence, not a line-coverage target. 
 | MyBatis parameter discovery | `ParameterExtractorTest`, `ParameterExtractorBoundaryTest` | scalar/object roots, bind/foreach exclusions, nested collections, indexed `#{}`/`${}` paths, placeholder options |
 | JSON parameter input | `JsonParameterTest`, `OgnlEvalTest` | the `parseValue()` path used by the parameter dialog, nested object/array values, malformed input, integer precision boundaries |
 | Dynamic SQL and literal rendering | `MyBatisEvaluatorContractTest`, `OgnlEvalTest` | dynamic `if`/`where`/`foreach`, nested OGNL, `#{}` vs `${}`, quote escaping, NULL/boolean literals, visible failure for unsupported direct list/map values |
-| Annotation SQL extraction | `AnnotationSqlExtractorTest` | literal annotation value, ordered string arrays, constant-field references through IntelliJ PSI |
+| Annotation SQL extraction | `AnnotationSqlExtractorTest` | literal values, ordered arrays, constant-field references at the PSI-interface contract without bootstrapping an IDE fixture |
 | Session persistence format and stale index recovery | `PersistedConsoleSessionTest`, `ConsoleCacheServicePersistenceTest` | versioned encoding, malformed/legacy/default-schema invalidation, interrupted-write pruning, shutdown lifecycle gating |
 
 The old IntelliJ template rename test and evaluator debug/reproduction files were removed when the product-specific tests above replaced them.
@@ -26,7 +26,8 @@ The automated session tests deliberately avoid pretending to emulate JetBrains D
 - missing/ambiguous datasource or schema resolution against a populated Database Tools model;
 - actual console recreation and schema switching across an IDE restart;
 - console disposal callbacks from the real Database Tools console implementation;
-- end-to-end confirmation that startup restoration never triggers statement execution.
+- end-to-end confirmation that startup restoration never triggers statement execution;
+- real Java parser/index wiring for annotation extraction, including project-backed constant resolution.
 
 Those gaps are explicit so a green `Test` context is not misrepresented as evidence for behavior it does not execute.
 
