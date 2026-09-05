@@ -18,6 +18,11 @@ WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "repository-settings-drift
 POLICY_TEXT = POLICY_PATH.read_text(encoding="utf-8")
 POLICY = live.parse_policy(POLICY_TEXT)
 
+PUBLICATION_PATTERN = (
+    "refs/tags/[0-9][0-9].[0-9][0-9].[0-9][0-9]."
+    "[0-9][0-9][0-9][0-9][0-9][0-9]"
+)
+
 GOOD_REPOSITORY = {
     "visibility": "public",
     "archived": False,
@@ -73,14 +78,30 @@ GOOD_RULESET = {
     ],
 }
 
+GOOD_PUBLICATION_RULESET = {
+    "id": 99999999,
+    "name": "publication tags",
+    "target": "tag",
+    "source_type": "Repository",
+    "source": "luceat-lux-vestra/zMyBatis",
+    "enforcement": "active",
+    "conditions": {"ref_name": {"include": [PUBLICATION_PATTERN], "exclude": []}},
+    "bypass_actors": [],
+    "rules": [
+        {"type": "deletion"},
+        {"type": "update", "parameters": {"update_allows_fetch_and_merge": False}},
+    ],
+}
+
 
 class LiveSettingsPolicyTest(unittest.TestCase):
-    def failures(self, repo=None, ruleset=None):
+    def failures(self, repo=None, ruleset=None, publication=None):
         return live.compare_live(
             POLICY,
             POLICY_TEXT,
             GOOD_REPOSITORY if repo is None else repo,
             GOOD_RULESET if ruleset is None else ruleset,
+            GOOD_PUBLICATION_RULESET if publication is None else publication,
         )
 
     def test_known_good_live_state_is_accepted(self):
@@ -91,13 +112,13 @@ class LiveSettingsPolicyTest(unittest.TestCase):
         repo["allow_merge_commit"] = True
         self.assertTrue(self.failures(repo=repo))
 
-    def test_hidden_bypass_actors_is_insufficient_evidence(self):
+    def test_hidden_main_bypass_actors_is_insufficient_evidence(self):
         ruleset = copy.deepcopy(GOOD_RULESET)
         del ruleset["bypass_actors"]
         failures = self.failures(ruleset=ruleset)
         self.assertTrue(any("insufficient evidence" in item for item in failures))
 
-    def test_nonempty_bypass_actors_is_rejected(self):
+    def test_nonempty_main_bypass_actors_is_rejected(self):
         ruleset = copy.deepcopy(GOOD_RULESET)
         ruleset["bypass_actors"] = [
             {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
@@ -114,17 +135,95 @@ class LiveSettingsPolicyTest(unittest.TestCase):
         ruleset["rules"][-1]["parameters"]["required_status_checks"][0]["integration_id"] = 999
         self.assertTrue(self.failures(ruleset=ruleset))
 
-    def test_extra_ruleset_rule_is_rejected(self):
+    def test_extra_main_ruleset_rule_is_rejected(self):
         ruleset = copy.deepcopy(GOOD_RULESET)
         ruleset["rules"].append({"type": "required_signatures"})
         self.assertTrue(self.failures(ruleset=ruleset))
+
+    def test_publication_pattern_drift_is_rejected(self):
+        publication = copy.deepcopy(GOOD_PUBLICATION_RULESET)
+        publication["conditions"]["ref_name"]["include"] = ["refs/tags/*"]
+        self.assertTrue(self.failures(publication=publication))
+
+    def test_hidden_publication_bypass_is_insufficient_evidence(self):
+        publication = copy.deepcopy(GOOD_PUBLICATION_RULESET)
+        del publication["bypass_actors"]
+        failures = self.failures(publication=publication)
+        self.assertTrue(any("publicationTagRuleset.bypass_actors" in item for item in failures))
+
+    def test_nonempty_publication_bypass_is_rejected(self):
+        publication = copy.deepcopy(GOOD_PUBLICATION_RULESET)
+        publication["bypass_actors"] = [
+            {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
+        ]
+        self.assertTrue(self.failures(publication=publication))
+
+    def test_publication_creation_restriction_is_rejected(self):
+        publication = copy.deepcopy(GOOD_PUBLICATION_RULESET)
+        publication["rules"].append({"type": "creation"})
+        self.assertTrue(self.failures(publication=publication))
+
+    def test_missing_publication_update_protection_is_rejected(self):
+        publication = copy.deepcopy(GOOD_PUBLICATION_RULESET)
+        publication["rules"] = [{"type": "deletion"}]
+        self.assertTrue(self.failures(publication=publication))
+
+    def test_publication_ruleset_discovery_accepts_exact_single_match(self):
+        expected = live.mapping(POLICY, "publicationTagRuleset")
+        summaries = [
+            {
+                "id": 1,
+                "name": "main protection",
+                "target": "branch",
+                "source_type": "Repository",
+                "source": "luceat-lux-vestra/zMyBatis",
+            },
+            {
+                "id": 99,
+                "name": "publication tags",
+                "target": "tag",
+                "source_type": "Repository",
+                "source": "luceat-lux-vestra/zMyBatis",
+            },
+        ]
+        self.assertEqual(99, live.find_publication_ruleset_id(summaries, expected))
+
+    def test_publication_ruleset_discovery_rejects_missing_match(self):
+        expected = live.mapping(POLICY, "publicationTagRuleset")
+        with self.assertRaises(RuntimeError):
+            live.find_publication_ruleset_id([], expected)
+
+    def test_publication_ruleset_discovery_rejects_duplicate_match(self):
+        expected = live.mapping(POLICY, "publicationTagRuleset")
+        summaries = [
+            {
+                "id": 98,
+                "name": "publication tags",
+                "target": "tag",
+                "source_type": "Repository",
+                "source": "luceat-lux-vestra/zMyBatis",
+            },
+            {
+                "id": 99,
+                "name": "publication tags",
+                "target": "tag",
+                "source_type": "Repository",
+                "source": "luceat-lux-vestra/zMyBatis",
+            },
+        ]
+        with self.assertRaises(RuntimeError):
+            live.find_publication_ruleset_id(summaries, expected)
 
     def test_checked_in_workflow_contract_is_accepted(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
         self.assertEqual([], live.check_workflow(POLICY, text))
 
     def test_schedule_weakening_is_rejected(self):
-        text = WORKFLOW_PATH.read_text(encoding="utf-8").replace("23 2 * * *", "23 2 * * 1", 1)
+        text = WORKFLOW_PATH.read_text(encoding="utf-8").replace(
+            "23 2 * * *",
+            "23 2 * * 1",
+            1,
+        )
         self.assertTrue(live.check_workflow(POLICY, text))
 
     def test_if_guard_disabling_audit_is_rejected(self):

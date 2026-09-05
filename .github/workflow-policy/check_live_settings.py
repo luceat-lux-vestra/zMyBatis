@@ -89,15 +89,74 @@ def compare_fields(
             failures.append(f"{prefix}.{key}: expected {wanted!r}, got {actual[key]!r}")
 
 
-def compare_live(
+def compare_ref_name(
+    failures: list[str],
+    prefix: str,
+    actual: dict[str, Any],
+    expected: dict[str, Any],
+) -> None:
+    ref_name = actual.get("conditions", {}).get("ref_name")
+    if not isinstance(ref_name, dict):
+        failures.append(f"{prefix}.conditions.ref_name: missing")
+        return
+    compare_fields(
+        failures,
+        f"{prefix}.conditions.ref_name",
+        ref_name,
+        mapping(expected, "ref_name"),
+    )
+
+
+def compare_bypass(
+    failures: list[str],
+    prefix: str,
+    actual: dict[str, Any],
+    expected: dict[str, Any],
+) -> None:
+    if "bypass_actors" not in actual:
+        failures.append(
+            f"{prefix}.bypass_actors: hidden by caller authority; insufficient evidence. "
+            "Configure LIVE_SETTINGS_AUDIT_TOKEN with ruleset write visibility."
+        )
+    elif actual["bypass_actors"] != expected.get("bypass_actors"):
+        failures.append(
+            f"{prefix}.bypass_actors: expected {expected.get('bypass_actors')!r}, "
+            f"got {actual['bypass_actors']!r}"
+        )
+
+
+def rules_by_type(
+    failures: list[str],
+    prefix: str,
+    actual: dict[str, Any],
+    wanted_types: Any,
+) -> dict[str, dict[str, Any]]:
+    rules = actual.get("rules")
+    if not isinstance(rules, list):
+        failures.append(f"{prefix}.rules: missing")
+        return {}
+
+    by_type: dict[str, dict[str, Any]] = {}
+    for rule in rules:
+        if not isinstance(rule, dict) or not isinstance(rule.get("type"), str):
+            failures.append(f"{prefix}.rules: malformed entry {rule!r}")
+            continue
+        if rule["type"] in by_type:
+            failures.append(f"{prefix}.rules: duplicate type {rule['type']!r}")
+        by_type[rule["type"]] = rule
+
+    wanted = wanted_types if isinstance(wanted_types, list) else []
+    if sorted(by_type) != sorted(wanted):
+        failures.append(f"{prefix}.rules types: expected {wanted!r}, got {sorted(by_type)!r}")
+    return by_type
+
+
+def compare_main_ruleset(
+    failures: list[str],
     policy: dict[str, Any],
     policy_text: str,
-    repo: dict[str, Any],
     ruleset: dict[str, Any],
-) -> list[str]:
-    failures: list[str] = []
-    compare_fields(failures, "repository", repo, mapping(policy, "repository"))
-
+) -> None:
     expected = mapping(policy, "ruleset")
     scalar_keys = ("id", "name", "target", "source_type", "source", "enforcement")
     compare_fields(
@@ -106,46 +165,16 @@ def compare_live(
         ruleset,
         {key: expected[key] for key in scalar_keys},
     )
-
-    ref_name = ruleset.get("conditions", {}).get("ref_name")
-    if not isinstance(ref_name, dict):
-        failures.append("ruleset.conditions.ref_name: missing")
-    else:
-        compare_fields(
-            failures,
-            "ruleset.conditions.ref_name",
-            ref_name,
-            mapping(expected, "ref_name"),
-        )
-
-    if "bypass_actors" not in ruleset:
-        failures.append(
-            "ruleset.bypass_actors: hidden by caller authority; insufficient evidence. "
-            "Configure LIVE_SETTINGS_AUDIT_TOKEN with ruleset write visibility."
-        )
-    elif ruleset["bypass_actors"] != expected.get("bypass_actors"):
-        failures.append(
-            f"ruleset.bypass_actors: expected {expected.get('bypass_actors')!r}, "
-            f"got {ruleset['bypass_actors']!r}"
-        )
-
-    rules = ruleset.get("rules")
-    if not isinstance(rules, list):
-        return failures + ["ruleset.rules: missing"]
-    by_type: dict[str, dict[str, Any]] = {}
-    for rule in rules:
-        if not isinstance(rule, dict) or not isinstance(rule.get("type"), str):
-            failures.append(f"ruleset.rules: malformed entry {rule!r}")
-            continue
-        if rule["type"] in by_type:
-            failures.append(f"ruleset.rules: duplicate type {rule['type']!r}")
-        by_type[rule["type"]] = rule
-
-    wanted_types = expected.get("rule_types")
-    if sorted(by_type) != sorted(wanted_types if isinstance(wanted_types, list) else []):
-        failures.append(
-            f"ruleset.rules types: expected {wanted_types!r}, got {sorted(by_type)!r}"
-        )
+    compare_ref_name(failures, "ruleset", ruleset, expected)
+    compare_bypass(failures, "ruleset", ruleset, expected)
+    by_type = rules_by_type(
+        failures,
+        "ruleset",
+        ruleset,
+        expected.get("rule_types"),
+    )
+    if not by_type:
+        return
 
     for rule_type in ("pull_request", "required_status_checks"):
         params = by_type.get(rule_type, {}).get("parameters")
@@ -172,21 +201,80 @@ def compare_live(
     required = status.get("required_status_checks")
     if not isinstance(required, list):
         failures.append("ruleset.required_status_checks.required_status_checks: missing")
-    else:
-        integration_id = expected.get("status_check_integration_id")
-        actual = sorted(
-            (item.get("context"), item.get("integration_id"))
-            for item in required
-            if isinstance(item, dict)
-        )
-        contexts = [item["context"] for item in required_entries(policy_text)]
-        wanted = sorted((context, integration_id) for context in contexts)
-        if actual != wanted:
-            failures.append(
-                "ruleset required checks: "
-                f"expected {wanted!r}, got {actual!r}"
-            )
+        return
+
+    integration_id = expected.get("status_check_integration_id")
+    actual = sorted(
+        (item.get("context"), item.get("integration_id"))
+        for item in required
+        if isinstance(item, dict)
+    )
+    contexts = [item["context"] for item in required_entries(policy_text)]
+    wanted = sorted((context, integration_id) for context in contexts)
+    if actual != wanted:
+        failures.append(f"ruleset required checks: expected {wanted!r}, got {actual!r}")
+
+
+def compare_publication_ruleset(
+    failures: list[str],
+    policy: dict[str, Any],
+    ruleset: dict[str, Any],
+) -> None:
+    expected = mapping(policy, "publicationTagRuleset")
+    scalar_keys = ("name", "target", "source_type", "source", "enforcement")
+    compare_fields(
+        failures,
+        "publicationTagRuleset",
+        ruleset,
+        {key: expected[key] for key in scalar_keys},
+    )
+    compare_ref_name(failures, "publicationTagRuleset", ruleset, expected)
+    compare_bypass(failures, "publicationTagRuleset", ruleset, expected)
+    rules_by_type(
+        failures,
+        "publicationTagRuleset",
+        ruleset,
+        expected.get("rule_types"),
+    )
+
+
+def compare_live(
+    policy: dict[str, Any],
+    policy_text: str,
+    repo: dict[str, Any],
+    ruleset: dict[str, Any],
+    publication_ruleset: dict[str, Any],
+) -> list[str]:
+    failures: list[str] = []
+    compare_fields(failures, "repository", repo, mapping(policy, "repository"))
+    compare_main_ruleset(failures, policy, policy_text, ruleset)
+    compare_publication_ruleset(failures, policy, publication_ruleset)
     return failures
+
+
+def find_publication_ruleset_id(
+    summaries: list[Any],
+    expected: dict[str, Any],
+) -> int:
+    matches = [
+        item
+        for item in summaries
+        if isinstance(item, dict)
+        and item.get("name") == expected.get("name")
+        and item.get("target") == expected.get("target")
+        and item.get("source_type") == expected.get("source_type")
+        and item.get("source") == expected.get("source")
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            "publication tag ruleset discovery failed closed: "
+            f"expected exactly one repository-owned {expected.get('name')!r}/"
+            f"{expected.get('target')!r}, found {len(matches)}"
+        )
+    ruleset_id = matches[0].get("id")
+    if not isinstance(ruleset_id, int):
+        raise RuntimeError("publication tag ruleset discovery returned no numeric id")
+    return ruleset_id
 
 
 def on_block(text: str) -> list[str]:
@@ -216,7 +304,7 @@ def check_workflow(policy: dict[str, Any], text: str) -> list[str]:
     block_text = "\n".join(block)
     if not re.search(r"(?m)^  push:\s*\n    branches:\s*\[\s*main\s*\]\s*$", block_text):
         failures.append("workflow push trigger must target exactly [ main ]")
-    crons = re.findall(r'''(?m)^\s*-\s*cron:\s*['"]([^'"]+)['"]\s*$''', block_text)
+    crons = re.findall(r"(?m)^\s*-\s*cron:\s*['\"]([^'\"]+)['\"]\s*$", block_text)
     if crons != [policy.get("scheduleCron")]:
         failures.append(f"workflow cron: expected {[policy.get('scheduleCron')]!r}, got {crons!r}")
     if re.search(r"(?m)^\s*continue-on-error\s*:", text):
@@ -233,7 +321,7 @@ def check_workflow(policy: dict[str, Any], text: str) -> list[str]:
     return failures
 
 
-def api_get(url: str, token: str | None) -> dict[str, Any]:
+def api_get_json(url: str, token: str | None) -> Any:
     headers = {
         "Accept": "application/vnd.github+json",
         "User-Agent": "zMyBatis-live-settings-audit",
@@ -244,11 +332,22 @@ def api_get(url: str, token: str | None) -> dict[str, Any]:
     request = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
-            value = json.load(response)
+            return json.load(response)
     except (urllib.error.URLError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"GitHub API read failed: {exc}") from exc
+
+
+def api_get_object(url: str, token: str | None) -> dict[str, Any]:
+    value = api_get_json(url, token)
     if not isinstance(value, dict):
         raise RuntimeError(f"GitHub API returned non-object JSON from {url}")
+    return value
+
+
+def api_get_list(url: str, token: str | None) -> list[Any]:
+    value = api_get_json(url, token)
+    if not isinstance(value, list):
+        raise RuntimeError(f"GitHub API returned non-list JSON from {url}")
     return value
 
 
@@ -264,6 +363,7 @@ def main(argv: list[str]) -> int:
         workflow_rel = policy["workflow"]
         if not isinstance(workflow_rel, str):
             raise ValueError("liveSettingsAudit.workflow must be a string")
+        publication_expected = mapping(policy, "publicationTagRuleset")
     except (KeyError, ValueError) as exc:
         print(f"live-settings policy error: {exc}", file=sys.stderr)
         return 2
@@ -291,9 +391,27 @@ def main(argv: list[str]) -> int:
     token = os.environ.get("LIVE_SETTINGS_AUDIT_TOKEN") or os.environ.get("GITHUB_TOKEN")
     try:
         ruleset_id = mapping(policy, "ruleset")["id"]
-        repo_json = api_get(f"{api}/repos/{repository}", token)
-        ruleset_json = api_get(f"{api}/repos/{repository}/rulesets/{ruleset_id}", token)
-        failures = compare_live(policy, text, repo_json, ruleset_json)
+        repo_json = api_get_object(f"{api}/repos/{repository}", token)
+        ruleset_json = api_get_object(
+            f"{api}/repos/{repository}/rulesets/{ruleset_id}",
+            token,
+        )
+        summaries = api_get_list(
+            f"{api}/repos/{repository}/rulesets?per_page=100",
+            token,
+        )
+        publication_id = find_publication_ruleset_id(summaries, publication_expected)
+        publication_json = api_get_object(
+            f"{api}/repos/{repository}/rulesets/{publication_id}",
+            token,
+        )
+        failures = compare_live(
+            policy,
+            text,
+            repo_json,
+            ruleset_json,
+            publication_json,
+        )
     except (KeyError, ValueError, RuntimeError) as exc:
         print(f"live-settings audit failed closed: {exc}", file=sys.stderr)
         return 1
