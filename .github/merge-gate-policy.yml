@@ -41,10 +41,6 @@ requiredStatusChecks:
     job: lint
 
 excludedFromRequiredChecks:
-  - job: build.yml#releaseDraft
-    reason: >-
-      Guarded by an exact event-name exclusion from pull_request execution;
-      it never satisfies a PR merge gate.
   - workflow: release.yml
     reason: >-
       Runs only on a published GitHub Release event. Publication trust-boundary
@@ -78,12 +74,6 @@ trustBoundary:
   workflowDefault: contents:read
   explicitPermissionsRequired: true
   privilegedJobs:
-    - workflow: .github/workflows/build.yml
-      job: releaseDraft
-      permissions: [ contents:write ]
-      justification: >-
-        Creates/replaces a draft GitHub Release from main after validation
-        succeeds. It is exactly excluded from pull_request execution.
     - workflow: .github/workflows/release.yml
       job: release
       permissions: [ contents:write ]
@@ -151,7 +141,7 @@ liveSettingsAudit:
     source: luceat-lux-vestra/zMyBatis
     enforcement: active
     ref_name:
-      include: [ "refs/tags/[0-9][0-9].[0-9][0-9].[0-9][0-9].[0-9][0-9][0-9][0-9][0-9][0-9]" ]
+      include: [ "refs/tags/v*" ]
       exclude: []
     bypass_actors: []
     rule_types: [ deletion, update ]

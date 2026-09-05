@@ -1,6 +1,6 @@
-# Publishes only a GitHub Release whose tag resolves to reviewed main history.
-# The protected release tag is the single effective plugin version used for build,
-# plugin metadata, artifact validation, signing, Marketplace publication, and release asset identity.
+# Publishes only a GitHub Release whose SemVer tag resolves to reviewed main history.
+# The protected v-prefixed release tag is the publication identity; the effective JetBrains
+# plugin version is the same SemVer with exactly the leading v removed.
 
 name: Release
 
@@ -56,7 +56,8 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          ./gradlew clean buildPlugin verifyPlugin -PpluginVersion="$RELEASE_TAG"
+          PLUGIN_VERSION="${RELEASE_TAG#v}"
+          ./gradlew clean buildPlugin verifyPlugin -PpluginVersion="$PLUGIN_VERSION"
           python3 .github/workflow-policy/check_release_provenance.py artifact "$RELEASE_TAG" build/distributions
 
       - name: Capture validated release asset
@@ -74,7 +75,10 @@ jobs:
           CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
-        run: ./gradlew signPlugin -PpluginVersion="$RELEASE_TAG"
+        run: |
+          set -euo pipefail
+          PLUGIN_VERSION="${RELEASE_TAG#v}"
+          ./gradlew signPlugin -PpluginVersion="$PLUGIN_VERSION"
 
       - name: Publish exact release version
         env:
@@ -83,7 +87,10 @@ jobs:
           CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
-        run: ./gradlew publishPlugin -PpluginVersion="$RELEASE_TAG"
+        run: |
+          set -euo pipefail
+          PLUGIN_VERSION="${RELEASE_TAG#v}"
+          ./gradlew publishPlugin -PpluginVersion="$PLUGIN_VERSION"
 
       - name: Upload validated release asset
         env:

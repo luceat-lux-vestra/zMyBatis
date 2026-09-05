@@ -9,11 +9,42 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
-TAG_RE = re.compile(r"^\d{2}\.\d{2}\.\d{2}\.\d{6}$")
+# Publication tags are SemVer with a lowercase v prefix. Build metadata is intentionally
+# excluded from publication identity; prerelease identifiers are supported. The legacy
+# Marketplace line uses 26.x timestamp-like versions, so 27 is the migration floor that
+# keeps new publications monotonically newer for existing installations.
+TAG_RE = re.compile(
+    r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
+TAG_FORMAT = "vMAJOR.MINOR.PATCH[-PRERELEASE]"
+MIN_PUBLICATION_MAJOR = 27
 
 
 def validate_tag(tag: str) -> list[str]:
-    return [] if TAG_RE.fullmatch(tag) else [f"release tag {tag!r} must match yy.MM.dd.HHmmss"]
+    match = TAG_RE.fullmatch(tag)
+    if not match:
+        return [f"release tag {tag!r} must match strict {TAG_FORMAT}"]
+    major = int(match.group(1))
+    if major < MIN_PUBLICATION_MAJOR:
+        return [
+            f"release tag {tag!r} is below the SemVer migration floor v{MIN_PUBLICATION_MAJOR}.0.0"
+        ]
+    prerelease = match.group(4)
+    if prerelease:
+        for identifier in prerelease.split("."):
+            if identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0"):
+                return [
+                    f"release tag {tag!r} has a numeric prerelease identifier with a leading zero"
+                ]
+    return []
+
+
+def effective_version(tag: str) -> str:
+    failures = validate_tag(tag)
+    if failures:
+        raise ValueError(failures[0])
+    return tag[1:]
 
 
 def plugin_versions_from_zip(path: Path) -> list[str]:
@@ -39,15 +70,22 @@ def plugin_versions_from_zip(path: Path) -> list[str]:
 
 def verify_artifact(tag: str, distributions: Path) -> list[str]:
     failures = validate_tag(tag)
+    if failures:
+        return failures
+    version = effective_version(tag)
     archives = sorted(distributions.glob("*.zip"))
     if len(archives) != 1:
-        return failures + [f"expected exactly one release ZIP, found {len(archives)}"]
+        return [f"expected exactly one release ZIP, found {len(archives)}"]
     archive = archives[0]
-    if tag not in archive.name:
-        failures.append(f"release ZIP name {archive.name!r} does not contain version {tag!r}")
+    if not archive.stem.endswith(f"-{version}"):
+        failures.append(
+            f"release ZIP name {archive.name!r} must end with exact effective version '-{version}.zip'"
+        )
     versions = plugin_versions_from_zip(archive)
-    if versions != [tag]:
-        failures.append(f"artifact plugin.xml versions: expected {[tag]!r}, got {versions!r}")
+    if versions != [version]:
+        failures.append(
+            f"artifact plugin.xml versions: expected {[version]!r}, got {versions!r}"
+        )
     return failures
 
 
@@ -76,14 +114,18 @@ def verify_static(repo: Path) -> list[str]:
         "persist-credentials: false",
         'git merge-base --is-ancestor "$TAG_COMMIT" origin/main',
         'python3 .github/workflow-policy/check_release_provenance.py tag "$RELEASE_TAG"',
-        './gradlew clean buildPlugin verifyPlugin -PpluginVersion="$RELEASE_TAG"',
+        './gradlew clean buildPlugin verifyPlugin -PpluginVersion="$PLUGIN_VERSION"',
         'python3 .github/workflow-policy/check_release_provenance.py artifact "$RELEASE_TAG" build/distributions',
-        './gradlew signPlugin -PpluginVersion="$RELEASE_TAG"',
-        './gradlew publishPlugin -PpluginVersion="$RELEASE_TAG"',
+        './gradlew signPlugin -PpluginVersion="$PLUGIN_VERSION"',
+        './gradlew publishPlugin -PpluginVersion="$PLUGIN_VERSION"',
     ]
     for fragment in required_release_fragments:
         if fragment not in release:
             failures.append(f"release.yml missing provenance gate: {fragment}")
+    if release.count('PLUGIN_VERSION="${RELEASE_TAG#v}"') < 3:
+        failures.append("release.yml must derive the effective SemVer from the v-prefixed tag for build/sign/publish")
+    if '-PpluginVersion="$RELEASE_TAG"' in release:
+        failures.append("release.yml must not pass the v-prefixed Git tag as the plugin version")
     if "continue-on-error" in release:
         failures.append("release.yml must not use continue-on-error")
     if "pull_request:" in release or "workflow_dispatch:" in release:
@@ -94,10 +136,18 @@ def verify_static(repo: Path) -> list[str]:
     if min(publish_pos, artifact_pos, sign_pos) < 0 or not (artifact_pos < sign_pos < publish_pos):
         failures.append("artifact verification and signing must precede publication")
 
-    if '--target "$GITHUB_SHA"' not in build_workflow:
-        failures.append("build.yml release draft must bind the tag target to exact main GITHUB_SHA")
-    if "git show -s --format=%ct \"$GITHUB_SHA\"" not in build_workflow:
-        failures.append("build.yml release draft version must derive deterministically from the exact commit")
+    forbidden_draft_fragments = [
+        "releaseDraft:",
+        "gh release create",
+        "git show -s --format=%ct",
+        "%y.%m.%d.%H%M%S",
+        "date -u -d",
+    ]
+    for fragment in forbidden_draft_fragments:
+        if fragment in build_workflow:
+            failures.append(
+                f"build.yml ordinary main/PR CI must not synthesize release identity: {fragment}"
+            )
     return failures
 
 
