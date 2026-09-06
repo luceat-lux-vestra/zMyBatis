@@ -21,8 +21,8 @@ zMyBatis is a public Apache-2.0 repository. This document covers the mechanics o
 Run what's relevant to your change, and say in the PR description what you ran:
 
 - Product code: `./gradlew check`; `./gradlew buildPlugin`; `./gradlew verifyPlugin` if platform/API compatibility is plausibly affected.
-- `.github/workflows/` or `.github/workflow-policy/` changes: `python3 .github/workflow-policy/test_policy.py` locally (it exercises `check_pins.py`, `check_trust_boundary.py`, `check_required_contexts.py`, actionlint, and zizmor against both the real workflows and the fixtures under `.github/workflow-policy/fixtures/`), in addition to the CI-run `Lint workflows` check.
-- Anything touching parsing, parameter binding, or SQL rendering: add or update a unit test that would fail without your change - see AGENTS.md section 8. `MyPluginTest`/`src/test/testData/rename/` are template leftovers and do not count as coverage.
+- `.github/workflows/` or `.github/workflow-policy/` changes: `python3 .github/workflow-policy/test_policy.py` locally. Changes to live-settings or release provenance also run `python3 .github/workflow-policy/test_live_settings.py` and/or `python3 .github/workflow-policy/test_release_provenance.py` as applicable, in addition to the CI-run `Lint workflows` check.
+- Anything touching parsing, parameter binding, SQL rendering, annotation extraction, or persistence behavior: add or update a falsifiable product contract; current evidence and platform-dependent gaps are mapped in [docs/test-contracts.md](docs/test-contracts.md). The template/debug tests removed under #58 are historical and do not count as current coverage.
 
 CI green is necessary, not sufficient. A PASS from review is only valid for the exact HEAD SHA it was given against (AGENTS.md section 11); pushing after approval invalidates it.
 
@@ -31,7 +31,7 @@ CI green is necessary, not sufficient. A PASS from review is only valid for the 
 - Never weaken `.github/workflow-policy/check_trust_boundary.py`'s R0/R1/R2 rules, `check_pins.py`'s SHA-pinning requirement, or `workflow-lint.yml`'s actionlint/zizmor invocations to make a finding disappear. Fix the underlying workflow.
 - If a check's fixtures under `.github/workflow-policy/fixtures/bad/` ever stop failing, that is a regression in the check, not a fixture to delete.
 - If you add or rename a job that should be a required merge-gate context, update `.github/merge-gate-policy.yml`'s `requiredStatusChecks` in the same PR - `check_required_contexts.py` will otherwise fail on the drift.
-- `release.yml` (JetBrains Marketplace publication) is intentionally out of scope for the `workflow-lint.yml` checks right now, pending a separate release-provenance PR. Don't fold release.yml hardening into an unrelated change; open it against that track instead.
+- `release.yml` is included in the fail-closed workflow security/static-analysis checks and has a checked-in release-provenance contract. Do not weaken or bypass those checks to make publication changes pass, and do not fold unrelated work into release hardening.
 
 ## Dependabot PRs
 
