@@ -109,7 +109,7 @@ intellijPlatform {
     }
 }
 
-// Run the real Java PSI/project-index fixture in its own sandbox. IDEA Ultimate
+// Run the real Java PSI/project fixtures in their own sandbox. IDEA Ultimate
 // bundles Vue support, whose resource lookup is unrelated to this Java boundary
 // and currently fails under the transformed Gradle test distribution.
 val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIndexTest") {
@@ -121,6 +121,7 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
     task {
         filter {
             includeTestsMatching("com.algorist.zMyBatis.AnnotationSqlExtractorProjectFixtureTest")
+            includeTestsMatching("com.algorist.zMyBatis.JavaActionContextProjectFixtureTest")
         }
     }
 }
@@ -147,6 +148,7 @@ tasks {
     test {
         filter {
             excludeTestsMatching("com.algorist.zMyBatis.AnnotationSqlExtractorProjectFixtureTest")
+            excludeTestsMatching("com.algorist.zMyBatis.JavaActionContextProjectFixtureTest")
         }
     }
 

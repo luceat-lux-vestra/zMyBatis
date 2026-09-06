@@ -13,6 +13,7 @@ The required `Test` CI context is product evidence, not a line-coverage target. 
 | Mutation/raw interpolation safety baseline | `MyBatisExecutionSafetyBaselineTest` | common read/mutation/DDL/unclassified SQL families remain ordinary evaluator strings, statement wrapper kind does not constrain SQL semantics, and `${}` preserves statement-shaped raw text without a typed safety boundary |
 | Mapper dependency baseline | `MyBatisEvaluatorDynamicTagBaselineTest`, `MyBatisEvaluatorNegativeBoundaryTest` | unresolved `<include>` behavior differs materially by compatibility setting: default mode returns current plugin-error text while `Ignore Unknown Tags` can strip the dependency and yield truncated SQL text |
 | Annotation SQL extraction | `AnnotationSqlExtractorTest`, `AnnotationSqlExtractorProjectFixtureTest` | literal/array/constant shapes at the PSI-interface contract plus real Java PSI/project-index resolution of cross-file constant references, including ordered constant arrays |
+| Java saved-action context / overload identity | `JavaActionContextProjectFixtureTest` | a real saved Java editor/caret selects the exact overloaded `PsiMethod` and annotation SQL through production action boundaries, while the current remembered-parameter statement key collapses distinct overloads to the same `file::Class#method` identity |
 | Session persistence format and stale index recovery | `PersistedConsoleSessionTest`, `ConsoleCacheServicePersistenceTest` | versioned encoding, malformed/legacy/default-schema invalidation, interrupted-write pruning, shutdown lifecycle gating |
 
 The old IntelliJ template rename test and evaluator debug/reproduction files were removed when the product-specific tests above replaced them.
@@ -36,7 +37,15 @@ These cases are falsification fixtures for #61. The method/runtime provenance re
 
 `AnnotationSqlExtractorTest` remains the fast PSI-interface contract. `AnnotationSqlExtractorProjectFixtureTest` adds a materially different proof path: it boots the IntelliJ Java code-insight fixture, installs separate project Java classes, parses a real mapper Java file, verifies `fixture.SqlConstants` is discoverable through `JavaPsiFacade` with project scope, resolves annotation value `PsiReferenceExpression`s to real `PsiField`s across files, and then invokes the production extractor.
 
-The fixture covers both a direct constant annotation value and an ordered annotation array containing cross-file constants. This closes the specific parser/project-index evidence gap for constant resolution; it does **not** by itself prove the whole Java action workflow. Caret/source authority, action-level `PsiMethod` selection, canonical overloaded-method identity, unsaved-document authority, and downstream execution remain separate #61/#62/#67 obligations.
+The fixture covers both a direct constant annotation value and an ordered annotation array containing cross-file constants. This closes the specific parser/project-index evidence gap for constant resolution. `JavaActionContextProjectFixtureTest` separately exercises the saved-Java action boundary; unsaved/current-document authority and a non-colliding canonical mapper-method identity remain separate #61/#62/#67 obligations.
+
+## Java saved-action context and overload identity evidence boundary
+
+`JavaActionContextProjectFixtureTest` boots the same real Java code-insight environment but drives a different boundary. It creates two overloaded annotation mapper methods, moves the real editor caret to each overload, supplies project/editor/PSI data through an `AnActionEvent`, and asserts that production `MyBatisContextAnalyzer.analyze` classifies both positions as annotation context. It then invokes the production action extraction boundary and proves that each caret returns the exact SQL attached to that overloaded `PsiMethod`.
+
+The same fixture deliberately exercises the current remembered-parameter statement-key boundary. The two methods have distinct parameter signatures and distinct SQL, but both keys are `/fixture/UserMapper.java::UserMapper#find`. This is executable characterization of a canonical-identity defect, not a target contract: remembered inputs can currently alias across overloaded mapper methods because the action key omits the method signature. #67 owns the canonical identity/evidence repair, while #62/#66 must establish one authoritative current source for the action workflow.
+
+This evidence is intentionally limited to the saved Java PSI/editor state supplied by the fixture. It does not prove which representation wins when an IDE document has unsaved changes, whether PSI/document synchronization is authoritative at action time, or whether a future canonical identity remains stable across the full persistence workflow. Those remain explicit obligations rather than being inferred from a green saved-file fixture.
 
 ## Dynamic SQL evidence boundary
 
@@ -83,7 +92,7 @@ The automated session tests deliberately avoid pretending to emulate JetBrains D
 - actual console recreation and schema switching across an IDE restart;
 - console disposal callbacks from the real Database Tools console implementation;
 - end-to-end confirmation that startup restoration never triggers statement execution;
-- end-to-end Java action context from caret/current document through `PsiMethod` selection and canonical mapper-method identity.
+- unsaved/current-document Java action authority and post-redesign canonical mapper-method identity across the full persistence workflow.
 
 Those gaps are explicit so a green `Test` context is not misrepresented as evidence for behavior it does not execute.
 
