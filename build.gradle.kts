@@ -127,6 +127,22 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
     }
 }
 
+// Run the Kotlin boundary characterization with the real bundled Kotlin plugin,
+// without adding Kotlin as a production plugin dependency or claiming support.
+val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundaryTest") {
+    testFramework(TestFrameworkType.Platform)
+    testFramework(TestFrameworkType.Plugin.Java)
+    plugins {
+        bundledPlugin("org.jetbrains.kotlin")
+        disablePlugin("org.jetbrains.plugins.vue")
+    }
+    task {
+        filter {
+            includeTestsMatching("com.algorist.zMyBatis.KotlinActionContextBoundaryTest")
+        }
+    }
+}
+
 // Configure Gradle Changelog Plugin.
 changelog {
     groups.empty()
@@ -151,11 +167,12 @@ tasks {
             excludeTestsMatching("com.algorist.zMyBatis.AnnotationSqlExtractorProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.JavaActionContextProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
+            excludeTestsMatching("com.algorist.zMyBatis.KotlinActionContextBoundaryTest")
         }
     }
 
     check {
-        dependsOn(javaParserIndexTest)
+        dependsOn(javaParserIndexTest, kotlinBoundaryTest)
     }
 
     wrapper {
