@@ -6,28 +6,28 @@
 
 ### Changed
 - **Execute (zMyBatis)** is now a standalone action (right-click menu / `Run` context group) instead of overriding DataGrip's built-in Execute action — DataGrip's own Execute, Explain Plan, and all other actions are no longer affected
-- **Session management redesigned** — `ConsoleCacheService.put()` now persists session data (dsName + schemaName) atomically; startup restore uses `pruneStaleIndex()` to cross-check the index against saved session data and drops entries that are no longer valid; `markShuttingDown()` / `dispose()` explicitly re-persist all live sessions before clearing the cache, eliminating the shutdown-flag race condition that caused deleted consoles to reappear after restart
+- **Session persistence hardened** — restart-persisted sessions are project-scoped and require a stable datasource UUID plus an explicit named schema; `Use Default Schema` and datasources without a stable UUID remain in-process only, and stale/missing/ambiguous restoration is rejected instead of redirected
 
 ### Added
 
 #### Core Execution
-- Execute MyBatis mapper queries directly from XML mapper files and Java annotation-based mappers via the DataGrip execution pipeline
-- Dynamic SQL evaluation: `<if>`, `<choose>/<when>/<otherwise>`, `<foreach>`, `<where>`, `<set>`, `<trim>`, `<bind>` tags fully supported
-- Supports `@Select`, `@Insert`, `@Update`, `@Delete` annotation-based mappers including multi-line string arrays and constant field references
+- Execute self-contained MyBatis mapper statements from XML mapper files and supported Java annotation-based mappers through the JetBrains Database Tools console path, subject to the documented evaluator/input/target evidence boundaries
+- Dynamic SQL evaluation routes `<if>`, `<choose>/<when>/<otherwise>`, `<foreach>`, `<where>`, `<set>`, `<trim>`, and `<bind>` through MyBatis `XMLScriptBuilder`; maintained tests exercise representative paths for each tag, but full application-runtime/JDBC/TypeHandler parity is not claimed
+- Java annotation extraction covers literal values, ordered multi-line string arrays, and constant-field-reference shapes at the extractor contract; real project parser/index-backed constant resolution remains a platform evidence gap
 - `@SelectProvider` / `@InsertProvider` / `@UpdateProvider` / `@DeleteProvider` methods show a clear unsupported notice instead of failing silently
 
 #### Parameter Input
-- Parameter input dialog: automatically detects `#{param}` and OGNL expression parameters and prompts for values before execution
-- Object/array parameters: multi-line JSON editor for dot-notation params (e.g. `#{user.name}`)
-- Supports `null`, numbers, strings, booleans, and list inputs (e.g. `[1, 2, 3]`) in the parameter dialog
-- Remember Last Inputs: parameter dialog pre-fills with last-used values per Mapper statement
+- Parameter input dialog heuristically detects `#{param}`, `${param}`, and OGNL-driven inputs and prompts for values before execution; generated/runtime parameter naming is not treated as proven caller metadata
+- Object/array parameters: multi-line JSON editor for supported dot/index navigation (e.g. `#{user.name}`) and collection/`foreach` shapes
+- Supports `null`, numbers, strings, booleans, and structured/list inputs needed by the maintained navigation/`foreach` paths; direct collection/object `#{}` literal binding is not claimed as supported semantics
+- Remember Last Inputs: parameter dialog pre-fills last-used values using the current statement key; canonical statement identity and sensitive-value retention remain Leap design obligations
 - Empty Input Handling: configurable policy for blank fields — treat as `NULL` or empty string `""`
-- OGNL expression parameters properly extracted: loop variables (`item`, `index`) and `<bind>` variables are correctly excluded
+- OGNL expression parameters are heuristically extracted while known loop variables (`item`, `index`) and `<bind>` variables are excluded from prompting
 
 #### Settings (`Settings → Tools → zMyBatis`)
-- SQL Preview: optional dialog to review resolved Native SQL before sending it to the database
+- SQL Preview: optional dialog to review resolved SQL before sending it to the database; current mutation/raw-interpolation confirmation policy is still a documented Leap safety gap
 - Auto-format SQL: reformat resolved SQL using IntelliJ's built-in SQL code-style settings before execution or preview
 - Copy to Clipboard: auto-copy the final resolved SQL to clipboard after execution (enabled by default)
 - Console Session Policy: choose between reusing an existing DB console or opening a new one per execution
-- Strict OGNL Mode: optional strict mode that surfaces OGNL evaluation errors immediately (disabled by default)
-- Ignore Unknown Tags: optional pre-stripping of unrecognised/custom XML tags to allow parsing to continue (disabled by default)
+- Strict OGNL Mode: optional strict mode that surfaces recognized OGNL evaluation errors immediately (disabled by default)
+- Ignore Unknown Tags: optional pre-stripping of unrecognised/custom XML tags to allow parsing to continue (disabled by default); this is compatibility-altered behavior, not stock MyBatis semantics

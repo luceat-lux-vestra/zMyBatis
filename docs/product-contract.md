@@ -4,7 +4,7 @@ This document is the product-policy authority for Leap Epic #60 and Track #61.
 
 It separates **current evidence** from the **Leap product decision**. Current implementation behavior is not a preservation constraint. A behavior is treated as maintained support only when its source, parameter, evaluation, execution, target, and IDE/database boundaries have enough evidence to fail closed when they cannot be proven.
 
-Audit baseline for this contract: `main` at `2ec7829cdaa2b74e9baab6ecf8432eb5b50c6bef`.
+Implementation audit baseline for this revision: `main` at `181f11e8a7d0bcfd322fde933ed789ff53586b53`. Evidence added by this revision is identified below and becomes authoritative only when the exact-HEAD test/merge gate succeeds; the baseline SHA does not imply that those new test files already existed on the parent commit.
 
 ## Status vocabulary
 
@@ -20,16 +20,16 @@ These terms describe evidence and product policy; they must not be read as a cla
 
 ## Capability / fidelity matrix
 
-| Area | Current evidence at audit base | Current classification | Leap product decision | Downstream owner |
+| Area | Current / revision evidence | Current classification | Leap product decision | Downstream owner |
 | --- | --- | --- | --- | --- |
 | XML `<select>/<insert>/<update>/<delete>` under caret | `MyBatisContextAnalyzer` recognizes these tags and the action extracts the containing statement tag | SUPPORTED for self-contained statement extraction, subject to evaluator/input limits below | SUPPORTED only when the complete statement/dependency source can be proven | #62 |
 | Java `@Select/@Insert/@Update/@Delete` | `PsiJavaFile` + `PsiMethod`; extractor unit contract covers literal, ordered array, and PSI-field-reference shapes | DEGRADED: extractor behavior is tested, real project parser/index-backed resolution remains platform-dependent | SUPPORTED only with maintained Java parser/index evidence and canonical method identity | #62, #67 |
 | Kotlin statement annotations | execution-context detection is `PsiJavaFile`-based and has no Kotlin PSI/source adapter | UNSUPPORTED | UNSUPPORTED until a dedicated adapter and evidence are added; do not group this claim with Java | #61, #62 |
 | Provider annotations | provider annotations are detected only to display an unsupported notice | UNSUPPORTED | UNSUPPORTED unless a future product decision defines a bounded provider/runtime model | #61, #62 |
-| XML `<sql>/<include>` and namespace fragment dependencies | extraction passes only the selected statement tag; no fragment graph/resolution implementation or contract evidence exists | UNSUPPORTED | unresolved include/fragment dependencies MUST fail closed; support requires explicit source/dependency modeling | #62 |
+| XML `<sql>/<include>` and namespace fragment dependencies | extraction passes only the selected statement tag; no fragment graph/resolution implementation exists; this revision characterizes the default/unit-test unresolved-`<include>` path as plugin-error text, while `Ignore Unknown Tags` remains a compatibility-altered path that may strip unrecognized tags | UNSUPPORTED by the maintained product contract; current runtime enforcement is still degraded/compatibility-altered | unresolved include/fragment dependencies MUST fail closed with typed failure; support requires explicit source/dependency modeling | #62, #64 |
 | `databaseId`, custom language drivers, runtime-only mapper extensions | no authoritative selection/runtime model is present | UNKNOWN | UNSUPPORTED for the maintained baseline until separately specified and evidenced | #61, #62, #64 |
 | Unsaved document / PSI / VFS authority | action reads editor/PSI state, but there is no explicit synchronization/authority contract proving which document state is authoritative | UNKNOWN | define one current-document authority and validity model before support is claimed | #62, #66 |
-| Standard dynamic tags | implementation routes MyBatis standard handlers through `XMLScriptBuilder`; current automated evaluator contracts directly exercise representative `if`/`where`/`foreach` behavior, not every standard tag individually | DEGRADED evidence for the full tag set; representative supported behavior is proven, complete maintained coverage is not | define and evidence the exact supported tag set; zMyBatis transformations remain separately classified | #61, #64, #67 |
+| Standard dynamic tags | implementation routes MyBatis standard handlers through `XMLScriptBuilder`; existing tests cover `if`/`where`/`foreach`, and this revision adds representative `choose`/`when`/`otherwise`, `set`, `trim`, and `bind` paths | DEGRADED for the full tag set: direct tag-level baseline evidence exists after this revision's exact-HEAD tests pass, but boundary/failure permutations, nested combinations, and application-runtime parity remain insufficient for an unconditional supported claim | define and maintain the exact supported tag set with positive and negative evidence; zMyBatis-owned parameter/OGNL/literal transformations remain separately classified | #61, #64, #67 |
 | Custom map/OGNL behavior | evaluator installs a process-global `LinkedHashMap` OGNL `PropertyAccessor` and sanitizes expressions before MyBatis parsing | COMPATIBILITY-ALTERED | no uncontrolled global evaluator mutation may participate in correctness; isolate or remove it | #64 |
 | `Strict OGNL Mode` off behavior | recognized/unrecognized evaluator failures can become SQL-looking error comments instead of typed failure data | DEGRADED / unsafe for an execution boundary | executable evaluation is always fail-closed; diagnostics are typed data, never SQL text | #64, #67 |
 | `Ignore Unknown Tags` | unrecognized tags may be regex-stripped while preserving inner text when enabled | COMPATIBILITY-ALTERED | unknown constructs cannot be silently stripped and automatically executed on the authoritative path; any retained escape hatch is explicit and non-authoritative | #64 |
@@ -128,10 +128,10 @@ Current settings are not automatically target product guarantees.
 This document establishes policy, but #61 remains open until the policy has falsifiable baseline evidence. At minimum, evidence must cover:
 
 - self-contained XML statements;
-- the exact maintained dynamic-tag set, including evidence for any tag claimed supported rather than inferring full coverage from `XMLScriptBuilder` alone;
+- the exact maintained dynamic-tag set; this revision adds at least one representative path for every standard tag named by `MyBatisEvaluator`, but positive tag presence alone is not enough to promote the full set to unconditional support without boundary/failure evidence;
 - Java annotation literal/array/constant shapes plus real parser/index integration evidence if those paths remain a maintained claim;
 - explicit Kotlin/provider unsupported outcomes;
-- `<sql>/<include>` and other dependency cases proving they cannot silently truncate into plausible SQL;
+- `<sql>/<include>` and other dependency cases proving they cannot silently truncate into plausible SQL across relevant modes; this revision's default-path unresolved-`<include>` characterization is only a baseline, not the target typed-failure proof;
 - malformed/unknown-tag/OGNL/unsupported-value failure paths proving failure cannot become executable SQL;
 - `#{}` versus `${}` provenance and confirmation policy;
 - `@Param`, generated aliases, collection aliases, nested/foreach/bind cases, and explicit unknown requirements;
