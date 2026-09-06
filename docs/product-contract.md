@@ -1,156 +1,313 @@
-# zMyBatis product capability and safety contract
+# zMyBatis Leap product capability and safety contract
 
 This document is the product-policy authority for Leap Epic #60 and Track #61.
 
-It separates **current evidence** from the **Leap product decision**. Current implementation behavior is not a preservation constraint. A behavior is treated as maintained support only when its source, parameter, evaluation, execution, target, and IDE/database boundaries have enough evidence to fail closed when they cannot be proven.
+Architecture is defined by [leap-architecture.md](leap-architecture.md). Current implementation behavior is evidence and migration input, **not a preservation constraint**. When a target decision is explicit, downstream work may replace or delete the current classes, settings, persistence formats, and execution flow.
 
-Implementation audit baseline for this revision: `main` at `09aeb946162dffb3d7713a660a4e7c8932c6ed42`. Evidence added by this revision is identified below and becomes authoritative only when the exact-HEAD test/merge gate succeeds; the baseline SHA does not imply that those new test files already existed on the parent commit.
+Target contract baseline: product decisions frozen from fresh `main` `249d3a5058fee71b858cb7926dbb30864ee15858` under #61/#101.
 
-## Status vocabulary
+## 1. Status vocabulary
 
-These terms describe evidence and product policy; they must not be read as a claim that the current implementation already satisfies every Leap target invariant.
+- **SUPPORTED** — part of the maintained Leap v1 product contract when its required evidence and dependencies are satisfied.
+- **UNSUPPORTED** — deliberately outside Leap v1; the product stops visibly before execution.
+- **COMPATIBILITY-ALTERED** — intentionally differs from stock MyBatis/application runtime and must be labeled; it is not silently treated as supported equivalence.
+- **DEGRADED** — useful current behavior exists but is not acceptable as the final authoritative path.
+- **UNKNOWN** — required semantics cannot be proven. UNKNOWN blocks execution.
 
-- **SUPPORTED** — part of the intended maintained product contract with a concrete evidence path.
-- **UNSUPPORTED** — deliberately outside the maintained product contract; the target behavior is to stop visibly before execution.
-- **COMPATIBILITY-ALTERED** — intentionally differs from stock MyBatis/application-runtime semantics and must be labeled as such.
-- **DEGRADED** — useful behavior exists, but evidence or fidelity is insufficient for an unconditional supported claim.
-- **UNKNOWN** — the product cannot currently prove the required semantics.
+**Invariant:** unsupported, unknown, ambiguous, stale, or failed preparation can never become plausible executable SQL.
 
-**Leap target invariant:** UNKNOWN, unresolved ambiguity, missing provenance, and unsupported dependencies must fail closed rather than being converted into plausible executable SQL.
+## 2. Leap v1 capability matrix
 
-## Capability / fidelity matrix
+| Area | Leap v1 decision | Required boundary / owner |
+| --- | --- | --- |
+| XML `<select>/<insert>/<update>/<delete>` | **SUPPORTED** when complete source/dependencies are resolvable | #62 source graph; #64 MyBatis preparation |
+| XML `<sql>/<include>` | **SUPPORTED target** including explicit dependency resolution; missing/ambiguous/cyclic dependencies block | #62 + isolated MyBatis mapper parsing in #64 |
+| Standard dynamic tags (`if`, `choose/when/otherwise`, `foreach`, `where`, `set`, `trim`, `bind`) | **SUPPORTED** through isolated maintained MyBatis semantics | #64 |
+| Unknown/custom XML elements | **UNSUPPORTED** on authoritative execution path; never silently stripped | #62/#64 |
+| Java `@Select/@Insert/@Update/@Delete` | **SUPPORTED target** with current-editor authority and complete method-signature identity | #62 |
+| Kotlin direct statement annotations | **UNSUPPORTED** in Leap v1 | explicit adapter/product decision required later |
+| Provider annotations | **UNSUPPORTED** in Leap v1 | stop before preparation; no speculative runtime provider model |
+| `databaseId`-dependent selection | **UNSUPPORTED/UNKNOWN** in Leap v1 when correctness depends on it | #62/#64 block |
+| Custom language drivers / runtime-only mapper extensions | **UNSUPPORTED** in Leap v1 | future explicit product decision only |
+| `#{}` | **SUPPORTED concept** through typed binding preparation/materialization within maintained type/dialect fidelity | #63/#64 |
+| `${}` | **SUPPORTED only as explicit raw interpolation**, separately provenanced and confirmed | #63/#66 |
+| Generated aliases / `@Param` / collection aliases | Supported only when provenance is actually established; never guessed solely by naming | #62/#63 |
+| Unknown parameter requirements | **UNSUPPORTED for execution** until resolved explicitly | #63 |
+| MyBatis/application custom TypeHandler runtime parity | **UNSUPPORTED unless explicitly reproduced/evidenced** | #64 |
+| Literal final SQL through Database Tools | Supported only as an explicit **materialized execution artifact** within a maintained type/dialect matrix; not JDBC/TypeHandler parity | #64/#65 |
+| SELECT | Supported after all source/input/preparation/target contracts pass | #66 orchestration |
+| INSERT/UPDATE/DELETE | Supported only with mandatory final-artifact confirmation | #66 |
+| Unknown semantic side-effect classification | Blocks; static SQL classification is not authorization | #64/#66 |
+| Stable datasource UUID + explicit schema | **SUPPORTED target identity contract** | preserve #57 invariants in #65 |
+| Default-schema restart | **UNSUPPORTED** until stable search-path identity can be proven | #65 |
+| IntelliJ IDEA Ultimate | target host; maintained claim requires current verifier/runtime evidence | #67 |
+| DataGrip | target host; maintained claim requires separate verifier/runtime evidence | #67 |
+| Generic other JetBrains hosts | **UNSUPPORTED/UNKNOWN** without maintained matrix | #67 |
 
-| Area | Current / revision evidence | Current classification | Leap product decision | Downstream owner |
-| --- | --- | --- | --- | --- |
-| XML `<select>/<insert>/<update>/<delete>` under caret | `MyBatisContextAnalyzer` recognizes these tags and the action extracts the containing statement tag | SUPPORTED for self-contained statement extraction, subject to evaluator/input limits below | SUPPORTED only when the complete statement/dependency source can be proven | #62 |
-| Java `@Select/@Insert/@Update/@Delete` | `PsiJavaFile` + `PsiMethod`; extractor unit/project fixtures cover literal/array/reference shapes and cross-file constants; `JavaActionContextProjectFixtureTest` proves saved Java caret/extraction for distinct overloads and separately characterizes an uncommitted editor Document against production action-time PSI extraction; `JavaActionContextDiskFixtureTest` separately proves the local-file persistence boundary without claiming project/index authority | DEGRADED: parser/index and saved-Java caret/extraction are evidenced, and VFS/save-state persistence semantics are characterized, but an unsaved editor Document can remain uncommitted while production analysis/extraction reads last-committed PSI; the remembered-parameter key also collapses overloads to `file::Class#method` | SUPPORTED only after the current editor source is made authoritative before PSI analysis/extraction and canonical method identity is maintained | #62, #66, #67 |
-| Kotlin statement annotations | execution-context detection is `PsiJavaFile`-based and has no Kotlin PSI/source adapter; `KotlinActionContextBoundaryTest` loads the bundled Kotlin plugin in a test-only sandbox, proves a Kotlin `@Select` mapper is a real `org.jetbrains.kotlin.psi.KtFile` rather than `PsiJavaFile`, places the caret in its mapper function, and proves production `MyBatisContextAnalyzer.analyze(...)` returns `NONE` | UNSUPPORTED | UNSUPPORTED until a dedicated adapter and maintained evidence are added; do not group this claim with Java | #61, #62 |
-| Provider annotations | provider annotations are detected only to display an unsupported notice | UNSUPPORTED | UNSUPPORTED unless a future product decision defines a bounded provider/runtime model | #61, #62 |
-| XML `<sql>/<include>` and namespace fragment dependencies | extraction passes only the selected statement tag; no fragment graph/resolution implementation exists; this revision characterizes the default/unit-test unresolved-`<include>` path as plugin-error text, while `Ignore Unknown Tags` remains a compatibility-altered path that may strip unrecognized tags | UNSUPPORTED by the maintained product contract; current runtime enforcement is still degraded/compatibility-altered | unresolved include/fragment dependencies MUST fail closed with typed failure; support requires explicit source/dependency modeling | #62, #64 |
-| `databaseId`, custom language drivers, runtime-only mapper extensions | no authoritative selection/runtime model is present | UNKNOWN | UNSUPPORTED for the maintained baseline until separately specified and evidenced | #61, #62, #64 |
-| Unsaved document / PSI / VFS authority | `JavaActionContextProjectFixtureTest` proves an active Java editor Document can contain `SELECT draft` while last-committed PSI and production analysis/extraction still expose `SELECT saved` until explicit `PsiDocumentManager.commitDocument`; `JavaActionContextDiskFixtureTest` uses a local `file://` mapper backed by a real OS file and proves editor edit -> unsaved/uncommitted Document, PSI commit -> draft PSI while the physical file remains saved/unsaved, and `FileDocumentManager.saveDocument` -> draft text persisted to the physical file | DEGRADED for production action-time source authority; Document↔PSI and PSI↔physical-file save transitions are now separately evidenced | the current editor Document is authoritative for an active editor; analysis/extraction must establish a synchronized PSI snapshot from that Document or fail closed on ambiguity; PSI commit and physical persistence remain distinct transitions and must not be conflated | #62, #66 |
-| Standard dynamic tags | implementation routes MyBatis standard handlers through `XMLScriptBuilder`; existing tests cover `if`/`where`/`foreach`, and this revision adds representative `choose`/`when`/`otherwise`, `set`, `trim`, and `bind` paths | DEGRADED for the full tag set: direct tag-level baseline evidence exists after this revision's exact-HEAD tests pass, but boundary/failure permutations, nested combinations, and application-runtime parity remain insufficient for an unconditional supported claim | define and maintain the exact supported tag set with positive and negative evidence; zMyBatis-owned parameter/OGNL/literal transformations remain separately classified | #61, #64, #67 |
-| Custom map/OGNL behavior | evaluator installs a process-global `LinkedHashMap` OGNL `PropertyAccessor` and sanitizes expressions before MyBatis parsing | COMPATIBILITY-ALTERED | no uncontrolled global evaluator mutation may participate in correctness; isolate or remove it | #64 |
-| `Strict OGNL Mode` off behavior | recognized/unrecognized evaluator failures can become SQL-looking error comments instead of typed failure data | DEGRADED / unsafe for an execution boundary | executable evaluation is always fail-closed; diagnostics are typed data, never SQL text | #64, #67 |
-| `Ignore Unknown Tags` | unrecognized tags may be regex-stripped while preserving inner text when enabled | COMPATIBILITY-ALTERED | unknown constructs cannot be silently stripped and automatically executed on the authoritative path; any retained escape hatch is explicit and non-authoritative | #64 |
-| `#{}` bound values | MyBatis produces parameter mappings and zMyBatis replaces JDBC placeholders with its own SQL literals | COMPATIBILITY-ALTERED vs JDBC/TypeHandler execution | #64 selects the authoritative representation and defines supported type/fidelity boundaries; unsupported types fail closed | #64 |
-| `${}` raw interpolation | MyBatis raw substitution is preserved, while current input discovery finds `${}` through the same heuristic path as `#{}` | DEGRADED safety posture | raw interpolation is a distinct input class with explicit provenance and mandatory warning/confirmation before execution | #63, #64, #66 |
-| Source-only parameter discovery | `ParameterExtractor` uses regex/keyword/path heuristics, finds bind/foreach locals, and explicitly filters names such as `paramN` | DEGRADED | heuristics may assist UX but are not caller-input authority; unknown/ambiguous requirements block execution | #63 |
-| `@Param`, `argN`/`paramN`, collection aliases, runtime method metadata | current extractor has no mapper-method provenance and explicitly drops `paramN` | UNKNOWN / partially unsupported | classify names from evidence rather than naming convention; do not invent application runtime state | #63 |
-| Remembered parameter input | current UI can pre-fill last values using its current statement key; `JavaActionContextProjectFixtureTest` proves two distinct overloaded Java mapper methods currently receive the same `file::Class#method` key | DEGRADED: canonical identity is insufficient and can alias remembered inputs across overloads; sensitive-data policy is also unresolved | persistence requires canonical statement identity, explicit retention/clearing rules, and no cross-statement/project bleed | #63, #67 |
-| Literal SQL text as execution representation | current evaluator returns a String consumed by format/preview/execution | COMPATIBILITY-ALTERED; not JDBC/TypeHandler parity | not frozen by #61; #64 must select one authoritative representation and define fidelity limits | #64 |
-| SELECT execution | same action pipeline as mutating statements; SQL preview is optional | DEGRADED safety posture | optional preview is acceptable only for fully supported/non-raw execution after all other contracts are proven | #61, #66 |
-| INSERT/UPDATE/DELETE execution | same action pipeline as SELECT; no mandatory mutation confirmation exists | DEGRADED safety posture | mutating mapper statement kinds require explicit confirmation of the final authoritative representation before execution | #61, #66 |
-| DDL / semantically unexpected SQL | mapper declaration kind is not proof of actual side effects and no authoritative SQL semantic classifier exists | UNKNOWN | static classification is advisory UX, never authorization; unknown execution meaning blocks instead of being guessed | #61, #64, #66 |
-| Datasource/session identity contract | #57 established project-scoped persistence, stable datasource UUID identity, explicit-schema restart persistence, stale-state cleanup, and fail-closed restoration rules | SUPPORTED hardened identity/persistence baseline, with real Database Tools runtime cases still listed as platform evidence gaps | preserve the wrong-target-is-worse-than-refusal invariant; #65 may redesign only with equal or stronger evidence | #65, #67 |
-| Default-schema restart | hardening intentionally does not persist/restart `Use Default Schema` sessions | UNSUPPORTED across restart; supported only as in-process reuse | preserve this restriction unless a future design can prove a stable default/search-path identity | #65 |
-| IntelliJ IDEA Ultimate host | deterministic Plugin Verifier target is IDEA Ultimate `2025.3.3`; declared minimum build is 253 | SUPPORTED automated compatibility baseline for that configured verifier target, not every later build | maintained host claims require verifier plus targeted Database API/runtime evidence where needed | #67 |
-| DataGrip host | product uses `com.intellij.database` / `JdbcConsole`, but there is no separate maintained DataGrip verifier/runtime evidence line | DEGRADED evidence | DataGrip remains a product target, but a maintained compatibility claim requires explicit reproducible evidence | #61, #67 |
-| Other JetBrains IDEs with Database tooling | no maintained host matrix exists | UNKNOWN | no generic host claim without an explicit maintained matrix | #61, #67 |
+## 3. Current shipping implementation is not the target
 
-## Current unsafe/degraded behaviors that Leap must not preserve by inertia
+Current `main` still contains legacy behaviors that Leap will replace. They must not be reclassified as target guarantees merely because they are tested today.
 
-The following are observations about the current implementation, not accepted target behavior:
+Known replacement targets include:
 
-- evaluator failures can be returned as SQL-looking comment text when strict OGNL handling does not rethrow them;
-- direct unsupported List/Map literalization currently returns an error marker plus `NULL` inside SQL text rather than a typed blocking result;
-- unknown tags can be stripped when `Ignore Unknown Tags` is enabled;
-- the evaluator mutates process-global OGNL accessor state;
-- `${}` input does not have a separate mandatory warning/confirmation boundary;
-- SELECT and mutating mapper statements share the same optional-preview execution flow;
-- raw parameter values and rendered SQL are logged at INFO level;
-- action presentation remains always enabled/visible and relies on `actionPerformed` context analysis to return early;
-- Java action analysis/extraction can read last-committed PSI while the active editor Document contains newer uncommitted annotation SQL; separately, PSI synchronization does not mean the underlying file has been saved.
+- `MyBatisExecuteProxyAction` god-object orchestration;
+- `MyBatisContextAnalyzer` event-coupled source model;
+- `AnnotationSqlExtractor` raw-string extraction boundary;
+- regex/keyword-based `ParameterExtractor` as caller-input authority;
+- `ParameterInputDialog` semantic/type/history ownership;
+- raw-string `ParameterHistoryService` identity/persistence;
+- `MyBatisEvaluator` global OGNL mutation, regex transformations, literal rendering, and error-as-SQL behavior;
+- v2 persisted-record/live-console-cache lifecycle coupling and startup eager console recreation;
+- execution-time formatting mutation;
+- `Strict OGNL Mode` / `Ignore Unknown Tags` as execution-safety switches.
 
-These observations are precisely why the target rules below are stronger than current behavior.
+Current positive evidence remains useful as regression/falsification evidence during migration, but it does not dictate the target class or package design.
 
-## Product safety posture — Leap target
+## 4. Source authority and canonical identity
 
-### 1. Correctness over plausibility
+### Active editor
 
-If zMyBatis cannot prove the selected source, required input, MyBatis evaluation, execution representation, or target, the target architecture stops before database execution. It must not fall back to guessed nulls, invented runtime objects, truncated mapper source, silently stripped dependencies, stale source snapshots, or SQL-looking error text.
+The active editor `Document` snapshot is authoritative for an invocation. Unsaved editor content cannot be silently replaced by last-committed PSI or disk content.
 
-### 2. `#{}` and `${}` are different product concepts
+Adapters may synchronize PSI from the Document for project/index semantics, but this does not imply a disk save. Saving user files is never an execution-preparation side effect.
 
-- `#{}` is a bound-value concept whose eventual execution fidelity is owned by #64.
-- `${}` is source-level raw interpolation. It is never described as a normal bound parameter.
-- `${}` input requires explicit provenance and an execution warning/confirmation.
-- Raw interpolation values are not silently promoted into a remembered-default mechanism. Any future persistence requires an explicit #63 sensitive-data policy.
+### XML identity
 
-### 3. Mutation confirmation is UX safety, not authorization
+Canonical identity includes:
 
-Mapper declaration kind (`select`, `insert`, `update`, `delete`) can drive user warnings, but it is not an authorization system and is not proof of the SQL's side effects.
+- stable source-file identity;
+- mapper namespace;
+- statement id.
 
-For the Leap target:
+Duplicate/ambiguous resolution blocks.
 
-- mutating mapper statement kinds require explicit confirmation of the final authoritative representation;
-- raw interpolation also requires explicit confirmation;
-- unsupported or unknown execution meaning is blocked, not merely confirmed;
-- SELECT may keep optional preview only after source/parameter/evaluation/representation/target contracts are supported.
+### Java identity
 
-### 4. Evaluation failures are not executable artifacts
+Canonical identity includes:
 
-A parser, OGNL, mapping, unsupported-type, compatibility, formatting, target, or preparation failure is typed failure data. It must never be returned as comment-shaped or marker-bearing SQL that can continue into the execution path.
+- stable source-file identity;
+- qualified mapper type;
+- complete method signature, including ordered parameter type identity.
 
-### 5. Sensitive values are not normal diagnostics
+Overloads cannot share statement/history identity.
 
-Normal logs must not contain raw parameter values, remembered inputs, rendered SQL, credentials, or equivalent sensitive source-derived values. Current INFO logging of parameter values/rendered SQL is a defect, not a diagnostic contract.
+Canonical statement/method identity is owned by #62. #63 consumes it for remembered-input isolation; #67 only verifies the final compatibility/evidence contract.
 
-### 6. Target identity fails closed
+## 5. XML composition policy
 
-The #57 baseline remains authoritative until #65 supersedes it with stronger evidence: stable datasource identity, explicit named-schema restart identity, stale/missing/ambiguous restoration rejection, and no SQL execution as a restoration side effect. Default-schema sessions remain in-process only under the current hardened baseline.
+Leap v1 intentionally supports ordinary MyBatis fragment composition rather than treating it as an unbounded runtime extension.
 
-## Intended user workflow
+- `<sql>/<include>` source dependencies are explicit in the source graph.
+- Same-namespace and qualified references are resolved from captured project mapper sources.
+- Live dependent Documents are authoritative over stale disk content when they exist.
+- Missing, ambiguous, cyclic, unsupported `databaseId`, or custom language-driver dependency paths block.
+- zMyBatis does not invent a parallel include-expansion semantics when maintained MyBatis mapper parsing can be used as the semantic authority.
 
-This is the policy flow that downstream architecture must implement; it does not freeze current classes or Swing mechanics.
+## 6. Parameter and input policy
 
-1. **Capture source/context** — identify one supported mapper statement from the authoritative current editor Document/source state and establish the corresponding synchronized PSI/model before analysis.
-2. **Resolve source dependencies** — prove required fragments/metadata or stop as unsupported/unknown.
-3. **Establish input contract** — distinguish caller inputs, MyBatis/internal/additional variables, `#{}` bindings, `${}` raw text, and unknown requirements.
-4. **Collect user input** — parse supported input types without inventing runtime objects; apply retention/redaction policy.
-5. **Evaluate** — use MyBatis as semantic authority only for behavior actually claimed as MyBatis-compatible; isolate deliberate compatibility transformations.
-6. **Construct one authoritative execution representation** — preview/copy/execution must refer to the same approved meaning.
-7. **Resolve execution target** — bind to one stable datasource/schema/search-path identity; ambiguity blocks.
-8. **Apply confirmation policy** — mandatory for mutation/raw interpolation and any future explicitly defined high-risk mode.
-9. **Execute only on explicit user action** — preparation, preview, formatting, history, restoration, startup, diagnostics, and cancellation never execute SQL as a side effect.
-10. **Report outcome** — expected unsupported/user/runtime failures are typed and user-visible without sensitive-value leakage.
+A parameter is not “whatever identifier a regex finds.”
 
-## Compatibility modes
+The target input model distinguishes:
 
-Current settings are not automatically target product guarantees.
+- explicit caller/logical values;
+- source/method `@Param` provenance;
+- generated aliases only when their origin is known;
+- single-object/map/collection environments;
+- MyBatis internal/context variables;
+- foreach item/index and bind/additional parameters;
+- `#{}` bound-value requirements;
+- `${}` raw interpolation requirements;
+- unknown/ambiguous requirements.
 
-- **Strict OGNL Mode:** target execution is fail-closed regardless of the current setting. A future setting may control diagnostic detail or a deliberately scoped compatibility mode, but not whether failure-shaped text is executable.
-- **Ignore Unknown Tags:** current regex stripping is COMPATIBILITY-ALTERED and cannot silently authorize automatic execution. If retained at all, it must be explicitly labeled and separated from the authoritative supported path.
-- **Auto-format SQL:** presentation only. Formatting cannot change the approved execution meaning.
-- **SQL Preview:** optional presentation for fully supported read paths; mandatory confirmation rules override the user's optional-preview preference.
+Unknown/ambiguous requirements block rather than becoming guessed fields or implicit nulls.
 
-## Evidence architecture for closing #61
+Input parsing is independent of Swing. Numeric/decimal/type fidelity is deliberate, not a convenience conversion.
 
-This document establishes policy, but #61 remains open until the policy has falsifiable baseline evidence. At minimum, evidence must cover:
+## 7. Remembered inputs and examples
 
-- self-contained XML statements;
-- the exact maintained dynamic-tag set; this revision adds at least one representative path for every standard tag named by `MyBatisEvaluator`, but positive tag presence alone is not enough to promote the full set to unconditional support without boundary/failure evidence;
-- Java annotation literal/array/constant shapes with maintained project-backed parser/index evidence, saved-Java action caret/extraction evidence, current Document↔PSI unsaved-state characterization, and a separate disk-backed PSI↔physical-file persistence characterization; the stale-PSI behavior is still a defect to replace, while canonical overloaded-method identity remains a separate obligation;
-- explicit Kotlin unsupported action-context evidence from a real bundled-plugin `KtFile`, plus provider unsupported outcomes;
-- `<sql>/<include>` and other dependency cases proving they cannot silently truncate into plausible SQL across relevant modes; this revision's default-path unresolved-`<include>` characterization is only a baseline, not the target typed-failure proof;
-- malformed/unknown-tag/OGNL/unsupported-value failure paths proving failure cannot become executable SQL;
-- `#{}` versus `${}` provenance and confirmation policy;
-- `@Param`, generated aliases, collection aliases, nested/foreach/bind cases, and explicit unknown requirements;
-- SELECT versus mutating action policy without treating static classification as authorization;
-- authoritative preview/execution representation identity;
-- #57 target-identity invariants, including default-schema non-persistence, without pretending automated tests emulate every Database Tools runtime case;
-- IDEA Ultimate maintained compatibility plus explicit DataGrip runtime/verifier evidence if DataGrip is claimed as maintained;
-- large/hostile fixtures sufficient to falsify downstream architecture assumptions.
+Remembered inputs are convenience, not a correctness requirement.
 
-Automated evidence belongs in the required `Test` context where it can be credible. Database/IDE behaviors that cannot be meaningfully emulated remain explicit platform/manual obligations rather than fake unit coverage.
+Leap target rules:
 
-## Downstream decision constraints
+- default **OFF** until #63 provides canonical identity, project scope, explicit retention/clearing, and sensitive-data policy;
+- values never bleed across distinct canonical statements or projects;
+- raw `${}` values are not remembered by default;
+- remembered/example values never become execution input without explicit user action;
+- if safe retention is not worth its complexity, remove the feature.
 
-- #62 must not silently truncate source dependencies, read stale source state as authoritative, or invent canonical identity from current ad-hoc keys.
-- #63 must not treat regex discovery as caller-input authority.
-- #64 must not preserve global evaluator mutation, error-as-SQL/error-marker SQL, or unsupported literalization by inertia.
-- #65 must preserve or strengthen #57 wrong-target fail-closed behavior and the explicit default-schema restart restriction unless stronger identity evidence replaces it.
-- #66 must establish current-editor source synchronization before execution and implement confirmation/cancellation/lifecycle policy without making the current action class the architecture.
-- #67 must close the evidence and diagnostics gaps, including sensitive INFO logging and host/runtime compatibility.
+Historical JSON-default request #69 is accepted only as non-authoritative example/scaffold presentation over the new input contract. Parameter-name suffix guessing is not semantic authority.
 
-Any downstream proposal that needs to weaken this contract must update #61/#60 explicitly with evidence before implementation is merged.
+## 8. MyBatis semantic boundary
+
+MyBatis is the semantic authority for behavior zMyBatis claims as MyBatis-compatible.
+
+The target engine:
+
+- owns an isolated `Configuration` per preparation or equivalent explicitly scoped lifecycle;
+- does not mutate application-global OGNL accessors/state;
+- does not regex-strip unknown tags on the authoritative path;
+- does not rewrite OGNL into a separate compatibility language without an explicit non-authoritative mode;
+- consumes complete supported source graphs;
+- preserves ordered `BoundSql` mappings and MyBatis additional parameters;
+- returns typed preparation results/failures.
+
+Evaluation errors are never SQL text.
+
+## 9. Prepared and materialized execution
+
+The authoritative core result is structured `PreparedExecution` (or equivalent), not a formatted SQL string.
+
+It carries enough information to prove:
+
+- canonical statement identity and source revisions;
+- statement declaration kind;
+- MyBatis-produced SQL placeholder structure;
+- ordered binding descriptors/values and additional-parameter provenance;
+- raw interpolation provenance;
+- supported/unsupported materialization requirements.
+
+Database Tools currently executes SQL text. Therefore #64 owns a separate target/dialect-aware `ExecutionMaterializer` producing one immutable `MaterializedExecution`.
+
+Materialization rules:
+
+- exact mapping cardinality;
+- explicit supported type/dialect matrix;
+- no unknown-object `toString()` fallback;
+- no comment+`NULL` marker fallbacks;
+- no unsupported/custom TypeHandler guessing;
+- typed failure outside maintained fidelity.
+
+The result is not described as JDBC/TypeHandler parity.
+
+## 10. Preview, formatting, copy, and execution identity
+
+One immutable `MaterializedExecution` is the execution authority.
+
+- preview/confirmation displays that artifact or an explicitly labeled presentation projection;
+- clipboard behavior refers to the same approved artifact according to policy;
+- formatting is presentation-only;
+- formatted text can never replace the execution SQL;
+- source/target revisions are revalidated before irreversible execution;
+- if source or target changed materially after preparation, the artifact is invalidated and must be re-prepared.
+
+## 11. Safety posture
+
+### Raw interpolation
+
+`${}` is raw source interpolation, not a normal binding. Its presence and values require explicit user confirmation before execution.
+
+### Mutation
+
+INSERT/UPDATE/DELETE mapper declaration kinds require explicit confirmation of the final immutable execution artifact.
+
+Statement kind is UX evidence, not authorization. If execution meaning is unknown/unsupported, the operation blocks rather than merely asking for confirmation.
+
+### Failure
+
+Source, dependency, input, MyBatis, mapping, materialization, target, console, cancellation, and database failures are typed outcomes. No failure string can flow into the execution API as SQL.
+
+### Side effects
+
+Only the explicit zMyBatis execution action may invoke SQL. Source capture, preparation, preview, formatting, clipboard preparation, settings, history, startup, restoration, and diagnostics do not execute.
+
+## 12. Target/session contract
+
+Preserve the proven #57 safety invariants:
+
+- project-scoped persisted state;
+- stable datasource UUID rather than display-name matching;
+- explicit named-schema restart identity;
+- missing/ambiguous datasource/schema fails closed;
+- malformed/interrupted persistence is cleaned safely;
+- restoration never executes SQL.
+
+Current v2 persistence already stores string records (`mapperKey`, stable datasource UUID, datasource display name, explicit schema); it does **not** serialize a live `JdbcConsole`. Leap changes the ownership and lifecycle boundary around that persisted identity.
+
+Leap target rules:
+
+- replace the current coupling where persisted-record creation/removal follows live-console cache registration/disposal;
+- evolve the record into a versioned `ExecutionTargetDescriptor`/session descriptor that remains independently meaningful and revalidatable without a live console cache entry;
+- do not eagerly recreate consoles on startup merely to restore persisted target selection;
+- console/editor/document resources are ephemeral Database Tools adapter resources;
+- `REUSE`/`NEW_EACH` are optional in-memory resource policies, not target identities;
+- default-schema restart remains unsupported until stable search-path identity exists.
+
+## 13. Threading, cancellation, and lifecycle
+
+- `AnAction.update()` remains cheap, bounded, side-effect free, and BGT-compatible.
+- action invocation captures IDE context and immediately converts it into adapter/application data; `AnActionEvent` never enters core.
+- editor/dialog/popup operations obey EDT requirements.
+- index/PSI source work obeys IntelliJ read-action requirements and emits immutable snapshots.
+- MyBatis preparation/materialization is background/cancellable.
+- project/source/target validity is rechecked after asynchronous or modal boundaries and before execution.
+- cancellation before query invocation means no query invocation.
+- stale callbacks cannot reuse a prior artifact or target.
+
+## 14. Privacy and diagnostics
+
+Normal logs must not contain:
+
+- raw parameter values;
+- remembered inputs;
+- raw `${}` values;
+- rendered/materialized SQL;
+- credentials or equivalent sensitive target data.
+
+Expected user/source/unsupported/database failures are normal typed outcomes, not IntelliJ fatal errors. `Logger.error` is reserved for genuine internal invariants/platform faults that require operator attention.
+
+A small safety patch may remove current INFO leakage before the full Leap cutover without preserving the legacy action architecture.
+
+## 15. IDE compatibility policy
+
+- IDEA Ultimate and DataGrip are evaluated independently.
+- Current IDEA Ultimate 2025.3.3 Plugin Verifier is maintained baseline evidence, not proof of DataGrip or every later IDE.
+- Database Tools APIs are isolated behind adapters so platform drift has a bounded replacement surface.
+- Public Marketplace/README compatibility claims must match #67 evidence before Leap release.
+
+## 16. Product workflow
+
+1. capture immutable authoritative current-editor source;
+2. resolve exactly one canonical supported statement;
+3. build/resolve complete supported source dependencies;
+4. derive a provenanced input contract;
+5. collect and validate explicit user input;
+6. prepare through isolated MyBatis semantics;
+7. resolve a stable execution target/dialect;
+8. materialize one immutable execution artifact;
+9. revalidate source and target revisions;
+10. require mutation/raw confirmation where applicable;
+11. execute only that artifact through the Database Tools adapter;
+12. present typed result/failure with redacted diagnostics.
+
+## 17. Compatibility settings disposition
+
+Current settings are not automatically product guarantees.
+
+- **Strict OGNL Mode:** remove as a switch controlling fail-closed behavior. Leap execution always fails closed. A future diagnostic-verbosity option must not alter safety semantics.
+- **Ignore Unknown Tags:** remove from authoritative execution. Any retained compatibility inspection mode must be explicitly non-executable.
+- **SQL Preview:** optional presentation for safe read paths; mandatory confirmation rules override it.
+- **Auto-format SQL:** presentation only.
+- **Remember Last Inputs:** target default OFF until #63 completes safe retention.
+- **Console Session Policy:** may remain as an ephemeral resource policy if #65 proves it worthwhile; it is not target identity.
+
+## 18. Track ownership and closure
+
+- #61 — this product contract. Close after #101 architecture and this document are mutually consistent and merged.
+- #62 — source snapshots, dependency graph, canonical XML/Java statement identity.
+- #63 — input provenance/codecs/UI/retention.
+- #64 — isolated MyBatis preparation and materialization.
+- #65 — target/session descriptor and Database Tools execution resources.
+- #66 — thin IDE action, threading/cancellation/confirmation/user workflow.
+- #67 — diagnostics/privacy, host compatibility, performance/resources, migration cleanup, public-claim reconciliation.
+
+#61 does **not** stay open until every legacy quirk is characterized or every downstream implementation is finished. Additional characterization is required only when it can falsify a concrete target decision.
+
+## 19. Non-goals for Leap v1
+
+- Kotlin mapper annotation execution;
+- Provider runtime execution;
+- arbitrary custom language drivers or runtime-only mapper extensions;
+- arbitrary application TypeHandler/runtime configuration emulation;
+- generic SQL authorization/classification engine;
+- custom JDBC result-grid implementation;
+- preserving legacy class/package/settings structure merely for compatibility with our own code.
