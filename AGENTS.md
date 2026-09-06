@@ -2,6 +2,8 @@
 
 This is the authoritative engineering and review contract for zMyBatis. It describes the **current enforced baseline** separately from **known product gaps** and from the Leap target architecture tracked by Epic #60. Do not turn a target rule into a claim about current behavior without evidence.
 
+For Leap implementation, [docs/product-contract.md](docs/product-contract.md) is the target product-policy authority and [docs/leap-architecture.md](docs/leap-architecture.md) is the target architecture authority. The current-class ownership lists below describe the shipping baseline only. They are **not** a reason to extend or preserve legacy action/evaluator/parameter/session architecture when the Leap documents schedule it for replacement.
+
 CI green is necessary evidence, never sufficient approval. Every PASS belongs to one exact final PR HEAD SHA. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution mechanics, [docs/test-contracts.md](docs/test-contracts.md) for executable product evidence, and [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
 ## 1. Current product boundary
@@ -28,18 +30,20 @@ Key current ownership areas:
 - session identity/lifecycle: `ConsoleCacheService`, startup restoration;
 - settings: `ZMyBatisSettings`, configurable UI.
 
+These are **current-state ownership descriptions**, not target component boundaries. Leap replacement/deletion dispositions are defined by `docs/leap-architecture.md`.
+
 ## 2. Mapper, parameter, and SQL fidelity
 
 - `#{...}` and `${...}` are distinct semantics. Never silently convert a bound placeholder into raw interpolation or vice versa.
 - The current literal renderer is a zMyBatis product representation; do not describe it as JDBC/TypeHandler-equivalent without dedicated evidence.
-- Strings, numbers, booleans, `null`, collections, nested objects, arrays, escaping, and indexed paths must preserve the contracts covered by `docs/test-contracts.md`.
+- Strings, numbers, booleans, `null`, collections, nested objects, arrays, escaping, and indexed paths must preserve the contracts covered by `docs/test-contracts.md` while the legacy path remains shipping.
 - Internal MyBatis variables such as `<bind>` names and `foreach` item/index must not be invented as caller inputs.
 - Unsupported or ambiguous source/input/evaluation behavior must not silently become plausible executable SQL. The stronger typed-failure architecture is owned by Leap #60/#64/#67.
 - Preview and execution must not silently diverge. Full Database Tools click-through fidelity remains a platform/integration evidence gap documented in `docs/test-contracts.md`.
 
 ### Known current privacy/diagnostic defect
 
-Current `MyBatisExecuteProxyAction` still emits raw parameter values and rendered SQL at INFO level. That is a known defect tracked by Leap #60/#67, **not** an accepted logging policy and not evidence that the privacy boundary is already satisfied. New code must not add or widen sensitive-value logging.
+Current `MyBatisExecuteProxyAction` still emits raw parameter values and rendered SQL at INFO level. That is a known defect tracked by Leap #60/#67, **not** an accepted logging policy and not evidence that the privacy boundary is already satisfied. New code must not add or widen sensitive-value logging. A narrow hardening fix may remove this leakage before Leap cutover without preserving the legacy action architecture.
 
 ## 3. DataGrip action and IDE boundary
 
@@ -49,7 +53,7 @@ zMyBatis must not replace, wrap, unregister, reorder, or intercept DataGrip buil
 - `MyBatisActionInterceptorActivity` is session-restoration infrastructure despite its historical name; it is not a global action interceptor.
 - `MyBatisExecuteProxyAction.getActionUpdateThread()` is BGT.
 - Current `update()` unconditionally keeps the zMyBatis action enabled/visible. Whether context-sensitive enablement is the intended product behavior is tracked by Leap #61/#66; do not document the target as if it were current behavior.
-- UI/console work belongs on the EDT; PSI reads obey IntelliJ read-action requirements; blocking work must not be moved onto the EDT.
+- UI/console work belongs on the EDT where required; PSI reads obey IntelliJ read-action requirements; blocking work must not be moved onto the EDT.
 
 ## 4. IntelliJ / Database API compatibility
 
@@ -75,7 +79,9 @@ The current v2 persistence baseline established by hardening #57 is:
 - interrupted persistence replacement must not resurrect an older datasource/schema identity;
 - startup restoration may reconstruct state/consoles but must never execute SQL.
 
-See [docs/session-persistence.md](docs/session-persistence.md) for the persistence contract and [docs/test-contracts.md](docs/test-contracts.md) for automated versus platform-dependent evidence.
+The v2 persisted record is string data (`mapperKey`, stable datasource UUID, datasource display name, explicit schema); it does **not** serialize a live `JdbcConsole`. The architectural coupling to replace is that persisted-record creation/removal follows live-console cache registration/disposal, and startup eagerly reconstructs consoles from those records. Leap #65 keeps the proven target-identity invariants while separating descriptor persistence from ephemeral Database Tools resource lifetime.
+
+See [docs/session-persistence.md](docs/session-persistence.md) for the current persistence contract and [docs/test-contracts.md](docs/test-contracts.md) for automated versus platform-dependent evidence.
 
 ## 6. Lifecycle and execution safety
 
@@ -101,6 +107,8 @@ Baseline evidence for ordinary code changes is selected by the changed contract 
 - `./gradlew buildPlugin`;
 - `./gradlew verifyPlugin` when platform/API compatibility is plausibly affected;
 - required CI/static-analysis gates.
+
+Leap evidence must be indexed by the new contract/domain boundary where possible rather than by continued existence of legacy class names. Legacy fixtures remain useful only when they can falsify a target invariant or protect shipping behavior during migration.
 
 Do not delete, ignore, soften, or bypass assertions/checks to obtain green CI. UNKNOWN/UNVERIFIED evidence is not a PASS.
 
@@ -150,7 +158,24 @@ JetBrains Marketplace `Source Code` and `License` are Marketplace-admin metadata
 
 ## 10. Current product gaps versus Leap target
 
-Hardening is a maintained baseline, not a declaration that the current product architecture is final. Epic #60 owns the next product/runtime architecture and may replace current classes/heuristics after preserving proven safety contracts.
+Hardening is a maintained baseline, not a declaration that the current product architecture is final. Epic #60 owns the replacement product/runtime architecture.
+
+The authoritative target is [docs/leap-architecture.md](docs/leap-architecture.md), with product policy in [docs/product-contract.md](docs/product-contract.md). New Leap implementation must follow those dependency/ownership boundaries rather than adding new semantic responsibility to classes scheduled for deletion.
+
+In particular, the target deliberately replaces or removes the current:
+
+- `MyBatisExecuteProxyAction` god-object orchestration;
+- event-coupled source/context + raw annotation extraction boundary;
+- regex/keyword parameter extraction as caller-input authority;
+- dialog-owned parameter semantics and raw-string history identity;
+- global/regex/literal/error-string `MyBatisEvaluator` behavior;
+- v2 persisted-record/live-console-cache lifecycle coupling and startup eager console reconstruction;
+- execution-time formatting mutation;
+- safety semantics controlled by Strict OGNL / Ignore Unknown Tags switches.
+
+The target physical dependency direction is root IntelliJ plugin -> `:mybatis-engine` -> `:core`, with core kept free of IntelliJ/Database Tools/MyBatis dependencies as specified in the architecture. If packaging evidence forces a mechanical adjustment, the core/platform dependency direction must still remain enforced.
+
+Bounded safety fixes to the current path and explicitly temporary migration bridges are allowed. They must not be used to justify preserving legacy architecture and must have an owner/deletion criterion when they survive beyond one PR.
 
 Current known product gaps include, among others:
 
@@ -160,7 +185,7 @@ Current known product gaps include, among others:
 - error/degradation paths that still need typed failure outcomes (#64/#67);
 - DataGrip/runtime integration evidence that is not exercised by the deterministic IDEA Ultimate Plugin Verifier target (#61/#67).
 
-These are explicit, separately owned gaps. Do not silently "fix" product architecture inside a repository-governance PR, and do not claim they are already solved merely because repository hardening is green.
+Do not claim these are solved merely because repository hardening is green.
 
 ## 11. Review discipline
 
@@ -176,5 +201,7 @@ Review the exact final PR HEAD for:
 - adversarial/negative evidence and remaining platform gaps;
 - workflow/release/merge-gate integrity;
 - diff scope and documentation consistency.
+
+For Leap architecture work, additionally review dependency direction, whether a legacy component is being preserved by inertia, whether a bridge has a deletion point, and whether an adapter is leaking platform objects into core models.
 
 A PASS applies only to the reviewed HEAD SHA. Any HEAD movement invalidates it. Merge by squash only after fresh HEAD/main readback and exact-head approval. Post-merge validation must complete before the owning issue is closed.
