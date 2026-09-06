@@ -14,7 +14,7 @@ import javax.swing.JComponent
 import javax.swing.JPanel
 
 /**
- * Read-only preview dialog that shows the resolved Native SQL before execution.
+ * Read-only preview dialog that shows the resolved SQL before execution.
  *
  * The user can:
  *  - Click **Execute** (OK) → proceed to run the SQL on the console

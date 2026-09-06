@@ -23,7 +23,7 @@ class ZMyBatisConfigurable : BoundConfigurable("zMyBatis") {
                         getter = { settings.sqlPreview },
                         setter = { settings.sqlPreview = it }
                     )
-                contextHelp("When enabled, the resolved Native SQL is shown in a preview\ndialog before being sent to the database console.")
+                contextHelp("When enabled, the resolved SQL is shown in a preview\ndialog before being sent to the database console.")
             }
             row {
                 checkBox("Auto-format resolved SQL")
@@ -39,7 +39,7 @@ class ZMyBatisConfigurable : BoundConfigurable("zMyBatis") {
                         getter = { settings.copyToClipboard },
                         setter = { settings.copyToClipboard = it }
                     )
-                contextHelp("Automatically copies the final Native SQL to the clipboard\nafter execution so you can paste it elsewhere.")
+                contextHelp("Automatically copies the resolved SQL text to the clipboard\nafter execution so you can paste it elsewhere.")
             }
             row {
                 label("Console session:")
@@ -76,8 +76,8 @@ class ZMyBatisConfigurable : BoundConfigurable("zMyBatis") {
                     )
                 contextHelp(
                     "Determines how blank fields in the parameter dialog are treated.\n" +
-                    "NULL         → binds SQL NULL\n" +
-                    "EMPTY_STRING → binds an empty string \"\""
+                    "NULL         → treats blank input as null during zMyBatis evaluation\n" +
+                    "EMPTY_STRING → treats blank input as an empty string during zMyBatis evaluation"
                 )
             }
         }
@@ -92,8 +92,8 @@ class ZMyBatisConfigurable : BoundConfigurable("zMyBatis") {
                 contextHelp(
                     "ON  — OGNL evaluation errors are propagated immediately.\n" +
                     "      Use this to catch type mismatches or typos in test= expressions.\n" +
-                    "OFF — (default) An OGNL error causes the enclosing <if>/<when> block\n" +
-                    "      to be silently skipped, matching lenient runtime behaviour."
+                    "OFF — (default) OGNL evaluation errors are converted to the current\n" +
+                    "      zMyBatis plugin-error text representation instead of being propagated."
                 )
             }
             row {
