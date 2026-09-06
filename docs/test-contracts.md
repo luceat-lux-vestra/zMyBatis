@@ -10,6 +10,7 @@ The required `Test` CI context is product evidence, not a line-coverage target. 
 | JSON parameter input | `JsonParameterTest`, `OgnlEvalTest` | the `parseValue()` path used by the parameter dialog, nested object/array values, malformed input, integer precision boundaries |
 | Dynamic SQL and literal rendering | `MyBatisEvaluatorContractTest`, `MyBatisEvaluatorDynamicTagBaselineTest`, `OgnlEvalTest` | representative direct evaluator behavior for `if`, `choose`/`when`/`otherwise`, `foreach`, `where`, `set`, `trim`, and `bind`; nested OGNL; `#{}` vs `${}`; quote escaping; NULL/boolean literals; visible current failure markers for unsupported direct list/map values |
 | Negative evaluator boundaries | `MyBatisEvaluatorNegativeBoundaryTest` | current classified-vs-unclassified OGNL failure behavior under Strict mode, unknown-tag stripping, unresolved-include truncation under compatibility mode, malformed XML diagnostic strings, and executable-looking unsupported-value markers |
+| Mutation/raw interpolation safety baseline | `MyBatisExecutionSafetyBaselineTest` | common read/mutation/DDL/unclassified SQL families remain ordinary evaluator strings, statement wrapper kind does not constrain SQL semantics, and `${}` preserves statement-shaped raw text without a typed safety boundary |
 | Mapper dependency baseline | `MyBatisEvaluatorDynamicTagBaselineTest`, `MyBatisEvaluatorNegativeBoundaryTest` | unresolved `<include>` behavior differs materially by compatibility setting: default mode returns current plugin-error text while `Ignore Unknown Tags` can strip the dependency and yield truncated SQL text |
 | Annotation SQL extraction | `AnnotationSqlExtractorTest` | literal values, ordered arrays, constant-field references at the PSI-interface contract without bootstrapping an IDE fixture |
 | Session persistence format and stale index recovery | `PersistedConsoleSessionTest`, `ConsoleCacheServicePersistenceTest` | versioned encoding, malformed/legacy/default-schema invalidation, interrupted-write pruning, shutdown lifecycle gating |
@@ -50,6 +51,18 @@ The unresolved-`<include>` characterization is deliberately narrower. With the u
 - malformed XML likewise becomes SQL-looking plugin-error text in the default path.
 
 These tests falsify any architecture assumption that today's evaluator already has a typed fail-closed boundary or that enabling Strict OGNL closes every expression-failure path. They do **not** make unknown-tag stripping, error-comment SQL, marker-bearing `NULL`, or exception propagation supported Leap behavior. #64 owns the typed evaluation/execution representation redesign; #66 owns the user confirmation/execution boundary.
+
+## Mutation and raw interpolation safety evidence boundary
+
+`MyBatisExecutionSafetyBaselineTest` characterizes the current evaluator-side safety gap without changing production behavior:
+
+- SELECT, INSERT, UPDATE, DELETE, representative DDL, and an unclassified statement-shaped command all emerge as ordinary SQL `String` results; the evaluator is not a SQL safety classifier;
+- mapper wrapper kind is not semantic proof: a `<select>` wrapper can evaluate to `DELETE`, and a `<delete>` wrapper can evaluate to `SELECT`;
+- `${}` preserves raw statement-shaped text, including semicolon/comment-bearing text that can materially change the resulting SQL string.
+
+This evidence must not be misread as an authorization or exploitability claim for every database/driver configuration. The Database Tools execution layer, target database, driver, and server settings ultimately determine what a particular SQL string can execute. The current action code separately shows that the evaluated/formatted `pureSql` is handed to the optional preview and execution path without a mutation- or raw-interpolation-specific confirmation branch; `sqlPreview` defaults to false. Full UI/Database Tools click-through remains a platform integration obligation rather than fake unit coverage.
+
+For the Leap target, these counterexamples support the existing #61 policy: mutation/raw interpolation require explicit confirmation of the final authoritative representation, while unknown execution meaning must fail closed. #64 owns typed evaluation/representation boundaries and #66 owns confirmation/execution workflow redesign.
 
 ## Preview and execution boundary
 
