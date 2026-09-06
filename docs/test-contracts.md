@@ -12,7 +12,7 @@ The required `Test` CI context is product evidence, not a line-coverage target. 
 | Negative evaluator boundaries | `MyBatisEvaluatorNegativeBoundaryTest` | current classified-vs-unclassified OGNL failure behavior under Strict mode, unknown-tag stripping, unresolved-include truncation under compatibility mode, malformed XML diagnostic strings, and executable-looking unsupported-value markers |
 | Mutation/raw interpolation safety baseline | `MyBatisExecutionSafetyBaselineTest` | common read/mutation/DDL/unclassified SQL families remain ordinary evaluator strings, statement wrapper kind does not constrain SQL semantics, and `${}` preserves statement-shaped raw text without a typed safety boundary |
 | Mapper dependency baseline | `MyBatisEvaluatorDynamicTagBaselineTest`, `MyBatisEvaluatorNegativeBoundaryTest` | unresolved `<include>` behavior differs materially by compatibility setting: default mode returns current plugin-error text while `Ignore Unknown Tags` can strip the dependency and yield truncated SQL text |
-| Annotation SQL extraction | `AnnotationSqlExtractorTest` | literal values, ordered arrays, constant-field references at the PSI-interface contract without bootstrapping an IDE fixture |
+| Annotation SQL extraction | `AnnotationSqlExtractorTest`, `AnnotationSqlExtractorProjectFixtureTest` | literal/array/constant shapes at the PSI-interface contract plus real Java PSI/project-index resolution of cross-file constant references, including ordered constant arrays |
 | Session persistence format and stale index recovery | `PersistedConsoleSessionTest`, `ConsoleCacheServicePersistenceTest` | versioned encoding, malformed/legacy/default-schema invalidation, interrupted-write pruning, shutdown lifecycle gating |
 
 The old IntelliJ template rename test and evaluator debug/reproduction files were removed when the product-specific tests above replaced them.
@@ -31,6 +31,12 @@ The direct boundary evidence is intentionally asymmetric:
 - the large repeated fixture proves deterministic sorted deduplication and stable structured-root classification only. It is not a runtime-parity or performance guarantee.
 
 These cases are falsification fixtures for #61. The method/runtime provenance redesign remains owned by #63; downstream implementation must not preserve these heuristics as caller-input authority merely because the characterization tests are green.
+
+## Java annotation parser/index evidence boundary
+
+`AnnotationSqlExtractorTest` remains the fast PSI-interface contract. `AnnotationSqlExtractorProjectFixtureTest` adds a materially different proof path: it boots the IntelliJ Java code-insight fixture, installs separate project Java classes, parses a real mapper Java file, verifies `fixture.SqlConstants` is discoverable through `JavaPsiFacade` with project scope, resolves annotation value `PsiReferenceExpression`s to real `PsiField`s across files, and then invokes the production extractor.
+
+The fixture covers both a direct constant annotation value and an ordered annotation array containing cross-file constants. This closes the specific parser/project-index evidence gap for constant resolution; it does **not** by itself prove the whole Java action workflow. Caret/source authority, action-level `PsiMethod` selection, canonical overloaded-method identity, unsaved-document authority, and downstream execution remain separate #61/#62/#67 obligations.
 
 ## Dynamic SQL evidence boundary
 
@@ -77,7 +83,7 @@ The automated session tests deliberately avoid pretending to emulate JetBrains D
 - actual console recreation and schema switching across an IDE restart;
 - console disposal callbacks from the real Database Tools console implementation;
 - end-to-end confirmation that startup restoration never triggers statement execution;
-- real Java parser/index wiring for annotation extraction, including project-backed constant resolution.
+- end-to-end Java action context from caret/current document through `PsiMethod` selection and canonical mapper-method identity.
 
 Those gaps are explicit so a green `Test` context is not misrepresented as evidence for behavior it does not execute.
 
