@@ -49,6 +49,7 @@ dependencies {
         bundledModules(providers.gradleProperty("platformBundledModules").map { it.split(',') })
 
         testFramework(TestFrameworkType.Platform)
+        testFramework(TestFrameworkType.Plugin.Java)
 
         implementation("org.mybatis:mybatis:3.5.19")
     }
@@ -108,6 +109,22 @@ intellijPlatform {
     }
 }
 
+// Run the real Java PSI/project-index fixture in its own sandbox. IDEA Ultimate
+// bundles Vue support, whose resource lookup is unrelated to this Java boundary
+// and currently fails under the transformed Gradle test distribution.
+val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIndexTest") {
+    testFramework(TestFrameworkType.Platform)
+    testFramework(TestFrameworkType.Plugin.Java)
+    plugins {
+        disablePlugin("org.jetbrains.plugins.vue")
+    }
+    task {
+        filter {
+            includeTestsMatching("com.algorist.zMyBatis.AnnotationSqlExtractorProjectFixtureTest")
+        }
+    }
+}
+
 // Configure Gradle Changelog Plugin.
 changelog {
     groups.empty()
@@ -127,6 +144,16 @@ kover {
 }
 
 tasks {
+    test {
+        filter {
+            excludeTestsMatching("com.algorist.zMyBatis.AnnotationSqlExtractorProjectFixtureTest")
+        }
+    }
+
+    check {
+        dependsOn(javaParserIndexTest)
+    }
+
     wrapper {
         gradleVersion = providers.gradleProperty("gradleVersion").get()
     }
