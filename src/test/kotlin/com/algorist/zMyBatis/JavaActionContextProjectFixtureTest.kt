@@ -6,7 +6,9 @@ import com.intellij.openapi.actionSystem.ActionUiKind
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
+import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiJavaFile
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
@@ -86,6 +88,86 @@ class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase(
             "distinct overloads currently share one remembered-parameter statement key",
             intKey,
             stringKey
+        )
+    }
+
+    fun testUnsavedJavaAnnotationUsesLastCommittedPsiUntilExplicitDocumentCommit() {
+        myFixture.addClass(
+            """
+            package org.apache.ibatis.annotations;
+
+            public @interface Select {
+                String[] value();
+            }
+            """.trimIndent()
+        )
+
+        val mapperFile = myFixture.configureByText(
+            JavaFileType.INSTANCE,
+            """
+            package fixture;
+
+            import org.apache.ibatis.annotations.Select;
+
+            class UserMapper {
+                @Select("SELECT saved")
+                Object find(int id) { return null; }
+            }
+            """.trimIndent()
+        ) as PsiJavaFile
+
+        val action = MyBatisExecuteProxyAction()
+        val editor = myFixture.editor
+        val document = editor.document
+        val documentManager = PsiDocumentManager.getInstance(project)
+        val savedSql = "SELECT saved"
+        val draftSql = "SELECT draft"
+
+        moveCaretTo(mapperFile, editor, "find(int id)")
+        assertTrue("fixture must start from committed PSI", documentManager.isCommitted(document))
+        assertEquals(savedSql, invokeExtractSqlContent(action, editor, mapperFile))
+
+        val sqlOffset = document.text.indexOf(savedSql)
+        assertTrue("saved annotation SQL must exist in the editor document", sqlOffset >= 0)
+        WriteCommandAction.runWriteCommandAction(project) {
+            document.replaceString(sqlOffset, sqlOffset + savedSql.length, draftSql)
+        }
+
+        assertFalse(
+            "editing the mapper Document must create an uncommitted Document/PSI boundary",
+            documentManager.isCommitted(document)
+        )
+        assertTrue("editor Document must contain the unsaved SQL", document.text.contains(draftSql))
+        assertTrue(
+            "last committed PSI text must still represent the pre-edit SQL",
+            documentManager.getLastCommittedText(document).contains(savedSql)
+        )
+
+        assertEquals(
+            MyBatisContextAnalyzer.ContextType.ANNOTATION,
+            MyBatisContextAnalyzer.analyze(actionEvent(action, editor, mapperFile))
+        )
+        assertEquals(
+            "current production extraction reads the last committed PSI, not the uncommitted editor Document",
+            savedSql,
+            invokeExtractSqlContent(action, editor, mapperFile)
+        )
+        assertFalse(
+            "production analysis/extraction must not be mistaken for an implicit mapper Document commit",
+            documentManager.isCommitted(document)
+        )
+
+        documentManager.commitDocument(document)
+
+        assertTrue("explicit Document commit must synchronize PSI", documentManager.isCommitted(document))
+        assertEquals(
+            MyBatisContextAnalyzer.ContextType.ANNOTATION,
+            MyBatisContextAnalyzer.analyze(actionEvent(action, editor, mapperFile))
+        )
+        assertEquals(
+            "after PSI synchronization production extraction must see the edited annotation SQL",
+            draftSql,
+            invokeExtractSqlContent(action, editor, mapperFile)
         )
     }
 

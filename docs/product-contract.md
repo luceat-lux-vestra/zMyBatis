@@ -23,12 +23,12 @@ These terms describe evidence and product policy; they must not be read as a cla
 | Area | Current / revision evidence | Current classification | Leap product decision | Downstream owner |
 | --- | --- | --- | --- | --- |
 | XML `<select>/<insert>/<update>/<delete>` under caret | `MyBatisContextAnalyzer` recognizes these tags and the action extracts the containing statement tag | SUPPORTED for self-contained statement extraction, subject to evaluator/input limits below | SUPPORTED only when the complete statement/dependency source can be proven | #62 |
-| Java `@Select/@Insert/@Update/@Delete` | `PsiJavaFile` + `PsiMethod`; extractor unit/project fixtures cover literal/array/reference shapes and cross-file constants, while `JavaActionContextProjectFixtureTest` drives a real saved Java editor/caret through production context analysis and action extraction for distinct overloads | DEGRADED: parser/index and saved-Java caret/extraction are evidenced, but the current remembered-parameter statement key collapses overloads to `file::Class#method` and unsaved/current-document authority remains unproven | SUPPORTED only with maintained Java parser/index evidence, one authoritative current source, and canonical method identity | #62, #67 |
+| Java `@Select/@Insert/@Update/@Delete` | `PsiJavaFile` + `PsiMethod`; extractor unit/project fixtures cover literal/array/reference shapes and cross-file constants; `JavaActionContextProjectFixtureTest` proves saved Java caret/extraction for distinct overloads and separately characterizes an uncommitted editor Document against production action-time PSI extraction | DEGRADED: parser/index and saved-Java caret/extraction are evidenced, but an unsaved editor Document can remain uncommitted while production analysis/extraction reads last-committed PSI; the remembered-parameter key also collapses overloads to `file::Class#method` | SUPPORTED only after the current editor source is made authoritative before PSI analysis/extraction and canonical method identity is maintained | #62, #66, #67 |
 | Kotlin statement annotations | execution-context detection is `PsiJavaFile`-based and has no Kotlin PSI/source adapter | UNSUPPORTED | UNSUPPORTED until a dedicated adapter and evidence are added; do not group this claim with Java | #61, #62 |
 | Provider annotations | provider annotations are detected only to display an unsupported notice | UNSUPPORTED | UNSUPPORTED unless a future product decision defines a bounded provider/runtime model | #61, #62 |
 | XML `<sql>/<include>` and namespace fragment dependencies | extraction passes only the selected statement tag; no fragment graph/resolution implementation exists; this revision characterizes the default/unit-test unresolved-`<include>` path as plugin-error text, while `Ignore Unknown Tags` remains a compatibility-altered path that may strip unrecognized tags | UNSUPPORTED by the maintained product contract; current runtime enforcement is still degraded/compatibility-altered | unresolved include/fragment dependencies MUST fail closed with typed failure; support requires explicit source/dependency modeling | #62, #64 |
 | `databaseId`, custom language drivers, runtime-only mapper extensions | no authoritative selection/runtime model is present | UNKNOWN | UNSUPPORTED for the maintained baseline until separately specified and evidenced | #61, #62, #64 |
-| Unsaved document / PSI / VFS authority | action reads editor/PSI state, but there is no explicit synchronization/authority contract proving which document state is authoritative | UNKNOWN | define one current-document authority and validity model before support is claimed | #62, #66 |
+| Unsaved document / PSI / VFS authority | `JavaActionContextProjectFixtureTest` edits the active Java editor Document from `SELECT saved` to `SELECT draft`, proves the Document is uncommitted while last-committed PSI still contains the saved SQL, and proves production analysis/extraction returns the saved SQL until explicit `PsiDocumentManager.commitDocument`; VFS/save-state semantics are not independently characterized by that fixture | DEGRADED for Document↔PSI authority; VFS/save-state boundary remains UNKNOWN | the current editor Document is authoritative for an active editor; analysis/extraction must establish a synchronized PSI snapshot from that Document or fail closed on ambiguity, and VFS/save-state behavior must be separately evidenced rather than substituted for unsaved editor state | #62, #66 |
 | Standard dynamic tags | implementation routes MyBatis standard handlers through `XMLScriptBuilder`; existing tests cover `if`/`where`/`foreach`, and this revision adds representative `choose`/`when`/`otherwise`, `set`, `trim`, and `bind` paths | DEGRADED for the full tag set: direct tag-level baseline evidence exists after this revision's exact-HEAD tests pass, but boundary/failure permutations, nested combinations, and application-runtime parity remain insufficient for an unconditional supported claim | define and maintain the exact supported tag set with positive and negative evidence; zMyBatis-owned parameter/OGNL/literal transformations remain separately classified | #61, #64, #67 |
 | Custom map/OGNL behavior | evaluator installs a process-global `LinkedHashMap` OGNL `PropertyAccessor` and sanitizes expressions before MyBatis parsing | COMPATIBILITY-ALTERED | no uncontrolled global evaluator mutation may participate in correctness; isolate or remove it | #64 |
 | `Strict OGNL Mode` off behavior | recognized/unrecognized evaluator failures can become SQL-looking error comments instead of typed failure data | DEGRADED / unsafe for an execution boundary | executable evaluation is always fail-closed; diagnostics are typed data, never SQL text | #64, #67 |
@@ -59,7 +59,8 @@ The following are observations about the current implementation, not accepted ta
 - `${}` input does not have a separate mandatory warning/confirmation boundary;
 - SELECT and mutating mapper statements share the same optional-preview execution flow;
 - raw parameter values and rendered SQL are logged at INFO level;
-- action presentation remains always enabled/visible and relies on `actionPerformed` context analysis to return early.
+- action presentation remains always enabled/visible and relies on `actionPerformed` context analysis to return early;
+- Java action analysis/extraction can read last-committed PSI while the active editor Document contains newer uncommitted annotation SQL.
 
 These observations are precisely why the target rules below are stronger than current behavior.
 
@@ -67,7 +68,7 @@ These observations are precisely why the target rules below are stronger than cu
 
 ### 1. Correctness over plausibility
 
-If zMyBatis cannot prove the selected source, required input, MyBatis evaluation, execution representation, or target, the target architecture stops before database execution. It must not fall back to guessed nulls, invented runtime objects, truncated mapper source, silently stripped dependencies, or SQL-looking error text.
+If zMyBatis cannot prove the selected source, required input, MyBatis evaluation, execution representation, or target, the target architecture stops before database execution. It must not fall back to guessed nulls, invented runtime objects, truncated mapper source, silently stripped dependencies, stale source snapshots, or SQL-looking error text.
 
 ### 2. `#{}` and `${}` are different product concepts
 
@@ -103,7 +104,7 @@ The #57 baseline remains authoritative until #65 supersedes it with stronger evi
 
 This is the policy flow that downstream architecture must implement; it does not freeze current classes or Swing mechanics.
 
-1. **Capture source/context** — identify one supported mapper statement from the authoritative current editor/source state.
+1. **Capture source/context** — identify one supported mapper statement from the authoritative current editor Document/source state and establish the corresponding synchronized PSI/model before analysis.
 2. **Resolve source dependencies** — prove required fragments/metadata or stop as unsupported/unknown.
 3. **Establish input contract** — distinguish caller inputs, MyBatis/internal/additional variables, `#{}` bindings, `${}` raw text, and unknown requirements.
 4. **Collect user input** — parse supported input types without inventing runtime objects; apply retention/redaction policy.
@@ -129,7 +130,7 @@ This document establishes policy, but #61 remains open until the policy has fals
 
 - self-contained XML statements;
 - the exact maintained dynamic-tag set; this revision adds at least one representative path for every standard tag named by `MyBatisEvaluator`, but positive tag presence alone is not enough to promote the full set to unconditional support without boundary/failure evidence;
-- Java annotation literal/array/constant shapes with maintained project-backed parser/index evidence for cross-file constant resolution plus saved-Java action caret/extraction evidence; the current overloaded-method key collision and unsaved/current-document authority remain separate obligations;
+- Java annotation literal/array/constant shapes with maintained project-backed parser/index evidence, saved-Java action caret/extraction evidence, and current Document↔PSI unsaved-state characterization; the stale-PSI behavior is a defect to replace, while VFS/save-state authority and canonical overloaded-method identity remain separate obligations;
 - explicit Kotlin/provider unsupported outcomes;
 - `<sql>/<include>` and other dependency cases proving they cannot silently truncate into plausible SQL across relevant modes; this revision's default-path unresolved-`<include>` characterization is only a baseline, not the target typed-failure proof;
 - malformed/unknown-tag/OGNL/unsupported-value failure paths proving failure cannot become executable SQL;
@@ -145,11 +146,11 @@ Automated evidence belongs in the required `Test` context where it can be credib
 
 ## Downstream decision constraints
 
-- #62 must not silently truncate source dependencies or invent canonical identity from current ad-hoc keys.
+- #62 must not silently truncate source dependencies, read stale source state as authoritative, or invent canonical identity from current ad-hoc keys.
 - #63 must not treat regex discovery as caller-input authority.
 - #64 must not preserve global evaluator mutation, error-as-SQL/error-marker SQL, or unsupported literalization by inertia.
 - #65 must preserve or strengthen #57 wrong-target fail-closed behavior and the explicit default-schema restart restriction unless stronger identity evidence replaces it.
-- #66 must implement confirmation/cancellation/lifecycle policy without making the current action class the architecture.
+- #66 must establish current-editor source synchronization before execution and implement confirmation/cancellation/lifecycle policy without making the current action class the architecture.
 - #67 must close the evidence and diagnostics gaps, including sensitive INFO logging and host/runtime compatibility.
 
 Any downstream proposal that needs to weaken this contract must update #61/#60 explicitly with evidence before implementation is merged.
