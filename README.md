@@ -20,7 +20,7 @@
 
 <h3>Dynamic SQL Evaluation</h3>
 <p>The implementation routes MyBatis standard dynamic tags through <code>XMLScriptBuilder</code>, including <code>if</code>, <code>choose</code> / <code>when</code> / <code>otherwise</code>, <code>foreach</code>, <code>where</code>, <code>set</code>, <code>trim</code>, and <code>bind</code>.</p>
-<p>The maintained automated evaluator contract currently exercises representative <code>if</code>/<code>where</code>/<code>foreach</code> behavior rather than every tag above individually. zMyBatis also owns parameter discovery, compatibility transformations, OGNL handling around that engine, and conversion of MyBatis parameter mappings to literal SQL. Using MyBatis for parsing therefore does <b>not</b> imply stock JDBC/TypeHandler semantics or arbitrary application-runtime parity.</p>
+<p>The maintained automated evaluator contract directly exercises <code>if</code>, <code>choose</code>/<code>when</code>/<code>otherwise</code>, <code>foreach</code>, <code>where</code>, <code>set</code>, <code>trim</code>, and <code>bind</code> at least once. This establishes a self-contained evaluator baseline, not proof of every semantic permutation. zMyBatis also owns parameter discovery, compatibility transformations, OGNL handling around that engine, and conversion of MyBatis parameter mappings to literal SQL. Using MyBatis for parsing therefore does <b>not</b> imply stock JDBC/TypeHandler semantics or arbitrary application-runtime parity.</p>
 
 <h3>Parameter Input Dialog</h3>
 <ul>
