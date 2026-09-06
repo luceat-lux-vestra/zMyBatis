@@ -19,7 +19,7 @@ import com.intellij.util.xmlb.XmlSerializerUtil
  *  - [autoFormatSql]         : Reformat the resolved SQL before executing/previewing.
  *  - [consoleSessionPolicy]  : Whether to reuse an existing console or always open a new one.
  *  - [copyToClipboard]       : Copy the resolved SQL to clipboard after execution.
- *  - [strictOgnlMode]        : Propagate OGNL evaluation errors instead of silently skipping blocks.
+ *  - [strictOgnlMode]        : Whether OGNL evaluation errors are propagated or converted to plugin-error text.
  *  - [ignoreUnknownTags]     : Strip unrecognised XML tags before parsing instead of throwing an error.
  */
 @Service(Service.Level.APP)
@@ -91,8 +91,8 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
 /**
  * Policy for how blank/empty parameter inputs are interpreted.
  *
- * - [NULL]           : empty input → `null`  (MyBatis binds `NULL` in the query)
- * - [EMPTY_STRING]   : empty input → `""`    (MyBatis binds an empty string)
+ * - [NULL]         : empty input → `null` for zMyBatis evaluation
+ * - [EMPTY_STRING] : empty input → `""` for zMyBatis evaluation
  */
 enum class EmptyInputPolicy {
     NULL,
