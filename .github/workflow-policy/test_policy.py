@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Deterministic controls for the workflow static-analysis gate.
 
-The local policy checkers must reject checked-in bad fixtures and accept the
-real validation workflows. actionlint and zizmor provide complementary
-schema/security coverage; repository-specific fixtures may intentionally be
-local-checker-only when those tools do not model the invariant.
+The local policy checkers must reject checked-in bad fixtures and accept every
+real workflow. actionlint and zizmor provide complementary schema/security
+coverage; repository-specific fixtures may intentionally be local-checker-only
+when those tools do not model the invariant.
 """
 from __future__ import annotations
 
@@ -22,6 +22,9 @@ GOOD_FIXTURES = sorted((POLICY_DIR / "fixtures" / "good").glob("*.yml"))
 REQUIRED_CONTEXTS_BAD_FIXTURE = (
     POLICY_DIR / "fixtures" / "bad" / "required_contexts_missing_pull_request"
 )
+REAL_WORKFLOWS = sorted(
+    [*WORKFLOWS_DIR.glob("*.yml"), *WORKFLOWS_DIR.glob("*.yaml")]
+)
 
 # Repository-specific controls that zizmor does not necessarily reject. The
 # local checker is the authoritative oracle for these fixtures.
@@ -31,12 +34,6 @@ ZIZMOR_LOCAL_ONLY_FIXTURES = {
     "pwn_default_checkout.yml",
     "pwn_other_write_scope.yml",
 }
-
-VALIDATION_WORKFLOWS = [
-    WORKFLOWS_DIR / "build.yml",
-    WORKFLOWS_DIR / "run-ui-tests.yml",
-    WORKFLOWS_DIR / "workflow-lint.yml",
-]
 
 
 def resolve_actionlint() -> str | None:
@@ -116,21 +113,17 @@ def check_local_policy(failures: list[str]) -> None:
             str(WORKFLOWS_DIR),
         ]
     )
-    expect(
-        "check_pins.py accepts the real .github/workflows (including release.yml)",
-        pins_rc == 0,
-        failures,
-    )
+    expect("check_pins.py accepts every real workflow", pins_rc == 0, failures)
 
     boundary_rc = run(
         [
             "python3",
             str(POLICY_DIR / "check_trust_boundary.py"),
-            *[str(path) for path in VALIDATION_WORKFLOWS],
+            *[str(path) for path in REAL_WORKFLOWS],
         ]
     )
     expect(
-        "check_trust_boundary.py accepts the real validation workflows",
+        "check_trust_boundary.py accepts every real workflow",
         boundary_rc == 0,
         failures,
     )
@@ -164,6 +157,18 @@ def check_local_policy(failures: list[str]) -> None:
         failures,
     )
 
+    build = (REPO_ROOT / "build.gradle.kts").read_text(encoding="utf-8")
+    expect(
+        "template UI-test workflow is absent until real UI tests exist",
+        not (WORKFLOWS_DIR / "run-ui-tests.yml").exists(),
+        failures,
+    )
+    expect(
+        "template robot-server Gradle scaffold is absent",
+        "runIdeForUiTests" not in build and "robotServerPlugin" not in build,
+        failures,
+    )
+
 
 def check_actionlint(failures: list[str]) -> None:
     actionlint = resolve_actionlint()
@@ -172,16 +177,10 @@ def check_actionlint(failures: list[str]) -> None:
         return
 
     good_rc = run([actionlint, *[str(path) for path in GOOD_FIXTURES]])
-    expect("actionlint accepts the good fixture", good_rc == 0, failures)
+    expect("actionlint accepts the good fixtures", good_rc == 0, failures)
 
-    real_rc = run(
-        [actionlint, *[str(path) for path in VALIDATION_WORKFLOWS]]
-    )
-    expect(
-        "actionlint accepts the real validation workflows",
-        real_rc == 0,
-        failures,
-    )
+    real_rc = run([actionlint, *[str(path) for path in REAL_WORKFLOWS]])
+    expect("actionlint accepts every real workflow", real_rc == 0, failures)
 
 
 def check_zizmor(failures: list[str]) -> None:
@@ -229,14 +228,10 @@ def check_zizmor(failures: list[str]) -> None:
             "--offline",
             "--persona",
             "regular",
-            *[str(path) for path in VALIDATION_WORKFLOWS],
+            *[str(path) for path in REAL_WORKFLOWS],
         ]
     )
-    expect(
-        "zizmor accepts the real validation workflows",
-        real_rc == 0,
-        failures,
-    )
+    expect("zizmor accepts every real workflow", real_rc == 0, failures)
 
 
 def main() -> int:
