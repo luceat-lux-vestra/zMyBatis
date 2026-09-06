@@ -1,167 +1,180 @@
 # zMyBatis Engineering Contract
 
-This is the authoritative engineering and review contract for zMyBatis. It is deliberately about this plugin's real failure modes: MyBatis parsing/evaluation, SQL fidelity, DataGrip integration, datasource/schema/session identity, lifecycle, and repository/CI integrity.
+This is the authoritative engineering and review contract for zMyBatis. It describes the **current enforced baseline** separately from **known product gaps** and from the Leap target architecture tracked by Epic #60. Do not turn a target rule into a claim about current behavior without evidence.
 
-CI green is necessary evidence, never sufficient approval. Every PASS belongs to one exact final PR HEAD SHA - see [CONTRIBUTING.md](CONTRIBUTING.md) for the PR workflow this implies, and [SECURITY.md](SECURITY.md) for how to report a vulnerability instead of opening a public PR.
+CI green is necessary evidence, never sufficient approval. Every PASS belongs to one exact final PR HEAD SHA. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution mechanics, [docs/test-contracts.md](docs/test-contracts.md) for executable product evidence, and [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
-## Product boundary
+## 1. Current product boundary
 
 zMyBatis is an IntelliJ/DataGrip database plugin. `plugin.xml` depends on `com.intellij.database`.
 
-The execution path is:
+The current execution path is broadly:
 
-1. extract a mapper statement from XML or MyBatis annotations;
-2. identify user-supplied parameters;
-3. evaluate dynamic SQL through MyBatis itself;
-4. render literal SQL for preview/execution;
-5. resolve datasource + schema and reuse/create the correct JDBC console;
+1. extract a mapper statement from supported XML or annotation source;
+2. infer user-supplied parameters;
+3. evaluate dynamic SQL with MyBatis `XMLScriptBuilder` plus zMyBatis-owned compatibility behavior;
+4. render a zMyBatis literal SQL representation;
+5. resolve datasource + explicit schema and reuse/create a JDBC console;
 6. execute only after the explicit zMyBatis action.
 
-Key ownership areas:
+Using MyBatis internally does **not** by itself prove stock MyBatis/JDBC parity. zMyBatis currently owns parameter discovery, OGNL/property-access behavior, unknown-tag compatibility handling, and literal rendering. Product/fidelity decisions and unsupported/degraded cases are owned by Leap #60, starting with #61.
 
-- statement extraction: `AnnotationSqlExtractor`, `MyBatisContextAnalyzer`;
+Key current ownership areas:
+
+- source/context extraction: `AnnotationSqlExtractor`, `MyBatisContextAnalyzer`;
 - parameters: `ParameterExtractor`, `JsonParameterParser`, parameter UI/history;
 - dynamic SQL/rendering: `MyBatisEvaluator`, `SqlFormatter`, preview;
 - execution/DataGrip integration: `MyBatisExecuteProxyAction`;
 - session identity/lifecycle: `ConsoleCacheService`, startup restoration;
 - settings: `ZMyBatisSettings`, configurable UI.
 
-## 1. Mapper / XML extraction
+## 2. Mapper, parameter, and SQL fidelity
 
-- Recover the whole intended statement and nothing else, including nested MyBatis dynamic tags and multi-line annotation forms.
-- Do not implement a second dynamic-SQL engine. Evaluation goes through MyBatis `XMLScriptBuilder` so zMyBatis and the application use the same semantics.
-- `Ignore Unknown Tags` may ignore an unknown wrapper but must preserve its text content.
-- `Strict OGNL Mode` must not silently turn evaluation errors into plausible-but-wrong SQL.
-- PSI access follows IntelliJ read-action rules. Partially edited mapper files fail with a useful diagnostic rather than a truncated statement or generic exception.
+- `#{...}` and `${...}` are distinct semantics. Never silently convert a bound placeholder into raw interpolation or vice versa.
+- The current literal renderer is a zMyBatis product representation; do not describe it as JDBC/TypeHandler-equivalent without dedicated evidence.
+- Strings, numbers, booleans, `null`, collections, nested objects, arrays, escaping, and indexed paths must preserve the contracts covered by `docs/test-contracts.md`.
+- Internal MyBatis variables such as `<bind>` names and `foreach` item/index must not be invented as caller inputs.
+- Unsupported or ambiguous source/input/evaluation behavior must not silently become plausible executable SQL. The stronger typed-failure architecture is owned by Leap #60/#64/#67.
+- Preview and execution must not silently diverge. Full Database Tools click-through fidelity remains a platform/integration evidence gap documented in `docs/test-contracts.md`.
 
-## 2. Parameter binding / rendered SQL fidelity
+### Known current privacy/diagnostic defect
 
-Literal SQL is a correctness and safety boundary.
+Current `MyBatisExecuteProxyAction` still emits raw parameter values and rendered SQL at INFO level. That is a known defect tracked by Leap #60/#67, **not** an accepted logging policy and not evidence that the privacy boundary is already satisfied. New code must not add or widen sensitive-value logging.
 
-- `#{...}` and `${...}` are not interchangeable. Never silently turn a bound value into raw textual interpolation.
-- Strings, numbers, booleans, `null`, collections, nested objects, and arrays must be rendered with correct SQL quoting/escaping semantics.
-- Internal MyBatis variables such as `<bind>` names and `foreach` item/index stay out of user prompts.
-- Empty-input policy changes (`NULL` vs empty string) are behavioral changes and require tests.
-- The previewed SQL and the SQL handed to the JDBC console must be byte-for-byte the same authoritative rendered statement. A divergence is a merge blocker.
-- Do not log parameter values or rendered production SQL at `info` or above.
+## 3. DataGrip action and IDE boundary
 
-## 3. DataGrip action isolation
-
-zMyBatis adds its own Execute action. It must not replace, wrap, unregister, reorder, or intercept DataGrip's built-in Execute/Explain/console actions.
+zMyBatis must not replace, wrap, unregister, reorder, or intercept DataGrip built-in Execute/Explain/console actions.
 
 - Platform action IDs remain untouched.
-- `MyBatisActionInterceptorActivity` is session-restoration infrastructure despite its historical name; do not turn it into a global action interceptor.
-- `update()` stays cheap and disables zMyBatis outside a valid MyBatis context.
-- Declare the appropriate `ActionUpdateThread`.
-
-A regression that changes DataGrip's own behavior is more severe than zMyBatis failing explicitly.
+- `MyBatisActionInterceptorActivity` is session-restoration infrastructure despite its historical name; it is not a global action interceptor.
+- `MyBatisExecuteProxyAction.getActionUpdateThread()` is BGT.
+- Current `update()` unconditionally keeps the zMyBatis action enabled/visible. Whether context-sensitive enablement is the intended product behavior is tracked by Leap #61/#66; do not document the target as if it were current behavior.
+- UI/console work belongs on the EDT; PSI reads obey IntelliJ read-action requirements; blocking work must not be moved onto the EDT.
 
 ## 4. IntelliJ / Database API compatibility
 
 The plugin uses `com.intellij.database.*`, including APIs that can move between IDE releases.
 
-- `pluginSinceBuild`, platform version/type, and bundled database plugin declarations form one compatibility contract.
-- The `Verify plugin` CI context is authoritative compatibility evidence. Do not lower verifier failure severity or narrow the intended supported range merely to get green CI.
-- Raising the minimum IDE build is an API/product decision, not a routine dependency bump.
-- Isolate new Database API usage so a future platform break has a bounded repair surface.
-- Compile success alone does not prove runtime compatibility.
+- `pluginSinceBuild`, platform type/version, bundled database plugin declarations, and Plugin Verifier configuration form one compatibility contract.
+- The required `Verify plugin` context is authoritative for its configured target. The deterministic automated verifier baseline is IntelliJ IDEA Ultimate 2025.3.3.
+- DataGrip remains a product target, but a green verifier against IDEA Ultimate alone is not evidence of every DataGrip runtime path. Database Tools behavior that cannot be credibly covered by unit tests requires explicit platform/manual evidence.
+- Raising the minimum IDE build or widening compatibility claims is a product/API decision, not a routine dependency bump.
 
-## 5. Datasource / schema / session identity
+## 5. Datasource / schema / session identity — hardened baseline
 
-The authoritative execution identity is `(project, mapper file, datasource, schema)`.
+Executing correct SQL against the wrong datasource/schema is a higher-severity failure than refusing to execute.
 
-Executing correct SQL against the wrong datasource/schema is the highest-severity product failure because it can affect production data.
+The current v2 persistence baseline established by hardening #57 is:
 
-Current known risks:
+- persistence is project-scoped; active state no longer uses `project.basePath.hashCode()` as a project namespace;
+- restart restoration uses a stable IDE datasource UUID, never datasource display-name fallback;
+- restart persistence requires an explicit named schema; `Use Default Schema` and datasources without a stable UUID are in-process only;
+- missing or ambiguous datasource/schema identity and failed named-schema switching fail closed;
+- legacy application-global hash/name records are deliberately not migrated or read because their original ownership cannot be proven safely;
+- registration, disposal, stale cleanup, and shutdown ordering are serialized by the project lifecycle contract;
+- interrupted persistence replacement must not resurrect an older datasource/schema identity;
+- startup restoration may reconstruct state/consoles but must never execute SQL.
 
-- session persistence historically namespaces application-level `PropertiesComponent` data with `project.basePath.hashCode()`, which can collide;
-- datasource restoration historically resolves by display name, which can be ambiguous after duplicate names or renames.
+See [docs/session-persistence.md](docs/session-persistence.md) for the persistence contract and [docs/test-contracts.md](docs/test-contracts.md) for automated versus platform-dependent evidence.
 
-Rules:
+## 6. Lifecycle and execution safety
 
-- Any key/namespace/datasource-lookup change is an identity migration and needs explicit backward-compatibility handling for persisted state.
-- Never silently fall back to another datasource when the saved datasource is missing or ambiguous.
-- `ConsoleCacheService.put()` keeps in-memory and persisted session state atomic; do not split it back into independently failing save/index operations.
-- Prefer project-scoped persistent state and stable platform identities over adding more application-global string keys.
+Only the user's explicit zMyBatis execution action may execute SQL.
 
-## 6. Restart, cleanup, and lifecycle
+Extraction, parameter discovery, evaluation, preview, formatting, settings, diagnostics, and startup/session restoration must not execute a statement as a side effect.
 
-- `pruneStaleIndex()` must reconcile persisted index/session data before restoration.
-- Missing datasource/session data is removed, never redirected to a different datasource.
-- Shutdown ordering is intentional: the project-closing flag must be established before delayed restoration can race with disposal.
-- Console disposal clears its persisted session; shutdown persistence preserves still-live sessions for the next restart. Change both halves together.
-- Every new persisted key has a deterministic cleanup path.
-- `ConsoleCacheService` is project-scoped. Consoles, listeners, sentinels, callbacks, dialogs, and scheduled work must not retain disposed `Project`, `Editor`, `PsiFile`, or `JdbcConsole` instances.
-- Re-check `project.isDisposed` after asynchronous/scheduled boundaries.
-- UI/console work belongs on the EDT; PSI reads use read actions; blocking I/O does not run on the EDT.
+- No auto-confirm, auto-retry, or auto-reexecute of failed statements.
+- Project shutdown must win deterministically over queued restore/selection/execution work.
+- Consoles, listeners, callbacks, dialogs, editors, PSI objects, and scheduled work must not retain disposed project state.
+- Re-check project/lifecycle availability after asynchronous boundaries.
+- Expected unsupported/degraded/user failures should not be promoted to IntelliJ fatal errors. The complete typed diagnostic model is owned by Leap #67.
 
-## 7. SQL execution safety
+## 7. Tests and evidence
 
-Only the user's explicit `Execute (zMyBatis)` action may execute SQL.
+The required `Test` context is product evidence, not a coverage percentage. The authoritative current contract map is [docs/test-contracts.md](docs/test-contracts.md).
 
-Extraction, parameter detection, OGNL evaluation, preview, formatting, settings, and startup restoration must not execute a statement as a side effect.
+Hardening #58/#79 removed the old IntelliJ template rename test and debug/reproduction-only evaluator evidence. Do not cite removed template fixtures, empty tests, `println`, or Kotlin/JVM `assert(...)` as product proof.
 
-- Startup restoration may recreate consoles but never run SQL.
-- Do not auto-confirm, auto-retry, or auto-reexecute failed statements.
-- Errors identify the stage that failed: extraction, parameter parsing, OGNL/evaluation, datasource/schema resolution, console setup, or database execution.
-- Include mapper/statement identity where safe, but redact sensitive parameter/rendered SQL content.
-
-## 8. Tests and evidence
-
-Run the narrowest evidence that can falsify the changed contract.
-
-Baseline for ordinary code changes:
+Baseline evidence for ordinary code changes is selected by the changed contract and normally includes:
 
 - `./gradlew check`;
 - `./gradlew buildPlugin`;
-- `./gradlew verifyPlugin` where platform compatibility is relevant;
-- required workflow/static-analysis gates (`Lint workflows`, see section 9).
+- `./gradlew verifyPlugin` when platform/API compatibility is plausibly affected;
+- required CI/static-analysis gates.
 
-Parsing, parameter extraction, OGNL, and SQL rendering are unit-testable without a live IDE and should be tested there. Session/DataGrip lifecycle changes require platform/manual evidence appropriate to the behavior.
+Do not delete, ignore, soften, or bypass assertions/checks to obtain green CI. UNKNOWN/UNVERIFIED evidence is not a PASS.
 
-`MyPluginTest` and `src/test/testData/rename/` are template leftovers and do not count as zMyBatis correctness coverage. Replace them with meaningful tests rather than citing their existence as evidence.
+## 8. CI / GitHub Actions — hardened baseline
 
-Do not delete, ignore, or weaken assertions to obtain green CI. The same rule applies to `.github/workflow-policy/`: a failing check gets fixed at the source, never suppressed, and its `test_policy.py` negative controls must keep failing on the fixtures under `fixtures/bad/` - if one of them stops failing, the check it targets has regressed, not the fixture.
+The canonical merge policy is [`.github/merge-gate-policy.yml`](.github/merge-gate-policy.yml).
 
-## 9. CI / GitHub Actions
+Current required contexts are exactly:
 
-The canonical policy lives in [`.github/merge-gate-policy.yml`](.github/merge-gate-policy.yml); this section is a summary, not a second copy - if the two ever disagree, the policy file wins and this section is out of date.
+- `Build`
+- `Test`
+- `Inspect code`
+- `Verify plugin`
+- `Lint workflows`
 
-- Third-party actions use immutable full commit SHAs with readable version comments (`.github/workflow-policy/check_pins.py`, run from `workflow-lint.yml`).
-- Validation workflows use explicit read-only defaults. Any write grant is job-scoped, minimal, and justified (see `merge-gate-policy.yml`'s `privilegedJobs`).
-- Every scanned job must have an explicit effective `permissions` declaration (R0). Missing workflow/job declarations never inherit mutable repository or organization defaults as an assumed read-only baseline.
-- A job in a `pull_request` workflow must never both check out source and hold any effective `*: write` permission unless an exact audited event-name condition proves that job cannot execute for pull requests (R1). The default synthetic merge ref still contains PR-controlled changes, so this rule applies equally to same-repository and fork contributions.
-- A job with no effective write permission must set `persist-credentials: false` on every `actions/checkout` step (R2). Relying on the checkout default leaves a usable token in `.git/config` for no reason.
-- `Inspect code` is the authoritative Qodana gate; it holds no write permissions, so it cannot publish its own PR comment or check run - its own job conclusion is the signal, not an annotation.
-- Workflow static analysis (`workflow-lint.yml`: pin check, trust-boundary check, required-context drift check, actionlint, zizmor) is itself fail-closed, proven by the negative/positive controls in `test_policy.py`. Do not add `continue-on-error` to any of it, and do not narrow a check's file scope to make a finding disappear.
-- Required status-check contexts must be the jobs listed in `merge-gate-policy.yml`'s `requiredStatusChecks`, must run unconditionally on every ordinary PR (the producing workflow must declare a `pull_request` trigger with no `paths`/`paths-ignore` filter, and the job must have no `if:` guard), and must not silently rename out from under that list - `check_required_contexts.py` enforces these invariants automatically.
-- `release.yml` (JetBrains Marketplace publication) is intentionally out of scope for the checks above pending the separate release-provenance track (issue #56); see the scope note at the top of `workflow-lint.yml`. That exclusion is a recorded, deliberate decision, not an oversight - do not silently start "fixing" release.yml from inside an unrelated PR.
+The live `main protection` ruleset is expected to enforce those contexts strictly, squash-only linear history, required review-thread resolution, and no bypass actors. `.github/workflows/repository-settings-drift.yml` performs recurring fail-closed live readback against the checked-in policy.
 
-## 10. Version and release contract (current state, not yet hardened)
+Workflow trust-boundary rules:
 
-This section describes what is actually true on `main` today, not a target state - do not treat it as evidence that the release-provenance chain is closed.
+- every third-party `uses:` reference is pinned to a full commit SHA;
+- every scanned job has explicit effective permissions;
+- PR-authored code cannot execute with write-scoped authority unless an exact audited event condition excludes PR execution;
+- read-only checkout jobs use `persist-credentials: false`;
+- `Inspect code` is the authoritative Qodana gate;
+- `workflow-lint.yml` runs repository pin/trust/required-context/live-settings/release-provenance checks plus actionlint and zizmor;
+- the checked-in negative controls must continue to fail for deliberately bad fixtures;
+- `release.yml` is included in pinning, permission, actionlint, zizmor, and release-provenance review. It is **not** pending or exempt from hardening.
 
-- `build.gradle.kts` derives the plugin version from `LocalDateTime.now()` (`yy.MM.dd.HHmmss`) on every build. The same source/tag can therefore currently rebuild to a different effective Marketplace version. This is a known, tracked gap, not an oversight of this contract.
-- `release.yml` checks out `github.event.release.tag_name` and publishes to JetBrains Marketplace, but does not yet establish an immutable tag -> reviewed-`main`-commit -> single effective version -> prevalidated artifact -> publication chain, and has known unresolved static-analysis findings (template-injection, cache-poisoning - see the `workflow-lint.yml` scope note).
-- Closing this gap - deterministic release version identity, tag/main ancestry verification, artifact/version preflight before `publishPlugin`, and narrowing `release.yml`'s write scopes - is the explicit subject of the release-provenance track (issue #56). Do not fold that work into an unrelated PR, and do not treat this repository/CI trust-boundary contract as implying it is already done.
-- `build.yml` validates code and stages (but never publishes) a draft release; `release.yml` is the only JetBrains Marketplace publication path in this repository.
+A manual UI-test workflow is not part of the current evidence architecture unless real UI tests exist and provide falsifiable product evidence. Do not retain template automation merely because it came from the upstream plugin template.
+
+## 9. Version and release contract — hardened baseline
+
+The active publication contract established by #56 is:
+
+- ordinary PR/main validation is deterministic and non-publishing, using `0.0.0-dev` unless an explicit release version is supplied;
+- publication identity is a protected Git tag matching `vMAJOR.MINOR.PATCH[-PRERELEASE]` with migration floor `v27.0.0`;
+- the effective JetBrains plugin version is exactly the validated tag with one leading `v` removed;
+- `release.yml` runs only from GitHub Release events and checks out the release tag;
+- release provenance proves the tag commit is reachable from reviewed `main`;
+- build/Plugin Verifier and artifact-version validation happen before signing and Marketplace publication;
+- signing and publishing use that same effective version;
+- ordinary `build.yml` does not create release identity or draft releases;
+- live `publication tags` governance protects `refs/tags/v*` from update/deletion with no routine bypass while allowing new tag creation;
+- `.github/workflow-policy/check_release_provenance.py` and its negative controls fail closed on release-contract drift.
+
+JetBrains Marketplace `Source Code` and `License` are Marketplace-admin metadata rather than repository-controlled state. The maintainer has confirmed the canonical source URL and Apache-2.0 metadata; repository automation must not pretend it can mutate those fields.
+
+## 10. Current product gaps versus Leap target
+
+Hardening is a maintained baseline, not a declaration that the current product architecture is final. Epic #60 owns the next product/runtime architecture and may replace current classes/heuristics after preserving proven safety contracts.
+
+Current known product gaps include, among others:
+
+- raw parameter/rendered-SQL INFO logging (#67);
+- current always-enabled action presentation and broader IDE orchestration policy (#61/#66);
+- compatibility-altered OGNL/unknown-tag/literal-rendering behavior that must not be described as stock MyBatis/JDBC parity (#61/#64);
+- error/degradation paths that still need typed failure outcomes (#64/#67);
+- DataGrip/runtime integration evidence that is not exercised by the deterministic IDEA Ultimate Plugin Verifier target (#61/#67).
+
+These are explicit, separately owned gaps. Do not silently "fix" product architecture inside a repository-governance PR, and do not claim they are already solved merely because repository hardening is green.
 
 ## 11. Review discipline
 
 Review the exact final PR HEAD for:
 
 - functional correctness and regressions;
-- mapper/dynamic-SQL and parameter-binding fidelity;
-- datasource/schema/session identity;
-- restart/rollback/disposal semantics;
-- IntelliJ/DataGrip compatibility;
-- architecture and ownership boundaries;
-- error handling and diagnostics;
-- SQL/privacy/security boundaries;
-- performance/resource retention;
-- abstractions, duplication, complexity, dead code, and hacks;
-- edge cases and meaningful test coverage;
-- workflow/merge-gate policy integrity (section 9);
-- diff scope and documentation consistency, including whether a change actually belongs in this PR or in a different tracked slice (see section 10 and `CONTRIBUTING.md`).
+- mapper/dynamic-SQL/parameter fidelity;
+- datasource/schema/session identity and lifecycle;
+- IntelliJ/DataGrip API, threading, and disposal boundaries;
+- diagnostics/privacy/security behavior;
+- compatibility and resource/performance risk;
+- abstractions, duplication, complexity, dead code, template residue, and hacks;
+- adversarial/negative evidence and remaining platform gaps;
+- workflow/release/merge-gate integrity;
+- diff scope and documentation consistency.
 
-A PASS applies only to the reviewed HEAD SHA. Any commit after review invalidates the PASS. Squash merge only after exact-HEAD approval (see `merge-gate-policy.yml`'s `mergeStrategy`). Publication remains a separate explicit gate.
+A PASS applies only to the reviewed HEAD SHA. Any HEAD movement invalidates it. Merge by squash only after fresh HEAD/main readback and exact-head approval. Post-merge validation must complete before the owning issue is closed.

@@ -1,6 +1,6 @@
-# Fail-closed static security review of this repository's GitHub Actions workflows.
-# release.yml is intentionally included: Marketplace publication must satisfy the same pinned-action,
-# explicit-permission, actionlint, zizmor, and repository-specific provenance controls as validation CI.
+# Fail-closed static security/governance review of this repository's GitHub Actions and authoritative contracts.
+# Marketplace publication satisfies the same pinned-action, explicit-permission,
+# actionlint, zizmor, and repository-specific provenance controls as validation CI.
 
 name: Workflow Lint
 
@@ -32,13 +32,7 @@ jobs:
         run: python3 .github/workflow-policy/check_pins.py .github/workflows
 
       - name: Require sound permission/credential trust boundaries
-        run: |
-          python3 .github/workflow-policy/check_trust_boundary.py \
-            .github/workflows/build.yml \
-            .github/workflows/run-ui-tests.yml \
-            .github/workflows/workflow-lint.yml \
-            .github/workflows/repository-settings-drift.yml \
-            .github/workflows/release.yml
+        run: python3 .github/workflow-policy/check_trust_boundary.py .github/workflows/*.yml
 
       - name: Require merge-gate-policy.yml to match its producing workflows
         run: python3 .github/workflow-policy/check_required_contexts.py .github/merge-gate-policy.yml .
@@ -49,6 +43,9 @@ jobs:
       - name: Require release provenance contract
         run: python3 .github/workflow-policy/check_release_provenance.py static .
 
+      - name: Require authoritative governance contract
+        run: python3 .github/workflow-policy/check_governance_contract.py .
+
       - name: Install actionlint
         run: |
           set -euo pipefail
@@ -57,27 +54,17 @@ jobs:
           tar -xzf actionlint_1.7.12_linux_amd64.tar.gz actionlint
 
       - name: actionlint
-        run: |
-          ./actionlint \
-            .github/workflows/build.yml \
-            .github/workflows/run-ui-tests.yml \
-            .github/workflows/workflow-lint.yml \
-            .github/workflows/repository-settings-drift.yml \
-            .github/workflows/release.yml
+        run: ./actionlint .github/workflows/*.yml
 
       - name: zizmor
         run: |
           set -euo pipefail
           pipx install "zizmor==1.30.0"
-          zizmor --offline --persona regular \
-            .github/workflows/build.yml \
-            .github/workflows/run-ui-tests.yml \
-            .github/workflows/workflow-lint.yml \
-            .github/workflows/repository-settings-drift.yml \
-            .github/workflows/release.yml
+          zizmor --offline --persona regular .github/workflows/*.yml
 
       - name: Prove the checks above are actually fail-closed
         run: |
           python3 .github/workflow-policy/test_policy.py
           python3 .github/workflow-policy/test_live_settings.py
           python3 .github/workflow-policy/test_release_provenance.py
+          python3 .github/workflow-policy/test_governance_contract.py

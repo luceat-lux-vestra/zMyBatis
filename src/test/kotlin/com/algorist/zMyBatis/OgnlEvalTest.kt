@@ -46,9 +46,7 @@ class OgnlEvalTest {
     @Test
     fun `evaluate - both if branches fire with nested params`() {
         val params = buildParams("""{"id": 1}""", """{"name": "test"}""", 42L)
-        println("params: $params")
         val result = MyBatisEvaluator.evaluate(xml, params)
-        println("SQL: $result")
         assertFalse(result.contains("-- [MyBatis Plugin Error]"))
         assertTrue("id, column expected", result.contains("id,"))
         assertTrue("name column expected", result.contains("name"))
@@ -59,7 +57,6 @@ class OgnlEvalTest {
     fun `evaluate - neither if branch fires`() {
         val params = buildParams("""{"id": 2}""", """{"name": "other"}""", 99L)
         val result = MyBatisEvaluator.evaluate(xml, params)
-        println("SQL (no if): $result")
         assertFalse(result.contains("-- [MyBatis Plugin Error]"))
         assertFalse("id, should NOT appear", result.contains("id,"))
         assertTrue("WHERE id = 99 expected", result.contains("99"))
@@ -69,7 +66,6 @@ class OgnlEvalTest {
     fun `evaluate - missing objectParams - graceful`() {
         val params = mapOf<String, Any?>("test" to 42L)
         val result = MyBatisEvaluator.evaluate(xml, params)
-        println("SQL (missing obj): $result")
         assertFalse(result.contains("-- [MyBatis Plugin Error]"))
     }
 
@@ -83,10 +79,8 @@ class OgnlEvalTest {
         val params = mapOf<String, Any?>(
             "user" to JsonParameterParser.parseValue("""{"id": 1, "name": "Alice"}""")
         )
-        println("params: $params")
 
         val result = MyBatisEvaluator.evaluate(paramXml, params)
-        println("SQL: $result")
         assertFalse(result.contains("-- [MyBatis Plugin Error]"))
         assertTrue("id=1 expected", result.contains("= 1"))
         assertTrue("name='Alice' expected", result.contains("'Alice'"))
