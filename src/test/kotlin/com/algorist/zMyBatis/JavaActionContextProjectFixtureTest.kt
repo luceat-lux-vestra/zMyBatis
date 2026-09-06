@@ -8,6 +8,8 @@ import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.ui.TestDialog
+import com.intellij.openapi.ui.TestDialogManager
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiJavaFile
@@ -171,10 +173,130 @@ class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase(
         )
     }
 
-    private fun moveCaretTo(psiFile: PsiFile, editor: Editor, marker: String) {
+    fun testProviderAnnotationsStopAtUnsupportedActionBoundaryWithoutStatementFallback() {
+        myFixture.addClass(
+            """
+            package org.apache.ibatis.annotations;
+
+            public @interface Select {
+                String[] value();
+            }
+            """.trimIndent()
+        )
+        listOf("SelectProvider", "InsertProvider", "UpdateProvider", "DeleteProvider").forEach { annotationName ->
+            myFixture.addClass(
+                """
+                package org.apache.ibatis.annotations;
+
+                public @interface $annotationName {
+                    Class<?> type();
+                    String method();
+                }
+                """.trimIndent()
+            )
+        }
+        myFixture.addClass(
+            """
+            package fixture;
+
+            public class SqlProvider {
+                public static String sql() {
+                    return "DELETE FROM users";
+                }
+            }
+            """.trimIndent()
+        )
+
+        val mapperFile = myFixture.configureByText(
+            JavaFileType.INSTANCE,
+            """
+            package fixture;
+
+            import org.apache.ibatis.annotations.DeleteProvider;
+            import org.apache.ibatis.annotations.InsertProvider;
+            import org.apache.ibatis.annotations.Select;
+            import org.apache.ibatis.annotations.SelectProvider;
+            import org.apache.ibatis.annotations.UpdateProvider;
+
+            class ProviderMapper {
+                @Select("SELECT plausible_but_must_not_win")
+                @SelectProvider(type = SqlProvider.class, method = "sql")
+                Object selectViaProvider() { return null; }
+
+                @InsertProvider(type = SqlProvider.class, method = "sql")
+                Object insertViaProvider() { return null; }
+
+                @UpdateProvider(type = SqlProvider.class, method = "sql")
+                Object updateViaProvider() { return null; }
+
+                @DeleteProvider(type = SqlProvider.class, method = "sql")
+                Object deleteViaProvider() { return null; }
+            }
+            """.trimIndent()
+        ) as PsiJavaFile
+
+        val action = MyBatisExecuteProxyAction()
+        val editor = myFixture.editor
+        val notices = mutableListOf<String>()
+        val previousDialog = TestDialogManager.setTestDialog(TestDialog { message ->
+            notices += message
+            0
+        })
+
+        try {
+            listOf(
+                "selectViaProvider()",
+                "insertViaProvider()",
+                "updateViaProvider()",
+                "deleteViaProvider()",
+            ).forEach { marker ->
+                val methodName = marker.substringBefore('(')
+                moveCaretTo(mapperFile, editor, marker, methodName)
+                val event = actionEvent(action, editor, mapperFile)
+
+                assertEquals(
+                    "provider annotation must win over ordinary statement annotations at the action boundary",
+                    MyBatisContextAnalyzer.ContextType.PROVIDER,
+                    MyBatisContextAnalyzer.analyze(event)
+                )
+                assertNull(
+                    "provider context must not expose plausible SQL to the ordinary extraction pipeline",
+                    invokeExtractSqlContent(
+                        action,
+                        editor,
+                        mapperFile,
+                        MyBatisContextAnalyzer.ContextType.PROVIDER
+                    )
+                )
+
+                val noticeCountBeforeAction = notices.size
+                action.actionPerformed(event)
+                assertEquals(
+                    "provider action must stop at exactly one unsupported notice",
+                    noticeCountBeforeAction + 1,
+                    notices.size
+                )
+                assertTrue(
+                    "unsupported notice must explain that provider SQL is not statically extracted",
+                    notices.last().contains("zMyBatis cannot statically extract the SQL from a Provider class.")
+                )
+            }
+        } finally {
+            TestDialogManager.setTestDialog(previousDialog)
+        }
+    }
+
+    private fun moveCaretTo(
+        psiFile: PsiFile,
+        editor: Editor,
+        marker: String,
+        caretToken: String = "find"
+    ) {
         val offset = psiFile.text.indexOf(marker)
         assertTrue("marker '$marker' must exist in the real Java file", offset >= 0)
-        editor.caretModel.moveToOffset(offset + marker.indexOf("find"))
+        val tokenOffset = marker.indexOf(caretToken)
+        assertTrue("caret token '$caretToken' must exist in marker '$marker'", tokenOffset >= 0)
+        editor.caretModel.moveToOffset(offset + tokenOffset)
     }
 
     private fun actionEvent(
@@ -199,7 +321,8 @@ class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase(
     private fun invokeExtractSqlContent(
         action: MyBatisExecuteProxyAction,
         editor: Editor,
-        psiFile: PsiFile
+        psiFile: PsiFile,
+        context: MyBatisContextAnalyzer.ContextType = MyBatisContextAnalyzer.ContextType.ANNOTATION
     ): String? {
         val method = MyBatisExecuteProxyAction::class.java.getDeclaredMethod(
             "extractSqlContent",
@@ -210,7 +333,7 @@ class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase(
         method.isAccessible = true
         return method.invoke(
             action,
-            MyBatisContextAnalyzer.ContextType.ANNOTATION,
+            context,
             editor,
             psiFile
         ) as String?
