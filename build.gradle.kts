@@ -122,6 +122,7 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
         filter {
             includeTestsMatching("com.algorist.zMyBatis.AnnotationSqlExtractorProjectFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.JavaActionContextProjectFixtureTest")
+            includeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
         }
     }
 }
@@ -149,6 +150,7 @@ tasks {
         filter {
             excludeTestsMatching("com.algorist.zMyBatis.AnnotationSqlExtractorProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.JavaActionContextProjectFixtureTest")
+            excludeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
         }
     }
 
