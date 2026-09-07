@@ -1,0 +1,55 @@
+name: Diagnose IntelliJ 2026 Teardown
+
+on:
+  push:
+    branches: [ test/intellij-2026-teardown-matrix ]
+
+concurrency:
+  group: diagnose-intellij-2026-teardown-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: IDEA ${{ matrix.version }} #${{ matrix.run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["2026.1.1", "2026.1.2", "2026.1.3", "2026.1.4", "2026.1.5", "2026.2"]
+        run: [1, 2]
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Java
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6
+        with:
+          distribution: zulu
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: true
+
+      - name: Run Java fixture suite and reject hidden teardown failures
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          ./gradlew javaParserIndexTest -PplatformVersion="${{ matrix.version }}" 2>&1 | tee gradle.log
+          gradle_status=${PIPESTATUS[0]}
+          set -e
+
+          if grep -E 'AsyncLog\.log|TestLoggerAssertionError|Worker exited due to exception|IllegalStateException: Check failed' gradle.log; then
+            echo "::error::Hidden IntelliJ teardown failure detected on ${{ matrix.version }} run ${{ matrix.run }}"
+            exit 86
+          fi
+
+          exit "$gradle_status"
