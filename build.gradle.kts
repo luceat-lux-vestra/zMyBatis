@@ -104,7 +104,7 @@ intellijPlatform {
     // with evidence rather than inferred from this single maintained target.
     pluginVerification {
         ides {
-            create(IntelliJPlatformType.IntellijIdeaUltimate, "2025.3.3")
+            create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.1.1")
         }
     }
 }

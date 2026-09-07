@@ -96,7 +96,24 @@ jobs:
           cache-read-only: true
 
       - name: Run Tests
-        run: ./gradlew check
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew check 2>&1 | tee gradle-check.log
+
+      - name: Reject hidden IntelliJ test-harness failures
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f gradle-check.log ]]; then
+            echo "::error::Gradle test log was not produced"
+            exit 1
+          fi
+          if grep -E 'AsyncLog\.log|Worker exited due to exception|TestLoggerAssertionError|IllegalStateException: Check failed' gradle-check.log; then
+            echo "::error::Hidden IntelliJ test-harness failure detected"
+            exit 1
+          fi
 
       - name: Collect Tests Result
         if: ${{ failure() }}
