@@ -60,7 +60,7 @@ zMyBatis must not replace, wrap, unregister, reorder, or intercept DataGrip buil
 The plugin uses `com.intellij.database.*`, including APIs that can move between IDE releases.
 
 - `pluginSinceBuild`, platform type/version, bundled database plugin declarations, and Plugin Verifier configuration form one compatibility contract.
-- The required `Verify plugin` context is authoritative for its configured target. The deterministic automated verifier baseline is IntelliJ IDEA Ultimate 2026.1.1.
+- The required `Verify plugin` context is authoritative for its configured target. The deterministic automated verifier baseline is IntelliJ IDEA Ultimate 2026.2.
 - DataGrip remains a product target, but a green verifier against IDEA Ultimate alone is not evidence of every DataGrip runtime path. Database Tools behavior that cannot be credibly covered by unit tests requires explicit platform/manual evidence.
 - Raising the minimum IDE build or widening compatibility claims is a product/API decision, not a routine dependency bump.
 
