@@ -260,7 +260,7 @@ A small safety patch may remove current INFO leakage before the full Leap cutove
 ## 15. IDE compatibility policy
 
 - IDEA Ultimate and DataGrip are evaluated independently.
-- Current IDEA Ultimate 2025.3.3 Plugin Verifier is maintained baseline evidence, not proof of DataGrip or every later IDE.
+- Current IDEA Ultimate 2026.1.1 Plugin Verifier is maintained baseline evidence, not proof of DataGrip or every later IDE.
 - Database Tools APIs are isolated behind adapters so platform drift has a bounded replacement surface.
 - Public Marketplace/README compatibility claims must match #67 evidence before Leap release.
 
