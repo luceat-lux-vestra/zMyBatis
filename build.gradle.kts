@@ -35,6 +35,10 @@ repositories {
 
 // Dependencies are managed with Gradle version catalog - read more: https://docs.gradle.org/current/userguide/version_catalogs.html
 dependencies {
+    implementation(project(":core")) {
+        exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
+    }
+
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)
 
@@ -123,6 +127,7 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
             includeTestsMatching("com.algorist.zMyBatis.AnnotationSqlExtractorProjectFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.JavaActionContextProjectFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
+            includeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
         }
     }
 }
@@ -177,6 +182,7 @@ tasks {
             excludeTestsMatching("com.algorist.zMyBatis.JavaActionContextProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.KotlinActionContextBoundaryTest")
+            excludeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
         }
     }
 
