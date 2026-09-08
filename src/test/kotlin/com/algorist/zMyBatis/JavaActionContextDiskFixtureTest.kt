@@ -2,6 +2,7 @@ package com.algorist.zMyBatis
 
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.vfs.newvfs.ManagingFS
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiJavaFile
 import com.intellij.testFramework.fixtures.IdeaTestFixtureFactory
@@ -92,6 +93,7 @@ class JavaActionContextDiskFixtureTest : LightJavaCodeInsightFixtureTestCase() {
         fileDocumentManager.saveDocument(document)
 
         assertFalse("explicit document save must clear the unsaved state", fileDocumentManager.isDocumentUnsaved(document))
+        ManagingFS.getInstance().flushPendingUpdates(virtualFile)
         val persistedText = Files.readString(backingPath)
         assertTrue("explicit document save must persist draft SQL to the physical file", persistedText.contains(draftSql))
         assertFalse("physical file must no longer contain the replaced saved SQL", persistedText.contains(savedSql))

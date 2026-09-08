@@ -104,7 +104,7 @@ intellijPlatform {
     // with evidence rather than inferred from this single maintained target.
     pluginVerification {
         ides {
-            create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.1.1")
+            create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.2")
         }
     }
 }
@@ -159,6 +159,14 @@ kover {
             }
         }
     }
+}
+
+// IntelliJ's LowMemoryWatcherManager schedules a periodic GC tracker on the
+// application scheduler. In the test harness that task can race AsyncLog teardown
+// after all assertions have passed. Disable only that periodic tracker in test
+// JVMs; logging and genuine Logger.error failures remain untouched.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    systemProperty("LowMemoryWatcherManager.REGULAR_TRACKER_UPDATE_PERIOD_MS", "-1")
 }
 
 tasks {
