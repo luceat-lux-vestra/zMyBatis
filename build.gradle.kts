@@ -167,6 +167,7 @@ kover {
 // JVMs; logging and genuine Logger.error failures remain untouched.
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     systemProperty("LowMemoryWatcherManager.REGULAR_TRACKER_UPDATE_PERIOD_MS", "-1")
+    systemProperty("intellij.platform.log.sync", "true")
 }
 
 tasks {
