@@ -124,13 +124,15 @@ open class MyBatisExecuteProxyAction : AnAction() {
             LOG.info("zMyBatis: resolveParameters returned null (user cancelled or failed)")
             return
         }
-        LOG.info("zMyBatis params: $paramValues")
+        val parameterCount = paramValues.size
+        LOG.info("zMyBatis: parameters resolved (count=$parameterCount)")
 
         ApplicationManager.getApplication().executeOnPooledThread {
             if (isProjectUnavailable(project)) return@executeOnPooledThread
             try {
                 val rawSql = MyBatisEvaluator.evaluate(wrapForEvaluator(sqlContent, context), paramValues)
-                LOG.info("zMyBatis SQL: $rawSql")
+                val sqlLength = rawSql.length
+                LOG.info("zMyBatis: SQL evaluated (length=$sqlLength)")
                 val settings = ZMyBatisSettings.getInstance()
 
                 ApplicationManager.getApplication().invokeLater {
@@ -483,13 +485,18 @@ open class MyBatisExecuteProxyAction : AnAction() {
         statementKey: String?
     ): Map<String, Any?>? {
         val extracted = ParameterExtractor.extractResult(sqlContent)
-        LOG.info("zMyBatis extractResult — params: ${extracted.params}, objectParams: ${extracted.objectParams}")
+        val extractedParameterCount = extracted.params.size
+        val structuredParameterCount = extracted.objectParams.size
+        LOG.info(
+            "zMyBatis: parameter extraction completed " +
+                "(count=$extractedParameterCount, structuredCount=$structuredParameterCount)"
+        )
         if (extracted.params.isEmpty()) return emptyMap()
         val dialog = ParameterInputDialog(project, extracted.params, extracted.objectParams, statementKey)
         if (!dialog.showAndGet()) return null
         val values = dialog.getValues()
-        LOG.info("zMyBatis getValues — keys: ${values.keys}, values: $values")
-        LOG.info("zMyBatis getValues — types: ${values.mapValues { (_, v) -> v?.javaClass?.simpleName ?: "null" }}")
+        val inputParameterCount = values.size
+        LOG.info("zMyBatis: parameter input completed (count=$inputParameterCount)")
         return values
     }
 
