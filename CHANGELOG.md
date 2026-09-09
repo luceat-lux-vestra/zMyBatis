@@ -13,7 +13,7 @@
 #### Core Execution
 - Execute self-contained MyBatis mapper statements from XML mapper files and supported Java annotation-based mappers through the JetBrains Database Tools console path, subject to the documented evaluator/input/target evidence boundaries
 - Dynamic SQL evaluation routes `<if>`, `<choose>/<when>/<otherwise>`, `<foreach>`, `<where>`, `<set>`, `<trim>`, and `<bind>` through MyBatis `XMLScriptBuilder`; maintained tests exercise representative paths for each tag, but full application-runtime/JDBC/TypeHandler parity is not claimed
-- Java annotation extraction covers literal values, ordered multi-line string arrays, and constant-field-reference shapes at the extractor contract; real project parser/index-backed constant resolution remains a platform evidence gap
+- Java annotation extraction covers literal values, ordered multi-line string arrays, and constant-field-reference shapes; maintained project-fixture evidence exercises real Java PSI/project-index resolution of cross-file constants, without claiming every Java source shape or production action cutover
 - `@SelectProvider` / `@InsertProvider` / `@UpdateProvider` / `@DeleteProvider` methods show a clear unsupported notice instead of failing silently
 
 #### Parameter Input

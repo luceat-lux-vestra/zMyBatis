@@ -13,7 +13,8 @@ The required `Test` CI context is product evidence, not a line-coverage target. 
 | Mutation/raw interpolation safety baseline | `MyBatisExecutionSafetyBaselineTest` | common read/mutation/DDL/unclassified SQL families remain ordinary evaluator strings, statement wrapper kind does not constrain SQL semantics, and `${}` preserves statement-shaped raw text without a typed safety boundary |
 | Mapper dependency baseline | `MyBatisEvaluatorDynamicTagBaselineTest`, `MyBatisEvaluatorNegativeBoundaryTest` | unresolved `<include>` behavior differs materially by compatibility setting: default mode returns current plugin-error text while `Ignore Unknown Tags` can strip the dependency and yield truncated SQL text |
 | Annotation SQL extraction | `AnnotationSqlExtractorTest`, `AnnotationSqlExtractorProjectFixtureTest` | literal/array/constant shapes at the PSI-interface contract plus real Java PSI/project-index resolution of cross-file constant references, including ordered constant arrays |
-| Java action source authority / overload identity | `JavaActionContextProjectFixtureTest` | a real saved Java editor/caret selects the exact overloaded `PsiMethod` and annotation SQL; an uncommitted editor Document is not made authoritative by the current production analyzer/extractor, which continues to read last-committed PSI until explicit `commitDocument`; distinct overloads still collapse to the same `file::Class#method` key |
+| Java action source authority / overload identity | `JavaActionContextProjectFixtureTest` | a real saved Java editor/caret selects the exact overloaded `PsiMethod` and annotation SQL; the still-shipping production analyzer/extractor continues to read last-committed PSI until explicit `commitDocument`; distinct overloads still collapse to the same legacy `file::Class#method` key |
+| Leap active-editor snapshot boundary | `ActiveEditorSourceSnapshotAdapterProjectFixtureTest` | the new non-wired source adapter captures saved and unsaved active `Document` text/revision/caret without committing PSI or saving disk, fails closed for missing file identity/source mutation/invalid caret evidence, and returns no retained IntelliJ platform object; it does not prove production action cutover or dependent-source resolution |
 | Session persistence format and stale index recovery | `PersistedConsoleSessionTest`, `ConsoleCacheServicePersistenceTest` | versioned encoding, malformed/legacy/default-schema invalidation, interrupted-write pruning, shutdown lifecycle gating |
 
 The old IntelliJ template rename test and evaluator debug/reproduction files were removed when the product-specific tests above replaced them.
@@ -37,13 +38,13 @@ These cases are falsification fixtures for #61. The method/runtime provenance re
 
 `AnnotationSqlExtractorTest` remains the fast PSI-interface contract. `AnnotationSqlExtractorProjectFixtureTest` adds a materially different proof path: it boots the IntelliJ Java code-insight fixture, installs separate project Java classes, parses a real mapper Java file, verifies `fixture.SqlConstants` is discoverable through `JavaPsiFacade` with project scope, resolves annotation value `PsiReferenceExpression`s to real `PsiField`s across files, and then invokes the production extractor.
 
-The fixture covers both a direct constant annotation value and an ordered annotation array containing cross-file constants. This closes the specific parser/project-index evidence gap for constant resolution. `JavaActionContextProjectFixtureTest` separately exercises action-time source authority and canonical-key characterization; a non-colliding canonical mapper-method identity remains a separate #67 obligation.
+The fixture covers both a direct constant annotation value and an ordered annotation array containing cross-file constants. This closes the specific parser/project-index evidence gap for constant resolution. `JavaActionContextProjectFixtureTest` separately exercises action-time source authority and legacy-key characterization. Canonical mapper-method identity is owned by #62 and now exists as a pure core contract; replacing the shipping legacy key construction remains #62 migration work, #63 consumes that identity for remembered-input isolation, and #67 verifies the final evidence rather than redesigning the identity.
 
 ## Java action source authority and overload identity evidence boundary
 
 `JavaActionContextProjectFixtureTest` boots the same real Java code-insight environment but drives the production action boundaries. Its saved-state case creates two overloaded annotation mapper methods, moves the real editor caret to each overload, supplies project/editor/PSI data through an `AnActionEvent`, and asserts that production `MyBatisContextAnalyzer.analyze` classifies both positions as annotation context. It then invokes the production action extraction boundary and proves that each caret returns the exact SQL attached to that overloaded `PsiMethod`.
 
-The same saved-state case deliberately exercises the current remembered-parameter statement-key boundary. The two methods have distinct parameter signatures and distinct SQL, but both keys are `/fixture/UserMapper.java::UserMapper#find`. This is executable characterization of a canonical-identity defect, not a target contract: remembered inputs can currently alias across overloaded mapper methods because the action key omits the method signature. #67 owns the canonical identity/evidence repair.
+The same saved-state case deliberately exercises the current remembered-parameter statement-key boundary. The two methods have distinct parameter signatures and distinct SQL, but both keys are `/fixture/UserMapper.java::UserMapper#find`. This is executable characterization of a shipping canonical-identity defect, not a target contract: remembered inputs can currently alias across overloaded mapper methods because the action key omits the method signature. #62 owns replacing that legacy source/statement key construction with the canonical identity; #63 owns remembered-input identity/persistence on top of it; #67 only validates the final contract.
 
 The unsaved-state case edits only the active editor `Document` from `SELECT saved` to the equal-length `SELECT draft` while retaining the existing `PsiJavaFile`. It proves all of the following before any explicit synchronization:
 
@@ -53,9 +54,11 @@ The unsaved-state case edits only the active editor `Document` from `SELECT save
 - production `extractSqlContent` returns `SELECT saved`, not the draft text;
 - invoking those production boundaries does not implicitly commit the mapper Document.
 
-After the fixture explicitly calls `PsiDocumentManager.commitDocument(document)`, the same production analyzer/extractor sees `SELECT draft`. This is characterization of a current source-authority defect: the production action does not itself establish an authoritative current-document PSI snapshot before reading Java PSI. It is **not** evidence that stale PSI is acceptable target behavior. #62/#66 must establish one authoritative current editor source and synchronize or reject ambiguity before extraction/execution.
+After the fixture explicitly calls `PsiDocumentManager.commitDocument(document)`, the same production analyzer/extractor sees `SELECT draft`. This remains characterization of the **shipping legacy path**: the production action does not itself establish an authoritative current-document PSI snapshot before reading Java PSI. It is not evidence that stale PSI is acceptable target behavior.
 
-This fixture intentionally does not claim VFS/save semantics. It proves the editor Document ↔ PSI synchronization boundary, not whether a particular VirtualFile implementation has been saved to backing storage. VFS/save-state authority and post-redesign canonical mapper identity across the full persistence workflow remain explicit obligations rather than being inferred from this green fixture.
+`ActiveEditorSourceSnapshotAdapterProjectFixtureTest` now proves a separate Leap adapter boundary that does establish the active `Document` as authoritative without committing PSI or saving the physical file. Its disk-backed case proves saved bytes remain unchanged while the captured immutable snapshot contains the unsaved draft and a changed revision. Its fail-closed cases cover a `Document` with no `VirtualFile`, mutation between the before/after revision reads, and caret evidence outside the captured content. The captured value retains only core/JDK values. This adapter is not yet wired into `MyBatisExecuteProxyAction`, so the legacy production characterization above and the new target-adapter evidence are intentionally both true at the same time.
+
+Full production cutover, Java canonical statement construction, dependent mapper capture, rename/move identity policy, and pre-execution source revalidation remain later #62/#66 obligations; they must not be inferred from this adapter fixture.
 
 ## Dynamic SQL evidence boundary
 
@@ -102,7 +105,7 @@ The automated session tests deliberately avoid pretending to emulate JetBrains D
 - actual console recreation and schema switching across an IDE restart;
 - console disposal callbacks from the real Database Tools console implementation;
 - end-to-end confirmation that startup restoration never triggers statement execution;
-- VFS/save-state source authority and post-redesign canonical mapper-method identity across the full persistence workflow.
+- end-to-end production source-adapter cutover, rename/move identity behavior, and pre-execution source revalidation across the full persistence/execution workflow.
 
 Those gaps are explicit so a green `Test` context is not misrepresented as evidence for behavior it does not execute.
 

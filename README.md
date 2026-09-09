@@ -39,7 +39,7 @@
 <h3>Annotation Support</h3>
 <ul>
   <li>The extractor contract covers Java annotation literal values, ordered string arrays, and constant-field reference shapes</li>
-  <li>Real project parser/index-backed constant resolution remains an explicit platform evidence gap; it is not inferred from the interface-level unit contract</li>
+  <li>Real Java project/index-backed cross-file constant resolution is exercised by <code>AnnotationSqlExtractorProjectFixtureTest</code>; this proves the tested parser/index path, not every Java source shape or production action cutover</li>
   <li>Unsupported <code>@SelectProvider</code> / <code>@InsertProvider</code> / <code>@UpdateProvider</code> / <code>@DeleteProvider</code> annotations show a clear unsupported notice instead of being executed</li>
 </ul>
 
