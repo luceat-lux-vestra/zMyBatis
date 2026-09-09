@@ -1,6 +1,8 @@
 package com.algorist.zMyBatis.source
 
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.editor.CaretModel
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.PsiDocumentManager
@@ -9,6 +11,7 @@ import com.intellij.testFramework.fixtures.IdeaTestFixtureFactory
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
 import com.intellij.testFramework.fixtures.TempDirTestFixture
 import com.intellij.util.ThrowableRunnable
+import java.lang.reflect.Proxy
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -117,6 +120,64 @@ class ActiveEditorSourceSnapshotAdapterProjectFixtureTest : LightJavaCodeInsight
         assertSame(ActiveEditorSourceCaptureResult.MissingVirtualFile, result)
     }
 
+    fun testCaptureFailsClosedWhenSourceChangesDuringCapture() {
+        val createdMapper = myFixture.addFileToProject(
+            "fixture/RacingMapper.java",
+            """
+            package fixture;
+
+            class RacingMapper {
+                String statement = "SELECT 1";
+            }
+            """.trimIndent(),
+        )
+        myFixture.configureFromExistingVirtualFile(createdMapper.virtualFile)
+
+        val editor = myFixture.editor
+        val document = editor.document
+        var mutatedDuringCapture = false
+        val racingEditor = editorWithCaretOffset(editor) {
+            if (!mutatedDuringCapture) {
+                mutatedDuringCapture = true
+                WriteCommandAction.runWriteCommandAction(project) {
+                    document.insertString(document.textLength, " ")
+                }
+            }
+            editor.caretModel.offset
+        }
+
+        val result = ActiveEditorSourceSnapshotAdapter.capture(racingEditor)
+
+        assertTrue("test double must mutate the source during capture", mutatedDuringCapture)
+        assertSame(ActiveEditorSourceCaptureResult.SourceChangedDuringCapture, result)
+    }
+
+    fun testCaptureFailsClosedWhenCaretFallsOutsideCapturedContent() {
+        val createdMapper = myFixture.addFileToProject(
+            "fixture/InvalidCaretMapper.java",
+            """
+            package fixture;
+
+            class InvalidCaretMapper {
+                String statement = "SELECT 1";
+            }
+            """.trimIndent(),
+        )
+        myFixture.configureFromExistingVirtualFile(createdMapper.virtualFile)
+
+        val editor = myFixture.editor
+        val contentLength = editor.document.textLength
+        val invalidOffset = contentLength + 1
+        val invalidCaretEditor = editorWithCaretOffset(editor) { invalidOffset }
+
+        val result = ActiveEditorSourceSnapshotAdapter.capture(invalidCaretEditor)
+
+        assertEquals(
+            ActiveEditorSourceCaptureResult.InvalidCaretOffset(invalidOffset, contentLength),
+            result,
+        )
+    }
+
     fun testCapturedValueRetainsNoIntellijPlatformObjects() {
         val retainedFieldTypes = ActiveEditorSourceCapture::class.java.declaredFields.map { it.type.name }
 
@@ -124,6 +185,35 @@ class ActiveEditorSourceSnapshotAdapterProjectFixtureTest : LightJavaCodeInsight
             "host capture may retain only immutable core/JDK values",
             retainedFieldTypes.none { it.startsWith("com.intellij.") },
         )
+    }
+
+    private fun editorWithCaretOffset(delegate: Editor, offsetProvider: () -> Int): Editor {
+        val caretModel = Proxy.newProxyInstance(
+            CaretModel::class.java.classLoader,
+            arrayOf(CaretModel::class.java),
+        ) { proxy, method, arguments ->
+            when (method.name) {
+                "getOffset" -> offsetProvider()
+                "toString" -> "CaretModelTestDouble"
+                "hashCode" -> System.identityHashCode(proxy)
+                "equals" -> proxy === arguments?.firstOrNull()
+                else -> throw AssertionError("unexpected CaretModel method: ${method.name}")
+            }
+        } as CaretModel
+
+        return Proxy.newProxyInstance(
+            Editor::class.java.classLoader,
+            arrayOf(Editor::class.java),
+        ) { proxy, method, arguments ->
+            when (method.name) {
+                "getDocument" -> delegate.document
+                "getCaretModel" -> caretModel
+                "toString" -> "EditorTestDouble"
+                "hashCode" -> System.identityHashCode(proxy)
+                "equals" -> proxy === arguments?.firstOrNull()
+                else -> throw AssertionError("unexpected Editor method: ${method.name}")
+            }
+        } as Editor
     }
 
     private fun captured(result: ActiveEditorSourceCaptureResult): ActiveEditorSourceCapture =
