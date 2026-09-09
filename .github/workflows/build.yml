@@ -3,7 +3,7 @@
 # Gates, in dependency order:
 # - build:       assembles the distributable plugin ZIP and keeps it as an artifact.
 # - test:        ./gradlew check (unit tests + Kover coverage report generation).
-# - inspectCode: Qodana static analysis of the exact PR head commit.
+# - inspectCode: fail-closed full-repository Qodana static analysis.
 # - verify:      plugin structure verification + IntelliJ Plugin Verifier.
 #
 # This workflow never creates release identity or publishes. SemVer release tags are selected
@@ -157,7 +157,13 @@ jobs:
       - name: Qodana - Code Inspection
         uses: JetBrains/qodana-action@10be11607eb323a180e2b76b26c9c5cdceac3e77 # v2026.2.1
         with:
+          args: --fail-threshold 0
           cache-default-branch-only: true
+          pr-mode: false
+          upload-result: true
+          artifact-name: qodana-report
+          use-annotations: false
+          post-pr-comment: false
 
   verify:
     name: Verify plugin

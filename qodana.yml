@@ -2,11 +2,49 @@
 # https://www.jetbrains.com/help/qodana/qodana-yaml.html
 
 version: "1.0"
-linter: jetbrains/qodana-jvm-community:2024.3
+linter: jetbrains/qodana-jvm-community:2026.2
 projectJDK: "21"
 profile:
   name: qodana.recommended
+
+# Temporary known debt discovered by the first authoritative 2026.2 full scan.
+# Every inspection/path pair below is locked by check_qodana_gate.py and tracked
+# in #115. Broad source exclusions are forbidden; remove entries as debt retires.
 exclude:
   - name: All
     paths:
       - .qodana
+  - name: DialogTitleCapitalization
+    paths:
+      - src/main/kotlin/com/algorist/zMyBatis/SqlPreviewDialog.kt
+      - src/main/kotlin/com/algorist/zMyBatis/settings/ZMyBatisConfigurable.kt
+  - name: DuplicateArgumentsInSetOfAndMapOfFunctions
+    paths:
+      - src/main/kotlin/com/algorist/zMyBatis/ParameterExtractor.kt
+  - name: KDocUnresolvedReference
+    paths:
+      - src/main/kotlin/com/algorist/zMyBatis/SqlFormatter.kt
+      - src/main/kotlin/com/algorist/zMyBatis/MyBatisEvaluator.kt
+  - name: MoveVariableDeclarationIntoWhen
+    paths:
+      - src/main/kotlin/com/algorist/zMyBatis/MyBatisEvaluator.kt
+      - src/main/kotlin/com/algorist/zMyBatis/AnnotationSqlExtractor.kt
+  - name: RedundantIf
+    paths:
+      - src/main/kotlin/com/algorist/zMyBatis/services/ConsoleCacheService.kt
+  - name: RegExpUnnecessaryNonCapturingGroup
+    paths:
+      - src/main/kotlin/com/algorist/zMyBatis/ParameterExtractor.kt
+  - name: RemoveExplicitTypeArguments
+    paths:
+      - core/src/main/kotlin/com/algorist/zMyBatis/core/source/SourceGraph.kt
+  - name: RemoveRedundantQualifierName
+    paths:
+      - build.gradle.kts
+  - name: UnusedSymbol
+    paths:
+      - core/src/main/kotlin/com/algorist/zMyBatis/core/source/SourceGraph.kt
+      - src/main/kotlin/com/algorist/zMyBatis/JsonParameterParser.kt
+  - name: UsePropertyAccessSyntax
+    paths:
+      - src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt

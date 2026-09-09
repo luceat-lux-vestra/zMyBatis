@@ -37,6 +37,9 @@ jobs:
       - name: Require merge-gate-policy.yml to match its producing workflows
         run: python3 .github/workflow-policy/check_required_contexts.py .github/merge-gate-policy.yml .
 
+      - name: Require fail-closed Qodana authority
+        run: python3 .github/workflow-policy/check_qodana_gate.py .github/workflows/build.yml qodana.yml
+
       - name: Require recurring live-settings audit ownership
         run: python3 .github/workflow-policy/check_live_settings.py .github/merge-gate-policy.yml --static-only
 
@@ -65,6 +68,7 @@ jobs:
       - name: Prove the checks above are actually fail-closed
         run: |
           python3 .github/workflow-policy/test_policy.py
+          python3 .github/workflow-policy/test_qodana_gate.py
           python3 .github/workflow-policy/test_live_settings.py
           python3 .github/workflow-policy/test_release_provenance.py
           python3 .github/workflow-policy/test_governance_contract.py
