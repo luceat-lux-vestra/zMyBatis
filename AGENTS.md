@@ -173,7 +173,7 @@ In particular, the target deliberately replaces or removes the current:
 - execution-time formatting mutation;
 - safety semantics controlled by Strict OGNL / Ignore Unknown Tags switches.
 
-The target physical dependency direction is root IntelliJ plugin -> `:mybatis-engine` -> `:core`, with core kept free of IntelliJ/Database Tools/MyBatis dependencies as specified in the architecture. If packaging evidence forces a mechanical adjustment, the core/platform dependency direction must still remain enforced.
+The target physical dependency graph is a DAG: root IntelliJ plugin -> `:core`, root IntelliJ plugin -> `:mybatis-engine`, and `:mybatis-engine` -> both `:core` and MyBatis; `:core` remains free of IntelliJ/Database Tools/MyBatis dependencies. The current implementation phase includes only `:core` and already wires root -> `:core` via #111; `:mybatis-engine` is not yet a Gradle module. This is the exact-mechanics adjustment allowed by #101, and the core/platform dependency direction must not invert.
 
 Bounded safety fixes to the current path and explicitly temporary migration bridges are allowed. They must not be used to justify preserving legacy architecture and must have an owner/deletion criterion when they survive beyond one PR.
 
