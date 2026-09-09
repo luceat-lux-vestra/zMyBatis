@@ -75,8 +75,8 @@ The target Gradle layout is deliberately split so architecture is enforced by co
 
 ```text
 root IntelliJ plugin module
-  -> :mybatis-engine
   -> :core
+  -> :mybatis-engine
 
 :mybatis-engine
   -> :core
@@ -85,6 +85,8 @@ root IntelliJ plugin module
 :core
   -> Kotlin/JDK only
 ```
+
+This is a dependency DAG, not a linear root -> engine -> core chain. Root IntelliJ adapters consume core contracts directly, while the future `:mybatis-engine` adapter also depends on `:core` and MyBatis. The current implementation phase includes only `:core` in `settings.gradle.kts`; #111 established the direct root plugin -> `:core` dependency. `:mybatis-engine` remains a target module to be introduced by later #64 work. This is the exact-mechanics adjustment permitted by #101; the platform/core dependency direction does not invert.
 
 The root module remains the IntelliJ plugin module so existing `buildPlugin`, verifier, signing, publishing, and CI entry points do not need a repository-wide workflow rewrite merely to establish architecture.
 
