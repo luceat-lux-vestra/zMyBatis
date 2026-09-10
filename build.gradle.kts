@@ -128,6 +128,10 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
             includeTestsMatching("com.algorist.zMyBatis.JavaActionContextProjectFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
+            includeTestsMatching("com.algorist.zMyBatis.source.DependentMapperSourceSnapshotAdapterProjectFixtureTest")
+        }
+        testLogging {
+            events("passed", "failed")
         }
     }
 }
@@ -183,6 +187,7 @@ tasks {
             excludeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.KotlinActionContextBoundaryTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
+            excludeTestsMatching("com.algorist.zMyBatis.source.DependentMapperSourceSnapshotAdapterProjectFixtureTest")
         }
     }
 
