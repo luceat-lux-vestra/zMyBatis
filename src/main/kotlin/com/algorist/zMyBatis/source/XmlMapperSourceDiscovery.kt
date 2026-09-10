@@ -6,7 +6,6 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementKind
 import java.io.StringReader
-import javax.xml.XMLConstants
 import javax.xml.stream.XMLInputFactory
 import javax.xml.stream.XMLStreamConstants
 import javax.xml.stream.XMLStreamException
@@ -125,10 +124,8 @@ object XmlMapperSourceDiscovery {
         XMLInputFactory.newFactory().apply {
             setProperty(XMLInputFactory.IS_NAMESPACE_AWARE, true)
             setProperty(XMLInputFactory.IS_VALIDATING, false)
-            setProperty(XMLInputFactory.SUPPORT_DTD, false)
-            setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false)
-            setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "")
-            setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
+            setProperty(XMLInputFactory.SUPPORT_DTD, true)
+            xmlResolver = javax.xml.stream.XMLResolver { _, _, _, _ -> StringReader("") }
         }
 
     private fun discover(
