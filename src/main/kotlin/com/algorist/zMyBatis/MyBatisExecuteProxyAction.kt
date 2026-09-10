@@ -124,13 +124,13 @@ open class MyBatisExecuteProxyAction : AnAction() {
             LOG.info("zMyBatis: resolveParameters returned null (user cancelled or failed)")
             return
         }
-        LOG.info("zMyBatis params: $paramValues")
+        LOG.info("zMyBatis: parameters resolved (count=${paramValues.size})")
 
         ApplicationManager.getApplication().executeOnPooledThread {
             if (isProjectUnavailable(project)) return@executeOnPooledThread
             try {
                 val rawSql = MyBatisEvaluator.evaluate(wrapForEvaluator(sqlContent, context), paramValues)
-                LOG.info("zMyBatis SQL: $rawSql")
+                LOG.info("zMyBatis: SQL evaluated (length=${rawSql.length})")
                 val settings = ZMyBatisSettings.getInstance()
 
                 ApplicationManager.getApplication().invokeLater {
@@ -483,13 +483,15 @@ open class MyBatisExecuteProxyAction : AnAction() {
         statementKey: String?
     ): Map<String, Any?>? {
         val extracted = ParameterExtractor.extractResult(sqlContent)
-        LOG.info("zMyBatis extractResult — params: ${extracted.params}, objectParams: ${extracted.objectParams}")
+        LOG.info(
+            "zMyBatis: parameters discovered " +
+                "(count=${extracted.params.size}, objectCount=${extracted.objectParams.size})"
+        )
         if (extracted.params.isEmpty()) return emptyMap()
         val dialog = ParameterInputDialog(project, extracted.params, extracted.objectParams, statementKey)
         if (!dialog.showAndGet()) return null
         val values = dialog.getValues()
-        LOG.info("zMyBatis getValues — keys: ${values.keys}, values: $values")
-        LOG.info("zMyBatis getValues — types: ${values.mapValues { (_, v) -> v?.javaClass?.simpleName ?: "null" }}")
+        LOG.info("zMyBatis: parameter values collected (count=${values.size})")
         return values
     }
 
