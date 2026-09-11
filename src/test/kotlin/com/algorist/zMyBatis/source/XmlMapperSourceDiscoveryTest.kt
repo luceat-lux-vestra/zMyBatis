@@ -165,14 +165,26 @@ class XmlMapperSourceDiscoveryTest {
     }
 
     @Test
-    fun prefixedMapperRootAndPrefixedDeclarationsFailClosed() {
+    fun namespacedMapperRootAndStructuralElementsFailClosed() {
         assertFailure(
             "<m:mapper xmlns:m=\"urn:fixture\" namespace=\"fixture.Mapper\"><m:select id=\"find\">SELECT 1</m:select></m:mapper>",
             XmlMapperDiscoveryFailure.INVALID_ROOT,
         )
         assertFailure(
+            "<mapper xmlns=\"urn:fixture\" namespace=\"fixture.Mapper\"><select id=\"find\">SELECT 1</select></mapper>",
+            XmlMapperDiscoveryFailure.INVALID_ROOT,
+        )
+        assertFailure(
             "<mapper xmlns:m=\"urn:fixture\" namespace=\"fixture.Mapper\"><m:select id=\"find\">SELECT 1</m:select></mapper>",
             XmlMapperDiscoveryFailure.INVALID_DECLARATION,
+        )
+        assertFailure(
+            "<mapper namespace=\"fixture.Mapper\"><select xmlns=\"urn:fixture\" id=\"find\">SELECT 1</select></mapper>",
+            XmlMapperDiscoveryFailure.INVALID_DECLARATION,
+        )
+        assertFailure(
+            "<mapper namespace=\"fixture.Mapper\"><select id=\"find\"><include xmlns=\"urn:fixture\" refid=\"columns\"/></select></mapper>",
+            XmlMapperDiscoveryFailure.INVALID_INCLUDE,
         )
     }
 
