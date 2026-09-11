@@ -27,6 +27,11 @@ enum class XmlDynamicIdentifierKind {
     FRAGMENT_ID,
 }
 
+enum class XmlDeclarationIdentifierKind {
+    STATEMENT_ID,
+    FRAGMENT_ID,
+}
+
 data class XmlResolvedFragmentId(
     val sourceFileId: SourceFileId,
     val namespace: String,
@@ -69,6 +74,13 @@ sealed interface XmlStatementSourceGraphFailure {
         val kind: XmlDynamicIdentifierKind,
         val value: String,
         val sourceRange: SourceRange?,
+    ) : XmlStatementSourceGraphFailure
+
+    data class UnsupportedDeclarationIdentifier(
+        val sourceFileId: SourceFileId,
+        val kind: XmlDeclarationIdentifierKind,
+        val value: String,
+        val sourceRange: SourceRange,
     ) : XmlStatementSourceGraphFailure
 
     class AmbiguousFragment(
@@ -390,6 +402,46 @@ object XmlStatementSourceGraphResolver {
             )
         }
 
+        val dottedDeclaration = buildList {
+            discovery.statements.forEach {
+                if ('.' in it.id) {
+                    add(
+                        DottedDeclaration(
+                            kind = XmlDeclarationIdentifierKind.STATEMENT_ID,
+                            value = it.id,
+                            sourceRange = it.sourceRange,
+                        ),
+                    )
+                }
+            }
+            discovery.fragments.forEach {
+                if ('.' in it.id) {
+                    add(
+                        DottedDeclaration(
+                            kind = XmlDeclarationIdentifierKind.FRAGMENT_ID,
+                            value = it.id,
+                            sourceRange = it.sourceRange,
+                        ),
+                    )
+                }
+            }
+        }.minWithOrNull(
+            compareBy<DottedDeclaration>(
+                { it.sourceRange.startOffset },
+                { it.sourceRange.endOffsetExclusive },
+                { it.kind.name },
+                { it.value },
+            ),
+        )
+        if (dottedDeclaration != null) {
+            return XmlStatementSourceGraphFailure.UnsupportedDeclarationIdentifier(
+                sourceFileId = discovery.sourceFileId,
+                kind = dottedDeclaration.kind,
+                value = dottedDeclaration.value,
+                sourceRange = dottedDeclaration.sourceRange,
+            )
+        }
+
         val unsupported = discovery.unsupportedSemantics.minWithOrNull(
             compareBy<XmlUnsupportedSemanticsEvidence>(
                 { it.sourceRange.startOffset },
@@ -435,6 +487,12 @@ object XmlStatementSourceGraphResolver {
 
     private data class DynamicIdentifier(
         val kind: XmlDynamicIdentifierKind,
+        val value: String,
+        val sourceRange: SourceRange,
+    )
+
+    private data class DottedDeclaration(
+        val kind: XmlDeclarationIdentifierKind,
         val value: String,
         val sourceRange: SourceRange,
     )
