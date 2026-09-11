@@ -130,6 +130,7 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
             includeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.source.DependentMapperSourceSnapshotAdapterProjectFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapterProjectFixtureTest")
+            includeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest")
         }
         testLogging {
             events("passed", "failed")
@@ -150,6 +151,9 @@ val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundar
         filter {
             includeTestsMatching("com.algorist.zMyBatis.KotlinActionContextBoundaryTest")
             includeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureKotlinBoundaryTest")
+        }
+        testLogging {
+            events("passed", "failed")
         }
     }
 }
@@ -191,6 +195,7 @@ tasks {
             excludeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.DependentMapperSourceSnapshotAdapterProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapterProjectFixtureTest")
+            excludeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureKotlinBoundaryTest")
         }
         testLogging {
