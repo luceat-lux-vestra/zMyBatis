@@ -71,6 +71,7 @@ object JavaAnnotationSourceCaptureAdapter {
     private const val DEFAULT_MAX_DEPENDENT_CONTENT_LENGTH = 2 * 1024 * 1024
     private const val PARAM_ANNOTATION = "org.apache.ibatis.annotations.Param"
     private const val LANG_ANNOTATION = "org.apache.ibatis.annotations.Lang"
+    private const val MYBATIS_ANNOTATION_PACKAGE = "org.apache.ibatis.annotations."
 
     private val statementAnnotations = linkedMapOf(
         "org.apache.ibatis.annotations.Select" to StatementKind.SELECT,
@@ -161,8 +162,9 @@ object JavaAnnotationSourceCaptureAdapter {
 
         val methodAnnotations = method.modifierList.annotations.toList()
         if (
-            methodAnnotations.any {
-                it.qualifiedName in providerAnnotations || it.qualifiedName in providerAnnotationContainers
+            methodAnnotations.any { annotation ->
+                providerAnnotations.any { annotationMatches(method, annotation, it) } ||
+                    providerAnnotationContainers.any { annotationMatches(method, annotation, it) }
             }
         ) {
             return failed(JavaAnnotationSourceCaptureFailure.PROVIDER_ANNOTATION)
@@ -170,12 +172,18 @@ object JavaAnnotationSourceCaptureAdapter {
         if (method.hasAnnotation(LANG_ANNOTATION)) {
             return failed(JavaAnnotationSourceCaptureFailure.UNSUPPORTED_LANGUAGE_DRIVER)
         }
-        if (methodAnnotations.any { it.qualifiedName in statementAnnotationContainers }) {
+        if (
+            methodAnnotations.any { annotation ->
+                statementAnnotationContainers.any { annotationMatches(method, annotation, it) }
+            }
+        ) {
             return failed(JavaAnnotationSourceCaptureFailure.AMBIGUOUS_STATEMENT_ANNOTATION)
         }
 
         val directAnnotations = methodAnnotations.mapNotNull { annotation ->
-            statementAnnotations[annotation.qualifiedName]?.let { kind -> annotation to kind }
+            statementAnnotations.entries.firstOrNull { (annotationName, _) ->
+                annotationMatches(method, annotation, annotationName)
+            }?.let { (_, kind) -> annotation to kind }
         }
         if (directAnnotations.isEmpty()) {
             return failed(JavaAnnotationSourceCaptureFailure.MISSING_STATEMENT_ANNOTATION)
@@ -287,6 +295,22 @@ object JavaAnnotationSourceCaptureAdapter {
         val range = element.textRange
         if (range.startOffset < 0 || range.endOffset > snapshot.content.length) return false
         return snapshot.content.substring(range.startOffset, range.endOffset) == element.text
+    }
+
+    private fun annotationMatches(
+        method: PsiMethod,
+        annotation: PsiAnnotation,
+        annotationName: String,
+    ): Boolean {
+        if (annotation.qualifiedName == annotationName) return true
+        if (annotation.resolveAnnotationType()?.qualifiedName == annotationName) return true
+        if (!method.hasAnnotation(annotationName)) return false
+
+        val sourceName = annotation.nameReferenceElement?.text ?: return false
+        val expectedSourceName = annotationName.removePrefix(MYBATIS_ANNOTATION_PACKAGE)
+        return sourceName == annotationName ||
+            sourceName == expectedSourceName ||
+            sourceName == expectedSourceName.substringAfterLast('.')
     }
 
     private fun parameterTypeIdentity(type: PsiType): JavaTypeIdentity? {
