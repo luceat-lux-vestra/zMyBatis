@@ -18,6 +18,8 @@ import java.nio.file.Path
 
 class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJavaCodeInsightFixtureTestCase() {
 
+    override fun getProjectDescriptor() = JAVA_21
+
     override fun setUp() {
         super.setUp()
         val myBatisJar = File(PathUtil.getJarPathForClass(Select::class.java))
