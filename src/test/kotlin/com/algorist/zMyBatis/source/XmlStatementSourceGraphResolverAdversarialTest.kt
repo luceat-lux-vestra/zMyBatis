@@ -31,6 +31,76 @@ class XmlStatementSourceGraphResolverAdversarialTest {
     }
 
     @Test
+    fun propertySubstitutedMapperNamespaceFailsTyped() {
+        val fixture = document(
+            "dynamic-namespace.xml",
+            "<mapper namespace=\"\${mapperNamespace}\"><select id=\"find\">SELECT 1</select></mapper>",
+        )
+
+        val failure = failed(
+            XmlStatementSourceGraphResolver.resolve(
+                rootStatementId = rootId(fixture, "\${mapperNamespace}", "find"),
+                snapshots = listOf(fixture.snapshot),
+                discoveries = listOf(fixture.discovery),
+            ),
+        )
+
+        assertEquals(
+            XmlStatementSourceGraphFailure.UnsupportedIdentifier(
+                sourceFileId = fixture.snapshot.fileId,
+                kind = XmlDynamicIdentifierKind.MAPPER_NAMESPACE,
+                value = "\${mapperNamespace}",
+                sourceRange = null,
+            ),
+            failure,
+        )
+    }
+
+    @Test
+    fun propertySubstitutedStatementIdFailsTyped() {
+        val fixture = document(
+            "dynamic-statement.xml",
+            "<mapper namespace=\"a.Mapper\"><select id=\"\${statementId}\">SELECT 1</select></mapper>",
+        )
+
+        val failure = failed(
+            XmlStatementSourceGraphResolver.resolve(
+                rootStatementId = rootId(fixture, "a.Mapper", "\${statementId}"),
+                snapshots = listOf(fixture.snapshot),
+                discoveries = listOf(fixture.discovery),
+            ),
+        )
+
+        assertTrue(failure is XmlStatementSourceGraphFailure.UnsupportedIdentifier)
+        failure as XmlStatementSourceGraphFailure.UnsupportedIdentifier
+        assertEquals(XmlDynamicIdentifierKind.STATEMENT_ID, failure.kind)
+        assertEquals("\${statementId}", failure.value)
+        assertTrue(failure.sourceRange != null)
+    }
+
+    @Test
+    fun propertySubstitutedFragmentIdBlocksReachableDocumentConservatively() {
+        val fixture = document(
+            "dynamic-fragment.xml",
+            "<mapper namespace=\"a.Mapper\"><sql id=\"\${fragmentId}\">id</sql><select id=\"find\">SELECT 1</select></mapper>",
+        )
+
+        val failure = failed(
+            XmlStatementSourceGraphResolver.resolve(
+                rootStatementId = rootId(fixture, "a.Mapper", "find"),
+                snapshots = listOf(fixture.snapshot),
+                discoveries = listOf(fixture.discovery),
+            ),
+        )
+
+        assertTrue(failure is XmlStatementSourceGraphFailure.UnsupportedIdentifier)
+        failure as XmlStatementSourceGraphFailure.UnsupportedIdentifier
+        assertEquals(XmlDynamicIdentifierKind.FRAGMENT_ID, failure.kind)
+        assertEquals("\${fragmentId}", failure.value)
+        assertTrue(failure.sourceRange != null)
+    }
+
+    @Test
     fun deepAcyclicFragmentChainResolvesWithoutJvmRecursion() {
         val depth = 2_000
         val xml = buildString {
