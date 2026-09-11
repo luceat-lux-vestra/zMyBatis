@@ -203,7 +203,7 @@ object JavaAnnotationSourceCaptureAdapter {
             }
             parameters += JavaMethodParameterMetadata(
                 index = index,
-                sourceName = parameter.name.takeIf(String::isNotBlank),
+                sourceName = parameter.name?.takeIf { it.isNotBlank() },
                 typeIdentity = parameterTypeIdentities[index],
                 myBatisParamAlias = paramAlias,
             )
@@ -372,6 +372,7 @@ object JavaAnnotationSourceCaptureAdapter {
         state: CaptureState,
     ): FailureResolution {
         val references = PsiTreeUtil.findChildrenOfType(expression, PsiReferenceExpression::class.java)
+            .filter { it.parent !is PsiReferenceExpression }
             .sortedBy { it.textRange.startOffset }
         references.forEach { reference ->
             when (val resolution = resolveStringReference(reference, ownerFileId, state)) {
@@ -521,8 +522,9 @@ object JavaAnnotationSourceCaptureAdapter {
                 }
                 is DependentMapperSourceCaptureResult.ContentTooLarge,
                 DependentMapperSourceCaptureResult.InvalidSource,
-                DependentMapperSourceCaptureResult.UnreadableSource,
-                -> return SnapshotResolution.Failed(JavaAnnotationSourceCaptureFailure.DEPENDENT_SOURCE_UNAVAILABLE)
+                DependentMapperSourceCaptureResult.UnreadableSource -> {
+                    return SnapshotResolution.Failed(JavaAnnotationSourceCaptureFailure.DEPENDENT_SOURCE_UNAVAILABLE)
+                }
             }
 
             val existing = snapshotsByFileId[captured.fileId]
