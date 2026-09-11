@@ -21,6 +21,12 @@ enum class XmlSourceGraphInputMismatchReason {
     REVISION_MISMATCH,
 }
 
+enum class XmlDynamicIdentifierKind {
+    MAPPER_NAMESPACE,
+    STATEMENT_ID,
+    FRAGMENT_ID,
+}
+
 data class XmlResolvedFragmentId(
     val sourceFileId: SourceFileId,
     val namespace: String,
@@ -56,6 +62,13 @@ sealed interface XmlStatementSourceGraphFailure {
         val ownerFileId: SourceFileId,
         val refid: String,
         val referenceRange: SourceRange,
+    ) : XmlStatementSourceGraphFailure
+
+    data class UnsupportedIdentifier(
+        val sourceFileId: SourceFileId,
+        val kind: XmlDynamicIdentifierKind,
+        val value: String,
+        val sourceRange: SourceRange?,
     ) : XmlStatementSourceGraphFailure
 
     class AmbiguousFragment(
@@ -145,6 +158,10 @@ object XmlStatementSourceGraphResolver {
                 XmlStatementSourceGraphFailure.RootSourceMissing(rootStatementId),
             )
 
+        firstDocumentFailure(rootDiscovery)?.let {
+            return XmlStatementSourceGraphResult.Failed(it)
+        }
+
         if (rootDiscovery.namespace != rootStatementId.namespace) {
             return XmlStatementSourceGraphResult.Failed(
                 XmlStatementSourceGraphFailure.RootStatementMissing(rootStatementId),
@@ -155,13 +172,8 @@ object XmlStatementSourceGraphResolver {
                 XmlStatementSourceGraphFailure.RootStatementMissing(rootStatementId),
             )
 
-        val unsupportedByFileId = discoveriesByFileId.values.associate { discovery ->
-            discovery.sourceFileId to firstUnsupported(discovery)
-        }
-        unsupportedByFileId[rootDiscovery.sourceFileId]?.let {
-            return XmlStatementSourceGraphResult.Failed(
-                XmlStatementSourceGraphFailure.UnsupportedSemantics(rootDiscovery.sourceFileId, it),
-            )
+        val blockerByFileId = discoveriesByFileId.values.associate { discovery ->
+            discovery.sourceFileId to firstDocumentFailure(discovery)
         }
 
         val candidatesByCanonicalName = discoveriesByFileId.values
@@ -183,12 +195,7 @@ object XmlStatementSourceGraphResolver {
                 null -> Unit
             }
 
-            unsupportedByFileId[start.discovery.sourceFileId]?.let {
-                return XmlStatementSourceGraphFailure.UnsupportedSemantics(
-                    start.discovery.sourceFileId,
-                    it,
-                )
-            }
+            blockerByFileId[start.discovery.sourceFileId]?.let { return it }
 
             val frames = mutableListOf<FragmentFrame>()
             states[start.resolvedId] = VisitState.VISITING
@@ -233,12 +240,7 @@ object XmlStatementSourceGraphResolver {
                                 )
                             }
                             null -> {
-                                unsupportedByFileId[target.discovery.sourceFileId]?.let {
-                                    return XmlStatementSourceGraphFailure.UnsupportedSemantics(
-                                        target.discovery.sourceFileId,
-                                        it,
-                                    )
-                                }
+                                blockerByFileId[target.discovery.sourceFileId]?.let { return it }
                                 states[target.resolvedId] = VisitState.VISITING
                                 frames += frameFor(target)
                             }
@@ -298,7 +300,7 @@ object XmlStatementSourceGraphResolver {
         include: XmlMapperIncludeReference,
         candidatesByCanonicalName: Map<String, List<FragmentCandidate>>,
     ): TargetResolution {
-        if (include.refid.contains("\${")) {
+        if (containsPropertyPlaceholder(include.refid)) {
             return TargetResolution.Failed(
                 XmlStatementSourceGraphFailure.UnsupportedReference(
                     ownerFileId = ownerDiscovery.sourceFileId,
@@ -336,18 +338,59 @@ object XmlStatementSourceGraphResolver {
         return TargetResolution.Resolved(candidates.single())
     }
 
-    private fun frameFor(candidate: FragmentCandidate): FragmentFrame =
-        FragmentFrame(
-            candidate = candidate,
-            includes = candidate.discovery.includes
-                .filter { it.owner == XmlMapperDeclarationRef.Fragment(candidate.declaration.id) }
-                .sortedWith(includeComparator),
-        )
-
-    private fun firstUnsupported(
+    private fun firstDocumentFailure(
         discovery: XmlMapperDocumentDiscovery,
-    ): XmlUnsupportedSemanticsEvidence? =
-        discovery.unsupportedSemantics.minWithOrNull(
+    ): XmlStatementSourceGraphFailure? {
+        if (containsPropertyPlaceholder(discovery.namespace)) {
+            return XmlStatementSourceGraphFailure.UnsupportedIdentifier(
+                sourceFileId = discovery.sourceFileId,
+                kind = XmlDynamicIdentifierKind.MAPPER_NAMESPACE,
+                value = discovery.namespace,
+                sourceRange = null,
+            )
+        }
+
+        val dynamicDeclaration = buildList {
+            discovery.statements.forEach {
+                if (containsPropertyPlaceholder(it.id)) {
+                    add(
+                        DynamicIdentifier(
+                            kind = XmlDynamicIdentifierKind.STATEMENT_ID,
+                            value = it.id,
+                            sourceRange = it.sourceRange,
+                        ),
+                    )
+                }
+            }
+            discovery.fragments.forEach {
+                if (containsPropertyPlaceholder(it.id)) {
+                    add(
+                        DynamicIdentifier(
+                            kind = XmlDynamicIdentifierKind.FRAGMENT_ID,
+                            value = it.id,
+                            sourceRange = it.sourceRange,
+                        ),
+                    )
+                }
+            }
+        }.minWithOrNull(
+            compareBy<DynamicIdentifier>(
+                { it.sourceRange.startOffset },
+                { it.sourceRange.endOffsetExclusive },
+                { it.kind.name },
+                { it.value },
+            ),
+        )
+        if (dynamicDeclaration != null) {
+            return XmlStatementSourceGraphFailure.UnsupportedIdentifier(
+                sourceFileId = discovery.sourceFileId,
+                kind = dynamicDeclaration.kind,
+                value = dynamicDeclaration.value,
+                sourceRange = dynamicDeclaration.sourceRange,
+            )
+        }
+
+        val unsupported = discovery.unsupportedSemantics.minWithOrNull(
             compareBy<XmlUnsupportedSemanticsEvidence>(
                 { it.sourceRange.startOffset },
                 { it.sourceRange.endOffsetExclusive },
@@ -355,6 +398,20 @@ object XmlStatementSourceGraphResolver {
                 { it.elementName },
                 { it.value },
             ),
+        )
+        return unsupported?.let {
+            XmlStatementSourceGraphFailure.UnsupportedSemantics(discovery.sourceFileId, it)
+        }
+    }
+
+    private fun containsPropertyPlaceholder(value: String): Boolean = value.contains("\${")
+
+    private fun frameFor(candidate: FragmentCandidate): FragmentFrame =
+        FragmentFrame(
+            candidate = candidate,
+            includes = candidate.discovery.includes
+                .filter { it.owner == XmlMapperDeclarationRef.Fragment(candidate.declaration.id) }
+                .sortedWith(includeComparator),
         )
 
     private fun <T> duplicateKey(groups: Map<SourceFileId, List<T>>): SourceFileId? =
@@ -375,6 +432,12 @@ object XmlStatementSourceGraphResolver {
         XmlStatementSourceGraphResult.Failed(
             XmlStatementSourceGraphFailure.InputMismatch(reason, sourceFileId),
         )
+
+    private data class DynamicIdentifier(
+        val kind: XmlDynamicIdentifierKind,
+        val value: String,
+        val sourceRange: SourceRange,
+    )
 
     private data class FragmentCandidate(
         val discovery: XmlMapperDocumentDiscovery,
