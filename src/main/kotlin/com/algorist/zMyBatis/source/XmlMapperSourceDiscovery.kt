@@ -170,7 +170,7 @@ object XmlMapperSourceDiscovery {
                     collectUnsupportedEvidence(reader, localName, sourceRange, unsupportedSemantics)
 
                     if (depth == 1) {
-                        if (rootSeen || localName != "mapper" || reader.prefix.isNotEmpty()) {
+                        if (rootSeen || localName != "mapper" || !isUnqualifiedElement(reader)) {
                             return failed(XmlMapperDiscoveryFailure.INVALID_ROOT)
                         }
                         val mapperNamespace = reader.getAttributeValue(null, "namespace")
@@ -188,7 +188,7 @@ object XmlMapperSourceDiscovery {
 
                     val statementKind = statementKind(localName)
                     if (statementKind != null || localName == "sql") {
-                        if (depth != 2 || currentOwner != null || reader.prefix.isNotEmpty()) {
+                        if (depth != 2 || currentOwner != null || !isUnqualifiedElement(reader)) {
                             return failed(XmlMapperDiscoveryFailure.INVALID_DECLARATION)
                         }
                         val id = reader.getAttributeValue(null, "id")
@@ -214,7 +214,7 @@ object XmlMapperSourceDiscovery {
                     }
 
                     if (localName == "include") {
-                        if (reader.prefix.isNotEmpty()) {
+                        if (!isUnqualifiedElement(reader)) {
                             return failed(XmlMapperDiscoveryFailure.INVALID_INCLUDE)
                         }
                         val owner = currentOwner
@@ -261,6 +261,9 @@ object XmlMapperSourceDiscovery {
             ),
         )
     }
+
+    private fun isUnqualifiedElement(reader: XMLStreamReader): Boolean =
+        reader.prefix.isEmpty() && reader.namespaceURI.isNullOrEmpty()
 
     private fun collectUnsupportedEvidence(
         reader: XMLStreamReader,
