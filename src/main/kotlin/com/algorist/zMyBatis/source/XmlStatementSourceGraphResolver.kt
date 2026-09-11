@@ -386,7 +386,7 @@ object XmlStatementSourceGraphResolver {
                 }
             }
         }.minWithOrNull(
-            compareBy<DynamicIdentifier>(
+            compareBy(
                 { it.sourceRange.startOffset },
                 { it.sourceRange.endOffsetExclusive },
                 { it.kind.name },
@@ -426,7 +426,7 @@ object XmlStatementSourceGraphResolver {
                 }
             }
         }.minWithOrNull(
-            compareBy<DottedDeclaration>(
+            compareBy(
                 { it.sourceRange.startOffset },
                 { it.sourceRange.endOffsetExclusive },
                 { it.kind.name },
@@ -443,7 +443,7 @@ object XmlStatementSourceGraphResolver {
         }
 
         val unsupported = discovery.unsupportedSemantics.minWithOrNull(
-            compareBy<XmlUnsupportedSemanticsEvidence>(
+            compareBy(
                 { it.sourceRange.startOffset },
                 { it.sourceRange.endOffsetExclusive },
                 { it.kind.name },
@@ -456,7 +456,16 @@ object XmlStatementSourceGraphResolver {
         }
     }
 
-    private fun containsPropertyPlaceholder(value: String): Boolean = value.contains("\${")
+    private fun containsPropertyPlaceholder(value: String): Boolean {
+        var index = value.indexOf('$')
+        while (index >= 0) {
+            if (index + 1 < value.length && value[index + 1] == '{') {
+                return true
+            }
+            index = value.indexOf('$', index + 1)
+        }
+        return false
+    }
 
     private fun frameFor(candidate: FragmentCandidate): FragmentFrame =
         FragmentFrame(
@@ -468,11 +477,9 @@ object XmlStatementSourceGraphResolver {
 
     private fun <T> duplicateKey(groups: Map<SourceFileId, List<T>>): SourceFileId? =
         groups.entries
-            .asSequence()
             .filter { it.value.size > 1 }
-            .map { it.key }
-            .sortedBy { it.value }
-            .firstOrNull()
+            .minByOrNull { it.key.value }
+            ?.key
 
     private fun firstSorted(ids: Collection<SourceFileId>): SourceFileId? =
         ids.minByOrNull { it.value }

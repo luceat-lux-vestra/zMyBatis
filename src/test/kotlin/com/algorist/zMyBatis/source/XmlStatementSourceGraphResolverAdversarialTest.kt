@@ -101,6 +101,50 @@ class XmlStatementSourceGraphResolverAdversarialTest {
     }
 
     @Test
+    fun dottedStatementIdFailsTypedInsteadOfAssumingMyBatisCanonicalization() {
+        val fixture = document(
+            "dotted-statement.xml",
+            """<mapper namespace="a.Mapper"><select id="a.Mapper.find">SELECT 1</select></mapper>""",
+        )
+
+        val failure = failed(
+            XmlStatementSourceGraphResolver.resolve(
+                rootStatementId = rootId(fixture, "a.Mapper", "a.Mapper.find"),
+                snapshots = listOf(fixture.snapshot),
+                discoveries = listOf(fixture.discovery),
+            ),
+        )
+
+        assertTrue(failure is XmlStatementSourceGraphFailure.UnsupportedDeclarationIdentifier)
+        failure as XmlStatementSourceGraphFailure.UnsupportedDeclarationIdentifier
+        assertEquals(XmlDeclarationIdentifierKind.STATEMENT_ID, failure.kind)
+        assertEquals("a.Mapper.find", failure.value)
+        assertEquals(fixture.discovery.statements.single().sourceRange, failure.sourceRange)
+    }
+
+    @Test
+    fun dottedFragmentIdBlocksReachableDocumentConservatively() {
+        val fixture = document(
+            "dotted-fragment.xml",
+            """<mapper namespace="a.Mapper"><sql id="a.Mapper.base">id</sql><select id="find">SELECT 1</select></mapper>""",
+        )
+
+        val failure = failed(
+            XmlStatementSourceGraphResolver.resolve(
+                rootStatementId = rootId(fixture, "a.Mapper", "find"),
+                snapshots = listOf(fixture.snapshot),
+                discoveries = listOf(fixture.discovery),
+            ),
+        )
+
+        assertTrue(failure is XmlStatementSourceGraphFailure.UnsupportedDeclarationIdentifier)
+        failure as XmlStatementSourceGraphFailure.UnsupportedDeclarationIdentifier
+        assertEquals(XmlDeclarationIdentifierKind.FRAGMENT_ID, failure.kind)
+        assertEquals("a.Mapper.base", failure.value)
+        assertEquals(fixture.discovery.fragments.single().sourceRange, failure.sourceRange)
+    }
+
+    @Test
     fun deepAcyclicFragmentChainResolvesWithoutJvmRecursion() {
         val depth = 2_000
         val xml = buildString {
