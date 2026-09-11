@@ -15,7 +15,6 @@ import com.algorist.zMyBatis.core.source.StatementSourceGraph
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
-import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.JavaTokenType
 import com.intellij.psi.PsiAnnotation
 import com.intellij.psi.PsiAnnotationMemberValue
@@ -301,8 +300,9 @@ object JavaAnnotationSourceCaptureAdapter {
 
     private fun rangeMatchesSnapshot(element: PsiElement, snapshot: SourceSnapshot): Boolean {
         val range = element.textRange
-        if (range.startOffset < 0 || range.endOffset > snapshot.content.length) return false
-        return snapshot.content.substring(range.startOffset, range.endOffset) == element.text
+        return range.startOffset >= 0 &&
+            range.endOffset <= snapshot.content.length &&
+            snapshot.content.substring(range.startOffset, range.endOffset) == element.text
     }
 
     private fun annotationMatches(annotation: PsiAnnotation, annotationName: String): Boolean =
@@ -378,56 +378,27 @@ object JavaAnnotationSourceCaptureAdapter {
         is PsiParenthesizedExpression -> expression.expression?.let {
             resolveStringExpression(it, ownerFileId, state)
         } ?: StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
-        is PsiPolyadicExpression -> {
-            if (expression.operationTokenType != JavaTokenType.PLUS) {
-                return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
-            }
-            when (val prepared = prepareExpressionDependencies(expression, ownerFileId, state)) {
-                is FailureResolution.Failed -> StringResolution.Failed(prepared.failure)
-                FailureResolution.Ready -> {
-                    val value = JavaPsiFacade.getInstance(state.project)
-                        .constantEvaluationHelper
-                        .computeConstantExpression(expression)
-                    if (value is String) {
-                        StringResolution.Resolved(value)
-                    } else {
-                        StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
-                    }
-                }
-            }
-        }
-        else -> {
-            when (val prepared = prepareExpressionDependencies(expression, ownerFileId, state)) {
-                is FailureResolution.Failed -> StringResolution.Failed(prepared.failure)
-                FailureResolution.Ready -> {
-                    val value = JavaPsiFacade.getInstance(state.project)
-                        .constantEvaluationHelper
-                        .computeConstantExpression(expression)
-                    if (value is String) {
-                        StringResolution.Resolved(value)
-                    } else {
-                        StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
-                    }
-                }
-            }
-        }
+        is PsiPolyadicExpression -> resolveStringConcatenation(expression, ownerFileId, state)
+        else -> StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
     }
 
-    private fun prepareExpressionDependencies(
-        expression: PsiExpression,
+    private fun resolveStringConcatenation(
+        expression: PsiPolyadicExpression,
         ownerFileId: SourceFileId,
         state: CaptureState,
-    ): FailureResolution {
-        val references = PsiTreeUtil.findChildrenOfType(expression, PsiReferenceExpression::class.java)
-            .filter { it.parent !is PsiReferenceExpression }
-            .sortedBy { it.textRange.startOffset }
-        references.forEach { reference ->
-            when (val resolution = resolveStringReference(reference, ownerFileId, state)) {
-                is StringResolution.Failed -> return FailureResolution.Failed(resolution.failure)
-                is StringResolution.Resolved -> Unit
+    ): StringResolution {
+        if (expression.operationTokenType != JavaTokenType.PLUS) {
+            return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
+        }
+
+        val value = StringBuilder()
+        expression.operands.forEach { operand ->
+            when (val resolution = resolveStringExpression(operand, ownerFileId, state)) {
+                is StringResolution.Resolved -> value.append(resolution.value)
+                is StringResolution.Failed -> return resolution
             }
         }
-        return FailureResolution.Ready
+        return StringResolution.Resolved(value.toString())
     }
 
     private fun literalString(literal: PsiLiteralExpression): StringResolution {
@@ -510,10 +481,6 @@ object JavaAnnotationSourceCaptureAdapter {
         state.endResolvingField(fieldKey)
 
         if (result is StringResolution.Resolved) {
-            val compilerValue = field.computeConstantValue()
-            if (compilerValue !is String || compilerValue != result.value) {
-                return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
-            }
             state.rememberFieldValue(fieldKey, result.value)
         }
         return result
@@ -535,11 +502,6 @@ object JavaAnnotationSourceCaptureAdapter {
     private sealed interface SnapshotResolution {
         data class Resolved(val snapshot: SourceSnapshot) : SnapshotResolution
         data class Failed(val failure: JavaAnnotationSourceCaptureFailure) : SnapshotResolution
-    }
-
-    private sealed interface FailureResolution {
-        data object Ready : FailureResolution
-        data class Failed(val failure: JavaAnnotationSourceCaptureFailure) : FailureResolution
     }
 
     private class CaptureState(
