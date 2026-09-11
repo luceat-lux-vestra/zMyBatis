@@ -54,6 +54,8 @@ enum class JavaAnnotationSourceCaptureFailure {
     PROVIDER_ANNOTATION,
     MISSING_STATEMENT_ANNOTATION,
     AMBIGUOUS_STATEMENT_ANNOTATION,
+    UNSUPPORTED_DATABASE_ID,
+    UNSUPPORTED_AFFECT_DATA,
     UNSUPPORTED_LANGUAGE_DRIVER,
     UNRESOLVED_MAPPER_TYPE,
     UNRESOLVED_PARAMETER_TYPE,
@@ -76,12 +78,16 @@ object JavaAnnotationSourceCaptureAdapter {
         "org.apache.ibatis.annotations.Delete" to StatementKind.DELETE,
     )
 
+    private val statementAnnotationContainers = statementAnnotations.keys.mapTo(linkedSetOf()) { "$it.List" }
+
     private val providerAnnotations = setOf(
         "org.apache.ibatis.annotations.SelectProvider",
         "org.apache.ibatis.annotations.InsertProvider",
         "org.apache.ibatis.annotations.UpdateProvider",
         "org.apache.ibatis.annotations.DeleteProvider",
     )
+
+    private val providerAnnotationContainers = providerAnnotations.mapTo(linkedSetOf()) { "$it.List" }
 
     fun capture(
         project: Project,
@@ -149,21 +155,40 @@ object JavaAnnotationSourceCaptureAdapter {
             return failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
         }
 
-        if (providerAnnotations.any(method::hasAnnotation)) {
+        val methodAnnotations = method.modifierList.annotations.toList()
+        if (
+            methodAnnotations.any {
+                it.qualifiedName in providerAnnotations || it.qualifiedName in providerAnnotationContainers
+            }
+        ) {
             return failed(JavaAnnotationSourceCaptureFailure.PROVIDER_ANNOTATION)
         }
         if (method.hasAnnotation(LANG_ANNOTATION)) {
             return failed(JavaAnnotationSourceCaptureFailure.UNSUPPORTED_LANGUAGE_DRIVER)
         }
+        if (methodAnnotations.any { it.qualifiedName in statementAnnotationContainers }) {
+            return failed(JavaAnnotationSourceCaptureFailure.AMBIGUOUS_STATEMENT_ANNOTATION)
+        }
 
-        val directAnnotations = statementAnnotations.mapNotNull { (annotationName, kind) ->
-            method.getAnnotation(annotationName)?.let { annotation -> annotation to kind }
+        val directAnnotations = methodAnnotations.mapNotNull { annotation ->
+            statementAnnotations[annotation.qualifiedName]?.let { kind -> annotation to kind }
         }
         if (directAnnotations.isEmpty()) {
             return failed(JavaAnnotationSourceCaptureFailure.MISSING_STATEMENT_ANNOTATION)
         }
         if (directAnnotations.size != 1) {
             return failed(JavaAnnotationSourceCaptureFailure.AMBIGUOUS_STATEMENT_ANNOTATION)
+        }
+
+        val (statementAnnotation, statementKind) = directAnnotations.single()
+        if (statementAnnotation.findDeclaredAttributeValue("databaseId") != null) {
+            return failed(JavaAnnotationSourceCaptureFailure.UNSUPPORTED_DATABASE_ID)
+        }
+        if (
+            statementKind == StatementKind.SELECT &&
+            statementAnnotation.findDeclaredAttributeValue("affectData") != null
+        ) {
+            return failed(JavaAnnotationSourceCaptureFailure.UNSUPPORTED_AFFECT_DATA)
         }
 
         val qualifiedMapperType = method.containingClass?.qualifiedName
@@ -209,7 +234,6 @@ object JavaAnnotationSourceCaptureAdapter {
             )
         }
 
-        val (statementAnnotation, statementKind) = directAnnotations.single()
         val sqlSegments = when (
             val resolution = resolveAnnotationStrings(statementAnnotation, sourceCapture.snapshot.fileId, state)
         ) {

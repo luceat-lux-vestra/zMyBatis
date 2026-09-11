@@ -50,6 +50,54 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
         }
     }
 
+    fun testDatabaseIdAffectDataAndRepeatableStatementsFailClosed() {
+        addDirectAnnotations()
+        val mapperFile = myFixture.configureByText(
+            JavaFileType.INSTANCE,
+            """
+            package fixture;
+
+            import org.apache.ibatis.annotations.Select;
+
+            interface SemanticBoundaryMapper {
+                @Select(value = "SELECT oracle", databaseId = "oracle")
+                Object databaseSpecific();
+
+                @Select(value = "DELETE FROM jobs WHERE id = 1 RETURNING id", affectData = true)
+                Object mutatingSelect();
+
+                @Select(value = "SELECT oracle", databaseId = "oracle")
+                @Select(value = "SELECT postgres", databaseId = "postgres")
+                Object repeated();
+
+                @Select.List({@Select("SELECT 1"), @Select("SELECT 2")})
+                Object explicitContainer();
+            }
+            """.trimIndent(),
+        )
+
+        assertFailure(
+            mapperFile.text,
+            "databaseSpecific()",
+            JavaAnnotationSourceCaptureFailure.UNSUPPORTED_DATABASE_ID,
+        )
+        assertFailure(
+            mapperFile.text,
+            "mutatingSelect()",
+            JavaAnnotationSourceCaptureFailure.UNSUPPORTED_AFFECT_DATA,
+        )
+        assertFailure(
+            mapperFile.text,
+            "repeated()",
+            JavaAnnotationSourceCaptureFailure.AMBIGUOUS_STATEMENT_ANNOTATION,
+        )
+        assertFailure(
+            mapperFile.text,
+            "explicitContainer()",
+            JavaAnnotationSourceCaptureFailure.AMBIGUOUS_STATEMENT_ANNOTATION,
+        )
+    }
+
     fun testMissingMethodAndMissingDirectAnnotationFailTyped() {
         addDirectAnnotations()
         val mapperFile = myFixture.configureByText(
@@ -207,11 +255,30 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
     }
 
     private fun addDirectAnnotations() {
-        listOf("Select", "Insert", "Update", "Delete").forEach { name ->
+        myFixture.addClass(
+            """
+            package org.apache.ibatis.annotations;
+
+            @java.lang.annotation.Repeatable(Select.List.class)
+            public @interface Select {
+                String[] value();
+                String databaseId() default "";
+                boolean affectData() default false;
+                @interface List { Select[] value(); }
+            }
+            """.trimIndent(),
+        )
+        listOf("Insert", "Update", "Delete").forEach { name ->
             myFixture.addClass(
                 """
                 package org.apache.ibatis.annotations;
-                public @interface $name { String[] value(); }
+
+                @java.lang.annotation.Repeatable($name.List.class)
+                public @interface $name {
+                    String[] value();
+                    String databaseId() default "";
+                    @interface List { $name[] value(); }
+                }
                 """.trimIndent(),
             )
         }
