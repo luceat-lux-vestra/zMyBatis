@@ -27,7 +27,7 @@ repositories {
 
     mavenCentral()
 
-    // IntelliJ Platform Gradle Plugin Repositories Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-repositories-extension.html
+    // IntelliJ Platform Gradle Plugin Repositories Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-plugin-gradle-plugin-repositories-extension.html
     intellijPlatform {
         defaultRepositories()
     }
@@ -129,6 +129,7 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
             includeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.source.DependentMapperSourceSnapshotAdapterProjectFixtureTest")
+            includeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapterProjectFixtureTest")
         }
         testLogging {
             events("passed", "failed")
@@ -148,6 +149,7 @@ val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundar
     task {
         filter {
             includeTestsMatching("com.algorist.zMyBatis.KotlinActionContextBoundaryTest")
+            includeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureKotlinBoundaryTest")
         }
     }
 }
@@ -188,6 +190,8 @@ tasks {
             excludeTestsMatching("com.algorist.zMyBatis.KotlinActionContextBoundaryTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.DependentMapperSourceSnapshotAdapterProjectFixtureTest")
+            excludeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapterProjectFixtureTest")
+            excludeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureKotlinBoundaryTest")
         }
         testLogging {
             events("passed", "failed")
