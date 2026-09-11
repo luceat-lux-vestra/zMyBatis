@@ -98,6 +98,40 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
         )
     }
 
+    fun testConstantDependencyCycleFailsTyped() {
+        addDirectAnnotations()
+        myFixture.addClass(
+            """
+            package fixture;
+
+            public final class CyclicSql {
+                public static final String A = CyclicSql.B;
+                public static final String B = CyclicSql.A;
+                private CyclicSql() {}
+            }
+            """.trimIndent(),
+        )
+        val mapperFile = myFixture.configureByText(
+            JavaFileType.INSTANCE,
+            """
+            package fixture;
+
+            import org.apache.ibatis.annotations.Select;
+
+            interface CyclicMapper {
+                @Select(CyclicSql.A)
+                Object find();
+            }
+            """.trimIndent(),
+        )
+
+        assertFailure(
+            mapperFile.text,
+            "find()",
+            JavaAnnotationSourceCaptureFailure.CONSTANT_DEPENDENCY_CYCLE,
+        )
+    }
+
     fun testMissingMethodAndMissingDirectAnnotationFailTyped() {
         addDirectAnnotations()
         val mapperFile = myFixture.configureByText(
