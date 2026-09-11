@@ -51,6 +51,7 @@ enum class JavaAnnotationSourceCaptureFailure {
     UNSUPPORTED_KOTLIN_SOURCE,
     UNSUPPORTED_SOURCE_LANGUAGE,
     MISSING_METHOD,
+    UNSUPPORTED_METHOD_FORM,
     PROVIDER_ANNOTATION,
     MISSING_STATEMENT_ANNOTATION,
     AMBIGUOUS_STATEMENT_ANNOTATION,
@@ -153,6 +154,9 @@ object JavaAnnotationSourceCaptureAdapter {
             ?: return failed(JavaAnnotationSourceCaptureFailure.MISSING_METHOD)
         if (method.containingFile !== psiFile || !rangeMatchesSnapshot(method, sourceCapture.snapshot)) {
             return failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
+        }
+        if (method.hasModifierProperty(PsiModifier.DEFAULT)) {
+            return failed(JavaAnnotationSourceCaptureFailure.UNSUPPORTED_METHOD_FORM)
         }
 
         val methodAnnotations = method.modifierList.annotations.toList()
