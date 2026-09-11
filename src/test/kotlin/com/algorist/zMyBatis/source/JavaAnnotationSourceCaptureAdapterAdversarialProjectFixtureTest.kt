@@ -18,7 +18,6 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
         IdeaTestFixtureFactory.getFixtureFactory().createTempDirTestFixture()
 
     fun testEverySupportedDirectAnnotationMapsToExactStatementKind() {
-        addDirectAnnotations()
         val mapperFile = myFixture.configureByText(
             JavaFileType.INSTANCE,
             """
@@ -51,7 +50,6 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
     }
 
     fun testDatabaseIdAffectDataAndRepeatableStatementsFailClosed() {
-        addDirectAnnotations()
         val mapperFile = myFixture.configureByText(
             JavaFileType.INSTANCE,
             """
@@ -99,7 +97,6 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
     }
 
     fun testDefaultAnnotatedMethodFailsUnsupportedMethodForm() {
-        addDirectAnnotations()
         val mapperFile = myFixture.configureByText(
             JavaFileType.INSTANCE,
             """
@@ -122,7 +119,6 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
     }
 
     fun testConstantDependencyCycleFailsTyped() {
-        addDirectAnnotations()
         myFixture.addClass(
             """
             package fixture;
@@ -156,7 +152,6 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
     }
 
     fun testMissingMethodAndMissingDirectAnnotationFailTyped() {
-        addDirectAnnotations()
         val mapperFile = myFixture.configureByText(
             JavaFileType.INSTANCE,
             """
@@ -186,8 +181,6 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
     }
 
     fun testUnresolvedParamAliasParameterTypeAndMapperTypeFailClosed() {
-        addDirectAnnotations()
-        addParamAnnotation()
         val mapperFile = myFixture.configureByText(
             JavaFileType.INSTANCE,
             """
@@ -231,7 +224,6 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
     }
 
     fun testUnsavedDependentConstantDocumentIsAuthoritativeWithoutDiskSave() {
-        addDirectAnnotations()
         val savedSql = "SELECT saved"
         val draftSql = "SELECT draft"
         val constantsFile = myFixture.addFileToProject(
@@ -309,44 +301,5 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
         val offset = fileText.indexOf(marker)
         assertTrue("marker '$marker' must exist", offset >= 0)
         myFixture.editor.caretModel.moveToOffset(offset)
-    }
-
-    private fun addDirectAnnotations() {
-        myFixture.addClass(
-            """
-            package org.apache.ibatis.annotations;
-
-            @java.lang.annotation.Repeatable(Select.List.class)
-            public @interface Select {
-                String[] value();
-                String databaseId() default "";
-                boolean affectData() default false;
-                @interface List { Select[] value(); }
-            }
-            """.trimIndent(),
-        )
-        listOf("Insert", "Update", "Delete").forEach { name ->
-            myFixture.addClass(
-                """
-                package org.apache.ibatis.annotations;
-
-                @java.lang.annotation.Repeatable($name.List.class)
-                public @interface $name {
-                    String[] value();
-                    String databaseId() default "";
-                    @interface List { $name[] value(); }
-                }
-                """.trimIndent(),
-            )
-        }
-    }
-
-    private fun addParamAnnotation() {
-        myFixture.addClass(
-            """
-            package org.apache.ibatis.annotations;
-            public @interface Param { String value(); }
-            """.trimIndent(),
-        )
     }
 }
