@@ -114,6 +114,69 @@ class XmlMapperSourceDiscoveryTest {
     }
 
     @Test
+    fun processingInstructionCrLfAndSingleQuotedAttributesRemainMappable() {
+        val xml =
+            "<?xml version='1.0'?>\r\n" +
+                "<mapper namespace='fixture.Mapper'>\r\n" +
+                "  <select id='find' data-note='a > b'>\r\n" +
+                "    SELECT <include refid='shared.columns' data-note='x > y'/>\r\n" +
+                "  </select>\r\n" +
+                "</mapper>"
+
+        val discovery = discovered(xml)
+
+        assertEquals(listOf("find"), discovery.statements.map { it.id })
+        assertEquals(listOf("shared.columns"), discovery.includes.map { it.refid })
+        assertEquals(
+            "<select id='find' data-note='a > b'>",
+            discovery.statements.single().sourceRange.let { xml.substring(it.startOffset, it.endOffsetExclusive) },
+        )
+        assertEquals(
+            "<include refid='shared.columns' data-note='x > y'/>",
+            discovery.includes.single().sourceRange.let { xml.substring(it.startOffset, it.endOffsetExclusive) },
+        )
+    }
+
+    @Test
+    fun legalNonDeclarationMapperElementsAndIncludePropertiesDoNotBecomeDeclarations() {
+        val xml = """
+            <mapper namespace="fixture.Mapper">
+              <cache/>
+              <resultMap id="result" type="fixture.User">
+                <id property="id" column="id"/>
+              </resultMap>
+              <sql id="columns">id, name</sql>
+              <select id="find">
+                SELECT <include refid="columns"><property name="prefix" value="u"/></include>
+                FROM users
+              </select>
+            </mapper>
+        """.trimIndent()
+
+        val discovery = discovered(xml)
+
+        assertEquals(listOf("find"), discovery.statements.map { it.id })
+        assertEquals(listOf("columns"), discovery.fragments.map { it.id })
+        assertEquals(listOf("columns"), discovery.includes.map { it.refid })
+        assertEquals(
+            XmlMapperDeclarationRef.Statement("find", StatementKind.SELECT),
+            discovery.includes.single().owner,
+        )
+    }
+
+    @Test
+    fun prefixedMapperRootAndPrefixedDeclarationsFailClosed() {
+        assertFailure(
+            "<m:mapper xmlns:m=\"urn:fixture\" namespace=\"fixture.Mapper\"><m:select id=\"find\">SELECT 1</m:select></m:mapper>",
+            XmlMapperDiscoveryFailure.INVALID_ROOT,
+        )
+        assertFailure(
+            "<mapper xmlns:m=\"urn:fixture\" namespace=\"fixture.Mapper\"><m:select id=\"find\">SELECT 1</m:select></mapper>",
+            XmlMapperDiscoveryFailure.INVALID_DECLARATION,
+        )
+    }
+
+    @Test
     fun duplicateStatementAndFragmentIdsFailClosed() {
         assertFailure(
             """
