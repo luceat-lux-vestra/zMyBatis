@@ -19,8 +19,6 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
         IdeaTestFixtureFactory.getFixtureFactory().createTempDirTestFixture()
 
     fun testSavedCapturePreservesCanonicalOverloadParameterMetadataAndOrderedSegments() {
-        addDirectAnnotations()
-        addParamAnnotation()
         myFixture.addClass(
             """
             package fixture;
@@ -105,7 +103,6 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
     }
 
     fun testUnsavedActiveDocumentIsSemanticAuthorityWithoutDiskSave() {
-        addDirectAnnotations()
         val savedSql = "SELECT saved"
         val draftSql = "SELECT draft"
         val createdMapper = myFixture.addFileToProject(
@@ -160,7 +157,6 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
     }
 
     fun testConstantChainCapturesSameFileAndCrossFileDependencies() {
-        addDirectAnnotations()
         myFixture.addClass(
             """
             package fixture;
@@ -210,9 +206,6 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
     }
 
     fun testProviderAmbiguousLangAndUnresolvedValuesFailClosed() {
-        addDirectAnnotations()
-        addProviderAnnotation()
-        addLangAnnotation()
         myFixture.addClass(
             """
             package fixture;
@@ -220,13 +213,6 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
             public final class Provider {
                 public static String sql() { return "SELECT provider"; }
             }
-            """.trimIndent(),
-        )
-        myFixture.addClass(
-            """
-            package fixture;
-
-            public final class CustomDriver {}
             """.trimIndent(),
         )
 
@@ -239,6 +225,7 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
             import org.apache.ibatis.annotations.Select;
             import org.apache.ibatis.annotations.SelectProvider;
             import org.apache.ibatis.annotations.Update;
+            import org.apache.ibatis.scripting.xmltags.XMLLanguageDriver;
 
             interface FailureMapper {
                 @SelectProvider(type = Provider.class, method = "sql")
@@ -248,7 +235,7 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
                 @Update("UPDATE users SET active = 1")
                 Object ambiguous();
 
-                @Lang(CustomDriver.class)
+                @Lang(XMLLanguageDriver.class)
                 @Select("SELECT 1")
                 Object customLang();
 
@@ -314,51 +301,5 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
         val tokenOffset = marker.indexOf(token)
         assertTrue("token '$token' must exist in marker '$marker'", tokenOffset >= 0)
         myFixture.editor.caretModel.moveToOffset(offset + tokenOffset)
-    }
-
-    private fun addDirectAnnotations() {
-        mapOf(
-            "Select" to "String[] value();",
-            "Insert" to "String[] value();",
-            "Update" to "String[] value();",
-            "Delete" to "String[] value();",
-        ).forEach { (name, body) ->
-            myFixture.addClass(
-                """
-                package org.apache.ibatis.annotations;
-                public @interface $name { $body }
-                """.trimIndent(),
-            )
-        }
-    }
-
-    private fun addParamAnnotation() {
-        myFixture.addClass(
-            """
-            package org.apache.ibatis.annotations;
-            public @interface Param { String value(); }
-            """.trimIndent(),
-        )
-    }
-
-    private fun addProviderAnnotation() {
-        myFixture.addClass(
-            """
-            package org.apache.ibatis.annotations;
-            public @interface SelectProvider {
-                Class<?> type();
-                String method();
-            }
-            """.trimIndent(),
-        )
-    }
-
-    private fun addLangAnnotation() {
-        myFixture.addClass(
-            """
-            package org.apache.ibatis.annotations;
-            public @interface Lang { Class<?> value(); }
-            """.trimIndent(),
-        )
     }
 }
