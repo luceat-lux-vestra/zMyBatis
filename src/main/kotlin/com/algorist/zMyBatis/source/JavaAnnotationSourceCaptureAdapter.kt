@@ -12,8 +12,8 @@ import com.algorist.zMyBatis.core.source.SourceRange
 import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
-import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.JavaTokenType
 import com.intellij.psi.PsiAnnotation
@@ -26,7 +26,6 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiExpression
 import com.intellij.psi.PsiField
-import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiLiteralExpression
 import com.intellij.psi.PsiMethod
@@ -417,20 +416,18 @@ object JavaAnnotationSourceCaptureAdapter {
         ownerFileId: SourceFileId,
         state: CaptureState,
     ): StringResolution {
-        val resolvedField = reference.resolve() as? PsiField
+        val initiallyResolvedField = reference.resolve() as? PsiField
             ?: return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
-        val containingClassName = resolvedField.containingClass?.qualifiedName
-            ?: return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
-        val fieldName = resolvedField.name
-        val resolvedFile = resolvedField.containingFile
-            ?: return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.DEPENDENT_SOURCE_UNAVAILABLE)
-
-        val requiredSnapshot = when (val snapshot = state.snapshotForResolvedFile(resolvedFile, reference, ownerFileId)) {
-            is SnapshotResolution.Resolved -> snapshot.snapshot
-            is SnapshotResolution.Failed -> return StringResolution.Failed(snapshot.failure)
+        val fieldResolution = state.authoritativeField(initiallyResolvedField)
+        val field: PsiField
+        val requiredSnapshot: SourceSnapshot
+        when (fieldResolution) {
+            is FieldResolution.Resolved -> {
+                field = fieldResolution.field
+                requiredSnapshot = fieldResolution.snapshot
+            }
+            is FieldResolution.Failed -> return StringResolution.Failed(fieldResolution.failure)
         }
-        val field = state.fieldFromSnapshot(requiredSnapshot, containingClassName, fieldName)
-            ?: return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
 
         if (!field.hasModifierProperty(PsiModifier.STATIC) || !field.hasModifierProperty(PsiModifier.FINAL)) {
             return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
@@ -457,7 +454,9 @@ object JavaAnnotationSourceCaptureAdapter {
             ),
         )
 
-        val fieldKey = "${requiredSnapshot.fileId.value}#$containingClassName#$fieldName"
+        val containingClassName = field.containingClass?.qualifiedName
+            ?: return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
+        val fieldKey = "${requiredSnapshot.fileId.value}#$containingClassName#${field.name}"
         state.resolvedFieldValue(fieldKey)?.let { return StringResolution.Resolved(it) }
         if (!state.beginResolvingField(fieldKey)) {
             return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.CONSTANT_DEPENDENCY_CYCLE)
@@ -495,13 +494,17 @@ object JavaAnnotationSourceCaptureAdapter {
         data class Failed(val failure: JavaAnnotationSourceCaptureFailure) : SnapshotResolution
     }
 
+    private sealed interface FieldResolution {
+        data class Resolved(val field: PsiField, val snapshot: SourceSnapshot) : FieldResolution
+        data class Failed(val failure: JavaAnnotationSourceCaptureFailure) : FieldResolution
+    }
+
     private class CaptureState(
         val project: Project,
         val activeSnapshot: SourceSnapshot,
         private val maxDependentContentLength: Int,
     ) {
         private val snapshotsByFileId = linkedMapOf(activeSnapshot.fileId to activeSnapshot)
-        private val parsedSourcesByFileId = linkedMapOf<SourceFileId, PsiJavaFile>()
         private val dependencySet = linkedSetOf<SourceDependencyEdge>()
         private val resolvingFieldKeys = linkedSetOf<String>()
         private val resolvedFieldValues = linkedMapOf<String, String>()
@@ -536,48 +539,53 @@ object JavaAnnotationSourceCaptureAdapter {
             return SnapshotResolution.Resolved(captured)
         }
 
-        fun snapshotForResolvedFile(
-            resolvedFile: com.intellij.psi.PsiFile,
-            reference: PsiReferenceExpression,
-            ownerFileId: SourceFileId,
-        ): SnapshotResolution {
-            if (resolvedFile === reference.containingFile) {
-                return snapshot(ownerFileId)?.let(SnapshotResolution::Resolved)
-                    ?: SnapshotResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
+        fun authoritativeField(initialField: PsiField): FieldResolution {
+            val containingClassName = initialField.containingClass?.qualifiedName
+                ?: return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
+            val fieldName = initialField.name
+            val initialFile = initialField.containingFile
+                ?: return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.DEPENDENT_SOURCE_UNAVAILABLE)
+            val virtualFile = initialFile.virtualFile
+                ?: return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.DEPENDENT_SOURCE_UNAVAILABLE)
+
+            val capturedBeforeSynchronization = when (val result = snapshotFor(initialFile)) {
+                is SnapshotResolution.Resolved -> result.snapshot
+                is SnapshotResolution.Failed -> return FieldResolution.Failed(result.failure)
             }
 
-            val virtualFile = resolvedFile.virtualFile
-                ?: return SnapshotResolution.Failed(JavaAnnotationSourceCaptureFailure.DEPENDENT_SOURCE_UNAVAILABLE)
-            val resolvedFileId = SourceFileId("vfs:${virtualFile.url}")
-            if (resolvedFileId == ownerFileId) {
-                return snapshot(ownerFileId)?.let(SnapshotResolution::Resolved)
-                    ?: SnapshotResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
+            val cachedDocument = FileDocumentManager.getInstance().getCachedDocument(virtualFile)
+            val synchronizedFile = if (cachedDocument == null) {
+                initialFile
+            } else {
+                val documentManager = PsiDocumentManager.getInstance(project)
+                if (!documentManager.isCommitted(cachedDocument)) {
+                    documentManager.commitDocument(cachedDocument)
+                }
+                val psiFile = documentManager.getPsiFile(cachedDocument)
+                    ?: return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
+                val capturedAfterSynchronization = when (val result = snapshotFor(psiFile)) {
+                    is SnapshotResolution.Resolved -> result.snapshot
+                    is SnapshotResolution.Failed -> return FieldResolution.Failed(result.failure)
+                }
+                if (capturedBeforeSynchronization != capturedAfterSynchronization) {
+                    return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_CHANGED_DURING_CAPTURE)
+                }
+                psiFile
             }
-            return snapshotFor(resolvedFile)
-        }
 
-        fun fieldFromSnapshot(
-            snapshot: SourceSnapshot,
-            qualifiedClassName: String,
-            fieldName: String,
-        ): PsiField? {
-            val sourceFile = parsedSource(snapshot) ?: return null
-            val containingClass = PsiTreeUtil.findChildrenOfType(sourceFile, PsiClass::class.java)
-                .singleOrNull { it.qualifiedName == qualifiedClassName }
-                ?: return null
-            return containingClass.fields.singleOrNull { it.name == fieldName }
+            if (synchronizedFile.text != capturedBeforeSynchronization.content) {
+                return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
+            }
+            val containingClass = PsiTreeUtil.findChildrenOfType(synchronizedFile, PsiClass::class.java)
+                .singleOrNull { it.qualifiedName == containingClassName }
+                ?: return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
+            val field = containingClass.fields.singleOrNull { it.name == fieldName }
+                ?: return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
+            if (!rangeMatchesSnapshot(field, capturedBeforeSynchronization)) {
+                return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
+            }
+            return FieldResolution.Resolved(field, capturedBeforeSynchronization)
         }
-
-        private fun parsedSource(snapshot: SourceSnapshot): PsiJavaFile? {
-            parsedSourcesByFileId[snapshot.fileId]?.let { return it }
-            val parsed = PsiFileFactory.getInstance(project)
-                .createFileFromText("Captured.java", JavaFileType.INSTANCE, snapshot.content) as? PsiJavaFile
-                ?: return null
-            parsedSourcesByFileId[snapshot.fileId] = parsed
-            return parsed
-        }
-
-        fun hasSnapshot(fileId: SourceFileId): Boolean = fileId in snapshotsByFileId
 
         fun snapshot(fileId: SourceFileId): SourceSnapshot? = snapshotsByFileId[fileId]
 
