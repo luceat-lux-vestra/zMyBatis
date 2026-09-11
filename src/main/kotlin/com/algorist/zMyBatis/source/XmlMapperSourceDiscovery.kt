@@ -125,6 +125,7 @@ object XmlMapperSourceDiscovery {
             setProperty(XMLInputFactory.IS_NAMESPACE_AWARE, true)
             setProperty(XMLInputFactory.IS_VALIDATING, false)
             setProperty(XMLInputFactory.SUPPORT_DTD, true)
+            setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false)
             xmlResolver = javax.xml.stream.XMLResolver { _, _, _, _ -> StringReader("") }
         }
 
