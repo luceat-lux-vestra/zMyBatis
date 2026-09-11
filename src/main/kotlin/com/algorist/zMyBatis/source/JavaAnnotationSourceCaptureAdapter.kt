@@ -421,15 +421,37 @@ object JavaAnnotationSourceCaptureAdapter {
             ?: return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.DEPENDENT_SOURCE_UNAVAILABLE)
 
         val initialFileId = SourceFileId("vfs:${initialVirtualFile.url}")
-        if (initialFileId != state.activeSnapshot.fileId) {
+        val field = if (initialFileId == state.activeSnapshot.fileId) {
+            initialField
+        } else {
             val cachedDocument = FileDocumentManager.getInstance().getCachedDocument(initialVirtualFile)
-            if (cachedDocument != null) {
-                PsiDocumentManager.getInstance(state.project).commitDocument(cachedDocument)
+            if (cachedDocument == null) {
+                initialField
+            } else {
+                val documentManager = PsiDocumentManager.getInstance(state.project)
+                if (documentManager.isCommitted(cachedDocument)) {
+                    initialField
+                } else {
+                    val containingClassName = initialField.containingClass?.qualifiedName
+                        ?: return StringResolution.Failed(
+                            JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE,
+                        )
+                    val fieldName = initialField.name
+                    documentManager.commitDocument(cachedDocument)
+                    val synchronizedFile = documentManager.getPsiFile(cachedDocument)
+                        ?: return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
+                    PsiTreeUtil.findChildrenOfType(synchronizedFile, PsiField::class.java)
+                        .singleOrNull { candidate ->
+                            candidate.name == fieldName &&
+                                candidate.containingClass?.qualifiedName == containingClassName
+                        }
+                        ?: return StringResolution.Failed(
+                            JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE,
+                        )
+                }
             }
         }
 
-        val field = reference.resolve() as? PsiField
-            ?: return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
         if (!field.hasModifierProperty(PsiModifier.STATIC) || !field.hasModifierProperty(PsiModifier.FINAL)) {
             return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
         }
