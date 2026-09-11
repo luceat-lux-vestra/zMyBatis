@@ -7,6 +7,7 @@ import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.PsiDocumentManager
+import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.fixtures.IdeaTestFixtureFactory
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
@@ -42,6 +43,7 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
             }
             """.trimIndent(),
         )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
 
         val mapperFile = myFixture.configureByText(
             JavaFileType.INSTANCE,
@@ -179,6 +181,7 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
             }
             """.trimIndent(),
         )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
 
         val mapperFile = myFixture.configureByText(
             JavaFileType.INSTANCE,
