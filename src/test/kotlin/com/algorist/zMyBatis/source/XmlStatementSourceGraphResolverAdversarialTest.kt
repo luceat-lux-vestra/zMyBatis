@@ -13,12 +13,7 @@ class XmlStatementSourceGraphResolverAdversarialTest {
     fun propertySubstitutedRefidFailsAsUnsupportedInsteadOfMissing() {
         val fixture = document(
             "dynamic.xml",
-            """
-                <mapper namespace="a.Mapper">
-                  <sql id="base">id</sql>
-                  <select id="find"><include refid="\${fragmentName}"/></select>
-                </mapper>
-            """.trimIndent(),
+            "<mapper namespace=\"a.Mapper\"><sql id=\"base\">id</sql><select id=\"find\"><include refid=\"\${fragmentName}\"/></select></mapper>",
         )
 
         val failure = failed(
