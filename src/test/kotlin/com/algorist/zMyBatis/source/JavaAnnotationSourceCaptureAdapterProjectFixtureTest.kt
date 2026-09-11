@@ -7,13 +7,23 @@ import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.PsiDocumentManager
+import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.fixtures.IdeaTestFixtureFactory
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
 import com.intellij.testFramework.fixtures.TempDirTestFixture
+import com.intellij.util.PathUtil
+import org.apache.ibatis.annotations.Select
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 
 class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsightFixtureTestCase() {
+
+    override fun setUp() {
+        super.setUp()
+        val myBatisJar = File(PathUtil.getJarPathForClass(Select::class.java))
+        PsiTestUtil.addLibrary(module, "mybatis-3.5.19", myBatisJar.parent, myBatisJar.name)
+    }
 
     override fun getTempDirFixture(): TempDirTestFixture =
         IdeaTestFixtureFactory.getFixtureFactory().createTempDirTestFixture()
