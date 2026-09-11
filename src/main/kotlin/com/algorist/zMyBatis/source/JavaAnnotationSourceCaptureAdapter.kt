@@ -71,7 +71,6 @@ object JavaAnnotationSourceCaptureAdapter {
     private const val DEFAULT_MAX_DEPENDENT_CONTENT_LENGTH = 2 * 1024 * 1024
     private const val PARAM_ANNOTATION = "org.apache.ibatis.annotations.Param"
     private const val LANG_ANNOTATION = "org.apache.ibatis.annotations.Lang"
-    private const val MYBATIS_ANNOTATION_PACKAGE = "org.apache.ibatis.annotations."
 
     private val statementAnnotations = linkedMapOf(
         "org.apache.ibatis.annotations.Select" to StatementKind.SELECT,
@@ -133,7 +132,6 @@ object JavaAnnotationSourceCaptureAdapter {
             return failed(JavaAnnotationSourceCaptureFailure.SOURCE_CHANGED_DURING_CAPTURE)
         }
 
-        val sourceCapture = afterSynchronization
         val psiFile = documentManager.getPsiFile(editor.document)
             ?: return failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
         if (psiFile !is PsiJavaFile) {
@@ -145,15 +143,15 @@ object JavaAnnotationSourceCaptureAdapter {
                 },
             )
         }
-        if (psiFile.text != sourceCapture.snapshot.content) {
+        if (psiFile.text != afterSynchronization.snapshot.content) {
             return failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
         }
 
-        val element = elementAtCaret(psiFile, sourceCapture.caretOffset)
+        val element = elementAtCaret(psiFile, afterSynchronization.caretOffset)
             ?: return failed(JavaAnnotationSourceCaptureFailure.MISSING_METHOD)
         val method = PsiTreeUtil.getParentOfType(element, PsiMethod::class.java, false)
             ?: return failed(JavaAnnotationSourceCaptureFailure.MISSING_METHOD)
-        if (method.containingFile !== psiFile || !rangeMatchesSnapshot(method, sourceCapture.snapshot)) {
+        if (method.containingFile !== psiFile || !rangeMatchesSnapshot(method, afterSynchronization.snapshot)) {
             return failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
         }
         if (method.hasModifierProperty(PsiModifier.DEFAULT)) {
@@ -163,8 +161,8 @@ object JavaAnnotationSourceCaptureAdapter {
         val methodAnnotations = method.modifierList.annotations.toList()
         if (
             methodAnnotations.any { annotation ->
-                providerAnnotations.any { annotationMatches(method, annotation, it) } ||
-                    providerAnnotationContainers.any { annotationMatches(method, annotation, it) }
+                providerAnnotations.any { annotationMatches(annotation, it) } ||
+                    providerAnnotationContainers.any { annotationMatches(annotation, it) }
             }
         ) {
             return failed(JavaAnnotationSourceCaptureFailure.PROVIDER_ANNOTATION)
@@ -174,7 +172,7 @@ object JavaAnnotationSourceCaptureAdapter {
         }
         if (
             methodAnnotations.any { annotation ->
-                statementAnnotationContainers.any { annotationMatches(method, annotation, it) }
+                statementAnnotationContainers.any { annotationMatches(annotation, it) }
             }
         ) {
             return failed(JavaAnnotationSourceCaptureFailure.AMBIGUOUS_STATEMENT_ANNOTATION)
@@ -182,7 +180,7 @@ object JavaAnnotationSourceCaptureAdapter {
 
         val directAnnotations = methodAnnotations.mapNotNull { annotation ->
             statementAnnotations.entries.firstOrNull { (annotationName, _) ->
-                annotationMatches(method, annotation, annotationName)
+                annotationMatches(annotation, annotationName)
             }?.let { (_, kind) -> annotation to kind }
         }
         if (directAnnotations.isEmpty()) {
@@ -216,7 +214,7 @@ object JavaAnnotationSourceCaptureAdapter {
 
         val state = CaptureState(
             project = project,
-            activeSnapshot = sourceCapture.snapshot,
+            activeSnapshot = afterSynchronization.snapshot,
             maxDependentContentLength = maxDependentContentLength,
         )
 
@@ -226,7 +224,13 @@ object JavaAnnotationSourceCaptureAdapter {
             val paramAlias = if (paramAnnotation == null) {
                 null
             } else {
-                when (val resolution = resolveAnnotationSingleString(paramAnnotation, sourceCapture.snapshot.fileId, state)) {
+                when (
+                    val resolution = resolveAnnotationSingleString(
+                        paramAnnotation,
+                        afterSynchronization.snapshot.fileId,
+                        state,
+                    )
+                ) {
                     is StringResolution.Resolved -> resolution.value.takeIf(String::isNotBlank)
                         ?: return failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_PARAM_ALIAS)
                     is StringResolution.Failed -> return failed(
@@ -240,14 +244,18 @@ object JavaAnnotationSourceCaptureAdapter {
             }
             parameters += JavaMethodParameterMetadata(
                 index = index,
-                sourceName = parameter.name?.takeIf { it.isNotBlank() },
+                sourceName = parameter.name.takeIf { it.isNotBlank() },
                 typeIdentity = parameterTypeIdentities[index],
                 myBatisParamAlias = paramAlias,
             )
         }
 
         val sqlSegments = when (
-            val resolution = resolveAnnotationStrings(statementAnnotation, sourceCapture.snapshot.fileId, state)
+            val resolution = resolveAnnotationStrings(
+                statementAnnotation,
+                afterSynchronization.snapshot.fileId,
+                state,
+            )
         ) {
             is StringsResolution.Resolved -> resolution.values
             is StringsResolution.Failed -> return failed(resolution.failure)
@@ -255,7 +263,7 @@ object JavaAnnotationSourceCaptureAdapter {
 
         val methodRange = method.textRange
         val statementId = JavaStatementId(
-            sourceFileId = sourceCapture.snapshot.fileId,
+            sourceFileId = afterSynchronization.snapshot.fileId,
             qualifiedMapperType = qualifiedMapperType,
             methodSignature = MethodSignature(method.name, parameterTypeIdentities),
         )
@@ -297,21 +305,8 @@ object JavaAnnotationSourceCaptureAdapter {
         return snapshot.content.substring(range.startOffset, range.endOffset) == element.text
     }
 
-    private fun annotationMatches(
-        method: PsiMethod,
-        annotation: PsiAnnotation,
-        annotationName: String,
-    ): Boolean {
-        if (annotation.qualifiedName == annotationName) return true
-        if (annotation.resolveAnnotationType()?.qualifiedName == annotationName) return true
-        if (!method.hasAnnotation(annotationName)) return false
-
-        val sourceName = annotation.nameReferenceElement?.text ?: return false
-        val expectedSourceName = annotationName.removePrefix(MYBATIS_ANNOTATION_PACKAGE)
-        return sourceName == annotationName ||
-            sourceName == expectedSourceName ||
-            sourceName == expectedSourceName.substringAfterLast('.')
-    }
+    private fun annotationMatches(annotation: PsiAnnotation, annotationName: String): Boolean =
+        annotation.hasQualifiedName(annotationName)
 
     private fun parameterTypeIdentity(type: PsiType): JavaTypeIdentity? {
         if (!isResolvableType(type)) return null
