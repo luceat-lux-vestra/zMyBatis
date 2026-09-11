@@ -220,6 +220,56 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
         )
     }
 
+    fun testCompileTimeStringConstantCapturesPrimitiveConstantDependency() {
+        myFixture.addClass(
+            """
+            package fixture;
+
+            public final class ConstantExpressions {
+                public static final int LIMIT = 2 + 3;
+                public static final String SQL = "SELECT " + (1 + 1) + " LIMIT " + LIMIT;
+                private ConstantExpressions() {}
+            }
+            """.trimIndent(),
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val mapperFile = myFixture.configureByText(
+            JavaFileType.INSTANCE,
+            """
+            package fixture;
+
+            import org.apache.ibatis.annotations.Select;
+
+            interface ConstantExpressionMapper {
+                @Select(ConstantExpressions.SQL)
+                Object find();
+            }
+            """.trimIndent(),
+        )
+        moveCaretTo(mapperFile.text, "find()", "find")
+
+        val capture = captured(JavaAnnotationSourceCaptureAdapter.capture(project, myFixture.editor))
+        val rootFileId = capture.sourceGraph.rootStatement.id.sourceFileId
+        val constantsFileId = capture.sourceGraph.sourceSnapshots.single { it.fileId != rootFileId }.fileId
+
+        assertEquals(listOf("SELECT 2 LIMIT 5"), capture.sqlSegments)
+        assertEquals(2, capture.sourceGraph.sourceSnapshots.size)
+        assertEquals(2, capture.sourceGraph.dependencies.size)
+        assertTrue(
+            "annotation reference must retain the cross-file String constant dependency",
+            capture.sourceGraph.dependencies.any {
+                it.dependentFileId == rootFileId && it.requiredFileId == constantsFileId
+            },
+        )
+        assertTrue(
+            "String constant evaluation must retain its primitive constant dependency",
+            capture.sourceGraph.dependencies.any {
+                it.dependentFileId == constantsFileId && it.requiredFileId == constantsFileId
+            },
+        )
+    }
+
     fun testProviderAmbiguousLangAndUnresolvedValuesFailClosed() {
         myFixture.addClass(
             """
