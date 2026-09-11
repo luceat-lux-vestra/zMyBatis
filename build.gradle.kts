@@ -189,6 +189,9 @@ tasks {
             excludeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.DependentMapperSourceSnapshotAdapterProjectFixtureTest")
         }
+        testLogging {
+            events("passed", "failed")
+        }
     }
 
     check {
