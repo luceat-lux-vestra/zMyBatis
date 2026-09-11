@@ -52,6 +52,12 @@ sealed interface XmlStatementSourceGraphFailure {
         val referenceRange: SourceRange,
     ) : XmlStatementSourceGraphFailure
 
+    data class UnsupportedReference(
+        val ownerFileId: SourceFileId,
+        val refid: String,
+        val referenceRange: SourceRange,
+    ) : XmlStatementSourceGraphFailure
+
     class AmbiguousFragment(
         val ownerFileId: SourceFileId,
         val refid: String,
@@ -149,7 +155,10 @@ object XmlStatementSourceGraphResolver {
                 XmlStatementSourceGraphFailure.RootStatementMissing(rootStatementId),
             )
 
-        firstUnsupported(rootDiscovery)?.let {
+        val unsupportedByFileId = discoveriesByFileId.values.associate { discovery ->
+            discovery.sourceFileId to firstUnsupported(discovery)
+        }
+        unsupportedByFileId[rootDiscovery.sourceFileId]?.let {
             return XmlStatementSourceGraphResult.Failed(
                 XmlStatementSourceGraphFailure.UnsupportedSemantics(rootDiscovery.sourceFileId, it),
             )
@@ -166,51 +175,77 @@ object XmlStatementSourceGraphResolver {
         val reachableFileIds = linkedSetOf(rootSnapshot.fileId)
         val dependencyEdges = mutableListOf<SourceDependencyEdge>()
         val states = mutableMapOf<XmlResolvedFragmentId, VisitState>()
-        val stack = mutableListOf<XmlResolvedFragmentId>()
 
-        fun visitFragment(candidate: FragmentCandidate): XmlStatementSourceGraphFailure? {
-            val id = candidate.resolvedId
-            when (states[id]) {
+        fun traverseFrom(start: FragmentCandidate): XmlStatementSourceGraphFailure? {
+            when (states[start.resolvedId]) {
                 VisitState.VISITED -> return null
-                VisitState.VISITING -> {
-                    val cycleStart = stack.indexOf(id).coerceAtLeast(0)
-                    return XmlStatementSourceGraphFailure.DependencyCycle(
-                        stack.subList(cycleStart, stack.size).toList() + id,
-                    )
-                }
+                VisitState.VISITING -> error("fragment cannot be VISITING without an active traversal frame")
                 null -> Unit
             }
 
-            firstUnsupported(candidate.discovery)?.let {
+            unsupportedByFileId[start.discovery.sourceFileId]?.let {
                 return XmlStatementSourceGraphFailure.UnsupportedSemantics(
-                    candidate.discovery.sourceFileId,
+                    start.discovery.sourceFileId,
                     it,
                 )
             }
 
-            states[id] = VisitState.VISITING
-            stack += id
+            val frames = mutableListOf<FragmentFrame>()
+            states[start.resolvedId] = VisitState.VISITING
+            frames += frameFor(start)
 
-            val includes = candidate.discovery.includes
-                .filter { it.owner == XmlMapperDeclarationRef.Fragment(candidate.declaration.id) }
-                .sortedWith(includeComparator)
+            while (frames.isNotEmpty()) {
+                val frame = frames.last()
+                if (frame.nextIncludeIndex >= frame.includes.size) {
+                    states[frame.candidate.resolvedId] = VisitState.VISITED
+                    frames.removeAt(frames.lastIndex)
+                    continue
+                }
 
-            for (include in includes) {
-                val failure = resolveInclude(
-                    ownerDiscovery = candidate.discovery,
-                    include = include,
-                    candidatesByCanonicalName = candidatesByCanonicalName,
-                    reachableFileIds = reachableFileIds,
-                    dependencyEdges = dependencyEdges,
-                    visitFragment = ::visitFragment,
-                )
-                if (failure != null) {
-                    return failure
+                val include = frame.includes[frame.nextIncludeIndex++]
+                when (
+                    val targetResolution = resolveTarget(
+                        ownerDiscovery = frame.candidate.discovery,
+                        include = include,
+                        candidatesByCanonicalName = candidatesByCanonicalName,
+                    )
+                ) {
+                    is TargetResolution.Failed -> return targetResolution.failure
+                    is TargetResolution.Resolved -> {
+                        val target = targetResolution.candidate
+                        reachableFileIds += target.discovery.sourceFileId
+                        dependencyEdges += SourceDependencyEdge(
+                            dependentFileId = frame.candidate.discovery.sourceFileId,
+                            requiredFileId = target.discovery.sourceFileId,
+                            referenceRange = include.sourceRange,
+                        )
+
+                        when (states[target.resolvedId]) {
+                            VisitState.VISITED -> Unit
+                            VisitState.VISITING -> {
+                                val activePath = frames.map { it.candidate.resolvedId }
+                                val cycleStart = activePath.indexOf(target.resolvedId)
+                                check(cycleStart >= 0) {
+                                    "VISITING fragment must have an active traversal frame"
+                                }
+                                return XmlStatementSourceGraphFailure.DependencyCycle(
+                                    activePath.subList(cycleStart, activePath.size) + target.resolvedId,
+                                )
+                            }
+                            null -> {
+                                unsupportedByFileId[target.discovery.sourceFileId]?.let {
+                                    return XmlStatementSourceGraphFailure.UnsupportedSemantics(
+                                        target.discovery.sourceFileId,
+                                        it,
+                                    )
+                                }
+                                states[target.resolvedId] = VisitState.VISITING
+                                frames += frameFor(target)
+                            }
+                        }
+                    }
                 }
             }
-
-            stack.removeAt(stack.lastIndex)
-            states[id] = VisitState.VISITED
             return null
         }
 
@@ -221,16 +256,28 @@ object XmlStatementSourceGraphResolver {
             .sortedWith(includeComparator)
 
         for (include in rootIncludes) {
-            val failure = resolveInclude(
-                ownerDiscovery = rootDiscovery,
-                include = include,
-                candidatesByCanonicalName = candidatesByCanonicalName,
-                reachableFileIds = reachableFileIds,
-                dependencyEdges = dependencyEdges,
-                visitFragment = ::visitFragment,
-            )
-            if (failure != null) {
-                return XmlStatementSourceGraphResult.Failed(failure)
+            when (
+                val targetResolution = resolveTarget(
+                    ownerDiscovery = rootDiscovery,
+                    include = include,
+                    candidatesByCanonicalName = candidatesByCanonicalName,
+                )
+            ) {
+                is TargetResolution.Failed -> {
+                    return XmlStatementSourceGraphResult.Failed(targetResolution.failure)
+                }
+                is TargetResolution.Resolved -> {
+                    val target = targetResolution.candidate
+                    reachableFileIds += target.discovery.sourceFileId
+                    dependencyEdges += SourceDependencyEdge(
+                        dependentFileId = rootDiscovery.sourceFileId,
+                        requiredFileId = target.discovery.sourceFileId,
+                        referenceRange = include.sourceRange,
+                    )
+                    traverseFrom(target)?.let {
+                        return XmlStatementSourceGraphResult.Failed(it)
+                    }
+                }
             }
         }
 
@@ -240,21 +287,27 @@ object XmlStatementSourceGraphResolver {
                 kind = rootDeclaration.kind,
                 sourceRange = rootDeclaration.sourceRange,
             ),
-            sourceSnapshots = reachableFileIds
-                .map { snapshotsByFileId.getValue(it) },
+            sourceSnapshots = reachableFileIds.map { snapshotsByFileId.getValue(it) },
             dependencies = dependencyEdges,
         )
         return XmlStatementSourceGraphResult.Resolved(graph)
     }
 
-    private fun resolveInclude(
+    private fun resolveTarget(
         ownerDiscovery: XmlMapperDocumentDiscovery,
         include: XmlMapperIncludeReference,
         candidatesByCanonicalName: Map<String, List<FragmentCandidate>>,
-        reachableFileIds: MutableSet<SourceFileId>,
-        dependencyEdges: MutableList<SourceDependencyEdge>,
-        visitFragment: (FragmentCandidate) -> XmlStatementSourceGraphFailure?,
-    ): XmlStatementSourceGraphFailure? {
+    ): TargetResolution {
+        if (include.refid.contains("\${")) {
+            return TargetResolution.Failed(
+                XmlStatementSourceGraphFailure.UnsupportedReference(
+                    ownerFileId = ownerDiscovery.sourceFileId,
+                    refid = include.refid,
+                    referenceRange = include.sourceRange,
+                ),
+            )
+        }
+
         val canonicalName = if ('.' in include.refid) {
             include.refid
         } else {
@@ -262,30 +315,34 @@ object XmlStatementSourceGraphResolver {
         }
         val candidates = candidatesByCanonicalName[canonicalName].orEmpty()
         if (candidates.isEmpty()) {
-            return XmlStatementSourceGraphFailure.MissingFragment(
-                ownerFileId = ownerDiscovery.sourceFileId,
-                refid = include.refid,
-                referenceRange = include.sourceRange,
+            return TargetResolution.Failed(
+                XmlStatementSourceGraphFailure.MissingFragment(
+                    ownerFileId = ownerDiscovery.sourceFileId,
+                    refid = include.refid,
+                    referenceRange = include.sourceRange,
+                ),
             )
         }
         if (candidates.size != 1) {
-            return XmlStatementSourceGraphFailure.AmbiguousFragment(
-                ownerFileId = ownerDiscovery.sourceFileId,
-                refid = include.refid,
-                referenceRange = include.sourceRange,
-                candidates = candidates.map { it.resolvedId },
+            return TargetResolution.Failed(
+                XmlStatementSourceGraphFailure.AmbiguousFragment(
+                    ownerFileId = ownerDiscovery.sourceFileId,
+                    refid = include.refid,
+                    referenceRange = include.sourceRange,
+                    candidates = candidates.map { it.resolvedId },
+                ),
             )
         }
-
-        val target = candidates.single()
-        reachableFileIds += target.discovery.sourceFileId
-        dependencyEdges += SourceDependencyEdge(
-            dependentFileId = ownerDiscovery.sourceFileId,
-            requiredFileId = target.discovery.sourceFileId,
-            referenceRange = include.sourceRange,
-        )
-        return visitFragment(target)
+        return TargetResolution.Resolved(candidates.single())
     }
+
+    private fun frameFor(candidate: FragmentCandidate): FragmentFrame =
+        FragmentFrame(
+            candidate = candidate,
+            includes = candidate.discovery.includes
+                .filter { it.owner == XmlMapperDeclarationRef.Fragment(candidate.declaration.id) }
+                .sortedWith(includeComparator),
+        )
 
     private fun firstUnsupported(
         discovery: XmlMapperDocumentDiscovery,
@@ -329,6 +386,17 @@ object XmlStatementSourceGraphResolver {
             namespace = discovery.namespace,
             fragmentId = declaration.id,
         )
+    }
+
+    private data class FragmentFrame(
+        val candidate: FragmentCandidate,
+        val includes: List<XmlMapperIncludeReference>,
+        var nextIncludeIndex: Int = 0,
+    )
+
+    private sealed interface TargetResolution {
+        data class Resolved(val candidate: FragmentCandidate) : TargetResolution
+        data class Failed(val failure: XmlStatementSourceGraphFailure) : TargetResolution
     }
 
     private enum class VisitState {
