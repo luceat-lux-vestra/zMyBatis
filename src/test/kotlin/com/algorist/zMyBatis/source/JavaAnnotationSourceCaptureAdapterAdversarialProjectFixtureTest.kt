@@ -98,6 +98,29 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
         )
     }
 
+    fun testDefaultAnnotatedMethodFailsUnsupportedMethodForm() {
+        addDirectAnnotations()
+        val mapperFile = myFixture.configureByText(
+            JavaFileType.INSTANCE,
+            """
+            package fixture;
+
+            import org.apache.ibatis.annotations.Select;
+
+            interface DefaultMapper {
+                @Select("SELECT ignored")
+                default Object ignoredByMyBatis() { return null; }
+            }
+            """.trimIndent(),
+        )
+
+        assertFailure(
+            mapperFile.text,
+            "ignoredByMyBatis()",
+            JavaAnnotationSourceCaptureFailure.UNSUPPORTED_METHOD_FORM,
+        )
+    }
+
     fun testConstantDependencyCycleFailsTyped() {
         addDirectAnnotations()
         myFixture.addClass(
