@@ -565,11 +565,52 @@ object JavaAnnotationSourceCaptureAdapter {
             }
 
             val existing = snapshotsByFileId[captured.fileId]
-            if (existing != null && existing != captured) {
+            if (existing != null) {
+                if (existing == captured || isStableVfsToDocumentMaterialization(existing, captured, virtualFile)) {
+                    return SnapshotResolution.Resolved(existing)
+                }
                 return SnapshotResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_CHANGED_DURING_CAPTURE)
             }
             snapshotsByFileId[captured.fileId] = captured
             return SnapshotResolution.Resolved(captured)
+        }
+
+        private fun isStableVfsToDocumentMaterialization(
+            existing: SourceSnapshot,
+            captured: SourceSnapshot,
+            virtualFile: com.intellij.openapi.vfs.VirtualFile,
+        ): Boolean {
+            if (existing.content != captured.content) return false
+            val vfsStamp = existing.revision.value.removePrefix("vfs:")
+                .takeIf { existing.revision.value.startsWith("vfs:") }
+                ?.toLongOrNull()
+                ?: return false
+            val capturedDocumentStamp = captured.revision.value.removePrefix("document:")
+                .takeIf { captured.revision.value.startsWith("document:") }
+                ?.toLongOrNull()
+                ?: return false
+            if (virtualFile.modificationStamp != vfsStamp) return false
+
+            val fileDocumentManager = FileDocumentManager.getInstance()
+            val document = fileDocumentManager.getCachedDocument(virtualFile) ?: return false
+            val documentManager = PsiDocumentManager.getInstance(project)
+            if (
+                fileDocumentManager.isDocumentUnsaved(document) ||
+                !documentManager.isCommitted(document) ||
+                document.modificationStamp != capturedDocumentStamp
+            ) {
+                return false
+            }
+
+            val documentStampBeforeRead = document.modificationStamp
+            val documentContent = document.immutableCharSequence.toString()
+            val documentStampAfterRead = document.modificationStamp
+            return documentStampBeforeRead == capturedDocumentStamp &&
+                documentStampAfterRead == capturedDocumentStamp &&
+                virtualFile.modificationStamp == vfsStamp &&
+                documentContent == existing.content &&
+                !fileDocumentManager.isDocumentUnsaved(document) &&
+                documentManager.isCommitted(document)
         }
 
         fun authoritativeField(initialField: PsiField): FieldResolution {
