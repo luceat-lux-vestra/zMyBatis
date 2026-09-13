@@ -583,12 +583,16 @@ object JavaAnnotationSourceCaptureAdapter {
                 is SnapshotResolution.Failed -> return FieldResolution.Failed(result.failure)
             }
 
-            val cachedDocument = FileDocumentManager.getInstance().getCachedDocument(virtualFile)
+            val fileDocumentManager = FileDocumentManager.getInstance()
+            val cachedDocument = fileDocumentManager.getCachedDocument(virtualFile)
             if (cachedDocument == null) {
                 return FieldResolution.Resolved(initialField, capturedBeforeSynchronization)
             }
 
             val documentManager = PsiDocumentManager.getInstance(project)
+            if (documentManager.isCommitted(cachedDocument) && !fileDocumentManager.isDocumentUnsaved(cachedDocument)) {
+                return FieldResolution.Resolved(initialField, capturedBeforeSynchronization)
+            }
             if (!documentManager.isCommitted(cachedDocument)) {
                 documentManager.commitDocument(cachedDocument)
             }
