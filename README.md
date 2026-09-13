@@ -1,5 +1,10 @@
 # zMyBatis — Dynamic SQL Runner with Parameters
 
+[![Build](https://github.com/luceat-lux-vestra/zMyBatis/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/luceat-lux-vestra/zMyBatis/actions/workflows/build.yml)
+[![Marketplace Version](https://img.shields.io/jetbrains/plugin/v/com.algorist.zMyBatis)](https://plugins.jetbrains.com/plugin/index?xmlId=com.algorist.zMyBatis)
+[![Downloads](https://img.shields.io/jetbrains/plugin/d/com.algorist.zMyBatis)](https://plugins.jetbrains.com/plugin/index?xmlId=com.algorist.zMyBatis)
+[![License](https://img.shields.io/github/license/luceat-lux-vestra/zMyBatis)](LICENSE)
+
 > **Distribution status:** zMyBatis is published on [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30447-zmybatis--mybatis-dynamic-sql-runner-with-parameters-mybatis). This GitHub repository is the canonical public source repository. No public GitHub Release artifact is currently published.
 
 <!-- Plugin description -->
