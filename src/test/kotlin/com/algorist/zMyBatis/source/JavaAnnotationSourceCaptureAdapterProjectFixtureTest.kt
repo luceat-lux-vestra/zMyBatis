@@ -7,6 +7,10 @@ import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiField
+import com.intellij.psi.PsiJavaFile
+import com.intellij.psi.PsiModifier
+import com.intellij.psi.PsiReferenceExpression
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.fixtures.IdeaTestFixtureFactory
@@ -268,6 +272,126 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
                 it.dependentFileId == constantsFileId && it.requiredFileId == constantsFileId
             },
         )
+    }
+
+    fun testRealMyBatisCrossFileConstantPsiExposesCompilerValueAndExactSourceRanges() {
+        myFixture.addClass(
+            """
+            package fixture;
+
+            public final class PsiSqlConstants {
+                public static final String SQL = "SELECT psi";
+                private PsiSqlConstants() {}
+            }
+            """.trimIndent(),
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val mapperFile = myFixture.configureByText(
+            JavaFileType.INSTANCE,
+            """
+            package fixture;
+
+            import org.apache.ibatis.annotations.Select;
+
+            interface PsiMapper {
+                @Select(PsiSqlConstants.SQL)
+                Object find();
+            }
+            """.trimIndent(),
+        ) as PsiJavaFile
+
+        val method = mapperFile.classes.single().findMethodsByName("find", false).single()
+        val annotation = method.getAnnotation("org.apache.ibatis.annotations.Select")
+        assertNotNull("real MyBatis @Select must resolve", annotation)
+        val member = annotation!!.findAttributeValue("value")
+        assertTrue("single @Select constant must remain a reference expression", member is PsiReferenceExpression)
+        val reference = member as PsiReferenceExpression
+        val field = reference.resolve() as? PsiField
+            ?: throw AssertionError("real MyBatis constant reference must resolve to a project field")
+
+        assertEquals("fixture.PsiSqlConstants", field.containingClass?.qualifiedName)
+        assertEquals("SQL", field.name)
+        assertTrue(field.hasModifierProperty(PsiModifier.STATIC))
+        assertTrue(field.hasModifierProperty(PsiModifier.FINAL))
+        assertEquals("java.lang.String", field.type.canonicalText)
+        val initializer = field.initializer
+            ?: throw AssertionError("resolved compile-time constant field must expose its initializer")
+        assertEquals("\"SELECT psi\"", initializer.text)
+        assertEquals("SELECT psi", field.computeConstantValue())
+
+        val dependentSnapshot = when (
+            val result = DependentMapperSourceSnapshotAdapter.capture(field.containingFile.virtualFile)
+        ) {
+            is DependentMapperSourceCaptureResult.Captured -> result.snapshot
+            else -> throw AssertionError("resolved constant source must be capturable, got $result")
+        }
+        val fieldRange = field.textRange
+        assertEquals(
+            field.text,
+            dependentSnapshot.content.substring(fieldRange.startOffset, fieldRange.endOffset),
+        )
+
+        val activeSnapshot = when (val result = ActiveEditorSourceSnapshotAdapter.capture(myFixture.editor)) {
+            is ActiveEditorSourceCaptureResult.Captured -> result.capture.snapshot
+            else -> throw AssertionError("active mapper source must be capturable, got $result")
+        }
+        val referenceRange = reference.textRange
+        assertEquals(
+            reference.text,
+            activeSnapshot.content.substring(referenceRange.startOffset, referenceRange.endOffset),
+        )
+    }
+
+    fun testRealMyBatisCyclicConstantPsiReferencesResolveReciprocally() {
+        myFixture.addClass(
+            """
+            package fixture;
+
+            public final class PsiCyclicSql {
+                public static final String A = PsiCyclicSql.B;
+                public static final String B = PsiCyclicSql.A;
+                private PsiCyclicSql() {}
+            }
+            """.trimIndent(),
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val mapperFile = myFixture.configureByText(
+            JavaFileType.INSTANCE,
+            """
+            package fixture;
+
+            import org.apache.ibatis.annotations.Select;
+
+            interface PsiCycleMapper {
+                @Select(PsiCyclicSql.A)
+                Object find();
+            }
+            """.trimIndent(),
+        ) as PsiJavaFile
+
+        val method = mapperFile.classes.single().findMethodsByName("find", false).single()
+        val annotation = method.getAnnotation("org.apache.ibatis.annotations.Select")
+        assertNotNull("real MyBatis @Select must resolve", annotation)
+        val rootReference = annotation!!.findAttributeValue("value") as? PsiReferenceExpression
+            ?: throw AssertionError("cyclic @Select constant must remain a reference expression")
+        val fieldA = rootReference.resolve() as? PsiField
+            ?: throw AssertionError("cyclic root reference must resolve to field A")
+        assertEquals("A", fieldA.name)
+
+        val referenceToB = fieldA.initializer as? PsiReferenceExpression
+            ?: throw AssertionError("field A initializer must remain a reference expression")
+        val fieldB = referenceToB.resolve() as? PsiField
+            ?: throw AssertionError("field A initializer must resolve to field B")
+        assertEquals("B", fieldB.name)
+
+        val referenceBackToA = fieldB.initializer as? PsiReferenceExpression
+            ?: throw AssertionError("field B initializer must remain a reference expression")
+        val resolvedBackToA = referenceBackToA.resolve() as? PsiField
+            ?: throw AssertionError("field B initializer must resolve back to field A")
+        assertEquals("A", resolvedBackToA.name)
+        assertEquals("fixture.PsiCyclicSql", resolvedBackToA.containingClass?.qualifiedName)
     }
 
     fun testProviderAmbiguousLangAndUnresolvedValuesFailClosed() {
