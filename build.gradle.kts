@@ -21,6 +21,21 @@ kotlin {
     jvmToolchain(21)
 }
 
+// Keep process-level Starter/Driver tests isolated from the existing JUnit 4 fixture suite.
+sourceSets {
+    create("integrationTest") {
+        compileClasspath += sourceSets.main.get().output
+        runtimeClasspath += sourceSets.main.get().output
+    }
+}
+
+val integrationTestImplementation by configurations.getting {
+    extendsFrom(configurations.testImplementation.get())
+}
+val integrationTestRuntimeOnly by configurations.getting {
+    extendsFrom(configurations.testRuntimeOnly.get())
+}
+
 // Configure project's dependencies
 repositories {
     gradlePluginPortal()
@@ -33,7 +48,6 @@ repositories {
     }
 }
 
-// Dependencies are managed with Gradle version catalog - read more: https://docs.gradle.org/current/userguide/version_catalogs.html
 dependencies {
     implementation(project(":core")) {
         exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
@@ -54,9 +68,17 @@ dependencies {
 
         testFramework(TestFrameworkType.Platform)
         testFramework(TestFrameworkType.Plugin.Java)
+        testFramework(TestFrameworkType.Starter, configurationName = "integrationTestImplementation")
 
         implementation("org.mybatis:mybatis:3.5.19")
     }
+
+    // Starter is JUnit 5-only. Pin the small integration-test stack independently from the
+    // existing JUnit 4 fixture suite until the process harness is characterized and promoted.
+    integrationTestImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
+    integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.20.2")
+    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.1")
+    integrationTestRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.3")
 }
 
 // Configure IntelliJ Platform Gradle Plugin.
@@ -154,6 +176,21 @@ val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundar
         }
         testLogging {
             events("passed", "failed")
+        }
+    }
+}
+
+// Launch an actual IDE process with the exact buildPlugin archive installed. Keep this task
+// separate from `check`: #130 requires process-level evidence to remain independently visible.
+val integrationTest by intellijPlatformTesting.testIdeUi.register("integrationTest") {
+    task {
+        val integrationTestSourceSet = sourceSets.getByName("integrationTest")
+        testClassesDirs = integrationTestSourceSet.output.classesDirs
+        classpath = integrationTestSourceSet.runtimeClasspath
+        useJUnitPlatform()
+        testLogging {
+            events("passed", "failed")
+            showStandardStreams = true
         }
     }
 }
