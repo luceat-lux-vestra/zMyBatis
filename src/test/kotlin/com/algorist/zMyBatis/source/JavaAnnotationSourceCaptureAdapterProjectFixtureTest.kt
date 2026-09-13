@@ -123,6 +123,16 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
         )
         assertTrue(methodText.contains("@Select"))
         assertTrue(methodText.contains("Object find(@Param(\"userId\") int id, String[] tags)"))
+
+        moveCaretTo(mapperFile.text, "find(String name)", "find")
+        val overloadCapture = captured(JavaAnnotationSourceCaptureAdapter.capture(project, myFixture.editor))
+        val overloadStatementId = overloadCapture.sourceGraph.rootStatement.id as JavaStatementId
+        assertEquals("find(java.lang.String)", overloadStatementId.methodSignature.toString())
+        assertNotEquals(
+            "overloads with different ordered parameter types must have distinct canonical statement ids",
+            statementId,
+            overloadStatementId,
+        )
     }
 
     fun testUnsavedActiveDocumentIsSemanticAuthorityWithoutDiskSave() {
@@ -438,6 +448,9 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
 
                 @Select(MissingSql.VALUE)
                 Object unresolved();
+
+                @Select(1)
+                Object nonString();
             }
             """.trimIndent(),
         )
@@ -460,6 +473,11 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
         assertFailure(
             mapperFile.text,
             "unresolved()",
+            JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE,
+        )
+        assertFailure(
+            mapperFile.text,
+            "nonString()",
             JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE,
         )
     }
