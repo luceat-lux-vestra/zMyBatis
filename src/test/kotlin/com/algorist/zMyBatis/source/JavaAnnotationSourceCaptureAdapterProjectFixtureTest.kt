@@ -18,6 +18,7 @@ import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
 import com.intellij.testFramework.fixtures.TempDirTestFixture
 import com.intellij.util.PathUtil
 import org.apache.ibatis.annotations.Select
+import org.junit.Assert.assertNotEquals
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
