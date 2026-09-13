@@ -7,7 +7,9 @@ import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiReferenceExpression
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.PsiTestUtil
+import com.intellij.testFramework.fixtures.IdeaTestFixtureFactory
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
+import com.intellij.testFramework.fixtures.TempDirTestFixture
 import com.intellij.util.PathUtil
 import org.apache.ibatis.annotations.Select
 import java.io.File
@@ -21,6 +23,9 @@ class JavaAnnotationConstantResolveHelperProjectFixtureTest : LightJavaCodeInsig
         val myBatisJar = File(PathUtil.getJarPathForClass(Select::class.java))
         PsiTestUtil.addLibrary(module, "mybatis-3.5.19", myBatisJar.parent, myBatisJar.name)
     }
+
+    override fun getTempDirFixture(): TempDirTestFixture =
+        IdeaTestFixtureFactory.getFixtureFactory().createTempDirTestFixture()
 
     fun testResolveHelperResolvesQualifiedRealMyBatisAnnotationConstantsWithoutStaticImport() {
         addResolutionConstants()
