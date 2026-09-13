@@ -430,7 +430,10 @@ object JavaAnnotationSourceCaptureAdapter {
         ownerFileId: SourceFileId,
         state: CaptureState,
     ): ConstantResolution {
-        val initiallyResolvedField = reference.resolve() as? PsiField
+        val initiallyResolvedField = (reference.resolve() as? PsiField)
+            ?: (JavaPsiFacade.getInstance(state.project)
+                .resolveHelper
+                .resolveReferencedVariable(reference.text, reference) as? PsiField)
             ?: return ConstantResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
         val fieldResolution = state.authoritativeField(initiallyResolvedField)
         val field: PsiField
@@ -585,9 +588,7 @@ object JavaAnnotationSourceCaptureAdapter {
 
             val fileDocumentManager = FileDocumentManager.getInstance()
             val cachedDocument = fileDocumentManager.getCachedDocument(virtualFile)
-            if (cachedDocument == null) {
-                return FieldResolution.Resolved(initialField, capturedBeforeSynchronization)
-            }
+                ?: return FieldResolution.Resolved(initialField, capturedBeforeSynchronization)
 
             val documentManager = PsiDocumentManager.getInstance(project)
             if (documentManager.isCommitted(cachedDocument) && !fileDocumentManager.isDocumentUnsaved(cachedDocument)) {
