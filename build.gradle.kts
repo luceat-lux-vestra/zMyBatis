@@ -27,7 +27,7 @@ repositories {
 
     mavenCentral()
 
-    // IntelliJ Platform Gradle Plugin Repositories Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-repositories-extension.html
+    // IntelliJ Platform Gradle Plugin Repositories Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
     intellijPlatform {
         defaultRepositories()
     }
@@ -63,7 +63,7 @@ dependencies {
 intellijPlatform {
     buildSearchableOptions = true
     pluginConfiguration {
-        name = providers.gradleProperty("pluginName").get()
+        name = providers.gradleProperty("pluginName")
         version = effectivePluginVersion
 
         val changelog = project.changelog // local variable for configuration cache compatibility
@@ -166,7 +166,7 @@ changelog {
     versionPrefix = ""
 }
 
-// Configure Kover Plugin.
+// Configure Gradle Kover Plugin.
 kover {
     reports {
         total {
