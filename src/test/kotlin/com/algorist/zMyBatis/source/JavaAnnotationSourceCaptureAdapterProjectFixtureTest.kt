@@ -321,7 +321,10 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
         assertEquals("SELECT psi", field.computeConstantValue())
 
         val dependentSnapshot = when (
-            val result = DependentMapperSourceSnapshotAdapter.capture(field.containingFile.virtualFile)
+            val result = DependentMapperSourceSnapshotAdapter.capture(
+                virtualFile = field.containingFile.virtualFile,
+                maxContentLength = 2 * 1024 * 1024,
+            )
         ) {
             is DependentMapperSourceCaptureResult.Captured -> result.snapshot
             else -> throw AssertionError("resolved constant source must be capturable, got $result")
