@@ -129,7 +129,6 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
             includeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.source.DependentMapperSourceSnapshotAdapterProjectFixtureTest")
-            includeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationConstantResolveHelperProjectFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapterProjectFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest")
         }
@@ -195,7 +194,6 @@ tasks {
             excludeTestsMatching("com.algorist.zMyBatis.KotlinActionContextBoundaryTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.DependentMapperSourceSnapshotAdapterProjectFixtureTest")
-            excludeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationConstantResolveHelperProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapterProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureKotlinBoundaryTest")
