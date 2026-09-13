@@ -3,7 +3,6 @@ package com.algorist.zMyBatis.e2e
 import com.intellij.driver.client.Remote
 import com.intellij.driver.sdk.invokeAction
 import com.intellij.driver.sdk.openFile
-import com.intellij.driver.sdk.service
 import com.intellij.driver.sdk.ui.components.common.ideFrame
 import com.intellij.driver.sdk.ui.components.elements.button
 import com.intellij.driver.sdk.ui.components.elements.dialog
@@ -18,6 +17,9 @@ import com.intellij.ide.starter.models.TestCase
 import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
+import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTestKind
+import com.intellij.platform.testFramework.teamCity.TeamCityReporter.TestMetadata
+import com.intellij.tools.ide.starter.product.idea.ultimate.IdeaUltimate
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
@@ -30,7 +32,7 @@ import kotlin.io.path.Path as pathOf
 import kotlin.time.Duration.Companion.minutes
 
 @Remote("com.algorist.zMyBatis.settings.ZMyBatisSettings", plugin = "com.algorist.zMyBatis")
-private interface ZMyBatisSettingsRemote {
+interface ZMyBatisSettingsRemote {
     fun getAutoFormatSql(): Boolean
 }
 
@@ -52,6 +54,9 @@ class ZMyBatisStarterDriverE2ETest {
                             message: String,
                             details: String,
                             linkToLogs: String?,
+                            kind: SyntheticTestKind,
+                            generifyTestName: Boolean,
+                            additionalMetadata: List<TestMetadata>,
                         ) {
                             fail { "$testName fails: $message\n$details" }
                         }
@@ -72,7 +77,7 @@ class ZMyBatisStarterDriverE2ETest {
 
                 // This is the shipping application service, reached over Driver JMX/RMI. No
                 // test-only production hook participates in the assertion.
-                assertTrue(service<ZMyBatisSettingsRemote>().getAutoFormatSql())
+                assertTrue(service(ZMyBatisSettingsRemote::class).getAutoFormatSql())
             }
     }
 
