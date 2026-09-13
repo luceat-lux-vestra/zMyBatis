@@ -610,6 +610,11 @@ object JavaAnnotationSourceCaptureAdapter {
                 documentManager.isCommitted(document)
         }
 
+        private fun fieldMatchesSnapshot(field: PsiField, snapshot: SourceSnapshot): Boolean {
+            val containingFile = field.containingFile ?: return false
+            return containingFile.text == snapshot.content && rangeMatchesSnapshot(field, snapshot)
+        }
+
         fun authoritativeField(initialField: PsiField): FieldResolution {
             val containingClassName = initialField.containingClass?.qualifiedName
                 ?: return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
@@ -626,10 +631,18 @@ object JavaAnnotationSourceCaptureAdapter {
 
             val fileDocumentManager = FileDocumentManager.getInstance()
             val cachedDocument = fileDocumentManager.getCachedDocument(virtualFile)
-                ?: return FieldResolution.Resolved(initialField, capturedBeforeSynchronization)
+            if (cachedDocument == null) {
+                if (!fieldMatchesSnapshot(initialField, capturedBeforeSynchronization)) {
+                    return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
+                }
+                return FieldResolution.Resolved(initialField, capturedBeforeSynchronization)
+            }
 
             val documentManager = PsiDocumentManager.getInstance(project)
             if (documentManager.isCommitted(cachedDocument) && !fileDocumentManager.isDocumentUnsaved(cachedDocument)) {
+                if (!fieldMatchesSnapshot(initialField, capturedBeforeSynchronization)) {
+                    return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
+                }
                 return FieldResolution.Resolved(initialField, capturedBeforeSynchronization)
             }
             if (!documentManager.isCommitted(cachedDocument)) {
