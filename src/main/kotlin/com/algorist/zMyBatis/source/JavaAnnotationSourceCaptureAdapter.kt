@@ -430,10 +430,7 @@ object JavaAnnotationSourceCaptureAdapter {
         ownerFileId: SourceFileId,
         state: CaptureState,
     ): ConstantResolution {
-        val initiallyResolvedField = (reference.resolve() as? PsiField)
-            ?: (JavaPsiFacade.getInstance(state.project)
-                .resolveHelper
-                .resolveReferencedVariable(reference.text, reference) as? PsiField)
+        val initiallyResolvedField = reference.resolve() as? PsiField
             ?: return ConstantResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
         val fieldResolution = state.authoritativeField(initiallyResolvedField)
         val field: PsiField
