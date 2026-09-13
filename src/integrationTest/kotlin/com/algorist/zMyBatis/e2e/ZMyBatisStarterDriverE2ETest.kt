@@ -18,7 +18,6 @@ import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
 import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTestKind
-import com.intellij.platform.testFramework.teamCity.TeamCityReporter.TestMetadata
 import com.intellij.tools.ide.starter.product.idea.ultimate.IdeaUltimate
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -56,7 +55,6 @@ class ZMyBatisStarterDriverE2ETest {
                             linkToLogs: String?,
                             kind: SyntheticTestKind,
                             generifyTestName: Boolean,
-                            additionalMetadata: List<TestMetadata>,
                         ) {
                             fail { "$testName fails: $message\n$details" }
                         }
