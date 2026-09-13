@@ -22,35 +22,19 @@ class JavaAnnotationConstantResolveHelperProjectFixtureTest : LightJavaCodeInsig
         PsiTestUtil.addLibrary(module, "mybatis-3.5.19", myBatisJar.parent, myBatisJar.name)
     }
 
-    fun testResolveHelperResolvesRealMyBatisAnnotationConstants() {
-        myFixture.addClass(
-            """
-            package fixture;
-
-            public final class ResolutionConstants {
-                public static final String SQL = "SELECT helper";
-                public static final String A = ResolutionConstants.B;
-                public static final String B = ResolutionConstants.A;
-                private ResolutionConstants() {}
-            }
-            """.trimIndent(),
-        )
-        IndexingTestUtil.waitUntilIndexesAreReady(project)
+    fun testResolveHelperResolvesQualifiedRealMyBatisAnnotationConstantsWithoutStaticImport() {
+        addResolutionConstants()
 
         val mapperFile = myFixture.configureByText(
             JavaFileType.INSTANCE,
             """
             package fixture;
 
-            import static fixture.ResolutionConstants.SQL;
             import org.apache.ibatis.annotations.Select;
 
-            interface ResolveHelperMapper {
+            interface QualifiedResolveHelperMapper {
                 @Select(ResolutionConstants.SQL)
                 Object qualified();
-
-                @Select(SQL)
-                Object staticImported();
 
                 @Select(ResolutionConstants.A)
                 Object cyclic();
@@ -64,11 +48,6 @@ class JavaAnnotationConstantResolveHelperProjectFixtureTest : LightJavaCodeInsig
         assertEquals("SQL", qualifiedField.name)
         assertEquals("SELECT helper", qualifiedField.computeConstantValue())
 
-        val staticImported = annotationReference(mapperFile, "staticImported")
-        val staticImportedField = resolveField(staticImported)
-        assertEquals("fixture.ResolutionConstants", staticImportedField.containingClass?.qualifiedName)
-        assertEquals("SQL", staticImportedField.name)
-
         val cyclic = annotationReference(mapperFile, "cyclic")
         val fieldA = resolveField(cyclic)
         assertEquals("A", fieldA.name)
@@ -79,6 +58,47 @@ class JavaAnnotationConstantResolveHelperProjectFixtureTest : LightJavaCodeInsig
         val referenceBackToA = fieldB.initializer as? PsiReferenceExpression
             ?: throw AssertionError("field B initializer must remain a reference expression")
         assertEquals("A", resolveField(referenceBackToA).name)
+    }
+
+    fun testResolveHelperResolvesStaticImportedRealMyBatisAnnotationConstant() {
+        addResolutionConstants()
+
+        val mapperFile = myFixture.configureByText(
+            JavaFileType.INSTANCE,
+            """
+            package fixture;
+
+            import static fixture.ResolutionConstants.SQL;
+            import org.apache.ibatis.annotations.Select;
+
+            interface StaticImportResolveHelperMapper {
+                @Select(SQL)
+                Object find();
+            }
+            """.trimIndent(),
+        ) as PsiJavaFile
+
+        val reference = annotationReference(mapperFile, "find")
+        val field = resolveField(reference)
+        assertEquals("fixture.ResolutionConstants", field.containingClass?.qualifiedName)
+        assertEquals("SQL", field.name)
+        assertEquals("SELECT helper", field.computeConstantValue())
+    }
+
+    private fun addResolutionConstants() {
+        myFixture.addClass(
+            """
+            package fixture;
+
+            public final class ResolutionConstants {
+                public static final String SQL = "SELECT helper";
+                public static final String A = ResolutionConstants.B;
+                public static final String B = ResolutionConstants.A;
+                private ResolutionConstants() {}
+            }
+            """.trimIndent(),
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
     }
 
     private fun annotationReference(file: PsiJavaFile, methodName: String): PsiReferenceExpression {
