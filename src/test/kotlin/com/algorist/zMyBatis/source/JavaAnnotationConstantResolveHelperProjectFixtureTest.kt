@@ -1,10 +1,12 @@
 package com.algorist.zMyBatis.source
 
 import com.intellij.ide.highlighter.JavaFileType
+import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiField
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiReferenceExpression
+import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.fixtures.IdeaTestFixtureFactory
@@ -46,6 +48,7 @@ class JavaAnnotationConstantResolveHelperProjectFixtureTest : LightJavaCodeInsig
             }
             """.trimIndent(),
         ) as PsiJavaFile
+        assertProjectResolutionContext(mapperFile)
 
         val qualified = annotationReference(mapperFile, "qualified")
         val qualifiedField = resolveField(qualified)
@@ -82,6 +85,7 @@ class JavaAnnotationConstantResolveHelperProjectFixtureTest : LightJavaCodeInsig
             }
             """.trimIndent(),
         ) as PsiJavaFile
+        assertProjectResolutionContext(mapperFile)
 
         val reference = annotationReference(mapperFile, "find")
         val field = resolveField(reference)
@@ -104,6 +108,29 @@ class JavaAnnotationConstantResolveHelperProjectFixtureTest : LightJavaCodeInsig
             """.trimIndent(),
         )
         IndexingTestUtil.waitUntilIndexesAreReady(project)
+    }
+
+    private fun assertProjectResolutionContext(mapperFile: PsiJavaFile) {
+        val constantsClass = JavaPsiFacade.getInstance(project).findClass(
+            "fixture.ResolutionConstants",
+            GlobalSearchScope.projectScope(project),
+        ) ?: throw AssertionError("ResolutionConstants must be indexed in project scope")
+        val constantsFile = constantsClass.containingFile.virtualFile
+        val mapperVirtualFile = mapperFile.virtualFile
+        val fileIndex = ProjectFileIndex.getInstance(project)
+
+        assertTrue(
+            "ResolutionConstants fixture must be production source content",
+            fileIndex.isInSourceContent(constantsFile),
+        )
+        assertTrue(
+            "mapper fixture must be source content for Java project resolution",
+            fileIndex.isInSourceContent(mapperVirtualFile),
+        )
+        assertTrue(
+            "mapper resolve scope must include ResolutionConstants",
+            mapperFile.resolveScope.contains(constantsFile),
+        )
     }
 
     private fun annotationReference(file: PsiJavaFile, methodName: String): PsiReferenceExpression {
