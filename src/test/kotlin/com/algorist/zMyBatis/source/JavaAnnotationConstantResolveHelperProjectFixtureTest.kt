@@ -22,6 +22,11 @@ class JavaAnnotationConstantResolveHelperProjectFixtureTest : LightJavaCodeInsig
 
     override fun setUp() {
         super.setUp()
+        val tempRoot = myFixture.tempDirFixture.getFile("")
+            ?: throw AssertionError("physical temp fixture root must exist")
+        PsiTestUtil.addContentRoot(module, tempRoot)
+        PsiTestUtil.addSourceRoot(module, tempRoot)
+
         val myBatisJar = File(PathUtil.getJarPathForClass(Select::class.java))
         PsiTestUtil.addLibrary(module, "mybatis-3.5.19", myBatisJar.parent, myBatisJar.name)
     }
