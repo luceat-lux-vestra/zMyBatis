@@ -584,25 +584,23 @@ object JavaAnnotationSourceCaptureAdapter {
             }
 
             val cachedDocument = FileDocumentManager.getInstance().getCachedDocument(virtualFile)
-            val synchronizedFile = if (cachedDocument == null) {
-                initialFile
-            } else {
-                val documentManager = PsiDocumentManager.getInstance(project)
-                if (!documentManager.isCommitted(cachedDocument)) {
-                    documentManager.commitDocument(cachedDocument)
-                }
-                val psiFile = documentManager.getPsiFile(cachedDocument)
-                    ?: return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
-                val capturedAfterSynchronization = when (val result = snapshotFor(psiFile)) {
-                    is SnapshotResolution.Resolved -> result.snapshot
-                    is SnapshotResolution.Failed -> return FieldResolution.Failed(result.failure)
-                }
-                if (capturedBeforeSynchronization != capturedAfterSynchronization) {
-                    return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_CHANGED_DURING_CAPTURE)
-                }
-                psiFile
+            if (cachedDocument == null) {
+                return FieldResolution.Resolved(initialField, capturedBeforeSynchronization)
             }
 
+            val documentManager = PsiDocumentManager.getInstance(project)
+            if (!documentManager.isCommitted(cachedDocument)) {
+                documentManager.commitDocument(cachedDocument)
+            }
+            val synchronizedFile = documentManager.getPsiFile(cachedDocument)
+                ?: return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
+            val capturedAfterSynchronization = when (val result = snapshotFor(synchronizedFile)) {
+                is SnapshotResolution.Resolved -> result.snapshot
+                is SnapshotResolution.Failed -> return FieldResolution.Failed(result.failure)
+            }
+            if (capturedBeforeSynchronization != capturedAfterSynchronization) {
+                return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_CHANGED_DURING_CAPTURE)
+            }
             if (synchronizedFile.text != capturedBeforeSynchronization.content) {
                 return FieldResolution.Failed(JavaAnnotationSourceCaptureFailure.SOURCE_PSI_MISMATCH)
             }
