@@ -36,7 +36,8 @@ import javax.swing.text.JTextComponent
  *
  * The dialog does not discover parameters, infer types from names, parse values itself, or turn
  * examples/history into executable inputs. It renders [ContractInputPresentation] and delegates
- * decoding plus final environment validation to [ContractInputAdapter].
+ * submission policy to [ContractInputSubmissionPolicy], then typed decoding/final environment
+ * validation to [ContractInputAdapter].
  *
  * Production action cutover is deliberately owned by #66. Until that cutover, the legacy dialog
  * may remain on the legacy execution path; this class is the target UI boundary for that migration.
@@ -47,7 +48,6 @@ class ContractParameterInputDialog(
     private val contract: ParameterContract,
 ) : DialogWrapper(project, true) {
     private data class FieldUi(
-        val field: ContractInputField,
         val editor: JTextComponent,
         val component: JComponent,
         val optionalSupply: JBCheckBox?,
@@ -69,7 +69,7 @@ class ContractParameterInputDialog(
     private val clearRetained = JButton("Clear remembered values")
     private val fields = presentation.fields.associate { field -> field.requirementId to createFieldUi(field) }
     private var preparedEnvironment: InputEnvironment? = null
-    private var preparedEntries: List<ContractInputTextEntry> = emptyList()
+    private var preparedRawValues: Map<InputRequirementId, String> = emptyMap()
 
     init {
         title = "Enter MyBatis Parameters"
@@ -103,11 +103,12 @@ class ContractParameterInputDialog(
             val ui = fields.getValue(field.requirementId)
             val requiredMarker = if (field.requiredness == InputRequiredness.REQUIRED) " *" else ""
             val kindMarker = if (field.inputKind == InputKind.RAW_INTERPOLATION) " — raw interpolation" else ""
-            val label = JBLabel("${displayName(field.requirementId)}$requiredMarker$kindMarker").apply {
-                toolTipText = provenanceText(field)
-                alignmentX = java.awt.Component.LEFT_ALIGNMENT
-            }
-            panel.add(label)
+            panel.add(
+                JBLabel("${displayName(field.requirementId)}$requiredMarker$kindMarker").apply {
+                    toolTipText = provenanceText(field)
+                    alignmentX = java.awt.Component.LEFT_ALIGNMENT
+                },
+            )
             panel.add(Box.createVerticalStrut(2))
             panel.add(ui.component)
 
@@ -150,16 +151,11 @@ class ContractParameterInputDialog(
             is ContractInputAdapterResult.Success -> {
                 preparedEnvironment = prepared.environment
                 if (ZMyBatisSettings.getInstance().rememberLastInputs) {
-                    history.save(
-                        contract,
-                        preparedEntries.associate { it.requirementId to it.text },
-                    )
+                    history.save(contract, preparedRawValues)
                 }
                 super.doOKAction()
             }
-            is ContractInputAdapterResult.Failure -> {
-                preparedEnvironment = null
-            }
+            is ContractInputAdapterResult.Failure -> preparedEnvironment = null
         }
     }
 
@@ -184,9 +180,9 @@ class ContractParameterInputDialog(
         }
 
         editor.document.addDocumentListener(object : DocumentListener {
-            override fun insertUpdate(e: DocumentEvent?) = markEdited(field.requirementId, optionalSupply)
-            override fun removeUpdate(e: DocumentEvent?) = markEdited(field.requirementId, optionalSupply)
-            override fun changedUpdate(e: DocumentEvent?) = markEdited(field.requirementId, optionalSupply)
+            override fun insertUpdate(event: DocumentEvent) = markEdited(field.requirementId, optionalSupply)
+            override fun removeUpdate(event: DocumentEvent) = markEdited(field.requirementId, optionalSupply)
+            override fun changedUpdate(event: DocumentEvent) = markEdited(field.requirementId, optionalSupply)
         })
 
         val component = when (editor) {
@@ -202,7 +198,7 @@ class ContractParameterInputDialog(
             else -> error("unsupported contract input editor component")
         }
 
-        return FieldUi(field, editor, component, optionalSupply, rawConfirmation)
+        return FieldUi(editor, component, optionalSupply, rawConfirmation)
     }
 
     private fun createEditor(field: ContractInputField): JTextComponent {
@@ -242,79 +238,28 @@ class ContractParameterInputDialog(
     }
 
     private fun prepareCurrentInput(): ContractInputAdapterResult {
-        if (!presentation.canSubmit) {
-            preparedEntries = emptyList()
-            return ContractInputAdapterResult.Failure(
-                presentation.problems.map { ContractInputAdapterFailure.Presentation(it) },
-            )
-        }
-
-        val localFailures = mutableListOf<ContractInputAdapterFailure>()
-        val entries = mutableListOf<ContractInputTextEntry>()
-
-        presentation.fields.forEach { field ->
+        val drafts = presentation.fields.map { field ->
             val ui = fields.getValue(field.requirementId)
-            val supplied = field.requiredness == InputRequiredness.REQUIRED || ui.optionalSupply?.isSelected == true
-            if (!supplied) return@forEach
-
-            val retainedUnchanged = field.requirementId in retainedDrafts &&
-                field.requirementId !in editedRequirementIds
-            if (retainedUnchanged && !acceptRetained.isSelected) {
-                localFailures += ContractInputAdapterFailure.Presentation(
-                    ContractInputPresentationProblem(
-                        kind = ContractInputPresentationProblemKind.PRESENTATION_UNSUPPORTED,
-                        code = "retained-input-requires-explicit-acceptance",
-                        requirementId = field.requirementId,
-                        provenance = field.provenance,
-                    ),
-                )
-                return@forEach
-            }
-
-            if (!retainedUnchanged && field.requiredness == InputRequiredness.REQUIRED &&
-                field.requirementId !in editedRequirementIds
-            ) {
-                localFailures += ContractInputAdapterFailure.Presentation(
-                    ContractInputPresentationProblem(
-                        kind = ContractInputPresentationProblemKind.PRESENTATION_UNSUPPORTED,
-                        code = "required-input-not-explicitly-entered",
-                        requirementId = field.requirementId,
-                        provenance = field.provenance,
-                    ),
-                )
-                return@forEach
-            }
-
-            if (field.requiresExplicitRawConfirmation && ui.rawConfirmation?.isSelected != true) {
-                localFailures += ContractInputAdapterFailure.Presentation(
-                    ContractInputPresentationProblem(
-                        kind = ContractInputPresentationProblemKind.PRESENTATION_UNSUPPORTED,
-                        code = "raw-input-requires-explicit-confirmation",
-                        requirementId = field.requirementId,
-                        provenance = field.provenance,
-                    ),
-                )
-                return@forEach
-            }
-
-            entries += ContractInputTextEntry(
+            ContractInputDraft(
                 requirementId = field.requirementId,
                 text = ui.editor.text,
-                origin = if (retainedUnchanged) {
-                    ContractInputTextOrigin.USER_ACCEPTED_RETAINED
-                } else {
-                    ContractInputTextOrigin.USER_ENTERED
-                },
+                supplied = field.requiredness == InputRequiredness.REQUIRED || ui.optionalSupply?.isSelected == true,
+                edited = field.requirementId in editedRequirementIds,
+                retained = field.requirementId in retainedDrafts,
+                rawConfirmed = ui.rawConfirmation?.isSelected == true,
             )
         }
-
-        if (localFailures.isNotEmpty()) {
-            preparedEntries = emptyList()
-            return ContractInputAdapterResult.Failure(localFailures)
+        val result = ContractInputSubmissionPolicy.prepare(
+            contract = contract,
+            drafts = drafts,
+            acceptRetained = acceptRetained.isSelected,
+        )
+        preparedRawValues = if (result is ContractInputAdapterResult.Success) {
+            drafts.filter { it.supplied }.associate { it.requirementId to it.text }
+        } else {
+            emptyMap()
         }
-
-        preparedEntries = entries.toList()
-        return ContractInputAdapter.prepare(contract, preparedEntries)
+        return result
     }
 
     private fun validationInfo(failure: ContractInputAdapterFailure): ValidationInfo {
