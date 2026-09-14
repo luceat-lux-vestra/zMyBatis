@@ -1,6 +1,5 @@
 package com.algorist.zMyBatis.input
 
-import com.algorist.zMyBatis.core.input.ContractInputAdapterResult
 import com.algorist.zMyBatis.core.input.ExpectedInputType
 import com.algorist.zMyBatis.core.input.InputCodecFailureKind
 import com.algorist.zMyBatis.core.input.InputContractProblem
