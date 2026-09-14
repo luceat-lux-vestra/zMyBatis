@@ -217,9 +217,29 @@ data class InputRequirement(
     }
 }
 
+enum class InputAliasKind {
+    EXPLICIT_PARAM,
+    SOURCE_PARAMETER_NAME,
+    GENERIC_PARAM,
+    ARGUMENT,
+    COLLECTION,
+    LIST,
+    ARRAY,
+}
+
+data class InputAlias(
+    val name: String,
+    val requirementId: InputRequirementId,
+    val kind: InputAliasKind,
+    val provenance: InputProvenance,
+) {
+    init {
+        require(name.isNotBlank()) { "input alias name must not be blank" }
+    }
+}
+
 enum class InternalBindingKind {
     MYBATIS_CONTEXT,
-    GENERATED_ALIAS,
     FOREACH_ITEM,
     FOREACH_INDEX,
     BIND,
@@ -259,11 +279,13 @@ data class InputContractProblem(
 class ParameterContract(
     val statementId: StatementId,
     requirements: List<InputRequirement>,
+    aliases: List<InputAlias>,
     internalBindings: List<InternalBinding>,
     blockingProblems: List<InputContractProblem>,
     sourceRevisions: Map<SourceFileId, SourceRevision>,
 ) {
     private val requirementSnapshot = requirements.toList()
+    private val aliasSnapshot = aliases.toList()
     private val internalBindingSnapshot = internalBindings.toList()
     private val problemSnapshot = blockingProblems.toList()
     private val sourceRevisionSnapshot = LinkedHashMap(
@@ -277,10 +299,16 @@ class ParameterContract(
         require(requirementSnapshot.map { it.id }.distinct().size == requirementSnapshot.size) {
             "parameter contract must not contain duplicate requirement ids"
         }
+        val requirementIds = requirementSnapshot.map { it.id }.toSet()
+        require(aliasSnapshot.all { it.requirementId in requirementIds }) {
+            "input aliases must reference an existing caller input requirement"
+        }
+        require(aliasSnapshot.map { it.name }.distinct().size == aliasSnapshot.size) {
+            "parameter contract must not contain ambiguous input alias names"
+        }
         require(internalBindingSnapshot.map { it.name to it.kind }.distinct().size == internalBindingSnapshot.size) {
             "parameter contract must not contain duplicate internal bindings of the same kind"
         }
-        val requirementIds = requirementSnapshot.map { it.id }.toSet()
         require(problemSnapshot.all { it.requirementId == null || it.requirementId in requirementIds }) {
             "input contract problem must reference an existing requirement or the contract as a whole"
         }
@@ -301,6 +329,7 @@ class ParameterContract(
 
         val provenance = buildList {
             addAll(requirementSnapshot.map { it.provenance })
+            addAll(aliasSnapshot.map { it.provenance })
             addAll(internalBindingSnapshot.map { it.provenance })
             addAll(problemSnapshot.mapNotNull { it.provenance })
         }
@@ -316,6 +345,9 @@ class ParameterContract(
 
     val requirements: List<InputRequirement>
         get() = requirementSnapshot.toList()
+
+    val aliases: List<InputAlias>
+        get() = aliasSnapshot.toList()
 
     val internalBindings: List<InternalBinding>
         get() = internalBindingSnapshot.toList()
