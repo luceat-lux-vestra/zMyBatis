@@ -10,6 +10,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigInteger
+import java.time.LocalDate
 
 class InputContractTest {
     private val statementId = JavaStatementId(
@@ -74,6 +75,31 @@ class InputContractTest {
     }
 
     @Test
+    fun unprovenScalarTypeMustCarryExplicitBlockingProblem() {
+        val requirement = boundRequirement("mystery", InputShape.SCALAR, InputScalarType.UNKNOWN)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ParameterContract(statementId, listOf(requirement), emptyList(), emptyList())
+        }
+
+        val blocked = ParameterContract(
+            statementId,
+            listOf(requirement),
+            emptyList(),
+            listOf(
+                InputContractProblem(
+                    InputContractProblemKind.UNKNOWN,
+                    "unproven-scalar-type",
+                    requirement.id,
+                    requirement.provenance,
+                ),
+            ),
+        )
+
+        assertTrue(blocked.isPreparationBlocked)
+    }
+
+    @Test
     fun environmentRejectsMissingDuplicateAndUnknownInputs() {
         val id = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
         val contract = ParameterContract(statementId, listOf(id), emptyList(), emptyList())
@@ -102,6 +128,36 @@ class InputContractTest {
         assertEquals(
             listOf(InputEnvironmentFailure(InputEnvironmentFailureKind.MISSING_REQUIRED_INPUT, id.id)),
             missing.failures,
+        )
+    }
+
+    @Test
+    fun environmentRejectsWrongScalarAndTemporalSubtypesEvenWhenShapeMatches() {
+        val integer = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
+        val date = boundRequirement("date", InputShape.TEMPORAL, InputScalarType.DATE)
+        val contract = ParameterContract(statementId, listOf(integer, date), emptyList(), emptyList())
+
+        val result = InputEnvironment.validate(
+            contract,
+            listOf(
+                ProvidedInput(integer.id, InputValue.Text("42"), ExecutionInputOrigin.USER_ENTERED),
+                ProvidedInput(
+                    date.id,
+                    InputValue.DateTimeValue(LocalDate.parse("2026-09-14").atStartOfDay()),
+                    ExecutionInputOrigin.USER_ENTERED,
+                ),
+            ),
+        ) as InputEnvironmentResult.Failure
+
+        assertTrue(
+            result.failures.contains(
+                InputEnvironmentFailure(InputEnvironmentFailureKind.TYPE_MISMATCH, integer.id),
+            ),
+        )
+        assertTrue(
+            result.failures.contains(
+                InputEnvironmentFailure(InputEnvironmentFailureKind.TYPE_MISMATCH, date.id),
+            ),
         )
     }
 
@@ -172,6 +228,21 @@ class InputContractTest {
             retainedRaw.failures.contains(
                 InputEnvironmentFailure(InputEnvironmentFailureKind.RAW_RETAINED_INPUT_FORBIDDEN, raw.id),
             ),
+        )
+    }
+
+    @Test
+    fun failureResultsDefensivelyCopyCallerOwnedLists() {
+        val callerOwned = mutableListOf(
+            InputEnvironmentFailure(InputEnvironmentFailureKind.CONTRACT_BLOCKED, null),
+        )
+        val result = InputEnvironmentResult.Failure(callerOwned)
+
+        callerOwned.clear()
+
+        assertEquals(
+            listOf(InputEnvironmentFailure(InputEnvironmentFailureKind.CONTRACT_BLOCKED, null)),
+            result.failures,
         )
     }
 
