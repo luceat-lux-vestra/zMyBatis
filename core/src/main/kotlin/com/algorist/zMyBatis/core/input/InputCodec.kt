@@ -263,8 +263,7 @@ private class JsonValueParser(private val text: String) {
         expect('"')
         val result = StringBuilder()
         while (cursor < text.length) {
-            val ch = text[cursor++]
-            when (ch) {
+            when (val ch = text[cursor++]) {
                 '"' -> return result.toString()
                 '\\' -> result.append(parseEscape())
                 else -> {
