@@ -38,12 +38,11 @@ object ContractInputSubmissionPolicy {
             )
         }
 
-        val fields = presentation.fields.associateBy { it.requirementId }
         val failures = mutableListOf<ContractInputAdapterFailure>()
         val entries = mutableListOf<ContractInputTextEntry>()
 
         drafts.forEach { draft ->
-            val field = fields[draft.requirementId]
+            val field = presentation.fields.firstOrNull { it.requirementId == draft.requirementId }
             if (field == null) {
                 failures += ContractInputAdapterFailure.Environment(
                     InputEnvironmentFailure(
