@@ -1,8 +1,8 @@
 package com.algorist.zMyBatis.input
 
 import com.algorist.zMyBatis.core.input.InputEnvironment
-import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputKind
+import com.algorist.zMyBatis.core.input.InputProvenance
 import com.algorist.zMyBatis.core.input.InputRequiredness
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.ParameterContract
@@ -97,13 +97,16 @@ class ContractParameterInputDialog(
             val ui = fields.getValue(field.requirementId)
             val requiredMarker = if (field.requiredness == InputRequiredness.REQUIRED) " *" else ""
             val kindMarker = if (field.inputKind == InputKind.RAW_INTERPOLATION) " — raw interpolation" else ""
+            val provenance = ContractInputProvenancePresenter.present(field.provenance)
             panel.add(
                 JBLabel("${displayName(field.requirementId)}$requiredMarker$kindMarker").apply {
-                    toolTipText = provenanceText(field)
+                    toolTipText = provenance.details
                     alignmentX = java.awt.Component.LEFT_ALIGNMENT
                 },
             )
             panel.add(Box.createVerticalStrut(2))
+            panel.add(provenanceLabel(provenance))
+            panel.add(Box.createVerticalStrut(4))
             panel.add(ui.component)
 
             ui.optionalSupply?.let {
@@ -128,7 +131,7 @@ class ContractParameterInputDialog(
         )
 
         return JBScrollPane(panel).apply {
-            preferredSize = Dimension(620, (presentation.fields.size * 126 + 80).coerceIn(220, 680))
+            preferredSize = Dimension(620, (presentation.fields.size * 146 + 80).coerceIn(220, 680))
             border = BorderFactory.createEmptyBorder()
         }
     }
@@ -261,10 +264,26 @@ class ContractParameterInputDialog(
         add(JBLabel("This parameter contract cannot be edited safely:"))
         presentation.problems.forEach { problem ->
             add(Box.createVerticalStrut(4))
-            add(JBLabel("• ${humanize(problem.code)}"))
+            val provenance = problem.provenance?.let(ContractInputProvenancePresenter::present)
+            add(
+                JBLabel("• ${humanize(problem.code)}").apply {
+                    provenance?.let { toolTipText = it.details }
+                    alignmentX = java.awt.Component.LEFT_ALIGNMENT
+                },
+            )
+            provenance?.let {
+                add(Box.createVerticalStrut(2))
+                add(provenanceLabel(it))
+            }
         }
-        preferredSize = Dimension(560, (presentation.problems.size * 30 + 70).coerceAtLeast(160))
+        preferredSize = Dimension(620, (presentation.problems.size * 48 + 70).coerceAtLeast(160))
     }
+
+    private fun provenanceLabel(provenance: ContractInputProvenancePresentation): JBLabel =
+        JBLabel("Why: ${provenance.summary}").apply {
+            toolTipText = provenance.details
+            alignmentX = java.awt.Component.LEFT_ALIGNMENT
+        }
 
     private fun clearRememberedValues() {
         history.clear(contract.statementId)
@@ -292,23 +311,6 @@ class ContractParameterInputDialog(
             0 -> requirementId.value
             1 -> aliases.single()
             else -> aliases.joinToString(prefix = "[", postfix = "]")
-        }
-    }
-
-    private fun provenanceText(field: ContractInputField): String = field.provenance.evidence.joinToString("; ") { evidence ->
-        when (evidence) {
-            is InputEvidence.MapperMethodParameter -> buildString {
-                append("mapper parameter #${evidence.index}")
-                evidence.sourceName?.let { append(" ($it)") }
-                append(": ${evidence.typeIdentity.value}")
-            }
-            is InputEvidence.ExplicitParamAlias -> "@Param(\"${evidence.alias}\")"
-            is InputEvidence.GeneratedAlias -> "generated alias ${evidence.alias} (${evidence.ruleId})"
-            is InputEvidence.Placeholder -> "${evidence.kind}: ${evidence.expression}"
-            is InputEvidence.OgnlExpression -> "OGNL: ${evidence.expression}"
-            is InputEvidence.ForeachCollection -> "foreach collection: ${evidence.expression}"
-            is InputEvidence.ForeachLocal -> "foreach ${evidence.role}: ${evidence.name}"
-            is InputEvidence.BindLocal -> "bind ${evidence.name}: ${evidence.expression}"
         }
     }
 
