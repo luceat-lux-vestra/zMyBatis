@@ -5,3 +5,4 @@ plugins {
 rootProject.name = "zMyBatis"
 
 include(":core")
+include(":mybatis-engine")
