@@ -38,6 +38,7 @@ interface ZMyBatisSettingsRemote {
 class ZMyBatisStarterDriverE2ETest {
 
     companion object {
+        private const val IDE_RELEASE = "2026.2"
         private val pluginArchive: Path = pathOf(System.getProperty("path.to.build.plugin")).toAbsolutePath()
         private val sampleProject: Path = pathOf("src/integrationTest/testProject").toAbsolutePath()
 
@@ -110,7 +111,7 @@ class ZMyBatisStarterDriverE2ETest {
     private fun starterContext(testName: String, projectDir: Path) =
         Starter.newContext(
             testName,
-            TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(projectDir)),
+            TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(projectDir)).useRelease(IDE_RELEASE),
         ).apply {
             System.getenv("LICENSE_KEY")
                 ?.takeIf { it.isNotBlank() }
