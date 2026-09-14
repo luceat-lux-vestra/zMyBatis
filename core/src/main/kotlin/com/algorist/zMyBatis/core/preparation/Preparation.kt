@@ -5,6 +5,7 @@ import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputKind
 import com.algorist.zMyBatis.core.input.InputProvenance
+import com.algorist.zMyBatis.core.input.InputRequirement
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.ParameterContract
@@ -244,7 +245,11 @@ class PreparedExecution(
             "raw interpolation requirements must not be duplicated"
         }
         val rawRequirementIds = rawInterpolationSnapshot.mapTo(linkedSetOf()) { it.requirementId }
-        require(bindingSnapshot.none { it.requirementId in rawRequirementIds }) {
+        require(
+            bindingSnapshot.none { binding ->
+                binding.requirementId != null && binding.requirementId in rawRequirementIds
+            },
+        ) {
             "one input requirement cannot be both raw interpolation and a bound mapping"
         }
     }
@@ -288,4 +293,5 @@ sealed interface PreparationResult {
     data class Failed(val failure: PreparationFailure) : PreparationResult
 }
 
-fun ParameterContract.rawRequirements() = requirements.filter { it.kind == InputKind.RAW_INTERPOLATION }
+fun ParameterContract.rawRequirements(): List<InputRequirement> =
+    requirements.filter { it.kind == InputKind.RAW_INTERPOLATION }
