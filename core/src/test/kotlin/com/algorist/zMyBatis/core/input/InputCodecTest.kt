@@ -84,6 +84,16 @@ class InputCodecTest {
     }
 
     @Test
+    fun excessiveStructuredNestingFailsWithTypedOutcomeInsteadOfRecursingUnbounded() {
+        val nested = "[".repeat(130) + "0" + "]".repeat(130)
+
+        assertFailureKind(
+            InputCodecFailureKind.INPUT_TOO_COMPLEX,
+            InputCodec.decode(nested, requirement(InputShape.LIST)),
+        )
+    }
+
+    @Test
     fun rawInterpolationPreservesExactTextWithoutNormalization() {
         val raw = requirement(
             InputShape.RAW_TEXT,
