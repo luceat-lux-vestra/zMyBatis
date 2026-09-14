@@ -253,7 +253,8 @@ class ContractParameterInputDialog(
             is ContractInputAdapterFailure.Environment ->
                 "${requirementId?.let(::displayName) ?: "Input contract"}: ${humanize(failure.failure.kind.name)}"
             is ContractInputAdapterFailure.Presentation ->
-                "${requirementId?.let(::displayName) ?: "Input contract"}: ${humanize(failure.problem.code)}"
+                "${requirementId?.let(::displayName) ?: "Input contract"}: " +
+                    ContractInputProblemPresenter.text(failure.problem)
         }
         return ValidationInfo(message, requirementId?.let { fields[it]?.component })
     }
@@ -266,7 +267,7 @@ class ContractParameterInputDialog(
             add(Box.createVerticalStrut(4))
             val provenance = problem.provenance?.let(ContractInputProvenancePresenter::present)
             add(
-                JBLabel("• ${humanize(problem.code)}").apply {
+                JBLabel("• ${ContractInputProblemPresenter.text(problem)}").apply {
                     provenance?.let { toolTipText = it.details }
                     alignmentX = java.awt.Component.LEFT_ALIGNMENT
                 },
