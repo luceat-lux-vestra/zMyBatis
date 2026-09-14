@@ -38,7 +38,7 @@ import javax.swing.text.JTextComponent
  */
 @Suppress("MagicNumber", "LongMethod")
 class ContractParameterInputDialog(
-    private val project: Project,
+    project: Project,
     private val contract: ParameterContract,
 ) : DialogWrapper(project, true) {
     private data class FieldUi(
@@ -70,7 +70,7 @@ class ContractParameterInputDialog(
         acceptRetained.isSelected = false
         clearRetained.addActionListener { clearRememberedValues() }
         init()
-        setOKActionEnabled(presentation.canSubmit)
+        isOKActionEnabled = presentation.canSubmit
     }
 
     override fun createCenterPanel(): JComponent {
