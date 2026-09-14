@@ -5,6 +5,7 @@ import com.algorist.zMyBatis.core.source.JavaTypeIdentity
 import com.algorist.zMyBatis.core.source.MethodSignature
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRange
+import com.algorist.zMyBatis.core.source.SourceRevision
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -18,7 +19,9 @@ class InputContractTest {
         "com.acme.UserMapper",
         MethodSignature("find", listOf(JavaTypeIdentity("java.lang.Long"))),
     )
-    private val source = SourceEvidence(statementId.sourceFileId, SourceRange(10, 20))
+    private val sourceRevision = SourceRevision("document:42")
+    private val source = SourceEvidence(statementId.sourceFileId, sourceRevision, SourceRange(10, 20))
+    private val sourceRevisions = mapOf(statementId.sourceFileId to sourceRevision)
 
     @Test
     fun contractDefensivelyCopiesCallerOwnedCollections() {
@@ -32,15 +35,18 @@ class InputContractTest {
             ),
         )
         val problems = mutableListOf<InputContractProblem>()
-        val contract = ParameterContract(statementId, requirements, internalBindings, problems)
+        val revisions = linkedMapOf(statementId.sourceFileId to sourceRevision)
+        val contract = ParameterContract(statementId, requirements, internalBindings, problems, revisions)
 
         requirements.clear()
         internalBindings.clear()
         problems += InputContractProblem(InputContractProblemKind.UNKNOWN, "late-mutation", null, null)
+        revisions.clear()
 
         assertEquals(listOf(requirement), contract.requirements)
         assertEquals(1, contract.internalBindings.size)
         assertTrue(contract.blockingProblems.isEmpty())
+        assertEquals(sourceRevisions, contract.sourceRevisions)
     }
 
     @Test
@@ -48,14 +54,12 @@ class InputContractTest {
         val requirement = boundRequirement("mystery", InputShape.UNKNOWN)
 
         assertThrows(IllegalArgumentException::class.java) {
-            ParameterContract(statementId, listOf(requirement), emptyList(), emptyList())
+            contract(listOf(requirement))
         }
 
-        val blocked = ParameterContract(
-            statementId,
-            listOf(requirement),
-            emptyList(),
-            listOf(
+        val blocked = contract(
+            requirements = listOf(requirement),
+            blockingProblems = listOf(
                 InputContractProblem(
                     InputContractProblemKind.UNKNOWN,
                     "unproven-input-shape",
@@ -77,7 +81,7 @@ class InputContractTest {
     @Test
     fun explicitTypedValueCanResolveAProvenScalarShapeWithoutGuessingSubtype() {
         val requirement = boundRequirement("value", InputShape.SCALAR, InputScalarType.UNKNOWN)
-        val contract = ParameterContract(statementId, listOf(requirement), emptyList(), emptyList())
+        val contract = contract(listOf(requirement))
         val provided = ProvidedInput(
             requirement.id,
             InputValue.IntegerValue(BigInteger.valueOf(42)),
@@ -92,7 +96,7 @@ class InputContractTest {
     @Test
     fun environmentRejectsMissingDuplicateAndUnknownInputs() {
         val id = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
-        val contract = ParameterContract(statementId, listOf(id), emptyList(), emptyList())
+        val contract = contract(listOf(id))
         val duplicate = ProvidedInput(
             id.id,
             InputValue.IntegerValue(BigInteger.ONE),
@@ -125,7 +129,7 @@ class InputContractTest {
     fun environmentRejectsWrongScalarAndTemporalSubtypesEvenWhenShapeMatches() {
         val integer = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
         val date = boundRequirement("date", InputShape.TEMPORAL, InputScalarType.DATE)
-        val contract = ParameterContract(statementId, listOf(integer, date), emptyList(), emptyList())
+        val contract = contract(listOf(integer, date))
 
         val result = InputEnvironment.validate(
             contract,
@@ -152,9 +156,9 @@ class InputContractTest {
     }
 
     @Test
-    fun successfulEnvironmentIsBoundToCanonicalStatementIdentity() {
+    fun successfulEnvironmentIsBoundToCanonicalStatementIdentityAndSourceRevisions() {
         val id = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
-        val contract = ParameterContract(statementId, listOf(id), emptyList(), emptyList())
+        val contract = contract(listOf(id))
         val provided = ProvidedInput(
             id.id,
             InputValue.IntegerValue(BigInteger.valueOf(42)),
@@ -164,7 +168,37 @@ class InputContractTest {
         val environment = (InputEnvironment.validate(contract, listOf(provided)) as InputEnvironmentResult.Success).environment
 
         assertEquals(statementId, environment.statementId)
+        assertEquals(sourceRevisions, environment.sourceRevisions)
         assertEquals(provided, environment.value(id.id))
+    }
+
+    @Test
+    fun provenanceRevisionMustMatchContractRevisionSet() {
+        val requirement = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ParameterContract(
+                statementId,
+                listOf(requirement),
+                emptyList(),
+                emptyList(),
+                mapOf(statementId.sourceFileId to SourceRevision("document:43")),
+            )
+        }
+    }
+
+    @Test
+    fun requirementSpecificProblemsMustCarryProvenance() {
+        val requirement = boundRequirement("id", InputShape.UNKNOWN)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            InputContractProblem(
+                InputContractProblemKind.UNKNOWN,
+                "unproven-input-shape",
+                requirement.id,
+                null,
+            )
+        }
     }
 
     @Test
@@ -177,7 +211,7 @@ class InputContractTest {
             provenance(InputEvidence.Placeholder(InputKind.RAW_INTERPOLATION, "orderBy", source)),
         )
         val bound = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
-        val contract = ParameterContract(statementId, listOf(raw, bound), emptyList(), emptyList())
+        val contract = contract(listOf(raw, bound))
 
         val result = InputEnvironment.validate(
             contract,
@@ -242,9 +276,21 @@ class InputContractTest {
         val second = boundRequirement("id", InputShape.SCALAR, InputScalarType.STRING)
 
         assertThrows(IllegalArgumentException::class.java) {
-            ParameterContract(statementId, listOf(first, second), emptyList(), emptyList())
+            contract(listOf(first, second))
         }
     }
+
+    private fun contract(
+        requirements: List<InputRequirement>,
+        internalBindings: List<InternalBinding> = emptyList(),
+        blockingProblems: List<InputContractProblem> = emptyList(),
+    ): ParameterContract = ParameterContract(
+        statementId,
+        requirements,
+        internalBindings,
+        blockingProblems,
+        sourceRevisions,
+    )
 
     private fun boundRequirement(
         id: String,
