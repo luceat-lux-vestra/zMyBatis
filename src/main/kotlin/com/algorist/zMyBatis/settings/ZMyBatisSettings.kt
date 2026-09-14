@@ -30,7 +30,7 @@ import com.intellij.util.xmlb.XmlSerializerUtil
 class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
 
     data class State(
-        var rememberLastInputs: Boolean = true,
+        var rememberLastInputs: Boolean = false,
         var emptyInputPolicy: EmptyInputPolicy = EmptyInputPolicy.NULL,
         var sqlPreview: Boolean = false,
         var autoFormatSql: Boolean = true,
@@ -109,4 +109,3 @@ enum class ConsoleSessionPolicy {
     REUSE,
     NEW_EACH
 }
-
