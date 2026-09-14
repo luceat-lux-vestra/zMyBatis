@@ -134,13 +134,18 @@ sealed interface InputEnvironmentResult {
 class InputEnvironment private constructor(
     val statementId: StatementId,
     sourceRevisions: Map<SourceFileId, SourceRevision>,
+    aliases: List<InputAlias>,
     values: Map<InputRequirementId, ProvidedInput>,
 ) {
     private val sourceRevisionSnapshot = LinkedHashMap(sourceRevisions)
+    private val aliasSnapshot = aliases.toList()
     private val valueSnapshot = LinkedHashMap(values)
 
     val sourceRevisions: Map<SourceFileId, SourceRevision>
         get() = LinkedHashMap(sourceRevisionSnapshot)
+
+    val aliases: List<InputAlias>
+        get() = aliasSnapshot.toList()
 
     val values: Map<InputRequirementId, ProvidedInput>
         get() = LinkedHashMap(valueSnapshot)
@@ -231,7 +236,12 @@ class InputEnvironment private constructor(
             }
 
             return InputEnvironmentResult.Success(
-                InputEnvironment(contract.statementId, contract.sourceRevisions, uniqueInputs),
+                InputEnvironment(
+                    contract.statementId,
+                    contract.sourceRevisions,
+                    contract.aliases,
+                    uniqueInputs,
+                ),
             )
         }
 
