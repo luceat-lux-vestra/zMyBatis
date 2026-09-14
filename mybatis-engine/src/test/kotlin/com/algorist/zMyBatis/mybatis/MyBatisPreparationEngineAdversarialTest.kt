@@ -23,6 +23,7 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
+import java.math.BigDecimal
 import java.math.BigInteger
 import java.sql.CallableStatement
 import java.sql.PreparedStatement
@@ -57,6 +58,50 @@ class MyBatisPreparationEngineAdversarialTest {
         result as PreparationResult.Failed
         assertEquals(PreparationFailureKind.BINDING_RESOLUTION, result.failure.kind)
         assertEquals("payload.missing", result.failure.bindingProperty)
+    }
+
+    @Test
+    fun longOverflowFailsBeforeProducingAnIncompatibleBinding() {
+        val request = request(
+            "select #{id}",
+            listOf(
+                Parameter(
+                    "java.lang.Long",
+                    "id",
+                    InputValue.IntegerValue(BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.ONE)),
+                ),
+            ),
+        )
+
+        val result = MyBatisPreparationEngine.prepare(request)
+
+        assertTrue(result is PreparationResult.Failed)
+        result as PreparationResult.Failed
+        assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, result.failure.kind)
+        assertEquals("java-parameter-value-out-of-range", result.failure.code)
+        assertEquals("id", result.failure.bindingProperty)
+    }
+
+    @Test
+    fun nonFiniteDoubleCoercionFailsClosed() {
+        val request = request(
+            "select #{amount}",
+            listOf(
+                Parameter(
+                    "java.lang.Double",
+                    "amount",
+                    InputValue.DecimalValue(BigDecimal("1E10000")),
+                ),
+            ),
+        )
+
+        val result = MyBatisPreparationEngine.prepare(request)
+
+        assertTrue(result is PreparationResult.Failed)
+        result as PreparationResult.Failed
+        assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, result.failure.kind)
+        assertEquals("java-parameter-value-out-of-range", result.failure.code)
+        assertEquals("amount", result.failure.bindingProperty)
     }
 
     @Test
