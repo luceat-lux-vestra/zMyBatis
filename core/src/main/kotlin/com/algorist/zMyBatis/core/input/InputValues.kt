@@ -254,11 +254,11 @@ class InputEnvironment private constructor(
                     InputScalarType.INTEGER -> value is InputValue.IntegerValue
                     InputScalarType.DECIMAL -> value is InputValue.DecimalValue
                     InputScalarType.UUID -> value is InputValue.UuidValue
+                    InputScalarType.UNKNOWN -> true
                     InputScalarType.DATE,
                     InputScalarType.TIME,
                     InputScalarType.DATE_TIME,
                     InputScalarType.INSTANT,
-                    InputScalarType.UNKNOWN,
                     -> false
                 }
                 InputShape.TEMPORAL -> when (expected.scalarType) {
@@ -266,12 +266,12 @@ class InputEnvironment private constructor(
                     InputScalarType.TIME -> value is InputValue.TimeValue
                     InputScalarType.DATE_TIME -> value is InputValue.DateTimeValue
                     InputScalarType.INSTANT -> value is InputValue.InstantValue
+                    InputScalarType.UNKNOWN -> true
                     InputScalarType.STRING,
                     InputScalarType.BOOLEAN,
                     InputScalarType.INTEGER,
                     InputScalarType.DECIMAL,
                     InputScalarType.UUID,
-                    InputScalarType.UNKNOWN,
                     -> false
                 }
                 InputShape.OBJECT -> value is InputValue.ObjectValue
