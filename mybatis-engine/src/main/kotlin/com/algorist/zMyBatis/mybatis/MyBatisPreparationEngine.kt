@@ -3,6 +3,7 @@ package com.algorist.zMyBatis.mybatis
 import com.algorist.zMyBatis.core.input.InputAlias
 import com.algorist.zMyBatis.core.input.InputKind
 import com.algorist.zMyBatis.core.input.InputRequirement
+import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
@@ -23,7 +24,6 @@ import org.apache.ibatis.mapping.BoundSql
 import org.apache.ibatis.mapping.ParameterMapping
 import org.apache.ibatis.mapping.ParameterMode
 import org.apache.ibatis.reflection.ReflectionException
-import org.apache.ibatis.scripting.LanguageDriver
 import org.apache.ibatis.session.Configuration
 import org.apache.ibatis.session.ResultHandler
 import org.apache.ibatis.session.RowBounds
@@ -62,15 +62,11 @@ object MyBatisPreparationEngine {
         val languageDriver = configuration.defaultScriptingLanguageInstance
         val parameterType = resolveAnnotationParameterType(source.capture.parameters.map { it.typeIdentity })
             ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_PARAMETER_TYPE)
-        val parameterObjectResult = buildParameterObject(request)
-        if (parameterObjectResult is RuntimeValueResult.Failed) {
-            return PreparationResult.Failed(parameterObjectResult.failure)
-        }
-        val parameterObject = (parameterObjectResult as RuntimeValueResult.Ready).value
+        val parameterObject = buildParameterObject(request)
         val script = source.capture.sqlSegments.joinToString(separator = " ").trim()
 
         val boundSql = try {
-            val sqlSource = languageDriver.createSqlSource(configuration, script, parameterType)
+            val sqlSource = languageDriver.createSqlSource(configuration, script, parameterType.type)
             sqlSource.getBoundSql(parameterObject)
         } catch (failure: RuntimeException) {
             return PreparationResult.Failed(classifyMyBatisFailure(failure))
@@ -155,23 +151,21 @@ object MyBatisPreparationEngine {
             "float" -> Float::class.javaPrimitiveType
             "double" -> Double::class.javaPrimitiveType
             "char" -> Char::class.javaPrimitiveType
-            else -> runCatching { Class.forName(rawType, false, MyBatisPreparationEngine::class.java.classLoader) }.getOrNull()
+            else -> runCatching {
+                Class.forName(rawType, false, MyBatisPreparationEngine::class.java.classLoader)
+            }.getOrNull()
         }
     }
 
-    private fun buildParameterObject(request: MyBatisPreparationRequest): RuntimeValueResult {
-        if (request.inputEnvironment.values.isEmpty()) {
-            return RuntimeValueResult.Ready(null)
-        }
+    private fun buildParameterObject(request: MyBatisPreparationRequest): Any? {
+        if (request.inputEnvironment.values.isEmpty()) return null
 
         val params = MapperMethod.ParamMap<Any?>()
         for (alias in request.inputEnvironment.aliases) {
             val provided = request.inputEnvironment.value(alias.requirementId) ?: continue
-            val converted = toRuntimeValue(provided.value)
-            if (converted is RuntimeValueResult.Failed) return converted
-            params[alias.name] = (converted as RuntimeValueResult.Ready).value
+            params[alias.name] = toRuntimeValue(provided.value)
         }
-        return RuntimeValueResult.Ready(params)
+        return params
     }
 
     private fun captureRawInterpolations(request: MyBatisPreparationRequest): RawInterpolationResult {
@@ -267,7 +261,7 @@ object MyBatisPreparationEngine {
             } catch (failure: RuntimeException) {
                 return BindingCaptureResult.Failed(classifyBindingFailure(failure, property))
             }
-            val coreValue = toCoreValue(runtimeValue)
+            val coreValue = toCoreValue(runtimeValue, requirement, property, alias)
                 ?: return bindingFailure(
                     PreparationFailureKind.UNSUPPORTED_BINDING_VALUE,
                     UNSUPPORTED_VALUE,
@@ -331,78 +325,78 @@ object MyBatisPreparationEngine {
         return true
     }
 
-    private fun toRuntimeValue(value: InputValue): RuntimeValueResult = when (value) {
-        InputValue.NullValue -> RuntimeValueResult.Ready(null)
-        is InputValue.Text -> RuntimeValueResult.Ready(value.value)
-        is InputValue.RawText -> RuntimeValueResult.Ready(value.value)
-        is InputValue.BooleanValue -> RuntimeValueResult.Ready(value.value)
-        is InputValue.IntegerValue -> RuntimeValueResult.Ready(value.value)
-        is InputValue.DecimalValue -> RuntimeValueResult.Ready(value.value)
-        is InputValue.DateValue -> RuntimeValueResult.Ready(value.value)
-        is InputValue.TimeValue -> RuntimeValueResult.Ready(value.value)
-        is InputValue.DateTimeValue -> RuntimeValueResult.Ready(value.value)
-        is InputValue.InstantValue -> RuntimeValueResult.Ready(value.value)
-        is InputValue.UuidValue -> RuntimeValueResult.Ready(value.value)
-        is InputValue.ObjectValue -> mapRuntimeValues(value.entries)
-        is InputValue.MapValue -> mapRuntimeValues(value.entries)
-        is InputValue.ListValue -> listRuntimeValues(value.elements, asArray = false)
-        is InputValue.ArrayValue -> listRuntimeValues(value.elements, asArray = true)
+    private fun toRuntimeValue(value: InputValue): Any? = when (value) {
+        InputValue.NullValue -> null
+        is InputValue.Text -> value.value
+        is InputValue.RawText -> value.value
+        is InputValue.BooleanValue -> value.value
+        is InputValue.IntegerValue -> value.value
+        is InputValue.DecimalValue -> value.value
+        is InputValue.DateValue -> value.value
+        is InputValue.TimeValue -> value.value
+        is InputValue.DateTimeValue -> value.value
+        is InputValue.InstantValue -> value.value
+        is InputValue.UuidValue -> value.value
+        is InputValue.ObjectValue -> value.entries.mapValuesTo(linkedMapOf()) { toRuntimeValue(it.value) }
+        is InputValue.MapValue -> value.entries.mapValuesTo(linkedMapOf()) { toRuntimeValue(it.value) }
+        is InputValue.ListValue -> value.elements.map(::toRuntimeValue)
+        is InputValue.ArrayValue -> value.elements.map(::toRuntimeValue).toTypedArray()
     }
 
-    private fun mapRuntimeValues(entries: Map<String, InputValue>): RuntimeValueResult {
-        val result = linkedMapOf<String, Any?>()
-        for ((key, value) in entries) {
-            val converted = toRuntimeValue(value)
-            if (converted is RuntimeValueResult.Failed) return converted
-            result[key] = (converted as RuntimeValueResult.Ready).value
-        }
-        return RuntimeValueResult.Ready(result)
-    }
-
-    private fun listRuntimeValues(elements: List<InputValue>, asArray: Boolean): RuntimeValueResult {
-        val result = mutableListOf<Any?>()
-        for (value in elements) {
-            val converted = toRuntimeValue(value)
-            if (converted is RuntimeValueResult.Failed) return converted
-            result += (converted as RuntimeValueResult.Ready).value
-        }
-        return RuntimeValueResult.Ready(if (asArray) result.toTypedArray() else result.toList())
-    }
-
-    private fun toCoreValue(value: Any?): InputValue? = when (value) {
-        null -> InputValue.NullValue
-        is String -> InputValue.Text(value)
-        is Boolean -> InputValue.BooleanValue(value)
-        is BigInteger -> InputValue.IntegerValue(value)
-        is Byte -> InputValue.IntegerValue(BigInteger.valueOf(value.toLong()))
-        is Short -> InputValue.IntegerValue(BigInteger.valueOf(value.toLong()))
-        is Int -> InputValue.IntegerValue(BigInteger.valueOf(value.toLong()))
-        is Long -> InputValue.IntegerValue(BigInteger.valueOf(value))
-        is BigDecimal -> InputValue.DecimalValue(value)
-        is Float -> InputValue.DecimalValue(BigDecimal(value.toString()))
-        is Double -> InputValue.DecimalValue(BigDecimal(value.toString()))
-        is LocalDate -> InputValue.DateValue(value)
-        is LocalTime -> InputValue.TimeValue(value)
-        is LocalDateTime -> InputValue.DateTimeValue(value)
-        is Instant -> InputValue.InstantValue(value)
-        is UUID -> InputValue.UuidValue(value)
-        is Map<*, *> -> {
-            val entries = linkedMapOf<String, InputValue>()
-            for ((key, item) in value) {
-                if (key !is String) return null
-                entries[key] = toCoreValue(item) ?: return null
-            }
-            InputValue.MapValue(entries)
-        }
-        is List<*> -> InputValue.ListValue(value.map { toCoreValue(it) ?: return null })
-        else -> {
-            if (!value.javaClass.isArray) return null
-            val elements = buildList {
-                for (index in 0 until ReflectArray.getLength(value)) {
-                    add(toCoreValue(ReflectArray.get(value, index)) ?: return null)
+    private fun toCoreValue(
+        value: Any?,
+        requirement: InputRequirement?,
+        property: String,
+        alias: InputAlias?,
+    ): InputValue? {
+        if (value == null) return InputValue.NullValue
+        return when (value) {
+            is String -> InputValue.Text(value)
+            is Boolean -> InputValue.BooleanValue(value)
+            is BigInteger -> InputValue.IntegerValue(value)
+            is Byte -> InputValue.IntegerValue(BigInteger.valueOf(value.toLong()))
+            is Short -> InputValue.IntegerValue(BigInteger.valueOf(value.toLong()))
+            is Int -> InputValue.IntegerValue(BigInteger.valueOf(value.toLong()))
+            is Long -> InputValue.IntegerValue(BigInteger.valueOf(value))
+            is BigDecimal -> InputValue.DecimalValue(value)
+            is Float -> InputValue.DecimalValue(BigDecimal(value.toString()))
+            is Double -> InputValue.DecimalValue(BigDecimal(value.toString()))
+            is LocalDate -> InputValue.DateValue(value)
+            is LocalTime -> InputValue.TimeValue(value)
+            is LocalDateTime -> InputValue.DateTimeValue(value)
+            is Instant -> InputValue.InstantValue(value)
+            is UUID -> InputValue.UuidValue(value)
+            is Map<*, *> -> {
+                val entries = linkedMapOf<String, InputValue>()
+                for ((key, item) in value) {
+                    if (key !is String) return null
+                    entries[key] = toCoreValue(item, null, property, null) ?: return null
+                }
+                if (
+                    requirement?.expectedType?.shape == InputShape.OBJECT &&
+                    alias != null &&
+                    property == alias.name
+                ) {
+                    InputValue.ObjectValue(entries)
+                } else {
+                    InputValue.MapValue(entries)
                 }
             }
-            InputValue.ArrayValue(elements)
+            is List<*> -> {
+                val elements = mutableListOf<InputValue>()
+                for (item in value) {
+                    elements += toCoreValue(item, null, property, null) ?: return null
+                }
+                InputValue.ListValue(elements)
+            }
+            else -> {
+                if (!value.javaClass.isArray) return null
+                val elements = mutableListOf<InputValue>()
+                for (index in 0 until ReflectArray.getLength(value)) {
+                    elements += toCoreValue(ReflectArray.get(value, index), null, property, null) ?: return null
+                }
+                InputValue.ArrayValue(elements)
+            }
         }
     }
 
@@ -465,11 +459,6 @@ object MyBatisPreparationEngine {
     ) = PreparationResult.Failed(PreparationFailure(kind, code, diagnosticType = diagnosticType))
 
     private data class ParameterTypeResolution(val type: Class<*>?)
-
-    private sealed interface RuntimeValueResult {
-        data class Ready(val value: Any?) : RuntimeValueResult
-        data class Failed(val failure: PreparationFailure) : RuntimeValueResult
-    }
 
     private sealed interface RawInterpolationResult {
         data class Ready(val interpolations: List<PreparedRawInterpolation>) : RawInterpolationResult
