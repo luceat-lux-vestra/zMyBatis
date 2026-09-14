@@ -19,6 +19,7 @@ import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
 import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTestKind
 import com.intellij.tools.ide.starter.product.idea.ultimate.IdeaUltimate
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
@@ -39,6 +40,10 @@ class ZMyBatisStarterDriverE2ETest {
 
     companion object {
         private const val IDE_RELEASE = "2026.2"
+        private const val KNOWN_ISLANDS_ISSUE = "IJPL-222870"
+        private const val ISLANDS_FAILURE_PREFIX = "Theme Islands Dark refers to unknown color scheme"
+        private const val ISLANDS_FAILURE_STACK =
+            "com.intellij.openapi.editor.colors.impl.EditorColorsManagerImpl.getSchemeForCurrentUITheme"
         private val pluginArchive: Path = pathOf(System.getProperty("path.to.build.plugin")).toAbsolutePath()
         private val sampleProject: Path = pathOf("src/integrationTest/testProject").toAbsolutePath()
 
@@ -65,9 +70,54 @@ class ZMyBatisStarterDriverE2ETest {
                     kind: SyntheticTestKind,
                     generifyTestName: Boolean,
                 ) {
+                    if (isKnownPinnedIdePlatformFailure(message, details)) {
+                        System.err.println(
+                            "Ignoring known IntelliJ IDEA $IDE_RELEASE platform failure $KNOWN_ISLANDS_ISSUE; " +
+                                "the exact exception remains preserved in Starter diagnostics.",
+                        )
+                        return
+                    }
                     fail { "$testName fails: $message\n$details" }
                 }
             }
+
+        /**
+         * IDEA 2026.2 currently reports IJPL-222870 while initializing the bundled Islands Dark
+         * theme: the UI theme can refer to a color scheme that has not been registered yet. This
+         * is an upstream platform startup defect, not a zMyBatis exception.
+         *
+         * Keep the mapping deliberately two-factor: both the exact failure family and the platform
+         * stack frame must be present. Any other Logger.error, crash, freeze, or Driver failure
+         * continues through the strict CIServer failure path.
+         */
+        private fun isKnownPinnedIdePlatformFailure(message: String, details: String): Boolean {
+            val combined = "$message\n$details"
+            return combined.contains(ISLANDS_FAILURE_PREFIX) &&
+                combined.contains("Islands Dark") &&
+                details.contains(ISLANDS_FAILURE_STACK)
+        }
+    }
+
+    @Test
+    fun knownIslandsPlatformFailureIsNarrowlyMapped() {
+        assertTrue(
+            isKnownPinnedIdePlatformFailure(
+                "Theme Islands Dark refers to unknown color scheme Islands Dark",
+                "java.lang.Throwable\n\tat $ISLANDS_FAILURE_STACK(EditorColorsManagerImpl.kt:266)",
+            ),
+        )
+        assertFalse(
+            isKnownPinnedIdePlatformFailure(
+                "Theme Islands Dark refers to unknown color scheme Islands Dark",
+                "java.lang.Throwable\n\tat com.algorist.zMyBatis.PluginCode.fail(PluginCode.kt:1)",
+            ),
+        )
+        assertFalse(
+            isKnownPinnedIdePlatformFailure(
+                "Unrelated IDE failure",
+                "java.lang.Throwable\n\tat $ISLANDS_FAILURE_STACK(EditorColorsManagerImpl.kt:266)",
+            ),
+        )
     }
 
     @Test
