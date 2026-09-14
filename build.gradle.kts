@@ -1,5 +1,6 @@
 import org.jetbrains.changelog.Changelog
 
+import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 
@@ -16,9 +17,24 @@ group = providers.gradleProperty("pluginGroup").get()
 val effectivePluginVersion = providers.gradleProperty("pluginVersion").orElse("0.0.0-dev")
 version = effectivePluginVersion.get()
 
-// Set the JVM language level used to build the project.
+// Java 25 is the single supported build/runtime target for the plugin and test harness.
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
+}
+
+// Keep process-level Starter/Driver tests isolated from the existing JUnit 4 fixture suite.
+sourceSets {
+    create("integrationTest") {
+        compileClasspath += sourceSets.main.get().output
+        runtimeClasspath += sourceSets.main.get().output
+    }
+}
+
+val integrationTestImplementation by configurations.getting {
+    extendsFrom(configurations.testImplementation.get())
+}
+val integrationTestRuntimeOnly by configurations.getting {
+    extendsFrom(configurations.testRuntimeOnly.get())
 }
 
 // Configure project's dependencies
@@ -27,13 +43,21 @@ repositories {
 
     mavenCentral()
 
+    // TeamCity's serviceMessages artifact is published only in JetBrains' TeamCity repository.
+    // Restrict this repository to that group so normal dependency resolution is unaffected.
+    maven {
+        url = uri("https://download.jetbrains.com/teamcity-repository/")
+        content {
+            includeGroup("org.jetbrains.teamcity")
+        }
+    }
+
     // IntelliJ Platform Gradle Plugin Repositories Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-repositories-extension.html
     intellijPlatform {
         defaultRepositories()
     }
 }
 
-// Dependencies are managed with Gradle version catalog - read more: https://docs.gradle.org/current/userguide/version_catalogs.html
 dependencies {
     implementation(project(":core")) {
         exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
@@ -54,9 +78,23 @@ dependencies {
 
         testFramework(TestFrameworkType.Platform)
         testFramework(TestFrameworkType.Plugin.Java)
+        testFramework(TestFrameworkType.Starter, configurationName = "integrationTestImplementation")
 
         implementation("org.mybatis:mybatis:3.5.19")
     }
+
+    // Starter is JUnit 5-only. Pin the small integration-test stack independently from the
+    // existing JUnit 4 fixture suite until the process harness is characterized and promoted.
+    integrationTestImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
+    integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.20.2")
+    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.1")
+    integrationTestRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.3")
+    integrationTestRuntimeOnly("org.jetbrains.teamcity:serviceMessages:2024.12")
+    // The plugin build deliberately opts out of bundling Kotlin stdlib. Starter/JUnit5 runs in a
+    // separate test JVM and requires a matched stdlib/reflect pair there, so add both only to that
+    // runtime using the Kotlin plugin's exact version.
+    integrationTestRuntimeOnly(kotlin("stdlib"))
+    integrationTestRuntimeOnly(kotlin("reflect"))
 }
 
 // Configure IntelliJ Platform Gradle Plugin.
@@ -158,6 +196,24 @@ val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundar
     }
 }
 
+// Launch an actual IDE process with the exact buildPlugin archive installed. Keep this task
+// separate from `check`: #130 requires process-level evidence to remain independently visible.
+val integrationTest by intellijPlatformTesting.testIdeUi.register("integrationTest") {
+    task {
+        val integrationTestSourceSet = sourceSets.getByName("integrationTest")
+        testClassesDirs = integrationTestSourceSet.output.classesDirs
+        classpath = integrationTestSourceSet.runtimeClasspath
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
+        useJUnitPlatform()
+        testLogging {
+            events("passed", "failed")
+            showStandardStreams = true
+        }
+    }
+}
+
 // Configure Gradle Changelog Plugin.
 changelog {
     groups.empty()
@@ -167,6 +223,13 @@ changelog {
 
 // Configure Gradle Kover Plugin.
 kover {
+    currentProject {
+        instrumentation {
+            // Process-level Starter/Driver evidence is independent from the normal `check`
+            // lifecycle and must not be pulled into Kover's default "all JVM test tasks" graph.
+            disabledForTestTasks.add("integrationTest")
+        }
+    }
     reports {
         total {
             xml {
