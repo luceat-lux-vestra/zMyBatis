@@ -201,7 +201,7 @@ class InputEnvironment private constructor(
                 }
 
                 if (provided.value is InputValue.NullValue) {
-                    if (requirement.expectedType.nullability == InputNullability.NON_NULL) {
+                    if (requirement.expectedType.nullability != InputNullability.NULLABLE) {
                         failures += InputEnvironmentFailure(InputEnvironmentFailureKind.NULL_NOT_ALLOWED, id)
                     }
                     return@forEach
