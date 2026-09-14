@@ -214,7 +214,24 @@ class ContractInputAdapterTest {
     }
 
     @Test
-    fun `duplicate and unknown entries fail before execution environment can be produced`() {
+    fun `duplicate entries are rejected by the authoritative input environment`() {
+        val integer = requirement(
+            id = "id",
+            kind = InputKind.BOUND,
+            type = ExpectedInputType(shape = InputShape.SCALAR, scalarType = InputScalarType.INTEGER),
+        )
+        val result = ContractInputAdapter.prepare(
+            contract(integer),
+            listOf(entry(integer, "1"), entry(integer, "2")),
+        )
+
+        val environment = result.failuresOrFail().single() as ContractInputAdapterFailure.Environment
+        assertEquals(InputEnvironmentFailureKind.DUPLICATE_INPUT, environment.failure.kind)
+        assertEquals(integer.id, environment.failure.requirementId)
+    }
+
+    @Test
+    fun `unknown requirement fails closed before type decoding`() {
         val integer = requirement(
             id = "id",
             kind = InputKind.BOUND,
@@ -223,8 +240,6 @@ class ContractInputAdapterTest {
         val result = ContractInputAdapter.prepare(
             contract(integer),
             listOf(
-                entry(integer, "1"),
-                entry(integer, "2"),
                 ContractInputTextEntry(
                     requirementId = InputRequirementId("ghost"),
                     text = "3",
@@ -233,14 +248,9 @@ class ContractInputAdapterTest {
             ),
         )
 
-        val kinds = result.failuresOrFail()
-            .filterIsInstance<ContractInputAdapterFailure.Environment>()
-            .map { it.failure.kind }
-            .toSet()
-        assertEquals(
-            setOf(InputEnvironmentFailureKind.DUPLICATE_INPUT, InputEnvironmentFailureKind.UNKNOWN_REQUIREMENT),
-            kinds,
-        )
+        val environment = result.failuresOrFail().single() as ContractInputAdapterFailure.Environment
+        assertEquals(InputEnvironmentFailureKind.UNKNOWN_REQUIREMENT, environment.failure.kind)
+        assertEquals(InputRequirementId("ghost"), environment.failure.requirementId)
     }
 
     private fun requirement(
