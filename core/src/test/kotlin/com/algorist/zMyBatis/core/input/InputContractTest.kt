@@ -27,6 +27,7 @@ class InputContractTest {
     fun contractDefensivelyCopiesCallerOwnedCollections() {
         val requirement = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
         val requirements = mutableListOf(requirement)
+        val aliases = mutableListOf(generatedAlias("param1", requirement))
         val internalBindings = mutableListOf(
             InternalBinding(
                 "_parameter",
@@ -36,14 +37,23 @@ class InputContractTest {
         )
         val problems = mutableListOf<InputContractProblem>()
         val revisions = linkedMapOf(statementId.sourceFileId to sourceRevision)
-        val contract = ParameterContract(statementId, requirements, internalBindings, problems, revisions)
+        val contract = ParameterContract(
+            statementId,
+            requirements,
+            aliases,
+            internalBindings,
+            problems,
+            revisions,
+        )
 
         requirements.clear()
+        aliases.clear()
         internalBindings.clear()
         problems += InputContractProblem(InputContractProblemKind.UNKNOWN, "late-mutation", null, null)
         revisions.clear()
 
         assertEquals(listOf(requirement), contract.requirements)
+        assertEquals(listOf(generatedAlias("param1", requirement)), contract.aliases)
         assertEquals(1, contract.internalBindings.size)
         assertTrue(contract.blockingProblems.isEmpty())
         assertEquals(sourceRevisions, contract.sourceRevisions)
@@ -91,6 +101,50 @@ class InputContractTest {
         val result = InputEnvironment.validate(contract, listOf(provided)) as InputEnvironmentResult.Success
 
         assertEquals(provided, result.environment.value(requirement.id))
+    }
+
+    @Test
+    fun callerAliasesRemainDistinctAndFlowIntoInputEnvironment() {
+        val requirement = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
+        val alias = generatedAlias("param1", requirement)
+        val contract = contract(listOf(requirement), aliases = listOf(alias))
+        val provided = ProvidedInput(
+            requirement.id,
+            InputValue.IntegerValue(BigInteger.ONE),
+            ExecutionInputOrigin.USER_ENTERED,
+        )
+
+        val environment = (InputEnvironment.validate(contract, listOf(provided)) as InputEnvironmentResult.Success).environment
+
+        assertEquals(listOf(alias), environment.aliases)
+        assertEquals(provided, environment.value(alias.requirementId))
+    }
+
+    @Test
+    fun ambiguousOrDanglingAliasesAreRejected() {
+        val first = boundRequirement("first", InputShape.SCALAR, InputScalarType.INTEGER)
+        val second = boundRequirement("second", InputShape.SCALAR, InputScalarType.INTEGER)
+        val duplicateName = listOf(
+            generatedAlias("param1", first),
+            generatedAlias("param1", second),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            contract(listOf(first, second), aliases = duplicateName)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            contract(
+                listOf(first),
+                aliases = listOf(
+                    InputAlias(
+                        "param2",
+                        InputRequirementId("missing"),
+                        InputAliasKind.GENERIC_PARAM,
+                        provenance(InputEvidence.GeneratedAlias(1, "param2", "mybatis-param-name-resolver")),
+                    ),
+                ),
+            )
+        }
     }
 
     @Test
@@ -180,6 +234,7 @@ class InputContractTest {
             ParameterContract(
                 statementId,
                 listOf(requirement),
+                emptyList(),
                 emptyList(),
                 emptyList(),
                 mapOf(statementId.sourceFileId to SourceRevision("document:43")),
@@ -282,11 +337,13 @@ class InputContractTest {
 
     private fun contract(
         requirements: List<InputRequirement>,
+        aliases: List<InputAlias> = emptyList(),
         internalBindings: List<InternalBinding> = emptyList(),
         blockingProblems: List<InputContractProblem> = emptyList(),
     ): ParameterContract = ParameterContract(
         statementId,
         requirements,
+        aliases,
         internalBindings,
         blockingProblems,
         sourceRevisions,
@@ -302,6 +359,13 @@ class InputContractTest {
         ExpectedInputType(shape, scalarType),
         InputRequiredness.REQUIRED,
         provenance(InputEvidence.Placeholder(InputKind.BOUND, id, source)),
+    )
+
+    private fun generatedAlias(name: String, requirement: InputRequirement): InputAlias = InputAlias(
+        name,
+        requirement.id,
+        InputAliasKind.GENERIC_PARAM,
+        provenance(InputEvidence.GeneratedAlias(0, name, "mybatis-param-name-resolver")),
     )
 
     private fun provenance(vararg evidence: InputEvidence): InputProvenance = InputProvenance(evidence.toList())
