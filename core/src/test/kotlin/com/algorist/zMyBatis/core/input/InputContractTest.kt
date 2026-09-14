@@ -1,0 +1,201 @@
+package com.algorist.zMyBatis.core.input
+
+import com.algorist.zMyBatis.core.source.JavaStatementId
+import com.algorist.zMyBatis.core.source.JavaTypeIdentity
+import com.algorist.zMyBatis.core.source.MethodSignature
+import com.algorist.zMyBatis.core.source.SourceFileId
+import com.algorist.zMyBatis.core.source.SourceRange
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.math.BigInteger
+
+class InputContractTest {
+    private val statementId = JavaStatementId(
+        SourceFileId("src/main/java/com/acme/UserMapper.java"),
+        "com.acme.UserMapper",
+        MethodSignature("find", listOf(JavaTypeIdentity("java.lang.Long"))),
+    )
+    private val source = SourceEvidence(statementId.sourceFileId, SourceRange(10, 20))
+
+    @Test
+    fun contractDefensivelyCopiesCallerOwnedCollections() {
+        val requirement = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
+        val requirements = mutableListOf(requirement)
+        val internalBindings = mutableListOf(
+            InternalBinding(
+                "_parameter",
+                InternalBindingKind.MYBATIS_CONTEXT,
+                provenance(InputEvidence.MapperMethodParameter(0, "id", JavaTypeIdentity("java.lang.Long"), source)),
+            ),
+        )
+        val problems = mutableListOf<InputContractProblem>()
+        val contract = ParameterContract(statementId, requirements, internalBindings, problems)
+
+        requirements.clear()
+        internalBindings.clear()
+        problems += InputContractProblem(InputContractProblemKind.UNKNOWN, "late-mutation", null, null)
+
+        assertEquals(listOf(requirement), contract.requirements)
+        assertEquals(1, contract.internalBindings.size)
+        assertTrue(contract.blockingProblems.isEmpty())
+    }
+
+    @Test
+    fun unknownRequirementShapeMustCarryExplicitBlockingProblem() {
+        val requirement = boundRequirement("mystery", InputShape.UNKNOWN)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ParameterContract(statementId, listOf(requirement), emptyList(), emptyList())
+        }
+
+        val blocked = ParameterContract(
+            statementId,
+            listOf(requirement),
+            emptyList(),
+            listOf(
+                InputContractProblem(
+                    InputContractProblemKind.UNKNOWN,
+                    "unproven-input-shape",
+                    requirement.id,
+                    requirement.provenance,
+                ),
+            ),
+        )
+
+        assertTrue(blocked.isPreparationBlocked)
+        assertEquals(
+            InputEnvironmentResult.Failure(
+                listOf(InputEnvironmentFailure(InputEnvironmentFailureKind.CONTRACT_BLOCKED, null)),
+            ),
+            InputEnvironment.validate(blocked, emptyList()),
+        )
+    }
+
+    @Test
+    fun environmentRejectsMissingDuplicateAndUnknownInputs() {
+        val id = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
+        val contract = ParameterContract(statementId, listOf(id), emptyList(), emptyList())
+        val duplicate = ProvidedInput(
+            id.id,
+            InputValue.IntegerValue(BigInteger.ONE),
+            ExecutionInputOrigin.USER_ENTERED,
+        )
+        val unknown = ProvidedInput(
+            InputRequirementId("other"),
+            InputValue.IntegerValue(BigInteger.TWO),
+            ExecutionInputOrigin.USER_ENTERED,
+        )
+
+        val result = InputEnvironment.validate(contract, listOf(duplicate, duplicate, unknown))
+        val failures = (result as InputEnvironmentResult.Failure).failures
+
+        assertTrue(failures.contains(InputEnvironmentFailure(InputEnvironmentFailureKind.DUPLICATE_INPUT, id.id)))
+        assertTrue(
+            failures.contains(
+                InputEnvironmentFailure(InputEnvironmentFailureKind.UNKNOWN_REQUIREMENT, unknown.requirementId),
+            ),
+        )
+
+        val missing = InputEnvironment.validate(contract, emptyList()) as InputEnvironmentResult.Failure
+        assertEquals(
+            listOf(InputEnvironmentFailure(InputEnvironmentFailureKind.MISSING_REQUIRED_INPUT, id.id)),
+            missing.failures,
+        )
+    }
+
+    @Test
+    fun successfulEnvironmentIsBoundToCanonicalStatementIdentity() {
+        val id = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
+        val contract = ParameterContract(statementId, listOf(id), emptyList(), emptyList())
+        val provided = ProvidedInput(
+            id.id,
+            InputValue.IntegerValue(BigInteger.valueOf(42)),
+            ExecutionInputOrigin.USER_ENTERED,
+        )
+
+        val environment = (InputEnvironment.validate(contract, listOf(provided)) as InputEnvironmentResult.Success).environment
+
+        assertEquals(statementId, environment.statementId)
+        assertEquals(provided, environment.value(id.id))
+    }
+
+    @Test
+    fun rawAndBoundInputsCannotBeConflatedOrSilentlyRestored() {
+        val raw = InputRequirement(
+            InputRequirementId("orderBy"),
+            InputKind.RAW_INTERPOLATION,
+            ExpectedInputType(InputShape.RAW_TEXT, InputScalarType.STRING, nullability = InputNullability.NON_NULL),
+            InputRequiredness.REQUIRED,
+            provenance(InputEvidence.Placeholder(InputKind.RAW_INTERPOLATION, "orderBy", source)),
+        )
+        val bound = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
+        val contract = ParameterContract(statementId, listOf(raw, bound), emptyList(), emptyList())
+
+        val result = InputEnvironment.validate(
+            contract,
+            listOf(
+                ProvidedInput(raw.id, InputValue.Text("created_at"), ExecutionInputOrigin.USER_ENTERED),
+                ProvidedInput(
+                    bound.id,
+                    InputValue.RawText("42"),
+                    ExecutionInputOrigin.USER_ENTERED,
+                ),
+            ),
+        ) as InputEnvironmentResult.Failure
+
+        assertTrue(
+            result.failures.contains(InputEnvironmentFailure(InputEnvironmentFailureKind.KIND_MISMATCH, raw.id)),
+        )
+        assertTrue(
+            result.failures.contains(InputEnvironmentFailure(InputEnvironmentFailureKind.KIND_MISMATCH, bound.id)),
+        )
+
+        val retainedRaw = InputEnvironment.validate(
+            contract,
+            listOf(
+                ProvidedInput(
+                    raw.id,
+                    InputValue.RawText("created_at"),
+                    ExecutionInputOrigin.USER_ACCEPTED_RETAINED,
+                ),
+                ProvidedInput(
+                    bound.id,
+                    InputValue.IntegerValue(BigInteger.ONE),
+                    ExecutionInputOrigin.USER_ENTERED,
+                ),
+            ),
+        ) as InputEnvironmentResult.Failure
+
+        assertTrue(
+            retainedRaw.failures.contains(
+                InputEnvironmentFailure(InputEnvironmentFailureKind.RAW_RETAINED_INPUT_FORBIDDEN, raw.id),
+            ),
+        )
+    }
+
+    @Test
+    fun duplicateRequirementIdsAreRejected() {
+        val first = boundRequirement("id", InputShape.SCALAR, InputScalarType.INTEGER)
+        val second = boundRequirement("id", InputShape.SCALAR, InputScalarType.STRING)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ParameterContract(statementId, listOf(first, second), emptyList(), emptyList())
+        }
+    }
+
+    private fun boundRequirement(
+        id: String,
+        shape: InputShape,
+        scalarType: InputScalarType = InputScalarType.UNKNOWN,
+    ): InputRequirement = InputRequirement(
+        InputRequirementId(id),
+        InputKind.BOUND,
+        ExpectedInputType(shape, scalarType),
+        InputRequiredness.REQUIRED,
+        provenance(InputEvidence.Placeholder(InputKind.BOUND, id, source)),
+    )
+
+    private fun provenance(vararg evidence: InputEvidence): InputProvenance = InputProvenance(evidence.toList())
+}
