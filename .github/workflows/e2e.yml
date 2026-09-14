@@ -31,13 +31,11 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - name: Setup Java 21 and 25
+      - name: Setup Java 25
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: zulu
-          java-version: |
-            21
-            25
+          java-version: 25
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
@@ -46,7 +44,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64,JAVA_HOME_25_X64 buildPlugin
+          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_25_X64 buildPlugin
 
           mapfile -t archives < <(find build/distributions -maxdepth 1 -type f -name '*.zip' -print)
           if [[ ${#archives[@]} -ne 1 ]]; then
@@ -61,6 +59,8 @@ jobs:
           {
             echo "tested_commit=$tested_commit"
             echo "workflow_sha=$GITHUB_SHA"
+            echo "java_target=25"
+            echo "ide_release=2026.2"
             echo "plugin_artifact=$artifact"
             echo "plugin_sha256=$artifact_sha256"
           } | tee e2e-artifact-manifest.txt
@@ -69,7 +69,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64,JAVA_HOME_25_X64 integrationTest --stacktrace 2>&1 | tee e2e.log
+          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_25_X64 integrationTest --stacktrace 2>&1 | tee e2e.log
 
       - name: Upload E2E artifact identity
         if: ${{ always() }}
