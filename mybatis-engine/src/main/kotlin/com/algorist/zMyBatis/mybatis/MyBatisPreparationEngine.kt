@@ -43,6 +43,7 @@ object MyBatisPreparationEngine {
     private const val UNSUPPORTED_PARAMETER_TYPE = "java-annotation-parameter-type-unavailable"
     private const val UNSUPPORTED_PARAMETER_MODE = "mybatis-parameter-mode-unsupported"
     private const val UNSUPPORTED_TYPE_HANDLER = "mybatis-custom-type-handler-unsupported"
+    private const val EXPLICIT_JAVA_TYPE = "mybatis-explicit-java-type-unsupported"
     private const val MISSING_MAPPING_PROPERTY = "mybatis-parameter-mapping-property-missing"
     private const val UNRESOLVED_MAPPING = "mybatis-parameter-mapping-unresolved"
     private const val RAW_INPUT_MISSING = "raw-interpolation-input-missing"
@@ -54,9 +55,23 @@ object MyBatisPreparationEngine {
     private const val BINDING_FAILURE = "mybatis-binding-resolution-failure"
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
 
+    private val explicitRuntimeClassOption = Regex(
+        pattern = "#\\{[^}]*\\b(typeHandler|javaType)\\s*=",
+        option = RegexOption.IGNORE_CASE,
+    )
+
     fun prepare(request: MyBatisPreparationRequest): PreparationResult {
         val source = request.source as? PreparationSource.JavaAnnotation
             ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_SOURCE)
+
+        val explicitClassOption = source.capture.sqlSegments.firstNotNullOfOrNull(::runtimeClassOption)
+        if (explicitClassOption != null) {
+            return if (explicitClassOption.equals("typeHandler", ignoreCase = true)) {
+                failed(PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER, UNSUPPORTED_TYPE_HANDLER)
+            } else {
+                failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, EXPLICIT_JAVA_TYPE)
+            }
+        }
 
         val configuration = Configuration()
         val languageDriver = configuration.defaultScriptingLanguageInstance
@@ -117,6 +132,9 @@ object MyBatisPreparationEngine {
             )
         }
     }
+
+    private fun runtimeClassOption(sql: String): String? =
+        explicitRuntimeClassOption.find(sql)?.groupValues?.get(1)
 
     private fun resolveAnnotationParameterType(parameterTypes: List<JavaTypeIdentity>): ParameterTypeResolution? {
         val resolved = mutableListOf<Class<*>>()
