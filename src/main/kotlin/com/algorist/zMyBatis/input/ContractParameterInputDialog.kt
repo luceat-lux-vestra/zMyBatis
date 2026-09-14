@@ -7,26 +7,20 @@ import com.algorist.zMyBatis.core.input.InputRequiredness
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.settings.ZMyBatisSettings
-import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.components.JBTextArea
-import com.intellij.ui.components.JBTextField
 import java.awt.BorderLayout
 import java.awt.Dimension
-import java.awt.Font
 import javax.swing.BorderFactory
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
-import javax.swing.JTextArea
-import javax.swing.JTextField
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 import javax.swing.text.JTextComponent
@@ -176,7 +170,8 @@ class ContractParameterInputDialog(
     }
 
     private fun createFieldUi(field: ContractInputField): FieldUi {
-        val editor = createEditor(field)
+        val rendered = ContractInputSwingRenderer.create(field)
+        val editor = rendered.editor
         retainedDrafts[field.requirementId]?.let { retained -> editor.text = retained }
 
         val optionalSupply = if (field.requiredness == InputRequiredness.OPTIONAL) {
@@ -208,50 +203,7 @@ class ContractParameterInputDialog(
             override fun changedUpdate(event: DocumentEvent) = markEdited(field.requirementId, optionalSupply)
         })
 
-        val component = when (editor) {
-            is JTextArea -> JBScrollPane(editor).apply {
-                preferredSize = Dimension(560, 88)
-                maximumSize = Dimension(Int.MAX_VALUE, 88)
-                alignmentX = java.awt.Component.LEFT_ALIGNMENT
-            }
-            is JTextField -> editor.apply {
-                maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
-                alignmentX = java.awt.Component.LEFT_ALIGNMENT
-            }
-            else -> error("unsupported contract input editor component")
-        }
-
-        return FieldUi(editor, component, optionalSupply, rawConfirmation, retainSelection)
-    }
-
-    private fun createEditor(field: ContractInputField): JTextComponent {
-        val multiline = field.editorKind in setOf(
-            ContractInputEditorKind.JSON_OBJECT,
-            ContractInputEditorKind.JSON_LIST,
-            ContractInputEditorKind.JSON_ARRAY,
-            ContractInputEditorKind.JSON_MAP,
-            ContractInputEditorKind.RAW_TEXT,
-        )
-        return if (multiline) {
-            JBTextArea(4, 56).apply {
-                lineWrap = false
-                emptyText.text = field.exampleText ?: if (field.editorKind == ContractInputEditorKind.RAW_TEXT) {
-                    "raw SQL text — explicit confirmation required"
-                } else {
-                    ""
-                }
-                font = Font(
-                    Font.MONOSPACED,
-                    Font.PLAIN,
-                    EditorColorsManager.getInstance().globalScheme.editorFontSize,
-                )
-                border = BorderFactory.createEmptyBorder(2, 4, 2, 4)
-            }
-        } else {
-            JBTextField(44).apply {
-                emptyText.text = field.exampleText.orEmpty()
-            }
-        }
+        return FieldUi(editor, rendered.component, optionalSupply, rawConfirmation, retainSelection)
     }
 
     private fun markEdited(requirementId: InputRequirementId, optionalSupply: JBCheckBox?) {
