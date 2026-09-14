@@ -68,7 +68,7 @@ class ContractParameterInputDialog(
     private val acceptRetained = JBCheckBox("Use unchanged remembered values for this execution")
     private val clearRetained = JButton("Clear remembered values")
     private val fields = presentation.fields.associate { field -> field.requirementId to createFieldUi(field) }
-    private var preparedEnvironment: InputEnvironment? = null
+    private var acceptedEnvironment: InputEnvironment? = null
     private var preparedRawValues: Map<InputRequirementId, String> = emptyMap()
 
     init {
@@ -136,31 +136,31 @@ class ContractParameterInputDialog(
     }
 
     override fun doValidate(): ValidationInfo? = when (val prepared = prepareCurrentInput()) {
-        is ContractInputAdapterResult.Success -> {
-            preparedEnvironment = prepared.environment
-            null
-        }
-        is ContractInputAdapterResult.Failure -> {
-            preparedEnvironment = null
-            validationInfo(prepared.failures.first())
-        }
+        is ContractInputAdapterResult.Success -> null
+        is ContractInputAdapterResult.Failure -> validationInfo(prepared.failures.first())
     }
 
     override fun doOKAction() {
         when (val prepared = prepareCurrentInput()) {
             is ContractInputAdapterResult.Success -> {
-                preparedEnvironment = prepared.environment
+                acceptedEnvironment = prepared.environment
                 if (ZMyBatisSettings.getInstance().rememberLastInputs) {
                     history.save(contract, preparedRawValues)
                 }
                 super.doOKAction()
             }
-            is ContractInputAdapterResult.Failure -> preparedEnvironment = null
+            is ContractInputAdapterResult.Failure -> acceptedEnvironment = null
         }
     }
 
-    /** Returns the exact validated environment after the dialog has been accepted. */
-    fun inputEnvironment(): InputEnvironment = requireNotNull(preparedEnvironment) {
+    override fun doCancelAction() {
+        acceptedEnvironment = null
+        preparedRawValues = emptyMap()
+        super.doCancelAction()
+    }
+
+    /** Returns the exact validated environment only after successful dialog acceptance. */
+    fun inputEnvironment(): InputEnvironment = requireNotNull(acceptedEnvironment) {
         "input environment is available only after successful dialog acceptance"
     }
 
