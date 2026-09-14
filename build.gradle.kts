@@ -17,9 +17,9 @@ group = providers.gradleProperty("pluginGroup").get()
 val effectivePluginVersion = providers.gradleProperty("pluginVersion").orElse("0.0.0-dev")
 version = effectivePluginVersion.get()
 
-// Set the JVM language level used to build the project.
+// Java 25 is the single supported build/runtime target for the plugin and test harness.
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
 }
 
 // Keep process-level Starter/Driver tests isolated from the existing JUnit 4 fixture suite.
@@ -215,9 +215,8 @@ changelog {
 kover {
     currentProject {
         instrumentation {
-            // Starter 262 test-framework classes require Java 25. This process-level suite is
-            // independent evidence and must not be pulled into the Java 21 `check` lifecycle by
-            // Kover's default "all JVM test tasks" report aggregation.
+            // Process-level Starter/Driver evidence is independent from the normal `check`
+            // lifecycle and must not be pulled into Kover's default "all JVM test tasks" graph.
             disabledForTestTasks.add("integrationTest")
         }
     }
