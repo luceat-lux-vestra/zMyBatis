@@ -18,6 +18,7 @@ enum class InputCodecFailureKind {
     INVALID_TEMPORAL,
     INVALID_UUID,
     INVALID_JSON,
+    INPUT_TOO_COMPLEX,
     SHAPE_MISMATCH,
     UNSUPPORTED_EXPECTATION,
 }
@@ -143,7 +144,7 @@ object InputCodec {
             JsonValueParser(text).parse()
         } catch (failure: JsonParseFailure) {
             return InputDecodeResult.Failure(
-                InputCodecFailure(InputCodecFailureKind.INVALID_JSON, failure.offset),
+                InputCodecFailure(failure.kind, failure.offset),
             )
         }
 
@@ -163,25 +164,31 @@ object InputCodec {
     }
 }
 
-private class JsonParseFailure(val offset: Int) : RuntimeException()
+private class JsonParseFailure(
+    val kind: InputCodecFailureKind,
+    val offset: Int,
+) : RuntimeException()
 
 private class JsonValueParser(private val text: String) {
     private var cursor: Int = 0
 
     fun parse(): InputValue {
         skipWhitespace()
-        val value = parseValue()
+        val value = parseValue(depth = 0)
         skipWhitespace()
         if (cursor != text.length) fail()
         return value
     }
 
-    private fun parseValue(): InputValue {
+    private fun parseValue(depth: Int): InputValue {
+        if (depth > MAX_NESTING_DEPTH) {
+            fail(kind = InputCodecFailureKind.INPUT_TOO_COMPLEX)
+        }
         skipWhitespace()
         if (cursor >= text.length) fail()
         return when (text[cursor]) {
-            '{' -> parseObject()
-            '[' -> parseArray()
+            '{' -> parseObject(depth)
+            '[' -> parseArray(depth)
             '"' -> InputValue.Text(parseString())
             't' -> {
                 consumeLiteral("true")
@@ -200,7 +207,7 @@ private class JsonValueParser(private val text: String) {
         }
     }
 
-    private fun parseObject(): InputValue.ObjectValue {
+    private fun parseObject(depth: Int): InputValue.ObjectValue {
         expect('{')
         skipWhitespace()
         val entries = LinkedHashMap<String, InputValue>()
@@ -216,7 +223,7 @@ private class JsonValueParser(private val text: String) {
             if (key in entries) fail()
             skipWhitespace()
             expect(':')
-            entries[key] = parseValue()
+            entries[key] = parseValue(depth + 1)
             skipWhitespace()
             when {
                 peek(',') -> cursor++
@@ -229,7 +236,7 @@ private class JsonValueParser(private val text: String) {
         }
     }
 
-    private fun parseArray(): InputValue.ListValue {
+    private fun parseArray(depth: Int): InputValue.ListValue {
         expect('[')
         skipWhitespace()
         val values = mutableListOf<InputValue>()
@@ -239,7 +246,7 @@ private class JsonValueParser(private val text: String) {
         }
 
         while (true) {
-            values += parseValue()
+            values += parseValue(depth + 1)
             skipWhitespace()
             when {
                 peek(',') -> cursor++
@@ -347,8 +354,20 @@ private class JsonValueParser(private val text: String) {
     private fun peek(expected: Char): Boolean = cursor < text.length && text[cursor] == expected
 
     private fun skipWhitespace() {
-        while (cursor < text.length && text[cursor] in setOf(' ', '\t', '\r', '\n')) cursor++
+        while (cursor < text.length) {
+            when (text[cursor]) {
+                ' ', '\t', '\r', '\n' -> cursor++
+                else -> return
+            }
+        }
     }
 
-    private fun fail(offset: Int = cursor): Nothing = throw JsonParseFailure(offset)
+    private fun fail(
+        offset: Int = cursor,
+        kind: InputCodecFailureKind = InputCodecFailureKind.INVALID_JSON,
+    ): Nothing = throw JsonParseFailure(kind, offset)
+
+    private companion object {
+        const val MAX_NESTING_DEPTH = 128
+    }
 }
