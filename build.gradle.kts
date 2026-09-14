@@ -80,6 +80,7 @@ dependencies {
     integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.20.2")
     integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.1")
     integrationTestRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.3")
+    integrationTestRuntimeOnly("org.jetbrains.teamcity:serviceMessages:2024.12")
     // The plugin build deliberately opts out of bundling Kotlin stdlib. Starter/JUnit5 runs in a
     // separate test JVM and requires a matched stdlib/reflect pair there, so add both only to that
     // runtime using the Kotlin plugin's exact version.
