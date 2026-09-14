@@ -52,13 +52,13 @@ class ContractParameterInputDialog(
         val component: JComponent,
         val optionalSupply: JBCheckBox?,
         val rawConfirmation: JBCheckBox?,
+        val retainSelection: JBCheckBox?,
     )
 
     private val presentation = ContractInputPresentationFactory.create(contract)
+    private val retentionEnabled = ZMyBatisSettings.getInstance().rememberLastInputs
     private val history = ContractInputHistoryService.getInstance(project)
-    private val retainedDrafts = if (
-        ZMyBatisSettings.getInstance().rememberLastInputs && presentation.canSubmit
-    ) {
+    private val retainedDrafts = if (retentionEnabled && presentation.canSubmit) {
         history.load(contract).toMutableMap()
     } else {
         linkedMapOf()
@@ -120,6 +120,10 @@ class ContractParameterInputDialog(
                 panel.add(Box.createVerticalStrut(2))
                 panel.add(it.apply { alignmentX = java.awt.Component.LEFT_ALIGNMENT })
             }
+            ui.retainSelection?.let {
+                panel.add(Box.createVerticalStrut(2))
+                panel.add(it.apply { alignmentX = java.awt.Component.LEFT_ALIGNMENT })
+            }
             panel.add(Box.createVerticalStrut(10))
         }
 
@@ -130,7 +134,7 @@ class ContractParameterInputDialog(
         )
 
         return JBScrollPane(panel).apply {
-            preferredSize = Dimension(620, (presentation.fields.size * 110 + 80).coerceIn(220, 620))
+            preferredSize = Dimension(620, (presentation.fields.size * 126 + 80).coerceIn(220, 680))
             border = BorderFactory.createEmptyBorder()
         }
     }
@@ -144,8 +148,15 @@ class ContractParameterInputDialog(
         when (val prepared = prepareCurrentInput()) {
             is ContractInputAdapterResult.Success -> {
                 acceptedEnvironment = prepared.environment
-                if (ZMyBatisSettings.getInstance().rememberLastInputs) {
-                    history.save(contract, preparedRawValues)
+                if (retentionEnabled) {
+                    val explicitlyRetainedIds = fields
+                        .filterValues { it.retainSelection?.isSelected == true }
+                        .keys
+                    history.save(
+                        contract = contract,
+                        rawValues = preparedRawValues,
+                        explicitlyRetainedIds = explicitlyRetainedIds,
+                    )
                 }
                 super.doOKAction()
             }
@@ -178,6 +189,18 @@ class ContractParameterInputDialog(
         } else {
             null
         }
+        val retainSelection = if (
+            retentionEnabled && field.retentionPolicy == ContractInputRetentionPolicy.RETAINABLE
+        ) {
+            JBCheckBox(
+                "Remember this value in this project workspace",
+                field.requirementId in retainedDrafts,
+            ).apply {
+                toolTipText = "Input text may be sensitive. It is stored only after this explicit selection."
+            }
+        } else {
+            null
+        }
 
         editor.document.addDocumentListener(object : DocumentListener {
             override fun insertUpdate(event: DocumentEvent) = markEdited(field.requirementId, optionalSupply)
@@ -198,7 +221,7 @@ class ContractParameterInputDialog(
             else -> error("unsupported contract input editor component")
         }
 
-        return FieldUi(editor, component, optionalSupply, rawConfirmation)
+        return FieldUi(editor, component, optionalSupply, rawConfirmation, retainSelection)
     }
 
     private fun createEditor(field: ContractInputField): JTextComponent {
@@ -299,6 +322,7 @@ class ContractParameterInputDialog(
                     fields[id]?.editor?.text = ""
                     fields[id]?.optionalSupply?.isSelected = false
                 }
+                fields[id]?.retainSelection?.isSelected = false
             }
             retainedDrafts.clear()
             acceptRetained.isSelected = false
