@@ -99,6 +99,7 @@ enum class InputEnvironmentFailureKind {
     MISSING_REQUIRED_INPUT,
     KIND_MISMATCH,
     SHAPE_MISMATCH,
+    TYPE_MISMATCH,
     RAW_RETAINED_INPUT_FORBIDDEN,
     NULL_NOT_ALLOWED,
 }
@@ -111,10 +112,20 @@ data class InputEnvironmentFailure(
 sealed interface InputEnvironmentResult {
     data class Success(val environment: InputEnvironment) : InputEnvironmentResult
 
-    data class Failure(val failures: List<InputEnvironmentFailure>) : InputEnvironmentResult {
+    class Failure(failures: List<InputEnvironmentFailure>) : InputEnvironmentResult {
+        private val failureSnapshot = failures.toList()
+
         init {
-            require(failures.isNotEmpty()) { "input environment failure must contain at least one failure" }
+            require(failureSnapshot.isNotEmpty()) { "input environment failure must contain at least one failure" }
         }
+
+        val failures: List<InputEnvironmentFailure>
+            get() = failureSnapshot.toList()
+
+        override fun equals(other: Any?): Boolean =
+            this === other || (other is Failure && failureSnapshot == other.failureSnapshot)
+
+        override fun hashCode(): Int = failureSnapshot.hashCode()
     }
 }
 
@@ -160,28 +171,41 @@ class InputEnvironment private constructor(
                     return@forEach
                 }
 
-                if (requirement.kind == InputKind.RAW_INTERPOLATION) {
-                    if (provided.value !is InputValue.RawText) {
-                        failures += InputEnvironmentFailure(InputEnvironmentFailureKind.KIND_MISMATCH, id)
-                    }
-                    if (provided.origin == ExecutionInputOrigin.USER_ACCEPTED_RETAINED) {
-                        failures += InputEnvironmentFailure(
-                            InputEnvironmentFailureKind.RAW_RETAINED_INPUT_FORBIDDEN,
-                            id,
-                        )
-                    }
-                } else if (provided.value is InputValue.RawText) {
+                val kindMatches = when (requirement.kind) {
+                    InputKind.RAW_INTERPOLATION -> provided.value is InputValue.RawText
+                    InputKind.BOUND -> provided.value !is InputValue.RawText
+                }
+                if (!kindMatches) {
                     failures += InputEnvironmentFailure(InputEnvironmentFailureKind.KIND_MISMATCH, id)
                 }
 
-                if (provided.value is InputValue.NullValue &&
-                    requirement.expectedType.nullability == InputNullability.NON_NULL
+                if (requirement.kind == InputKind.RAW_INTERPOLATION &&
+                    provided.origin == ExecutionInputOrigin.USER_ACCEPTED_RETAINED
                 ) {
-                    failures += InputEnvironmentFailure(InputEnvironmentFailureKind.NULL_NOT_ALLOWED, id)
-                } else if (provided.value !is InputValue.NullValue &&
-                    !matchesShape(provided.value, requirement.expectedType.shape)
-                ) {
+                    failures += InputEnvironmentFailure(
+                        InputEnvironmentFailureKind.RAW_RETAINED_INPUT_FORBIDDEN,
+                        id,
+                    )
+                }
+
+                if (provided.value is InputValue.NullValue) {
+                    if (requirement.expectedType.nullability == InputNullability.NON_NULL) {
+                        failures += InputEnvironmentFailure(InputEnvironmentFailureKind.NULL_NOT_ALLOWED, id)
+                    }
+                    return@forEach
+                }
+
+                if (!kindMatches) {
+                    return@forEach
+                }
+
+                if (!matchesShape(provided.value, requirement.expectedType.shape)) {
                     failures += InputEnvironmentFailure(InputEnvironmentFailureKind.SHAPE_MISMATCH, id)
+                    return@forEach
+                }
+
+                if (!matchesExpectedType(provided.value, requirement.expectedType)) {
+                    failures += InputEnvironmentFailure(InputEnvironmentFailureKind.TYPE_MISMATCH, id)
                 }
             }
 
@@ -221,5 +245,41 @@ class InputEnvironment private constructor(
             InputShape.RAW_TEXT -> value is InputValue.RawText
             InputShape.UNKNOWN -> false
         }
+
+        private fun matchesExpectedType(value: InputValue, expected: ExpectedInputType): Boolean =
+            when (expected.shape) {
+                InputShape.SCALAR -> when (expected.scalarType) {
+                    InputScalarType.STRING -> value is InputValue.Text
+                    InputScalarType.BOOLEAN -> value is InputValue.BooleanValue
+                    InputScalarType.INTEGER -> value is InputValue.IntegerValue
+                    InputScalarType.DECIMAL -> value is InputValue.DecimalValue
+                    InputScalarType.UUID -> value is InputValue.UuidValue
+                    InputScalarType.DATE,
+                    InputScalarType.TIME,
+                    InputScalarType.DATE_TIME,
+                    InputScalarType.INSTANT,
+                    InputScalarType.UNKNOWN,
+                    -> false
+                }
+                InputShape.TEMPORAL -> when (expected.scalarType) {
+                    InputScalarType.DATE -> value is InputValue.DateValue
+                    InputScalarType.TIME -> value is InputValue.TimeValue
+                    InputScalarType.DATE_TIME -> value is InputValue.DateTimeValue
+                    InputScalarType.INSTANT -> value is InputValue.InstantValue
+                    InputScalarType.STRING,
+                    InputScalarType.BOOLEAN,
+                    InputScalarType.INTEGER,
+                    InputScalarType.DECIMAL,
+                    InputScalarType.UUID,
+                    InputScalarType.UNKNOWN,
+                    -> false
+                }
+                InputShape.OBJECT -> value is InputValue.ObjectValue
+                InputShape.LIST -> value is InputValue.ListValue
+                InputShape.ARRAY -> value is InputValue.ArrayValue
+                InputShape.MAP -> value is InputValue.MapValue
+                InputShape.RAW_TEXT -> value is InputValue.RawText
+                InputShape.UNKNOWN -> false
+            }
     }
 }
