@@ -287,27 +287,19 @@ object ContractInputAdapter {
         }
 
         val failures = mutableListOf<ContractInputAdapterFailure>()
-        val grouped = entries.groupBy { it.requirementId }
-        grouped.filterValues { it.size > 1 }.keys.forEach { requirementId ->
-            failures += ContractInputAdapterFailure.Environment(
-                InputEnvironmentFailure(InputEnvironmentFailureKind.DUPLICATE_INPUT, requirementId),
-            )
-        }
-
         val provided = mutableListOf<ProvidedInput>()
-        grouped.forEach { (requirementId, duplicates) ->
-            val entry = duplicates.first()
-            val requirement = contract.requirement(requirementId)
+        entries.forEach { entry ->
+            val requirement = contract.requirement(entry.requirementId)
             if (requirement == null) {
                 failures += ContractInputAdapterFailure.Environment(
-                    InputEnvironmentFailure(InputEnvironmentFailureKind.UNKNOWN_REQUIREMENT, requirementId),
+                    InputEnvironmentFailure(InputEnvironmentFailureKind.UNKNOWN_REQUIREMENT, entry.requirementId),
                 )
                 return@forEach
             }
 
             when (val decoded = InputCodec.decode(entry.text, requirement)) {
                 is InputDecodeResult.Success -> provided += ProvidedInput(
-                    requirementId = requirementId,
+                    requirementId = entry.requirementId,
                     value = decoded.value,
                     origin = when (entry.origin) {
                         ContractInputTextOrigin.USER_ENTERED -> ExecutionInputOrigin.USER_ENTERED
@@ -316,7 +308,7 @@ object ContractInputAdapter {
                     },
                 )
                 is InputDecodeResult.Failure -> failures += ContractInputAdapterFailure.Codec(
-                    requirementId = requirementId,
+                    requirementId = entry.requirementId,
                     failure = decoded.failure,
                 )
             }
