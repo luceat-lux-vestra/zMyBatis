@@ -43,6 +43,15 @@ repositories {
 
     mavenCentral()
 
+    // TeamCity's serviceMessages artifact is published only in JetBrains' TeamCity repository.
+    // Restrict this repository to that group so normal dependency resolution is unaffected.
+    maven {
+        url = uri("https://download.jetbrains.com/teamcity-repository/")
+        content {
+            includeGroup("org.jetbrains.teamcity")
+        }
+    }
+
     // IntelliJ Platform Gradle Plugin Repositories Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-repositories-extension.html
     intellijPlatform {
         defaultRepositories()
