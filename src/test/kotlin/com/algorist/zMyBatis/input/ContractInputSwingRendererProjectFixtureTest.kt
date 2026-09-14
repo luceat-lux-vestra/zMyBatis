@@ -8,9 +8,15 @@ import com.algorist.zMyBatis.core.input.InputRequiredness
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InputScalarType
 import com.algorist.zMyBatis.core.input.InputShape
+import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.SourceEvidence
+import com.algorist.zMyBatis.core.source.JavaStatementId
+import com.algorist.zMyBatis.core.source.JavaTypeIdentity
+import com.algorist.zMyBatis.core.source.MethodSignature
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRevision
+import com.algorist.zMyBatis.settings.ZMyBatisSettings
+import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
@@ -56,6 +62,40 @@ class ContractInputSwingRendererProjectFixtureTest : BasePlatformTestCase() {
         assertTrue(rendered.editor is JBTextArea)
         assertTrue(rendered.component is JBScrollPane)
         assertSame(rendered.editor, (rendered.component as JBScrollPane).viewport.view)
+    }
+
+    fun testDialogDoesNotPublishEnvironmentBeforeExplicitAcceptance() {
+        val settings = ZMyBatisSettings.getInstance()
+        val originalRetention = settings.rememberLastInputs
+        settings.rememberLastInputs = false
+        val contract = ParameterContract(
+            statementId = JavaStatementId(
+                sourceFileId = FILE,
+                qualifiedMapperType = "fixture.Mapper",
+                methodSignature = MethodSignature(
+                    name = "find",
+                    parameterTypeIdentities = listOf(JavaTypeIdentity("java.lang.String")),
+                ),
+            ),
+            requirements = emptyList(),
+            aliases = emptyList(),
+            internalBindings = emptyList(),
+            blockingProblems = emptyList(),
+            sourceRevisions = mapOf(FILE to REVISION),
+        )
+        val dialog = ContractParameterInputDialog(project, contract)
+
+        try {
+            try {
+                dialog.inputEnvironment()
+                fail("dialog must not expose an InputEnvironment before explicit OK acceptance")
+            } catch (expected: IllegalArgumentException) {
+                assertTrue(expected.message.orEmpty().contains("successful dialog acceptance"))
+            }
+        } finally {
+            dialog.close(DialogWrapper.CANCEL_EXIT_CODE)
+            settings.rememberLastInputs = originalRetention
+        }
     }
 
     private fun field(editorKind: ContractInputEditorKind): ContractInputField {
