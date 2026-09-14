@@ -29,6 +29,7 @@ import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import org.apache.ibatis.type.BaseTypeHandler
 import org.apache.ibatis.type.JdbcType
 import org.junit.Assert.assertEquals
@@ -74,7 +75,8 @@ class MyBatisPreparationEngineAdversarialTest {
     }
 
     @Test
-    fun customTypeHandlerIsNotClaimedAsReproducible() {
+    fun customTypeHandlerIsRefusedBeforeItsConstructorCanRun() {
+        customHandlerConstructions.set(0)
         val handler =
             "com.algorist.zMyBatis.mybatis.MyBatisPreparationEngineAdversarialTest\$CustomLongTypeHandler"
         val request = request(
@@ -87,7 +89,23 @@ class MyBatisPreparationEngineAdversarialTest {
         assertTrue(result is PreparationResult.Failed)
         result as PreparationResult.Failed
         assertEquals(PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER, result.failure.kind)
-        assertEquals(handler, result.failure.diagnosticType)
+        assertEquals("mybatis-custom-type-handler-unsupported", result.failure.code)
+        assertEquals(0, customHandlerConstructions.get())
+    }
+
+    @Test
+    fun explicitJavaTypeIsRefusedBeforeMyBatisRuntimeClassResolution() {
+        val request = request(
+            "select #{id,javaType=java.lang.Long}",
+            listOf(Parameter("java.lang.Long", "id", InputValue.IntegerValue(BigInteger.ONE))),
+        )
+
+        val result = MyBatisPreparationEngine.prepare(request)
+
+        assertTrue(result is PreparationResult.Failed)
+        result as PreparationResult.Failed
+        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
+        assertEquals("mybatis-explicit-java-type-unsupported", result.failure.code)
     }
 
     @Test
@@ -183,6 +201,10 @@ class MyBatisPreparationEngineAdversarialTest {
     }
 
     class CustomLongTypeHandler : BaseTypeHandler<Long>() {
+        init {
+            customHandlerConstructions.incrementAndGet()
+        }
+
         override fun setNonNullParameter(
             ps: PreparedStatement,
             i: Int,
@@ -204,4 +226,8 @@ class MyBatisPreparationEngineAdversarialTest {
         val alias: String,
         val value: InputValue,
     )
+
+    companion object {
+        private val customHandlerConstructions = AtomicInteger()
+    }
 }
