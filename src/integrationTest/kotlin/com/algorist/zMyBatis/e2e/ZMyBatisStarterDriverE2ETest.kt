@@ -46,22 +46,27 @@ class ZMyBatisStarterDriverE2ETest {
             // the JUnit process instead of allowing a false green.
             di = DI {
                 extend(di)
-                bindSingleton<CIServer>(overrides = true) {
-                    object : CIServer by NoCIServer {
-                        override fun reportTestFailure(
-                            testName: String,
-                            message: String,
-                            details: String,
-                            linkToLogs: String?,
-                            kind: SyntheticTestKind,
-                            generifyTestName: Boolean,
-                        ) {
-                            fail { "$testName fails: $message\n$details" }
-                        }
-                    }
-                }
+                bindSingleton<CIServer>(overrides = true) { strictCIServer() }
             }
         }
+
+        // Starter 262 exposes SyntheticTestKind from its internal TeamCity reporter as a required
+        // CIServer method parameter. Keep the unavoidable unstable API usage inside this adapter;
+        // production code and the rest of the E2E harness do not depend on that internal type.
+        @Suppress("UnstableApiUsage")
+        private fun strictCIServer(): CIServer =
+            object : CIServer by NoCIServer {
+                override fun reportTestFailure(
+                    testName: String,
+                    message: String,
+                    details: String,
+                    linkToLogs: String?,
+                    kind: SyntheticTestKind,
+                    generifyTestName: Boolean,
+                ) {
+                    fail { "$testName fails: $message\n$details" }
+                }
+            }
     }
 
     @Test

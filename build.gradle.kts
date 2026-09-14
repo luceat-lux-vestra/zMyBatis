@@ -1,5 +1,6 @@
 import org.jetbrains.changelog.Changelog
 
+import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 
@@ -187,6 +188,9 @@ val integrationTest by intellijPlatformTesting.testIdeUi.register("integrationTe
         val integrationTestSourceSet = sourceSets.getByName("integrationTest")
         testClassesDirs = integrationTestSourceSet.output.classesDirs
         classpath = integrationTestSourceSet.runtimeClasspath
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
         useJUnitPlatform()
         testLogging {
             events("passed", "failed")
@@ -204,6 +208,14 @@ changelog {
 
 // Configure Gradle Kover Plugin.
 kover {
+    currentProject {
+        instrumentation {
+            // Starter 262 test-framework classes require Java 25. This process-level suite is
+            // independent evidence and must not be pulled into the Java 21 `check` lifecycle by
+            // Kover's default "all JVM test tasks" report aggregation.
+            disabledForTestTasks.add("integrationTest")
+        }
+    }
     reports {
         total {
             xml {
