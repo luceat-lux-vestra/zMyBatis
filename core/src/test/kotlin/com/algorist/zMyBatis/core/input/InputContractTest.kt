@@ -75,28 +75,18 @@ class InputContractTest {
     }
 
     @Test
-    fun unprovenScalarTypeMustCarryExplicitBlockingProblem() {
-        val requirement = boundRequirement("mystery", InputShape.SCALAR, InputScalarType.UNKNOWN)
-
-        assertThrows(IllegalArgumentException::class.java) {
-            ParameterContract(statementId, listOf(requirement), emptyList(), emptyList())
-        }
-
-        val blocked = ParameterContract(
-            statementId,
-            listOf(requirement),
-            emptyList(),
-            listOf(
-                InputContractProblem(
-                    InputContractProblemKind.UNKNOWN,
-                    "unproven-scalar-type",
-                    requirement.id,
-                    requirement.provenance,
-                ),
-            ),
+    fun explicitTypedValueCanResolveAProvenScalarShapeWithoutGuessingSubtype() {
+        val requirement = boundRequirement("value", InputShape.SCALAR, InputScalarType.UNKNOWN)
+        val contract = ParameterContract(statementId, listOf(requirement), emptyList(), emptyList())
+        val provided = ProvidedInput(
+            requirement.id,
+            InputValue.IntegerValue(BigInteger.valueOf(42)),
+            ExecutionInputOrigin.USER_ENTERED,
         )
 
-        assertTrue(blocked.isPreparationBlocked)
+        val result = InputEnvironment.validate(contract, listOf(provided)) as InputEnvironmentResult.Success
+
+        assertEquals(provided, result.environment.value(requirement.id))
     }
 
     @Test
