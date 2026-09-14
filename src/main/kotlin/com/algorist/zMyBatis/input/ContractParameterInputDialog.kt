@@ -188,10 +188,11 @@ class ContractParameterInputDialog(
             retentionEnabled && field.retentionPolicy == ContractInputRetentionPolicy.RETAINABLE
         ) {
             JBCheckBox(
-                "Remember this value in this project workspace",
+                "Remember this value in this project workspace (plain text)",
                 field.requirementId in retainedDrafts,
             ).apply {
-                toolTipText = "Input text may be sensitive. It is stored only after this explicit selection."
+                toolTipText =
+                    "Input text may be sensitive. If selected, it is stored as plain text in this project's workspace metadata."
             }
         } else {
             null
