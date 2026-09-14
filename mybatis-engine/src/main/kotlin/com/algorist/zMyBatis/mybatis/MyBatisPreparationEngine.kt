@@ -49,6 +49,8 @@ object MyBatisPreparationEngine {
     private const val RAW_INPUT_MISSING = "raw-interpolation-input-missing"
     private const val RAW_BOUND_CONFLATION = "raw-interpolation-bound-mapping-conflation"
     private const val UNSUPPORTED_VALUE = "mybatis-binding-value-unsupported"
+    private const val VALUE_OUT_OF_RANGE = "java-parameter-value-out-of-range"
+    private const val VALUE_TYPE_MISMATCH = "java-parameter-value-type-mismatch"
     private const val EMPTY_SQL = "mybatis-prepared-sql-empty"
     private const val PARSE_FAILURE = "mybatis-sql-source-parse-failure"
     private const val OGNL_FAILURE = "mybatis-ognl-evaluation-failure"
@@ -77,7 +79,11 @@ object MyBatisPreparationEngine {
         val languageDriver = configuration.defaultScriptingLanguageInstance
         val parameterType = resolveAnnotationParameterType(source.capture.parameters.map { it.typeIdentity })
             ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_PARAMETER_TYPE)
-        val parameterObject = buildParameterObject(request)
+        val parameterObjectResult = buildParameterObject(request)
+        if (parameterObjectResult is ParameterObjectResult.Failed) {
+            return PreparationResult.Failed(parameterObjectResult.failure)
+        }
+        val parameterObject = (parameterObjectResult as ParameterObjectResult.Ready).value
         val script = source.capture.sqlSegments.joinToString(separator = " ").trim()
 
         val boundSql = try {
@@ -175,15 +181,29 @@ object MyBatisPreparationEngine {
         }
     }
 
-    private fun buildParameterObject(request: MyBatisPreparationRequest): Any? {
-        if (request.inputEnvironment.values.isEmpty()) return null
+    private fun buildParameterObject(request: MyBatisPreparationRequest): ParameterObjectResult {
+        if (request.inputEnvironment.values.isEmpty()) return ParameterObjectResult.Ready(null)
 
         val params = MapperMethod.ParamMap<Any?>()
         for (alias in request.inputEnvironment.aliases) {
             val provided = request.inputEnvironment.value(alias.requirementId) ?: continue
-            params[alias.name] = toRuntimeValue(provided.value)
+            val requirement = request.parameterContract.requirement(alias.requirementId)
+                ?: return ParameterObjectResult.Failed(
+                    PreparationFailure(
+                        PreparationFailureKind.PREPARATION_INVARIANT,
+                        INVARIANT_FAILURE,
+                        bindingProperty = alias.name,
+                    ),
+                )
+            val converted = toRuntimeValue(provided.value, requirement.expectedType.javaTypeIdentity)
+            if (converted is RuntimeValueResult.Failed) {
+                return ParameterObjectResult.Failed(
+                    converted.failure.copy(bindingProperty = alias.name),
+                )
+            }
+            params[alias.name] = (converted as RuntimeValueResult.Ready).value
         }
-        return params
+        return ParameterObjectResult.Ready(params)
     }
 
     private fun captureRawInterpolations(request: MyBatisPreparationRequest): RawInterpolationResult {
@@ -343,7 +363,107 @@ object MyBatisPreparationEngine {
         return true
     }
 
-    private fun toRuntimeValue(value: InputValue): Any? = when (value) {
+    private fun toRuntimeValue(value: InputValue, declaredType: JavaTypeIdentity?): RuntimeValueResult {
+        if (value is InputValue.NullValue) return RuntimeValueResult.Ready(null)
+        val typeName = declaredType?.value?.trim().orEmpty()
+        val rawTypeName = typeName.substringBefore('<').trim()
+
+        return when (value) {
+            InputValue.NullValue -> RuntimeValueResult.Ready(null)
+            is InputValue.Text -> if (rawTypeName == "java.lang.String" || rawTypeName == "String") {
+                RuntimeValueResult.Ready(value.value)
+            } else {
+                typeMismatch()
+            }
+            is InputValue.RawText -> if (rawTypeName == "java.lang.String" || rawTypeName == "String") {
+                RuntimeValueResult.Ready(value.value)
+            } else {
+                typeMismatch()
+            }
+            is InputValue.BooleanValue -> when (rawTypeName) {
+                "boolean", "java.lang.Boolean" -> RuntimeValueResult.Ready(value.value)
+                else -> typeMismatch()
+            }
+            is InputValue.IntegerValue -> integerRuntimeValue(value.value, rawTypeName)
+            is InputValue.DecimalValue -> decimalRuntimeValue(value.value, rawTypeName)
+            is InputValue.DateValue -> when (rawTypeName) {
+                "java.time.LocalDate" -> RuntimeValueResult.Ready(value.value)
+                else -> typeMismatch()
+            }
+            is InputValue.TimeValue -> when (rawTypeName) {
+                "java.time.LocalTime" -> RuntimeValueResult.Ready(value.value)
+                else -> typeMismatch()
+            }
+            is InputValue.DateTimeValue -> when (rawTypeName) {
+                "java.time.LocalDateTime" -> RuntimeValueResult.Ready(value.value)
+                else -> typeMismatch()
+            }
+            is InputValue.InstantValue -> when (rawTypeName) {
+                "java.time.Instant" -> RuntimeValueResult.Ready(value.value)
+                else -> typeMismatch()
+            }
+            is InputValue.UuidValue -> when (rawTypeName) {
+                "java.util.UUID" -> RuntimeValueResult.Ready(value.value)
+                else -> typeMismatch()
+            }
+            is InputValue.ObjectValue -> RuntimeValueResult.Ready(
+                value.entries.mapValuesTo(linkedMapOf()) { toUntypedRuntimeValue(it.value) },
+            )
+            is InputValue.MapValue -> RuntimeValueResult.Ready(
+                value.entries.mapValuesTo(linkedMapOf()) { toUntypedRuntimeValue(it.value) },
+            )
+            is InputValue.ListValue -> RuntimeValueResult.Ready(value.elements.map(::toUntypedRuntimeValue))
+            is InputValue.ArrayValue -> arrayRuntimeValue(value, rawTypeName)
+        }
+    }
+
+    private fun integerRuntimeValue(value: BigInteger, rawTypeName: String): RuntimeValueResult = try {
+        when (rawTypeName) {
+            "byte", "java.lang.Byte" -> RuntimeValueResult.Ready(value.byteValueExact())
+            "short", "java.lang.Short" -> RuntimeValueResult.Ready(value.shortValueExact())
+            "int", "java.lang.Integer" -> RuntimeValueResult.Ready(value.intValueExact())
+            "long", "java.lang.Long" -> RuntimeValueResult.Ready(value.longValueExact())
+            "java.math.BigInteger" -> RuntimeValueResult.Ready(value)
+            else -> typeMismatch()
+        }
+    } catch (_: ArithmeticException) {
+        outOfRange()
+    }
+
+    private fun decimalRuntimeValue(value: BigDecimal, rawTypeName: String): RuntimeValueResult = when (rawTypeName) {
+        "float", "java.lang.Float" -> {
+            val converted = value.toFloat()
+            if (converted.isFinite()) RuntimeValueResult.Ready(converted) else outOfRange()
+        }
+        "double", "java.lang.Double" -> {
+            val converted = value.toDouble()
+            if (converted.isFinite()) RuntimeValueResult.Ready(converted) else outOfRange()
+        }
+        "java.math.BigDecimal" -> RuntimeValueResult.Ready(value)
+        else -> typeMismatch()
+    }
+
+    private fun arrayRuntimeValue(value: InputValue.ArrayValue, rawTypeName: String): RuntimeValueResult {
+        if (!rawTypeName.endsWith("[]")) return typeMismatch()
+        val componentIdentity = JavaTypeIdentity(rawTypeName.removeSuffix("[]"))
+        val componentClass = resolveJavaType(componentIdentity)
+            ?: return RuntimeValueResult.Failed(
+                PreparationFailure(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, UNSUPPORTED_VALUE),
+            )
+        val target = ReflectArray.newInstance(componentClass, value.elements.size)
+        for ((index, element) in value.elements.withIndex()) {
+            val converted = toRuntimeValue(element, componentIdentity)
+            if (converted is RuntimeValueResult.Failed) return converted
+            try {
+                ReflectArray.set(target, index, (converted as RuntimeValueResult.Ready).value)
+            } catch (_: IllegalArgumentException) {
+                return typeMismatch()
+            }
+        }
+        return RuntimeValueResult.Ready(target)
+    }
+
+    private fun toUntypedRuntimeValue(value: InputValue): Any? = when (value) {
         InputValue.NullValue -> null
         is InputValue.Text -> value.value
         is InputValue.RawText -> value.value
@@ -355,11 +475,19 @@ object MyBatisPreparationEngine {
         is InputValue.DateTimeValue -> value.value
         is InputValue.InstantValue -> value.value
         is InputValue.UuidValue -> value.value
-        is InputValue.ObjectValue -> value.entries.mapValuesTo(linkedMapOf()) { toRuntimeValue(it.value) }
-        is InputValue.MapValue -> value.entries.mapValuesTo(linkedMapOf()) { toRuntimeValue(it.value) }
-        is InputValue.ListValue -> value.elements.map(::toRuntimeValue)
-        is InputValue.ArrayValue -> value.elements.map(::toRuntimeValue).toTypedArray()
+        is InputValue.ObjectValue -> value.entries.mapValuesTo(linkedMapOf()) { toUntypedRuntimeValue(it.value) }
+        is InputValue.MapValue -> value.entries.mapValuesTo(linkedMapOf()) { toUntypedRuntimeValue(it.value) }
+        is InputValue.ListValue -> value.elements.map(::toUntypedRuntimeValue)
+        is InputValue.ArrayValue -> value.elements.map(::toUntypedRuntimeValue).toTypedArray()
     }
+
+    private fun typeMismatch() = RuntimeValueResult.Failed(
+        PreparationFailure(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, VALUE_TYPE_MISMATCH),
+    )
+
+    private fun outOfRange() = RuntimeValueResult.Failed(
+        PreparationFailure(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, VALUE_OUT_OF_RANGE),
+    )
 
     private fun toCoreValue(
         value: Any?,
@@ -477,6 +605,16 @@ object MyBatisPreparationEngine {
     ) = PreparationResult.Failed(PreparationFailure(kind, code, diagnosticType = diagnosticType))
 
     private data class ParameterTypeResolution(val type: Class<*>?)
+
+    private sealed interface ParameterObjectResult {
+        data class Ready(val value: Any?) : ParameterObjectResult
+        data class Failed(val failure: PreparationFailure) : ParameterObjectResult
+    }
+
+    private sealed interface RuntimeValueResult {
+        data class Ready(val value: Any?) : RuntimeValueResult
+        data class Failed(val failure: PreparationFailure) : RuntimeValueResult
+    }
 
     private sealed interface RawInterpolationResult {
         data class Ready(val interpolations: List<PreparedRawInterpolation>) : RawInterpolationResult
