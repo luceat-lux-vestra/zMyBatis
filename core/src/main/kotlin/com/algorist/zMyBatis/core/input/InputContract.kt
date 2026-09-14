@@ -274,10 +274,15 @@ class ParameterContract(
         }
         require(
             requirementSnapshot
-                .filter { it.expectedType.shape == InputShape.UNKNOWN }
+                .filter { requirement ->
+                    val expected = requirement.expectedType
+                    expected.shape == InputShape.UNKNOWN ||
+                        (expected.shape in setOf(InputShape.SCALAR, InputShape.TEMPORAL) &&
+                            expected.scalarType == InputScalarType.UNKNOWN)
+                }
                 .all { requirement -> problemSnapshot.any { it.requirementId == requirement.id } },
         ) {
-            "unknown input shape must have an explicit blocking problem"
+            "unproven input shape or scalar type must have an explicit blocking problem"
         }
     }
 
