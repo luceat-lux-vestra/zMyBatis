@@ -41,24 +41,9 @@ class ContractInputHistoryService(
         myState = state
     }
 
-    /**
-     * Stores only current, caller-editable, non-raw requirements. Unknown/stale requirement ids and
-     * raw interpolation are discarded at this boundary even if a caller attempts to persist them.
-     */
     fun save(contract: ParameterContract, rawValues: Map<InputRequirementId, String>) {
         if (contract.isPreparationBlocked) return
-
-        val retainableIds = contract.requirements
-            .asSequence()
-            .filter { it.kind != InputKind.RAW_INTERPOLATION }
-            .map { it.id }
-            .toSet()
-        val retained = rawValues
-            .filterKeys { it in retainableIds }
-            .entries
-            .sortedBy { it.key.value }
-            .associateTo(linkedMapOf()) { it.key.value to it.value }
-
+        val retained = ContractInputHistoryPolicy.filterForSave(contract, rawValues)
         val key = ContractInputRetentionKey.of(contract.statementId).value
         if (retained.isEmpty()) {
             myState.history.remove(key)
@@ -67,28 +52,10 @@ class ContractInputHistoryService(
         }
     }
 
-    /**
-     * Restores presentation drafts only for requirements that still exist and remain non-raw in the
-     * current contract. The returned values are not executable until explicitly accepted by the UI.
-     */
     fun load(contract: ParameterContract): Map<InputRequirementId, String> {
         if (contract.isPreparationBlocked) return emptyMap()
-
         val key = ContractInputRetentionKey.of(contract.statementId).value
-        val stored = myState.history[key].orEmpty()
-        val retainableIds = contract.requirements
-            .asSequence()
-            .filter { it.kind != InputKind.RAW_INTERPOLATION }
-            .map { it.id }
-            .toSet()
-
-        return stored.entries
-            .mapNotNull { (rawId, value) ->
-                val id = runCatching { InputRequirementId(rawId) }.getOrNull() ?: return@mapNotNull null
-                if (id in retainableIds) id to value else null
-            }
-            .sortedBy { it.first.value }
-            .associateTo(linkedMapOf()) { it }
+        return ContractInputHistoryPolicy.restore(contract, myState.history[key].orEmpty())
     }
 
     fun clear(statementId: StatementId) {
@@ -102,6 +69,43 @@ class ContractInputHistoryService(
     companion object {
         fun getInstance(project: Project): ContractInputHistoryService = project.service()
     }
+}
+
+internal object ContractInputHistoryPolicy {
+    fun filterForSave(
+        contract: ParameterContract,
+        rawValues: Map<InputRequirementId, String>,
+    ): Map<String, String> {
+        if (contract.isPreparationBlocked) return emptyMap()
+        val retainableIds = retainableIds(contract)
+        return rawValues
+            .filterKeys { it in retainableIds }
+            .entries
+            .sortedBy { it.key.value }
+            .associateTo(linkedMapOf()) { it.key.value to it.value }
+    }
+
+    fun restore(
+        contract: ParameterContract,
+        storedValues: Map<String, String>,
+    ): Map<InputRequirementId, String> {
+        if (contract.isPreparationBlocked) return emptyMap()
+        val retainableIds = retainableIds(contract)
+        return storedValues.entries
+            .mapNotNull { (rawId, value) ->
+                val id = runCatching { InputRequirementId(rawId) }.getOrNull() ?: return@mapNotNull null
+                if (id in retainableIds) id to value else null
+            }
+            .sortedBy { it.first.value }
+            .associateTo(linkedMapOf()) { (id, value) -> id to value }
+    }
+
+    private fun retainableIds(contract: ParameterContract): Set<InputRequirementId> =
+        contract.requirements
+            .asSequence()
+            .filter { it.kind != InputKind.RAW_INTERPOLATION }
+            .map { it.id }
+            .toSet()
 }
 
 @JvmInline
