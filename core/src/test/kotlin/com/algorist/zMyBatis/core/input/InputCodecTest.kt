@@ -2,6 +2,7 @@ package com.algorist.zMyBatis.core.input
 
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRange
+import com.algorist.zMyBatis.core.source.SourceRevision
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,7 +12,11 @@ import java.time.Instant
 import java.time.LocalDate
 
 class InputCodecTest {
-    private val source = SourceEvidence(SourceFileId("src/main/resources/UserMapper.xml"), SourceRange(0, 8))
+    private val source = SourceEvidence(
+        SourceFileId("src/main/resources/UserMapper.xml"),
+        SourceRevision("document:7"),
+        SourceRange(0, 8),
+    )
 
     @Test
     fun integerAndDecimalCodecsPreserveArbitraryPrecision() {
