@@ -17,9 +17,12 @@ import com.intellij.openapi.project.Project
 /**
  * Project-scoped retained input storage for the contract-driven parameter UI.
  *
- * Retention is keyed by the complete canonical [StatementId]. Values are still only presentation
- * drafts: callers must explicitly accept a loaded value before [ContractInputAdapter] may turn it
- * into an execution input. Raw `${}` interpolation is never persisted or restored.
+ * All input text is treated as potentially sensitive. The global remember-inputs setting only
+ * enables the feature: each bound value must also be explicitly selected for retention by the user
+ * before it may reach this storage boundary. Retention is keyed by the complete canonical
+ * [StatementId]. Loaded values remain presentation drafts and need a separate explicit acceptance
+ * before [ContractInputAdapter] may turn them into execution input. Raw `${}` interpolation is
+ * never persisted or restored, even if a caller attempts to select it.
  */
 @Service(Service.Level.PROJECT)
 @State(
@@ -41,9 +44,17 @@ class ContractInputHistoryService(
         myState = state
     }
 
-    fun save(contract: ParameterContract, rawValues: Map<InputRequirementId, String>) {
+    fun save(
+        contract: ParameterContract,
+        rawValues: Map<InputRequirementId, String>,
+        explicitlyRetainedIds: Set<InputRequirementId>,
+    ) {
         if (contract.isPreparationBlocked) return
-        val retained = ContractInputHistoryPolicy.filterForSave(contract, rawValues)
+        val retained = ContractInputHistoryPolicy.filterForSave(
+            contract = contract,
+            rawValues = rawValues,
+            explicitlyRetainedIds = explicitlyRetainedIds,
+        )
         val key = ContractInputRetentionKey.of(contract.statementId).value
         if (retained.isEmpty()) {
             myState.history.remove(key)
@@ -62,10 +73,6 @@ class ContractInputHistoryService(
         myState.history.remove(ContractInputRetentionKey.of(statementId).value)
     }
 
-    fun clearAll() {
-        myState.history.clear()
-    }
-
     companion object {
         fun getInstance(project: Project): ContractInputHistoryService = project.service()
     }
@@ -75,9 +82,10 @@ internal object ContractInputHistoryPolicy {
     fun filterForSave(
         contract: ParameterContract,
         rawValues: Map<InputRequirementId, String>,
+        explicitlyRetainedIds: Set<InputRequirementId>,
     ): Map<String, String> {
-        if (contract.isPreparationBlocked) return emptyMap()
-        val retainableIds = retainableIds(contract)
+        if (contract.isPreparationBlocked || explicitlyRetainedIds.isEmpty()) return emptyMap()
+        val retainableIds = retainableIds(contract).intersect(explicitlyRetainedIds)
         return rawValues
             .filterKeys { it in retainableIds }
             .entries
