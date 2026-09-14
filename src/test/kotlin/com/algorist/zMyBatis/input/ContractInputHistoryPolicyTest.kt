@@ -60,21 +60,36 @@ class ContractInputHistoryPolicyTest {
     }
 
     @Test
-    fun `raw interpolation and unknown requirement ids are never saved`() {
+    fun `persistence is deny by default even when bound text is supplied`() {
         val bound = requirement("bound", InputKind.BOUND)
-        val raw = requirement("raw", InputKind.RAW_INTERPOLATION)
-        val contract = contract(bound, raw)
-
         val retained = ContractInputHistoryPolicy.filterForSave(
-            contract,
-            mapOf(
-                bound.id to "42",
-                raw.id to "created_at",
-                InputRequirementId("stale") to "stale",
-            ),
+            contract = contract(bound),
+            rawValues = mapOf(bound.id to "42"),
+            explicitlyRetainedIds = emptySet(),
         )
 
-        assertEquals(mapOf("bound" to "42"), retained)
+        assertTrue(retained.isEmpty())
+    }
+
+    @Test
+    fun `only explicitly selected current bound requirements are saved`() {
+        val first = requirement("first", InputKind.BOUND)
+        val second = requirement("second", InputKind.BOUND)
+        val raw = requirement("raw", InputKind.RAW_INTERPOLATION)
+        val stale = InputRequirementId("stale")
+        val retained = ContractInputHistoryPolicy.filterForSave(
+            contract = contract(first, second, raw),
+            rawValues = mapOf(
+                first.id to "1",
+                second.id to "2",
+                raw.id to "created_at",
+                stale to "stale",
+            ),
+            explicitlyRetainedIds = setOf(first.id, raw.id, stale),
+        )
+
+        assertEquals(mapOf("first" to "1"), retained)
+        assertFalse("second" in retained)
         assertFalse("raw" in retained)
         assertFalse("stale" in retained)
     }
