@@ -1,6 +1,8 @@
 package com.algorist.zMyBatis.input
 
 import com.algorist.zMyBatis.core.input.ExpectedInputType
+import com.algorist.zMyBatis.core.input.InputContractProblem
+import com.algorist.zMyBatis.core.input.InputContractProblemKind
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputKind
 import com.algorist.zMyBatis.core.input.InputProvenance
@@ -84,6 +86,40 @@ class ContractInputPresentationCoverageTest {
         }
     }
 
+    @Test
+    fun `unknown ambiguous and unsupported blockers never become editable fields`() {
+        val mappings = listOf(
+            InputContractProblemKind.UNKNOWN to ContractInputPresentationProblemKind.CONTRACT_UNKNOWN,
+            InputContractProblemKind.AMBIGUOUS to ContractInputPresentationProblemKind.CONTRACT_AMBIGUOUS,
+            InputContractProblemKind.UNSUPPORTED to ContractInputPresentationProblemKind.CONTRACT_UNSUPPORTED,
+        )
+
+        mappings.forEach { (contractKind, presentationKind) ->
+            val blocked = requirement(
+                id = "blocked-${contractKind.name.lowercase()}",
+                kind = InputKind.BOUND,
+                expectedType = ExpectedInputType(InputShape.SCALAR, InputScalarType.STRING),
+            )
+            val problem = InputContractProblem(
+                kind = contractKind,
+                code = "fixture-${contractKind.name.lowercase()}",
+                requirementId = blocked.id,
+                provenance = blocked.provenance,
+            )
+
+            val presentation = ContractInputPresentationFactory.create(
+                contract(requirements = listOf(blocked), problems = listOf(problem)),
+            )
+
+            assertFalse(presentation.canSubmit)
+            assertTrue(presentation.fields.isEmpty())
+            assertEquals(1, presentation.problems.size)
+            assertEquals(presentationKind, presentation.problems.single().kind)
+            assertEquals(problem.code, presentation.problems.single().code)
+            assertEquals(blocked.id, presentation.problems.single().requirementId)
+        }
+    }
+
     private fun requirement(
         id: String,
         kind: InputKind,
@@ -104,12 +140,15 @@ class ContractInputPresentationCoverageTest {
         ),
     )
 
-    private fun contract(requirements: List<InputRequirement>): ParameterContract = ParameterContract(
+    private fun contract(
+        requirements: List<InputRequirement>,
+        problems: List<InputContractProblem> = emptyList(),
+    ): ParameterContract = ParameterContract(
         statementId = STATEMENT,
         requirements = requirements,
         aliases = emptyList(),
         internalBindings = emptyList(),
-        blockingProblems = emptyList(),
+        blockingProblems = problems,
         sourceRevisions = mapOf(FILE to REVISION),
     )
 
