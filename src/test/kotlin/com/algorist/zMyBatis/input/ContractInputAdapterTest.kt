@@ -26,7 +26,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Test
 
 class ContractInputAdapterTest {
@@ -203,7 +202,8 @@ class ContractInputAdapterTest {
         val contract = contract(integer, optional)
 
         val result = ContractInputAdapter.prepare(contract, listOf(entry(integer, "9007199254740993")))
-        val success = result as? ContractInputAdapterResult.Success ?: fail("expected successful environment")
+        assertTrue(result is ContractInputAdapterResult.Success)
+        val success = result as ContractInputAdapterResult.Success
 
         assertEquals(contract.statementId, success.environment.statementId)
         assertEquals(contract.sourceRevisions, success.environment.sourceRevisions)
@@ -297,8 +297,10 @@ class ContractInputAdapterTest {
             origin = ContractInputTextOrigin.USER_ENTERED,
         )
 
-    private fun ContractInputAdapterResult.failuresOrFail(): List<ContractInputAdapterFailure> =
-        (this as? ContractInputAdapterResult.Failure)?.failures ?: fail("expected adapter failure")
+    private fun ContractInputAdapterResult.failuresOrFail(): List<ContractInputAdapterFailure> {
+        assertTrue(this is ContractInputAdapterResult.Failure)
+        return (this as ContractInputAdapterResult.Failure).failures
+    }
 
     private companion object {
         val FILE = SourceFileId("src/example/Mapper.java")
