@@ -1,5 +1,7 @@
 package com.algorist.zMyBatis.core.input
 
+import com.algorist.zMyBatis.core.source.SourceFileId
+import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.StatementId
 import java.math.BigDecimal
 import java.math.BigInteger
@@ -131,9 +133,14 @@ sealed interface InputEnvironmentResult {
 
 class InputEnvironment private constructor(
     val statementId: StatementId,
+    sourceRevisions: Map<SourceFileId, SourceRevision>,
     values: Map<InputRequirementId, ProvidedInput>,
 ) {
+    private val sourceRevisionSnapshot = LinkedHashMap(sourceRevisions)
     private val valueSnapshot = LinkedHashMap(values)
+
+    val sourceRevisions: Map<SourceFileId, SourceRevision>
+        get() = LinkedHashMap(sourceRevisionSnapshot)
 
     val values: Map<InputRequirementId, ProvidedInput>
         get() = LinkedHashMap(valueSnapshot)
@@ -224,7 +231,7 @@ class InputEnvironment private constructor(
             }
 
             return InputEnvironmentResult.Success(
-                InputEnvironment(contract.statementId, uniqueInputs),
+                InputEnvironment(contract.statementId, contract.sourceRevisions, uniqueInputs),
             )
         }
 
