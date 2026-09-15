@@ -75,7 +75,7 @@ class MyBatisPreparationBoundaryAdversarialTest {
         assertFailure(
             result,
             PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "raw-interpolation-mybatis-token-synthesis-unsupported",
+            "raw-interpolation-mybatis-token-topology-unsupported",
         )
     }
 
@@ -89,8 +89,36 @@ class MyBatisPreparationBoundaryAdversarialTest {
         assertFailure(
             result,
             PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "raw-interpolation-mybatis-token-synthesis-unsupported",
+            "raw-interpolation-mybatis-token-topology-unsupported",
         )
+    }
+
+    @Test
+    fun rawBackslashCannotEscapeAnAuthoritativeSourceBoundToken() {
+        val result = prepare(
+            segments = listOf("select ${'$'}{prefix}#{literal}"),
+            parameter = rawParameter(alias = "prefix", value = "\\"),
+        )
+
+        assertFailure(
+            result,
+            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+            "raw-interpolation-mybatis-token-topology-unsupported",
+        )
+    }
+
+    @Test
+    fun safeEmptyStaticRawValueRemainsSupportedWhenBoundTopologyIsUnchanged() {
+        val result = prepare(
+            segments = listOf("select '${'$'}{fragment}'"),
+            parameter = rawParameter(alias = "fragment", value = ""),
+        )
+
+        assertTrue(result is PreparationResult.Success)
+        result as PreparationResult.Success
+        assertEquals("select ''", result.execution.sqlWithPlaceholders.trim())
+        assertTrue(result.execution.orderedBindings.isEmpty())
+        assertEquals(1, result.execution.rawInterpolations.size)
     }
 
     @Test
