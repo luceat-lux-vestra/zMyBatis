@@ -122,6 +122,21 @@ class MyBatisPreparationBoundaryAdversarialTest {
     }
 
     @Test
+    fun harmlessRawMetasyntaxCharactersRemainSupportedWhenBoundTopologyIsUnchanged() {
+        val value = "archive#2026{old}"
+        val result = prepare(
+            segments = listOf("select '${'$'}{fragment}'"),
+            parameter = rawParameter(alias = "fragment", value = value),
+        )
+
+        assertTrue(result is PreparationResult.Success)
+        result as PreparationResult.Success
+        assertEquals("select '$value'", result.execution.sqlWithPlaceholders.trim())
+        assertTrue(result.execution.orderedBindings.isEmpty())
+        assertEquals(1, result.execution.rawInterpolations.size)
+    }
+
+    @Test
     fun staticRawInterpolationCannotMutateAnExistingBoundToken() {
         val result = prepare(
             segments = listOf("select #{${'$'}{option}}"),
