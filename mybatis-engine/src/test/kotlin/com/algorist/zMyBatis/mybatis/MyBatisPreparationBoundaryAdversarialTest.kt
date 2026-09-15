@@ -111,6 +111,24 @@ class MyBatisPreparationBoundaryAdversarialTest {
     }
 
     @Test
+    fun staticRawSourceMustMatchAuthoritativePlaceholderEvidence() {
+        val result = prepare(
+            segments = listOf("select ${'$'}{fragment}"),
+            parameter = rawParameter(
+                alias = "fragment",
+                value = "users",
+                evidenceExpression = "different",
+            ),
+        )
+
+        assertFailure(
+            result,
+            PreparationFailureKind.PREPARATION_INVARIANT,
+            "raw-interpolation-source-authority-mismatch",
+        )
+    }
+
+    @Test
     fun staticRawOgnlClassLoadingSyntaxIsRejectedBeforeClassInitialization() {
         System.clearProperty(STATIC_RAW_OGNL_PROBE_PROPERTY)
         val expression = "@com.algorist.zMyBatis.mybatis.StaticRawOgnlLoadProbe@touch()"
