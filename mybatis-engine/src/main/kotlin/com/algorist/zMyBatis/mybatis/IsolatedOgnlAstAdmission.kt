@@ -12,6 +12,7 @@ import org.apache.ibatis.session.Configuration
  */
 internal object IsolatedOgnlAstAdmission {
     private const val OGNL = "org.apache.ibatis.ognl.Ognl"
+    private const val EXPRESSION_SYNTAX = "org.apache.ibatis.ognl.ExpressionSyntaxException"
 
     private val allowedNodeTypes = setOf(
         "ASTAdd",
@@ -59,9 +60,13 @@ internal object IsolatedOgnlAstAdmission {
                     val root = try {
                         parseExpression.invoke(null, expression)
                     } catch (failure: InvocationTargetException) {
-                        return Result.Malformed(
-                            failure.targetException?.javaClass?.name ?: failure.javaClass.name,
-                        )
+                        val target = failure.targetException ?: failure
+                        rethrowFatal(target)
+                        return if (target.javaClass.name == EXPRESSION_SYNTAX) {
+                            Result.Malformed(target.javaClass.name)
+                        } else {
+                            Result.Invariant(target.javaClass.name)
+                        }
                     }
                     if (root == null || root.javaClass.classLoader !== loader) {
                         return Result.Invariant("mybatis-ognl-ast-not-isolated")
