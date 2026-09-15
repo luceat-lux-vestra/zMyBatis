@@ -214,7 +214,7 @@ object MyBatisPreparationEngine {
         }
     }
 
-    private fun containsDynamicScript(sql: String): Boolean = sql.indexOf("<script", ignoreCase = true) >= 0
+    private fun containsDynamicScript(sql: String): Boolean = sql.startsWith("<script>")
 
     private fun runtimeClassOption(sql: String): String? =
         explicitRuntimeClassOption.find(sql)?.groupValues?.get(1)
