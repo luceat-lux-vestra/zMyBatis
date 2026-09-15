@@ -47,6 +47,8 @@ object MyBatisPreparationEngine {
     private const val UNSUPPORTED_TYPE_HANDLER = "mybatis-custom-type-handler-unsupported"
     private const val EXPLICIT_JAVA_TYPE = "mybatis-explicit-java-type-unsupported"
     private const val DYNAMIC_RAW_INTERPOLATION = "java-annotation-dynamic-raw-interpolation-unsupported"
+    private const val DYNAMIC_NUMERIC_CHARACTER_REFERENCE =
+        "java-annotation-dynamic-numeric-character-reference-unsupported"
     private const val MISSING_MAPPING_PROPERTY = "mybatis-parameter-mapping-property-missing"
     private const val UNRESOLVED_MAPPING = "mybatis-parameter-mapping-unresolved"
     private const val ADDITIONAL_PROVENANCE_MISSING = "mybatis-additional-parameter-provenance-missing"
@@ -73,7 +75,11 @@ object MyBatisPreparationEngine {
             ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_SOURCE)
 
         val script = source.capture.sqlSegments.joinToString(separator = " ").trim()
-        if (containsDynamicScript(script) && script.contains("${'$'}{")) {
+        val dynamicScript = containsDynamicScript(script)
+        if (dynamicScript && script.contains("&#")) {
+            return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_NUMERIC_CHARACTER_REFERENCE)
+        }
+        if (dynamicScript && script.contains("${'$'}{")) {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_RAW_INTERPOLATION)
         }
 
