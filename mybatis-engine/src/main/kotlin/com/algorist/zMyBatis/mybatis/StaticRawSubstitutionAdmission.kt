@@ -14,14 +14,14 @@ import org.apache.ibatis.parsing.GenericTokenParser
  * Admits the statically supported `${...}` subset without evaluating it.
  *
  * MyBatis renders `${...}` first and only then parses the rendered text for `#{...}` mappings.  A raw
- * value must therefore be proven unable to synthesize a new bound token or mutate an existing bound
- * token before MyBatis is allowed to evaluate the raw expression.
+ * value must therefore be proven unable to create, remove, or mutate a bound token before MyBatis is
+ * allowed to evaluate the raw expression.
  */
 internal object StaticRawSubstitutionAdmission {
     private const val AUTHORITY_MISMATCH = "raw-interpolation-source-authority-mismatch"
     private const val EXPRESSION_UNSUPPORTED = "raw-interpolation-expression-unsupported"
     private const val BOUND_CONTEXT_UNSUPPORTED = "raw-interpolation-bound-context-unsupported"
-    private const val TOKEN_SYNTHESIS_UNSUPPORTED = "raw-interpolation-mybatis-token-synthesis-unsupported"
+    private const val TOKEN_TOPOLOGY_UNSUPPORTED = "raw-interpolation-mybatis-token-topology-unsupported"
 
     private val rawOpen = String(charArrayOf('$', '{'))
     private val boundOpen = String(charArrayOf('#', '{'))
@@ -91,29 +91,55 @@ internal object StaticRawSubstitutionAdmission {
             requirementByExpression[expression] = requirementId
         }
 
-        // Reuse MyBatis's own bound-token tokenizer over a non-evaluated structural skeleton.  If a
-        // raw slot is already inside a source `#{...}`, its value could inject typeHandler/javaType
-        // options into that mapping and is therefore not admitted.
-        var rawInsideBoundToken = false
-        GenericTokenParser(boundOpen, "}") { content ->
-            if (slotMarkers.any { marker -> content.contains(marker) }) rawInsideBoundToken = true
-            ""
-        }.parse(structuralSql)
-        if (rawInsideBoundToken) return unsupported(BOUND_CONTEXT_UNSUPPORTED)
+        // Reuse MyBatis's own bound-token tokenizer over a non-evaluated structural skeleton.  A raw
+        // slot already inside a source `#{...}` could change mapping options and is never admitted.
+        val sourceBoundPayloads = boundPayloads(structuralSql)
+        if (sourceBoundPayloads.any { payload -> slotMarkers.any { marker -> payload.contains(marker) } }) {
+            return unsupported(BOUND_CONTEXT_UNSUPPORTED)
+        }
 
+        val rawValuesByRequirement = linkedMapOf<InputRequirementId, String>()
         for (requirementId in requirementByExpression.values.toSet()) {
             val provided = request.inputEnvironment.value(requirementId) ?: return authorityMismatch()
             val raw = (provided.value as? InputValue.RawText)?.value ?: return authorityMismatch()
+            rawValuesByRequirement[requirementId] = raw
+        }
 
-            // A non-empty replacement that contains neither half of the `#{` opener cannot create a
-            // new bound token across either substitution boundary.  Existing source bound tokens were
-            // handled above, so MyBatis cannot discover a new runtime-class-bearing mapping later.
-            if (raw.isEmpty() || '#' in raw || '{' in raw) {
-                return unsupported(TOKEN_SYNTHESIS_UNSUPPORTED)
-            }
+        // Preserve only characters that influence GenericTokenParser's `#{...}` structure.  All other
+        // characters become inert sentinels.  This is not SQL rendering: it proves that raw replacement
+        // cannot create, delete, escape, close, or otherwise rewire the bound-token payload sequence.
+        var projectedSql = structuralSql
+        for (index in slotMarkers.indices) {
+            val expression = sourceExpressions[index]
+            val requirementId = requirementByExpression[expression] ?: return authorityMismatch()
+            val raw = rawValuesByRequirement[requirementId] ?: return authorityMismatch()
+            projectedSql = projectedSql.replace(slotMarkers[index], projectBoundTokenMetasyntax(raw))
+        }
+        if (boundPayloads(projectedSql) != sourceBoundPayloads) {
+            return unsupported(TOKEN_TOPOLOGY_UNSUPPORTED)
         }
 
         return null
+    }
+
+    private fun boundPayloads(sql: String): List<String> {
+        val payloads = mutableListOf<String>()
+        GenericTokenParser(boundOpen, "}") { content ->
+            payloads += content
+            "?"
+        }.parse(sql)
+        return payloads
+    }
+
+    private fun projectBoundTokenMetasyntax(raw: String): String = buildString(raw.length) {
+        raw.forEach { character ->
+            append(
+                when (character) {
+                    '#', '{', '}', '\\' -> character
+                    else -> 'x'
+                },
+            )
+        }
     }
 
     private fun counts(values: List<String>): Map<String, Int> = values.groupingBy { it }.eachCount()
