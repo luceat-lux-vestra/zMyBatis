@@ -7,13 +7,13 @@ import java.net.URLClassLoader
 import org.apache.ibatis.session.Configuration
 
 /**
- * Executes stock MyBatis dynamic-script preparation in a fresh classloader.
+ * Executes stock MyBatis DynamicSqlSource preparation in a fresh classloader.
  *
  * MyBatis 3.5.19 initializes DynamicContext by registering a ContextMap accessor in the shaded
- * process-global OGNL runtime. Loading/evaluating dynamic scripts in the application/plugin
- * classloader would therefore violate the preparation isolation contract. A fresh loader keeps that
- * stock-MyBatis mutation scoped to one preparation while only immutable/JDK-safe snapshots cross
- * back to the caller.
+ * process-global OGNL runtime. Loading/evaluating either a `<script>` or static `${...}` through
+ * DynamicSqlSource in the application/plugin classloader would therefore violate the preparation
+ * isolation contract. A fresh loader scopes that stock-MyBatis mutation to one preparation while
+ * only JDK-safe snapshots cross back to the caller.
  */
 internal object IsolatedDynamicMyBatisPreparation {
     private const val CONFIGURATION = "org.apache.ibatis.session.Configuration"
@@ -22,25 +22,32 @@ internal object IsolatedDynamicMyBatisPreparation {
     private const val BOUND_SQL = "org.apache.ibatis.mapping.BoundSql"
     private const val PARAMETER_MAPPING = "org.apache.ibatis.mapping.ParameterMapping"
     private const val PARAM_MAP = "org.apache.ibatis.binding.MapperMethod\$ParamMap"
+    private const val OGNL_RUNTIME = "org.apache.ibatis.ognl.OgnlRuntime"
 
     private const val PARSE_FAILURE = "mybatis-sql-source-parse-failure"
     private const val OGNL_FAILURE = "mybatis-ognl-evaluation-failure"
     private const val BINDING_FAILURE = "mybatis-binding-resolution-failure"
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
 
+    private val platformLoader = ClassLoader.getPlatformClassLoader()
+
     fun prepare(
         script: String,
         parameterType: MyBatisParameterType,
         parameterValues: Map<String, Any?>,
     ): Result {
+        if (!safeParameterType(parameterType)) {
+            return Result.Failed(invariantFailure("mybatis-isolated-parameter-type-not-jdk-owned"))
+        }
+        if (!safeInboundValue(parameterValues)) {
+            return Result.Failed(invariantFailure("mybatis-isolated-parameter-value-not-jdk-owned"))
+        }
+
         val myBatisLocation = Configuration::class.java.protectionDomain?.codeSource?.location
             ?: return Result.Failed(invariantFailure("mybatis-code-source-unavailable"))
 
         return try {
-            URLClassLoader(
-                arrayOf(myBatisLocation),
-                ClassLoader.getPlatformClassLoader(),
-            ).use { loader ->
+            URLClassLoader(arrayOf(myBatisLocation), platformLoader).use { loader ->
                 prepareIn(loader, script, parameterType, parameterValues)
             }
         } catch (failure: Throwable) {
@@ -58,6 +65,10 @@ internal object IsolatedDynamicMyBatisPreparation {
         val configurationClass = Class.forName(CONFIGURATION, true, loader)
         if (configurationClass.classLoader !== loader) {
             return Result.Failed(invariantFailure("mybatis-configuration-not-isolated"))
+        }
+        val ognlRuntimeClass = Class.forName(OGNL_RUNTIME, false, loader)
+        if (ognlRuntimeClass.classLoader !== loader) {
+            return Result.Failed(invariantFailure("mybatis-ognl-runtime-not-isolated"))
         }
         val languageDriverClass = Class.forName(LANGUAGE_DRIVER, true, loader)
         val sqlSourceClass = Class.forName(SQL_SOURCE, true, loader)
@@ -241,6 +252,36 @@ internal object IsolatedDynamicMyBatisPreparation {
         )
     }
 
+    private fun safeParameterType(parameterType: MyBatisParameterType): Boolean = when (parameterType) {
+        MyBatisParameterType.None,
+        MyBatisParameterType.Multi,
+        -> true
+        is MyBatisParameterType.Single -> jdkOwned(parameterType.type)
+    }
+
+    private fun safeInboundValue(value: Any?): Boolean {
+        if (value == null) return true
+        if (!jdkOwned(value.javaClass)) return false
+        return when (value) {
+            is Map<*, *> -> value.entries.all { (key, item) ->
+                safeInboundValue(key) && safeInboundValue(item)
+            }
+            is List<*> -> value.all(::safeInboundValue)
+            else -> {
+                if (!value.javaClass.isArray) {
+                    true
+                } else {
+                    (0 until ReflectArray.getLength(value)).all { index ->
+                        safeInboundValue(ReflectArray.get(value, index))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun jdkOwned(type: Class<*>): Boolean =
+        type.classLoader == null || type.classLoader === platformLoader
+
     private fun copyAcrossLoader(value: Any?, loader: ClassLoader): CrossLoaderValue {
         if (value == null) return CrossLoaderValue.Ready(null)
 
@@ -258,7 +299,7 @@ internal object IsolatedDynamicMyBatisPreparation {
         }
 
         if (value is List<*>) {
-            val copy = mutableListOf<Any?>()
+            val copy = ArrayList<Any?>(value.size)
             for (item in value) {
                 val copied = copyAcrossLoader(item, loader)
                 if (copied is CrossLoaderValue.Unsupported) return copied
@@ -280,7 +321,7 @@ internal object IsolatedDynamicMyBatisPreparation {
 
         val valueLoader = value.javaClass.classLoader
         if (valueLoader === loader) return CrossLoaderValue.Unsupported(value.javaClass.name)
-        if (valueLoader == null || valueLoader === ClassLoader.getPlatformClassLoader()) {
+        if (valueLoader == null || valueLoader === platformLoader) {
             return CrossLoaderValue.Ready(value)
         }
         return CrossLoaderValue.Unsupported(value.javaClass.name)
