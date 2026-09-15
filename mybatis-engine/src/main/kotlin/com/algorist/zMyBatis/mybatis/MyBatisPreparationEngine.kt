@@ -5,6 +5,7 @@ import com.algorist.zMyBatis.core.input.InputKind
 import com.algorist.zMyBatis.core.input.InputRequirement
 import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InputValue
+import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
@@ -13,6 +14,7 @@ import com.algorist.zMyBatis.core.preparation.PreparationResult
 import com.algorist.zMyBatis.core.preparation.PreparationSource
 import com.algorist.zMyBatis.core.preparation.PreparedBinding
 import com.algorist.zMyBatis.core.preparation.PreparedBindingMetadata
+import com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin
 import com.algorist.zMyBatis.core.preparation.PreparedExecution
 import com.algorist.zMyBatis.core.preparation.PreparedRawInterpolation
 import com.algorist.zMyBatis.core.preparation.rawRequirements
@@ -44,8 +46,12 @@ object MyBatisPreparationEngine {
     private const val UNSUPPORTED_PARAMETER_MODE = "mybatis-parameter-mode-unsupported"
     private const val UNSUPPORTED_TYPE_HANDLER = "mybatis-custom-type-handler-unsupported"
     private const val EXPLICIT_JAVA_TYPE = "mybatis-explicit-java-type-unsupported"
+    private const val DYNAMIC_RAW_INTERPOLATION = "java-annotation-dynamic-raw-interpolation-unsupported"
     private const val MISSING_MAPPING_PROPERTY = "mybatis-parameter-mapping-property-missing"
     private const val UNRESOLVED_MAPPING = "mybatis-parameter-mapping-unresolved"
+    private const val ADDITIONAL_PROVENANCE_MISSING = "mybatis-additional-parameter-provenance-missing"
+    private const val ADDITIONAL_PROVENANCE_AMBIGUOUS = "mybatis-additional-parameter-provenance-ambiguous"
+    private const val ADDITIONAL_KIND_UNSUPPORTED = "mybatis-additional-parameter-kind-unsupported"
     private const val RAW_INPUT_MISSING = "raw-interpolation-input-missing"
     private const val RAW_BOUND_CONFLATION = "raw-interpolation-bound-mapping-conflation"
     private const val UNSUPPORTED_VALUE = "mybatis-binding-value-unsupported"
@@ -66,6 +72,11 @@ object MyBatisPreparationEngine {
         val source = request.source as? PreparationSource.JavaAnnotation
             ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_SOURCE)
 
+        val script = source.capture.sqlSegments.joinToString(separator = " ").trim()
+        if (containsDynamicScript(script) && script.contains("${'$'}{")) {
+            return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_RAW_INTERPOLATION)
+        }
+
         val explicitClassOption = source.capture.sqlSegments.firstNotNullOfOrNull(::runtimeClassOption)
         if (explicitClassOption != null) {
             return if (explicitClassOption.equals("typeHandler", ignoreCase = true)) {
@@ -84,7 +95,6 @@ object MyBatisPreparationEngine {
             return PreparationResult.Failed(parameterObjectResult.failure)
         }
         val parameterObject = (parameterObjectResult as ParameterObjectResult.Ready).value
-        val script = source.capture.sqlSegments.joinToString(separator = " ").trim()
 
         val boundSql = try {
             val sqlSource = languageDriver.createSqlSource(configuration, script, parameterType.type)
@@ -138,6 +148,8 @@ object MyBatisPreparationEngine {
             )
         }
     }
+
+    private fun containsDynamicScript(sql: String): Boolean = sql.indexOf("<script", ignoreCase = true) >= 0
 
     private fun runtimeClassOption(sql: String): String? =
         explicitRuntimeClassOption.find(sql)?.groupValues?.get(1)
@@ -269,30 +281,59 @@ object MyBatisPreparationEngine {
                     MISSING_MAPPING_PROPERTY,
                     null,
                 )
-
+            val rootProperty = property.substringBefore('.')
             val additional = boundSql.hasAdditionalParameter(property)
-            val alias = aliasesByName[property.substringBefore('.')]
+            val alias = aliasesByName[rootProperty]
             val requirement = alias?.let { request.parameterContract.requirement(it.requirementId) }
-            if (requirement?.kind == InputKind.RAW_INTERPOLATION) {
-                return bindingFailure(
-                    PreparationFailureKind.PARAMETER_MAPPING_MISMATCH,
-                    RAW_BOUND_CONFLATION,
-                    property,
-                )
-            }
-            if (!additional && requirement == null) {
-                return bindingFailure(
-                    PreparationFailureKind.BINDING_RESOLUTION,
-                    UNRESOLVED_MAPPING,
-                    property,
-                )
-            }
-            if (!additional && requirement != null && !pathExists(request, alias, requirement, property)) {
-                return bindingFailure(
-                    PreparationFailureKind.BINDING_RESOLUTION,
-                    UNRESOLVED_MAPPING,
-                    property,
-                )
+
+            val origin = if (additional) {
+                val candidates = request.parameterContract.internalBindings.filter { it.name == rootProperty }
+                if (candidates.isEmpty()) {
+                    return bindingFailure(
+                        PreparationFailureKind.BINDING_RESOLUTION,
+                        ADDITIONAL_PROVENANCE_MISSING,
+                        property,
+                    )
+                }
+                if (candidates.size != 1) {
+                    return bindingFailure(
+                        PreparationFailureKind.BINDING_RESOLUTION,
+                        ADDITIONAL_PROVENANCE_AMBIGUOUS,
+                        property,
+                    )
+                }
+                val internalBinding = candidates.single()
+                if (internalBinding.kind != InternalBindingKind.BIND) {
+                    return bindingFailure(
+                        PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                        ADDITIONAL_KIND_UNSUPPORTED,
+                        property,
+                    )
+                }
+                PreparedBindingOrigin.MyBatisAdditional(internalBinding)
+            } else {
+                if (requirement?.kind == InputKind.RAW_INTERPOLATION) {
+                    return bindingFailure(
+                        PreparationFailureKind.PARAMETER_MAPPING_MISMATCH,
+                        RAW_BOUND_CONFLATION,
+                        property,
+                    )
+                }
+                if (requirement == null) {
+                    return bindingFailure(
+                        PreparationFailureKind.BINDING_RESOLUTION,
+                        UNRESOLVED_MAPPING,
+                        property,
+                    )
+                }
+                if (!pathExists(request, alias, requirement, property)) {
+                    return bindingFailure(
+                        PreparationFailureKind.BINDING_RESOLUTION,
+                        UNRESOLVED_MAPPING,
+                        property,
+                    )
+                }
+                PreparedBindingOrigin.CallerInput(requirement.id, requirement.provenance)
             }
 
             val typeHandler = mapping.typeHandler
@@ -316,7 +357,9 @@ object MyBatisPreparationEngine {
             } catch (failure: RuntimeException) {
                 return BindingCaptureResult.Failed(classifyBindingFailure(failure, property))
             }
-            val coreValue = toCoreValue(runtimeValue, requirement, property, alias)
+            val callerRequirement = (origin as? PreparedBindingOrigin.CallerInput)?.let { requirement }
+            val callerAlias = if (callerRequirement != null) alias else null
+            val coreValue = toCoreValue(runtimeValue, callerRequirement, property, callerAlias)
                 ?: return bindingFailure(
                     PreparationFailureKind.UNSUPPORTED_BINDING_VALUE,
                     UNSUPPORTED_VALUE,
@@ -327,17 +370,15 @@ object MyBatisPreparationEngine {
             bindings += PreparedBinding(
                 index = index,
                 property = property,
-                requirementId = requirement?.id,
                 value = coreValue,
-                provenance = requirement?.provenance,
+                origin = origin,
                 metadata = PreparedBindingMetadata(
-                    declaredJavaTypeIdentity = requirement?.expectedType?.javaTypeIdentity,
+                    declaredJavaTypeIdentity = callerRequirement?.expectedType?.javaTypeIdentity,
                     mappingJavaTypeIdentity = mapping.javaType?.name,
                     jdbcTypeIdentity = mapping.jdbcType?.name,
                     typeHandlerIdentity = typeHandlerName,
                     parameterMode = mapping.mode.name,
                     numericScale = mapping.numericScale,
-                    additionalParameter = additional,
                 ),
             )
         }
