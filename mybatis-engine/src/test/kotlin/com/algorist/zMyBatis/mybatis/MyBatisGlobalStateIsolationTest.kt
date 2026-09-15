@@ -38,6 +38,7 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
+import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Proxy
 import java.math.BigInteger
 import org.apache.ibatis.session.Configuration
@@ -48,13 +49,8 @@ import org.junit.Test
 
 class MyBatisGlobalStateIsolationTest {
     @Test
-    fun dynamicAndStaticRawPreparationDoNotUseOrMutateParentOgnlContextAccessor() = synchronized(ognlLock) {
+    fun allPreparationKindsDoNotUseOrMutateParentOgnlContextAccessor() = synchronized(ognlLock) {
         val myBatisLoader = Configuration::class.java.classLoader
-        Class.forName(
-            "org.apache.ibatis.scripting.xmltags.DynamicContext",
-            true,
-            myBatisLoader,
-        )
         val contextMapClass = Class.forName(
             "org.apache.ibatis.scripting.xmltags.DynamicContext\$ContextMap",
             false,
@@ -91,6 +87,18 @@ class MyBatisGlobalStateIsolationTest {
             assertEquals(InputValue.IntegerValue(BigInteger.valueOf(7)), dynamic.execution.orderedBindings.single().value)
             assertSame(poison, getPropertyAccessor.invoke(null, contextMapClass))
 
+            val staticBound = prepare(
+                fixture(
+                    script = "select #{id}",
+                    parameter = Parameter.boundLong("id", 8),
+                ),
+            )
+            assertTrue(staticBound is PreparationResult.Success)
+            staticBound as PreparationResult.Success
+            assertEquals("select ?", normalizeSql(staticBound.execution.sqlWithPlaceholders))
+            assertEquals(InputValue.IntegerValue(BigInteger.valueOf(8)), staticBound.execution.orderedBindings.single().value)
+            assertSame(poison, getPropertyAccessor.invoke(null, contextMapClass))
+
             val staticRaw = prepare(
                 fixture(
                     script = "select * from ${'$'}{table}",
@@ -104,7 +112,52 @@ class MyBatisGlobalStateIsolationTest {
             assertEquals(1, staticRaw.execution.rawInterpolations.size)
             assertSame(poison, getPropertyAccessor.invoke(null, contextMapClass))
         } finally {
-            setPropertyAccessor.invoke(null, contextMapClass, original)
+            val current = getPropertyAccessor.invoke(null, contextMapClass)
+            if (current === poison) {
+                setPropertyAccessor.invoke(null, contextMapClass, original)
+            }
+        }
+    }
+
+    @Test
+    fun parentOgnlExpressionLengthLimitCannotChangeDynamicAdmission() = synchronized(ognlLock) {
+        val myBatisLoader = Configuration::class.java.classLoader
+        val ognlClass = Class.forName("org.apache.ibatis.ognl.Ognl", true, myBatisLoader)
+        val maxField = ognlClass.getDeclaredField("expressionMaxLength").apply { isAccessible = true }
+        val frozenField = ognlClass.getDeclaredField("expressionMaxLengthFrozen").apply { isAccessible = true }
+        val originalMax = maxField.get(null) as Int?
+        val originalFrozen = frozenField.get(null) as Boolean
+        val thaw = ognlClass.getMethod("thawExpressionMaxLength")
+        val freeze = ognlClass.getMethod("freezeExpressionMaxLength")
+        val apply = ognlClass.getMethod("applyExpressionMaxLength", Int::class.javaObjectType)
+        val parse = ognlClass.getMethod("parseExpression", String::class.java)
+
+        thaw.invoke(null)
+        apply.invoke(null, 1)
+        try {
+            var parentRejected = false
+            try {
+                parse.invoke(null, "id != null")
+            } catch (_: InvocationTargetException) {
+                parentRejected = true
+            }
+            assertTrue("test setup must poison the parent OGNL parser", parentRejected)
+
+            val result = prepare(
+                fixture(
+                    script = "<script><if test=\"id != null\">select #{id}</if></script>",
+                    parameter = Parameter.boundLong("id", 9),
+                ),
+            )
+
+            assertTrue(result is PreparationResult.Success)
+            result as PreparationResult.Success
+            assertEquals("select ?", normalizeSql(result.execution.sqlWithPlaceholders))
+            assertEquals(InputValue.IntegerValue(BigInteger.valueOf(9)), result.execution.orderedBindings.single().value)
+        } finally {
+            thaw.invoke(null)
+            apply.invoke(null, originalMax)
+            if (originalFrozen) freeze.invoke(null)
         }
     }
 
