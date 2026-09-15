@@ -105,6 +105,24 @@ class MyBatisPreparationEngineAdversarialTest {
     }
 
     @Test
+    fun unusedUnknownMapperParameterDoesNotTriggerRuntimeClassResolution() {
+        val request = request(
+            "select #{id}",
+            listOf(
+                Parameter("java.lang.Long", "id", InputValue.IntegerValue(BigInteger.valueOf(17))),
+                Parameter("fixture.DoesNotExist", "unused", InputValue.Text("not-consumed")),
+            ),
+        )
+
+        val result = MyBatisPreparationEngine.prepare(request)
+
+        assertTrue(result is PreparationResult.Success)
+        val execution = (result as PreparationResult.Success).execution
+        assertEquals("select ?", execution.sqlWithPlaceholders)
+        assertEquals(InputValue.IntegerValue(BigInteger.valueOf(17)), execution.orderedBindings.single().value)
+    }
+
+    @Test
     fun invalidMyBatisPlaceholderOptionFailsAsTypedParseFailure() {
         val request = request(
             "select #{id,notARealOption=x}",
