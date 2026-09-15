@@ -16,6 +16,10 @@ import org.apache.ibatis.parsing.GenericTokenParser
  * MyBatis renders `${...}` first and only then parses the rendered text for `#{...}` mappings. A raw
  * value must therefore be proven unable to create, remove, replace, escape, or mutate a source bound
  * token before MyBatis is allowed to evaluate the raw expression.
+ *
+ * This slice admits only an exact caller alias (`${alias}`). Nested/raw OGNL property traversal is
+ * deliberately refused because the authoritative root RawText value does not prove the value that
+ * MyBatis would obtain after evaluating `${alias.property}`.
  */
 internal object StaticRawSubstitutionAdmission {
     private const val AUTHORITY_MISMATCH = "raw-interpolation-source-authority-mismatch"
@@ -25,7 +29,7 @@ internal object StaticRawSubstitutionAdmission {
 
     private val rawOpen = String(charArrayOf('$', '{'))
     private val boundOpen = String(charArrayOf('#', '{'))
-    private val simplePath = Regex("[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*")
+    private val aliasName = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val supportedStringTypes = setOf("java.lang.String", "String")
 
     fun failureOrNull(
@@ -73,9 +77,8 @@ internal object StaticRawSubstitutionAdmission {
         val aliasesByName = request.inputEnvironment.aliases.groupBy { it.name }
         val requirementByExpression = linkedMapOf<String, InputRequirementId>()
         for (expression in sourceExpressions.distinct()) {
-            if (!simplePath.matches(expression) || expression.split('.').any { it == "class" }) {
-                return unsupported(EXPRESSION_UNSUPPORTED)
-            }
+            if (!aliasName.matches(expression)) return unsupported(EXPRESSION_UNSUPPORTED)
+
             val candidateIds = authorities
                 .asSequence()
                 .filter { it.expression == expression }
@@ -85,8 +88,7 @@ internal object StaticRawSubstitutionAdmission {
             if (candidateIds.size != 1) return authorityMismatch()
 
             val requirementId = candidateIds.single()
-            val root = expression.substringBefore('.')
-            val aliases = aliasesByName[root].orEmpty()
+            val aliases = aliasesByName[expression].orEmpty()
             if (aliases.size != 1 || aliases.single().requirementId != requirementId) return authorityMismatch()
             requirementByExpression[expression] = requirementId
         }
