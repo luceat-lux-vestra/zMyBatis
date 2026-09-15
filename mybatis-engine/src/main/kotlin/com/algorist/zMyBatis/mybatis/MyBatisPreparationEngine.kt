@@ -88,13 +88,18 @@ object MyBatisPreparationEngine {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_RAW_INTERPOLATION)
         }
 
-        val explicitClassOption = source.capture.sqlSegments.firstNotNullOfOrNull(::runtimeClassOption)
+        val explicitClassOption = runtimeClassOption(script)
         if (explicitClassOption != null) {
             return if (explicitClassOption.equals("typeHandler", ignoreCase = true)) {
                 failed(PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER, UNSUPPORTED_TYPE_HANDLER)
             } else {
                 failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, EXPLICIT_JAVA_TYPE)
             }
+        }
+
+        if (!dynamicScript) {
+            val staticRawFailure = StaticRawSubstitutionAdmission.failureOrNull(script, request)
+            if (staticRawFailure != null) return PreparationResult.Failed(staticRawFailure)
         }
 
         if (dynamicScript) {
