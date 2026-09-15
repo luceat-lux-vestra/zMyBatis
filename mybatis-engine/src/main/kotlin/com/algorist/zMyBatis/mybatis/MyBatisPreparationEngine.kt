@@ -143,11 +143,15 @@ object MyBatisPreparationEngine {
         explicitRuntimeClassOption.find(sql)?.groupValues?.get(1)
 
     private fun resolveAnnotationParameterType(parameterTypes: List<JavaTypeIdentity>): ParameterTypeResolution? {
-        val effectiveParameterTypes = parameterTypes.filterNot(::isMyBatisSpecialParameter)
+        val resolved = mutableListOf<Class<*>>()
+        for (typeIdentity in parameterTypes) {
+            if (isMyBatisSpecialParameter(typeIdentity)) continue
+            resolved += resolveSafeJavaType(typeIdentity) ?: return null
+        }
         return ParameterTypeResolution(
-            when (effectiveParameterTypes.size) {
+            when (resolved.size) {
                 0 -> null
-                1 -> resolveSafeJavaType(effectiveParameterTypes.single()) ?: return null
+                1 -> resolved.single()
                 else -> MapperMethod.ParamMap::class.java
             },
         )
