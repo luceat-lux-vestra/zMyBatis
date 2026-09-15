@@ -62,6 +62,17 @@ class MyBatisPreparationEngineTest {
     }
 
     @Test
+    fun zeroParameterStaticSqlPreparesThroughIsolatedBoundary() {
+        val result = MyBatisPreparationEngine.prepare(request("select 1", emptyList()))
+
+        assertTrue(result is PreparationResult.Success)
+        val execution = (result as PreparationResult.Success).execution
+        assertEquals("select 1", execution.sqlWithPlaceholders)
+        assertTrue(execution.orderedBindings.isEmpty())
+        assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    @Test
     fun rawInterpolationIsDelegatedToMyBatisButRemainsSeparateFromBindings() {
         val request = request(
             "select * from ${'$'}{table} where id = #{id}",
