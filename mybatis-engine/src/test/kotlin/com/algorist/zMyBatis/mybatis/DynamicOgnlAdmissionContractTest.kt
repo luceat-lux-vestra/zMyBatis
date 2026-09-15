@@ -64,6 +64,21 @@ class DynamicOgnlAdmissionContractTest {
     }
 
     @Test
+    fun bindCannotShadowReservedMyBatisContext() {
+        val expression = "name"
+        val result = DynamicOgnlAdmission.inspect(
+            "<script><bind name=\"_parameter\" value=\"$expression\"/>select 1</script>",
+            setOf("name"),
+            listOf(bind("_parameter", expression)),
+        )
+
+        assertTrue(result is DynamicOgnlAdmission.Result.BindAuthority)
+        result as DynamicOgnlAdmission.Result.BindAuthority
+        assertEquals("_parameter", result.name)
+        assertEquals(DynamicOgnlAdmission.BindAuthorityProblem.RESERVED_CONTEXT, result.problem)
+    }
+
+    @Test
     fun bindLocalsAreNotImplicitExpressionRoots() {
         val first = "name + 'x'"
         val second = "first + 'y'"
