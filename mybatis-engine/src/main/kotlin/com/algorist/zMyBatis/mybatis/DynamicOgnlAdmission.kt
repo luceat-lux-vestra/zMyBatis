@@ -66,9 +66,12 @@ internal object DynamicOgnlAdmission {
         internalBindings: List<InternalBinding>,
         sourceBindNames: MutableSet<String>,
     ): Result {
+        // Positive foreach support is outside #143 because generated item/index authority is not yet
+        // modeled.  Refuse the tag itself before MyBatis can iterate or synthesize __frch_* locals.
+        if (node.name == "foreach") return Result.Unsupported("DynamicTag[foreach]")
+
         val expression = when (node.name) {
             "if", "when" -> node.getStringAttribute("test")
-            "foreach" -> node.getStringAttribute("collection")
             "bind" -> {
                 val bindResult = inspectBindAuthority(node, callerRootProperties, internalBindings, sourceBindNames)
                 if (bindResult !is Result.Admitted) return bindResult
