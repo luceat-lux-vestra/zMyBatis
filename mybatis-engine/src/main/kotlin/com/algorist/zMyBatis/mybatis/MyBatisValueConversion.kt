@@ -40,7 +40,7 @@ internal object MyBatisValueConversion {
 
     fun parameterValues(request: MyBatisPreparationRequest): ParameterValuesResult {
         if (request.inputEnvironment.values.isEmpty()) {
-            return ParameterValuesResult.Ready(emptyMap())
+            return ParameterValuesResult.Ready(linkedMapOf())
         }
 
         val values = linkedMapOf<String, Any?>()
