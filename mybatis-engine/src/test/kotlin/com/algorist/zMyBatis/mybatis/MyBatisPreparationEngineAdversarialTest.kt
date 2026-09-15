@@ -172,7 +172,7 @@ class MyBatisPreparationEngineAdversarialTest {
     }
 
     @Test
-    fun rawOgnlFailureIsTypedAndNeverReturnedAsSql() {
+    fun nestedStaticRawOgnlIsRejectedBeforeEvaluation() {
         val request = request(
             "select * from ${'$'}{id.missing}",
             listOf(Parameter("java.lang.String", "id", InputValue.RawText("abc"))),
@@ -182,8 +182,8 @@ class MyBatisPreparationEngineAdversarialTest {
 
         assertTrue(result is PreparationResult.Failed)
         result as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.OGNL, result.failure.kind)
-        assertEquals("mybatis-ognl-evaluation-failure", result.failure.code)
+        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
+        assertEquals("raw-interpolation-expression-unsupported", result.failure.code)
     }
 
     @Test
