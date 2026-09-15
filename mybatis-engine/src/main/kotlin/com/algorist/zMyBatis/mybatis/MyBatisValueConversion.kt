@@ -231,7 +231,9 @@ internal object MyBatisValueConversion {
             is InputValue.MapValue -> RuntimeValueResult.Ready(
                 value.entries.mapValuesTo(linkedMapOf()) { toUntypedRuntimeValue(it.value) },
             )
-            is InputValue.ListValue -> RuntimeValueResult.Ready(value.elements.map(::toUntypedRuntimeValue))
+            is InputValue.ListValue -> RuntimeValueResult.Ready(
+                value.elements.mapTo(ArrayList(value.elements.size), ::toUntypedRuntimeValue),
+            )
             is InputValue.ArrayValue -> arrayRuntimeValue(value, rawTypeName)
         }
     }
@@ -296,7 +298,7 @@ internal object MyBatisValueConversion {
         is InputValue.UuidValue -> value.value
         is InputValue.ObjectValue -> value.entries.mapValuesTo(linkedMapOf()) { toUntypedRuntimeValue(it.value) }
         is InputValue.MapValue -> value.entries.mapValuesTo(linkedMapOf()) { toUntypedRuntimeValue(it.value) }
-        is InputValue.ListValue -> value.elements.map(::toUntypedRuntimeValue)
+        is InputValue.ListValue -> value.elements.mapTo(ArrayList(value.elements.size), ::toUntypedRuntimeValue)
         is InputValue.ArrayValue -> value.elements.map(::toUntypedRuntimeValue).toTypedArray()
     }
 
