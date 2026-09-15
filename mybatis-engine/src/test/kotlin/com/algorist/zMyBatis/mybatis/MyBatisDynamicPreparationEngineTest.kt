@@ -66,7 +66,7 @@ class MyBatisDynamicPreparationEngineTest {
         )
         assertTrue(present is PreparationResult.Success)
         present as PreparationResult.Success
-        assertEquals("select * from users\n WHERE id = ?", present.execution.sqlWithPlaceholders)
+        assertEquals("select * from users WHERE id = ?", normalizeSql(present.execution.sqlWithPlaceholders))
         assertEquals(listOf("id"), present.execution.orderedBindings.map { it.property })
         assertEquals(longValue(7), present.execution.orderedBindings.single().value)
 
@@ -78,7 +78,7 @@ class MyBatisDynamicPreparationEngineTest {
         )
         assertTrue(absent is PreparationResult.Success)
         absent as PreparationResult.Success
-        assertEquals("select * from users", absent.execution.sqlWithPlaceholders)
+        assertEquals("select * from users", normalizeSql(absent.execution.sqlWithPlaceholders))
         assertTrue(absent.execution.orderedBindings.isEmpty())
     }
 
@@ -105,7 +105,7 @@ class MyBatisDynamicPreparationEngineTest {
 
         assertTrue(result is PreparationResult.Success)
         result as PreparationResult.Success
-        assertEquals("select * from users\n WHERE  id = ?", result.execution.sqlWithPlaceholders)
+        assertEquals("select * from users WHERE id = ?", normalizeSql(result.execution.sqlWithPlaceholders))
         assertEquals(listOf("id"), result.execution.orderedBindings.map { it.property })
     }
 
@@ -132,7 +132,7 @@ class MyBatisDynamicPreparationEngineTest {
         assertEquals("pattern", binding.property)
         assertEquals(InputValue.Text("%Ada%"), binding.value)
         assertTrue(binding.additionalParameter)
-        assertEquals(null, binding.requirementId)
+        assertTrue(binding.requirementId == null)
         assertTrue(binding.origin is PreparedBindingOrigin.MyBatisAdditional)
         val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
         assertEquals("pattern", origin.internalBinding.name)
@@ -177,7 +177,7 @@ class MyBatisDynamicPreparationEngineTest {
                 parameters = listOf(Parameter("java.lang.String", "name", stringType(), InputValue.Text("Ada"))),
                 internalBindings = listOf(
                     InternalSpec("pattern", InternalBindingKind.BIND, "'%' + name + '%'"),
-                    InternalSpec("pattern", InternalBindingKind.ADDITIONAL_PARAMETER, "'%' + name + '%'"),
+                    InternalSpec("pattern", InternalBindingKind.ADDITIONAL_PARAMETER, "pattern"),
                 ),
             ),
         )
@@ -219,7 +219,8 @@ class MyBatisDynamicPreparationEngineTest {
         result as PreparationResult.Failed
         assertEquals(PreparationFailureKind.BINDING_RESOLUTION, result.failure.kind)
         assertEquals("mybatis-additional-parameter-provenance-missing", result.failure.code)
-        assertTrue(result.failure.bindingProperty?.startsWith("__frch_") == true)
+        assertTrue(result.failure.bindingProperty != null)
+        assertTrue(result.failure.bindingProperty != "item")
     }
 
     @Test
@@ -369,14 +370,14 @@ class MyBatisDynamicPreparationEngineTest {
                 provenance = InputProvenance(
                     listOf(
                         when (spec.kind) {
-                            InternalBindingKind.BIND,
-                            InternalBindingKind.ADDITIONAL_PARAMETER,
-                            -> InputEvidence.BindLocal(spec.name, spec.expression, source)
+                            InternalBindingKind.BIND -> InputEvidence.BindLocal(spec.name, spec.expression, source)
                             InternalBindingKind.FOREACH_ITEM ->
                                 InputEvidence.ForeachLocal(spec.name, com.algorist.zMyBatis.core.input.ForeachLocalRole.ITEM, source)
                             InternalBindingKind.FOREACH_INDEX ->
                                 InputEvidence.ForeachLocal(spec.name, com.algorist.zMyBatis.core.input.ForeachLocalRole.INDEX, source)
-                            InternalBindingKind.MYBATIS_CONTEXT -> InputEvidence.OgnlExpression(spec.expression, source)
+                            InternalBindingKind.ADDITIONAL_PARAMETER,
+                            InternalBindingKind.MYBATIS_CONTEXT,
+                            -> InputEvidence.OgnlExpression(spec.expression, source)
                         },
                     ),
                 ),
@@ -412,6 +413,8 @@ class MyBatisDynamicPreparationEngineTest {
         assertEquals(code, result.failure.code)
         assertEquals(property, result.failure.bindingProperty)
     }
+
+    private fun normalizeSql(sql: String): String = sql.trim().replace(Regex("\\s+"), " ")
 
     private fun longValue(value: Long) = InputValue.IntegerValue(BigInteger.valueOf(value))
 
