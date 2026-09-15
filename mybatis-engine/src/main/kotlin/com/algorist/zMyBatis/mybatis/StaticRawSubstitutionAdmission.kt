@@ -41,7 +41,12 @@ internal object StaticRawSubstitutionAdmission {
         var rawSlotIndex = 0
         val structuralSql = GenericTokenParser(rawOpen, "}") { content ->
             sourceExpressions += content.trim()
-            val marker = "\u0000zmybatis_raw_slot_${rawSlotIndex++}\u0000"
+            val marker = freshMarker(
+                forbidden = script,
+                prefix = "zmybatis_raw_slot",
+                index = rawSlotIndex++,
+                delimiter = '\u0000',
+            )
             rawSlotMarkers += marker
             marker
         }.parse(script)
@@ -108,13 +113,18 @@ internal object StaticRawSubstitutionAdmission {
         }
 
         // Give every source bound token a unique analysis-only identity while preserving its `#{...}`
-        // opener. After raw substitution, MyBatis's own tokenizer must still observe exactly these
-        // marker-bearing source tokens in the same order. A raw-created token is unmarked; a removed,
-        // escaped, replaced, or truncated source token loses its marker, so either case fails closed.
+        // opener. The marker is selected to be absent from authoritative source text so a source literal
+        // can never masquerade as analysis metadata. After raw substitution, MyBatis's own tokenizer must
+        // still observe exactly these marker-bearing source tokens in the same order.
         val expectedLabeledPayloads = mutableListOf<String>()
         var boundIndex = 0
         val labeledStructuralSql = GenericTokenParser(boundOpen, "}") { content ->
-            val marker = "\u0001zmybatis_bound_${boundIndex++}\u0001"
+            val marker = freshMarker(
+                forbidden = structuralSql,
+                prefix = "zmybatis_bound",
+                index = boundIndex++,
+                delimiter = '\u0001',
+            )
             val labeledPayload = content + marker
             expectedLabeledPayloads += labeledPayload
             boundOpen + labeledPayload + "}"
@@ -144,6 +154,20 @@ internal object StaticRawSubstitutionAdmission {
             "?"
         }.parse(sql)
         return payloads
+    }
+
+    private fun freshMarker(
+        forbidden: String,
+        prefix: String,
+        index: Int,
+        delimiter: Char,
+    ): String {
+        var salt = 0L
+        while (true) {
+            val candidate = "$delimiter${prefix}_${index}_$salt$delimiter"
+            if (!forbidden.contains(candidate)) return candidate
+            salt++
+        }
     }
 
     private fun projectBoundTokenMetasyntax(raw: String): String = buildString(raw.length) {
