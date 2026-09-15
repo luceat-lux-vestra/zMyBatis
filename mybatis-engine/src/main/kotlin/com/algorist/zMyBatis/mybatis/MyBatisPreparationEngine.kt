@@ -15,6 +15,13 @@ import com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin
 import com.algorist.zMyBatis.core.preparation.PreparedExecution
 import com.algorist.zMyBatis.core.preparation.PreparedRawInterpolation
 import com.algorist.zMyBatis.core.preparation.rawRequirements
+import org.apache.ibatis.binding.BindingException
+import org.apache.ibatis.binding.MapperMethod
+import org.apache.ibatis.builder.BuilderException
+import org.apache.ibatis.mapping.BoundSql
+import org.apache.ibatis.mapping.ParameterMapping
+import org.apache.ibatis.reflection.ReflectionException
+import org.apache.ibatis.session.Configuration
 
 object MyBatisPreparationEngine {
     private const val ENGINE_ID = "org.mybatis:mybatis"
@@ -42,6 +49,7 @@ object MyBatisPreparationEngine {
     private const val UNSUPPORTED_VALUE = "mybatis-binding-value-unsupported"
     private const val EMPTY_SQL = "mybatis-prepared-sql-empty"
     private const val PARSE_FAILURE = "mybatis-sql-source-parse-failure"
+    private const val OGNL_FAILURE = "mybatis-ognl-evaluation-failure"
     private const val BINDING_FAILURE = "mybatis-binding-resolution-failure"
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
 
@@ -151,16 +159,25 @@ object MyBatisPreparationEngine {
         val parameterValues =
             (parameterValuesResult as MyBatisValueConversion.ParameterValuesResult.Ready).values
 
-        val boundSql = when (
-            val isolated = IsolatedDynamicMyBatisPreparation.prepare(
-                script,
-                parameterType,
-                parameterValues,
-            )
-        ) {
-            is IsolatedDynamicMyBatisPreparation.Result.Ready -> isolated.boundSql
-            is IsolatedDynamicMyBatisPreparation.Result.Failed ->
-                return PreparationResult.Failed(isolated.failure)
+        val requiresIsolatedDynamicRuntime =
+            dynamicScript || request.parameterContract.rawRequirements().isNotEmpty()
+        val boundSql = if (requiresIsolatedDynamicRuntime) {
+            when (
+                val isolated = IsolatedDynamicMyBatisPreparation.prepare(
+                    script,
+                    parameterType,
+                    parameterValues,
+                )
+            ) {
+                is IsolatedDynamicMyBatisPreparation.Result.Ready -> isolated.boundSql
+                is IsolatedDynamicMyBatisPreparation.Result.Failed ->
+                    return PreparationResult.Failed(isolated.failure)
+            }
+        } else {
+            when (val static = prepareStaticBoundSql(script, parameterType, parameterValues)) {
+                is StaticBoundSqlResult.Ready -> static.boundSql
+                is StaticBoundSqlResult.Failed -> return PreparationResult.Failed(static.failure)
+            }
         }
 
         if (boundSql.sql.isBlank()) {
@@ -216,6 +233,95 @@ object MyBatisPreparationEngine {
 
     private fun dynamicOgnlRootProperties(request: MyBatisPreparationRequest): Set<String> =
         request.inputEnvironment.aliases.mapTo(linkedSetOf()) { it.name }
+
+    private fun prepareStaticBoundSql(
+        script: String,
+        parameterType: MyBatisParameterType,
+        parameterValues: Map<String, Any?>,
+    ): StaticBoundSqlResult {
+        val configuration = Configuration()
+        val languageDriver = configuration.defaultScriptingLanguageInstance
+        val parameterObject = parentParameterObject(parameterValues)
+        val resolvedParameterType = when (parameterType) {
+            MyBatisParameterType.None -> null
+            is MyBatisParameterType.Single -> parameterType.type
+            MyBatisParameterType.Multi -> MapperMethod.ParamMap::class.java
+        }
+
+        val boundSql = try {
+            val sqlSource = languageDriver.createSqlSource(configuration, script, resolvedParameterType)
+            sqlSource.getBoundSql(parameterObject)
+        } catch (failure: RuntimeException) {
+            return StaticBoundSqlResult.Failed(classifyMyBatisFailure(failure))
+        }
+
+        val mappings = boundSql.parameterMappings.map { mapping ->
+            snapshotStaticMapping(configuration, boundSql, parameterObject, mapping)
+        }
+        return StaticBoundSqlResult.Ready(
+            MyBatisBoundSqlSnapshot(
+                sql = boundSql.sql,
+                mappings = mappings,
+                languageDriverIdentity = languageDriver.javaClass.name,
+            ),
+        )
+    }
+
+    private fun parentParameterObject(parameterValues: Map<String, Any?>): Any? {
+        if (parameterValues.isEmpty()) return null
+        return MapperMethod.ParamMap<Any?>().apply { putAll(parameterValues) }
+    }
+
+    private fun snapshotStaticMapping(
+        configuration: Configuration,
+        boundSql: BoundSql,
+        parameterObject: Any?,
+        mapping: ParameterMapping,
+    ): MyBatisParameterMappingSnapshot {
+        val property = mapping.property
+        val additional = property?.let(boundSql::hasAdditionalParameter) ?: false
+        val runtimeValue = if (property == null) {
+            MyBatisRuntimeValueSnapshot.Ready(null)
+        } else {
+            try {
+                MyBatisRuntimeValueSnapshot.Ready(
+                    resolveStaticMappingValue(configuration, boundSql, parameterObject, mapping),
+                )
+            } catch (failure: RuntimeException) {
+                val chain = generateSequence<Throwable>(failure) { it.cause }.toList()
+                MyBatisRuntimeValueSnapshot.Failed(
+                    bindingFailure = chain.any { it is BindingException || it is ReflectionException },
+                    diagnosticType = failure.javaClass.name,
+                )
+            }
+        }
+
+        return MyBatisParameterMappingSnapshot(
+            property = property,
+            additionalParameter = additional,
+            runtimeValue = runtimeValue,
+            mappingJavaTypeIdentity = mapping.javaType?.name,
+            jdbcTypeIdentity = mapping.jdbcType?.name,
+            typeHandlerIdentity = mapping.typeHandler?.javaClass?.name,
+            parameterMode = mapping.mode?.name,
+            numericScale = mapping.numericScale,
+        )
+    }
+
+    private fun resolveStaticMappingValue(
+        configuration: Configuration,
+        boundSql: BoundSql,
+        parameterObject: Any?,
+        mapping: ParameterMapping,
+    ): Any? {
+        val property = mapping.property
+        return when {
+            boundSql.hasAdditionalParameter(property) -> boundSql.getAdditionalParameter(property)
+            parameterObject == null -> null
+            configuration.typeHandlerRegistry.hasTypeHandler(parameterObject.javaClass) -> parameterObject
+            else -> configuration.newMetaObject(parameterObject).getValue(property)
+        }
+    }
 
     private fun captureRawInterpolations(request: MyBatisPreparationRequest): RawInterpolationResult {
         val interpolations = mutableListOf<PreparedRawInterpolation>()
@@ -381,6 +487,32 @@ object MyBatisPreparationEngine {
         return BindingCaptureResult.Ready(bindings)
     }
 
+    private fun classifyMyBatisFailure(failure: RuntimeException): PreparationFailure {
+        val chain = generateSequence<Throwable>(failure) { it.cause }.toList()
+        return when {
+            chain.any { it.javaClass.name.contains(".ognl.") } -> PreparationFailure(
+                PreparationFailureKind.OGNL,
+                OGNL_FAILURE,
+                diagnosticType = failure.javaClass.name,
+            )
+            chain.any { it is BindingException || it is ReflectionException } -> PreparationFailure(
+                PreparationFailureKind.BINDING_RESOLUTION,
+                BINDING_FAILURE,
+                diagnosticType = failure.javaClass.name,
+            )
+            chain.any { it is BuilderException } -> PreparationFailure(
+                PreparationFailureKind.MYBATIS_PARSE,
+                PARSE_FAILURE,
+                diagnosticType = failure.javaClass.name,
+            )
+            else -> PreparationFailure(
+                PreparationFailureKind.PREPARATION_INVARIANT,
+                INVARIANT_FAILURE,
+                diagnosticType = failure.javaClass.name,
+            )
+        }
+    }
+
     private fun bindingFailure(
         kind: PreparationFailureKind,
         code: String,
@@ -393,6 +525,16 @@ object MyBatisPreparationEngine {
         code: String,
         diagnosticType: String? = null,
     ) = PreparationResult.Failed(PreparationFailure(kind, code, diagnosticType = diagnosticType))
+
+    private sealed interface StaticBoundSqlResult {
+        data class Ready(
+            val boundSql: MyBatisBoundSqlSnapshot,
+        ) : StaticBoundSqlResult
+
+        data class Failed(
+            val failure: PreparationFailure,
+        ) : StaticBoundSqlResult
+    }
 
     private sealed interface RawInterpolationResult {
         data class Ready(
