@@ -22,6 +22,7 @@ import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
 import java.math.BigInteger
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -121,16 +122,17 @@ class PreparationTest {
             typeHandlerIdentity = "org.apache.ibatis.type.LongTypeHandler",
             parameterMode = "IN",
             numericScale = null,
-            additionalParameter = false,
         )
         val binding = PreparedBinding(
             index = 0,
             property = "id",
-            requirementId = requirement.id,
             value = InputValue.IntegerValue(BigInteger.ONE),
-            provenance = requirement.provenance,
+            origin = PreparedBindingOrigin.CallerInput(requirement.id, requirement.provenance),
             metadata = metadata,
         )
+        assertFalse(binding.additionalParameter)
+        assertEquals(requirement.id, binding.requirementId)
+        assertEquals(requirement.provenance, binding.provenance)
 
         val execution = PreparedExecution(
             statementId = capture.sourceGraph.rootStatement.id,
