@@ -191,7 +191,7 @@ class MyBatisDynamicPreparationEngineTest {
     }
 
     @Test
-    fun foreachGeneratedMappingNamesAreNotReverseEngineered() {
+    fun foreachIsRejectedBeforeGeneratedLocalsCanBecomeAuthority() {
         val script = """
             <script>
               select * from users where id in
@@ -215,12 +215,12 @@ class MyBatisDynamicPreparationEngineTest {
             ),
         )
 
-        assertTrue(result is PreparationResult.Failed)
-        result as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.BINDING_RESOLUTION, result.failure.kind)
-        assertEquals("mybatis-additional-parameter-provenance-missing", result.failure.code)
-        assertTrue(result.failure.bindingProperty != null)
-        assertTrue(result.failure.bindingProperty != "item")
+        assertFailure(
+            result,
+            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+            "java-annotation-dynamic-ognl-node-unsupported",
+            null,
+        )
     }
 
     @Test
