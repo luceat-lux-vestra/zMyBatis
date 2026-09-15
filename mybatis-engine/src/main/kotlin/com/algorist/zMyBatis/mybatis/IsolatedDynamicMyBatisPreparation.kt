@@ -45,6 +45,9 @@ internal object IsolatedDynamicMyBatisPreparation {
 
         val myBatisLocation = Configuration::class.java.protectionDomain?.codeSource?.location
             ?: return Result.Failed(invariantFailure("mybatis-code-source-unavailable"))
+        if (myBatisLocation.protocol != "file") {
+            return Result.Failed(invariantFailure("mybatis-code-source-non-local"))
+        }
 
         return try {
             URLClassLoader(arrayOf(myBatisLocation), platformLoader).use { loader ->
