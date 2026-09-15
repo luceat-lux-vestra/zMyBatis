@@ -65,6 +65,7 @@ object MyBatisPreparationEngine {
     private const val BINDING_FAILURE = "mybatis-binding-resolution-failure"
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
 
+    private val rawInterpolationPrefix = String(charArrayOf('$', '{'))
     private val explicitRuntimeClassOption = Regex(
         pattern = "#\\{[^}]*\\b(typeHandler|javaType)\\s*=",
         option = RegexOption.IGNORE_CASE,
@@ -79,7 +80,7 @@ object MyBatisPreparationEngine {
         if (dynamicScript && script.contains("&#")) {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_NUMERIC_CHARACTER_REFERENCE)
         }
-        if (dynamicScript && script.contains("${'$'}{")) {
+        if (dynamicScript && script.contains(rawInterpolationPrefix)) {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_RAW_INTERPOLATION)
         }
 
