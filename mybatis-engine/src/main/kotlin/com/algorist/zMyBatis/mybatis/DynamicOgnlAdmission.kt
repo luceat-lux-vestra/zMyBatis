@@ -42,7 +42,8 @@ internal object DynamicOgnlAdmission {
             return Result.BindAuthority(null, BindAuthorityProblem.SOURCE_CONTRACT_MISMATCH)
         }
 
-        return when (val admission = IsolatedOgnlAstAdmission.inspect(expressions, callerRootProperties)) {
+        val admittedCallerRoots = callerRootProperties - reservedContextNames
+        return when (val admission = IsolatedOgnlAstAdmission.inspect(expressions, admittedCallerRoots)) {
             IsolatedOgnlAstAdmission.Result.Admitted -> Result.Admitted
             is IsolatedOgnlAstAdmission.Result.Unsupported -> Result.Unsupported(admission.nodeType)
             is IsolatedOgnlAstAdmission.Result.UnprovenProperty -> Result.UnprovenProperty(admission.property)
