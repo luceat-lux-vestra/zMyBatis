@@ -32,6 +32,7 @@ internal object DynamicOgnlAdmission {
         "ASTRemainder",
         "ASTSubtract",
     )
+    private val reservedContextNames = setOf("_parameter", "_databaseId")
 
     fun inspect(
         script: String,
@@ -67,7 +68,7 @@ internal object DynamicOgnlAdmission {
         sourceBindNames: MutableSet<String>,
     ): Result {
         // Positive foreach support is outside #143 because generated item/index authority is not yet
-        // modeled.  Refuse the tag itself before MyBatis can iterate or synthesize __frch_* locals.
+        // modeled. Refuse the tag itself before MyBatis can iterate or synthesize __frch_* locals.
         if (node.name == "foreach") return Result.Unsupported("DynamicTag[foreach]")
 
         val expression = when (node.name) {
@@ -100,6 +101,9 @@ internal object DynamicOgnlAdmission {
             ?: return Result.MalformedScript(IllegalArgumentException("bind name is unavailable"))
         val expression = node.getStringAttribute("value")
             ?: return Result.MalformedScript(IllegalArgumentException("bind value is unavailable"))
+        if (name in reservedContextNames) {
+            return Result.BindAuthority(name, BindAuthorityProblem.RESERVED_CONTEXT)
+        }
         if (!sourceBindNames.add(name)) return Result.BindAuthority(name, BindAuthorityProblem.AMBIGUOUS)
         if (name in callerRootProperties) return Result.BindAuthority(name, BindAuthorityProblem.AMBIGUOUS)
 
@@ -184,6 +188,7 @@ internal object DynamicOgnlAdmission {
         AMBIGUOUS,
         KIND_UNSUPPORTED,
         SOURCE_CONTRACT_MISMATCH,
+        RESERVED_CONTEXT,
     }
 
     sealed interface Result {
