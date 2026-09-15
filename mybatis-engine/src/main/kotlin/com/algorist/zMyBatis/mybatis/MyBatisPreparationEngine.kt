@@ -137,7 +137,13 @@ object MyBatisPreparationEngine {
                     return failed(
                         PreparationFailureKind.OGNL,
                         DYNAMIC_OGNL_PARSE_FAILURE,
-                        diagnosticType = admission.failure.javaClass.name,
+                        diagnosticType = admission.diagnosticType,
+                    )
+                is DynamicOgnlAdmission.Result.Invariant ->
+                    return failed(
+                        PreparationFailureKind.PREPARATION_INVARIANT,
+                        INVARIANT_FAILURE,
+                        diagnosticType = admission.diagnosticType,
                     )
             }
         }
