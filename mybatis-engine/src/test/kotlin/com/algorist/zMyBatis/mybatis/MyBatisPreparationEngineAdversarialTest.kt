@@ -105,7 +105,7 @@ class MyBatisPreparationEngineAdversarialTest {
     }
 
     @Test
-    fun unusedUnknownMapperParameterDoesNotTriggerRuntimeClassResolution() {
+    fun unknownMapperParameterTypeFailsClosedWithoutRuntimeFallback() {
         val request = request(
             "select #{id}",
             listOf(
@@ -116,10 +116,10 @@ class MyBatisPreparationEngineAdversarialTest {
 
         val result = MyBatisPreparationEngine.prepare(request)
 
-        assertTrue(result is PreparationResult.Success)
-        val execution = (result as PreparationResult.Success).execution
-        assertEquals("select ?", execution.sqlWithPlaceholders)
-        assertEquals(InputValue.IntegerValue(BigInteger.valueOf(17)), execution.orderedBindings.single().value)
+        assertTrue(result is PreparationResult.Failed)
+        result as PreparationResult.Failed
+        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
+        assertEquals("java-annotation-parameter-type-unavailable", result.failure.code)
     }
 
     @Test
