@@ -38,6 +38,7 @@ object MyBatisPreparationEngine {
     private const val DYNAMIC_OGNL_PROPERTY_UNPROVEN = "java-annotation-dynamic-ognl-property-unproven"
     private const val DYNAMIC_OGNL_PARSE_FAILURE = "java-annotation-dynamic-ognl-parse-failure"
     private const val BIND_SOURCE_PROVENANCE_MISMATCH = "mybatis-bind-source-provenance-mismatch"
+    private const val BIND_RESERVED_CONTEXT = "mybatis-bind-reserved-context-name-unsupported"
     private const val MISSING_MAPPING_PROPERTY = "mybatis-parameter-mapping-property-missing"
     private const val UNRESOLVED_MAPPING = "mybatis-parameter-mapping-unresolved"
     private const val ADDITIONAL_PROVENANCE_MISSING = "mybatis-additional-parameter-provenance-missing"
@@ -106,8 +107,9 @@ object MyBatisPreparationEngine {
                     )
                 is DynamicOgnlAdmission.Result.BindAuthority -> {
                     val kind = when (admission.problem) {
-                        DynamicOgnlAdmission.BindAuthorityProblem.KIND_UNSUPPORTED ->
-                            PreparationFailureKind.UNSUPPORTED_SEMANTIC
+                        DynamicOgnlAdmission.BindAuthorityProblem.KIND_UNSUPPORTED,
+                        DynamicOgnlAdmission.BindAuthorityProblem.RESERVED_CONTEXT,
+                        -> PreparationFailureKind.UNSUPPORTED_SEMANTIC
                         DynamicOgnlAdmission.BindAuthorityProblem.MISSING,
                         DynamicOgnlAdmission.BindAuthorityProblem.AMBIGUOUS,
                         DynamicOgnlAdmission.BindAuthorityProblem.SOURCE_CONTRACT_MISMATCH,
@@ -119,6 +121,7 @@ object MyBatisPreparationEngine {
                         DynamicOgnlAdmission.BindAuthorityProblem.KIND_UNSUPPORTED -> ADDITIONAL_KIND_UNSUPPORTED
                         DynamicOgnlAdmission.BindAuthorityProblem.SOURCE_CONTRACT_MISMATCH ->
                             BIND_SOURCE_PROVENANCE_MISMATCH
+                        DynamicOgnlAdmission.BindAuthorityProblem.RESERVED_CONTEXT -> BIND_RESERVED_CONTEXT
                     }
                     return PreparationResult.Failed(
                         PreparationFailure(kind, code, bindingProperty = admission.name),
