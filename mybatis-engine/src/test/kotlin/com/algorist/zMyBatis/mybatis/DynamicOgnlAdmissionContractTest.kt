@@ -81,6 +81,30 @@ class DynamicOgnlAdmissionContractTest {
         assertEquals("first", result.property)
     }
 
+    @Test
+    fun nonBindInternalAuthorityIsRejectedForSourceBind() {
+        val expression = "name + 'x'"
+        val result = DynamicOgnlAdmission.inspect(
+            "<script><bind name=\"pattern\" value=\"$expression\"/>select 1</script>",
+            setOf("name"),
+            listOf(
+                InternalBinding(
+                    name = "pattern",
+                    kind = InternalBindingKind.ADDITIONAL_PARAMETER,
+                    provenance = InputProvenance(listOf(InputEvidence.OgnlExpression(expression, source))),
+                ),
+            ),
+        )
+
+        assertTrue(result is DynamicOgnlAdmission.Result.BindAuthority)
+        result as DynamicOgnlAdmission.Result.BindAuthority
+        assertEquals("pattern", result.name)
+        assertEquals(
+            DynamicOgnlAdmission.BindAuthorityProblem.KIND_UNSUPPORTED,
+            result.problem,
+        )
+    }
+
     private fun bind(name: String, expression: String) = InternalBinding(
         name = name,
         kind = InternalBindingKind.BIND,
