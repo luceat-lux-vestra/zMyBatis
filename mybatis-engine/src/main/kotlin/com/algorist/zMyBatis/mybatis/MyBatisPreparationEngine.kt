@@ -52,6 +52,7 @@ object MyBatisPreparationEngine {
     private const val DYNAMIC_OGNL_UNSUPPORTED = "java-annotation-dynamic-ognl-node-unsupported"
     private const val DYNAMIC_OGNL_PROPERTY_UNPROVEN = "java-annotation-dynamic-ognl-property-unproven"
     private const val DYNAMIC_OGNL_PARSE_FAILURE = "java-annotation-dynamic-ognl-parse-failure"
+    private const val BIND_SOURCE_PROVENANCE_MISMATCH = "mybatis-bind-source-provenance-mismatch"
     private const val MISSING_MAPPING_PROPERTY = "mybatis-parameter-mapping-property-missing"
     private const val UNRESOLVED_MAPPING = "mybatis-parameter-mapping-unresolved"
     private const val ADDITIONAL_PROVENANCE_MISSING = "mybatis-additional-parameter-provenance-missing"
@@ -97,7 +98,13 @@ object MyBatisPreparationEngine {
         }
 
         if (dynamicScript) {
-            when (val admission = DynamicOgnlAdmission.inspect(script, dynamicOgnlRootProperties(request))) {
+            when (
+                val admission = DynamicOgnlAdmission.inspect(
+                    script,
+                    dynamicOgnlRootProperties(request),
+                    request.parameterContract.internalBindings,
+                )
+            ) {
                 DynamicOgnlAdmission.Result.Admitted -> Unit
                 is DynamicOgnlAdmission.Result.Unsupported ->
                     return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_OGNL_UNSUPPORTED)
@@ -109,6 +116,26 @@ object MyBatisPreparationEngine {
                             bindingProperty = admission.property,
                         ),
                     )
+                is DynamicOgnlAdmission.Result.BindAuthority -> {
+                    val kind = when (admission.problem) {
+                        DynamicOgnlAdmission.BindAuthorityProblem.KIND_UNSUPPORTED ->
+                            PreparationFailureKind.UNSUPPORTED_SEMANTIC
+                        DynamicOgnlAdmission.BindAuthorityProblem.MISSING,
+                        DynamicOgnlAdmission.BindAuthorityProblem.AMBIGUOUS,
+                        DynamicOgnlAdmission.BindAuthorityProblem.SOURCE_CONTRACT_MISMATCH,
+                        -> PreparationFailureKind.BINDING_RESOLUTION
+                    }
+                    val code = when (admission.problem) {
+                        DynamicOgnlAdmission.BindAuthorityProblem.MISSING -> ADDITIONAL_PROVENANCE_MISSING
+                        DynamicOgnlAdmission.BindAuthorityProblem.AMBIGUOUS -> ADDITIONAL_PROVENANCE_AMBIGUOUS
+                        DynamicOgnlAdmission.BindAuthorityProblem.KIND_UNSUPPORTED -> ADDITIONAL_KIND_UNSUPPORTED
+                        DynamicOgnlAdmission.BindAuthorityProblem.SOURCE_CONTRACT_MISMATCH ->
+                            BIND_SOURCE_PROVENANCE_MISMATCH
+                    }
+                    return PreparationResult.Failed(
+                        PreparationFailure(kind, code, bindingProperty = admission.name),
+                    )
+                }
                 is DynamicOgnlAdmission.Result.MalformedScript ->
                     return failed(
                         PreparationFailureKind.MYBATIS_PARSE,
@@ -192,12 +219,8 @@ object MyBatisPreparationEngine {
     private fun runtimeClassOption(sql: String): String? =
         explicitRuntimeClassOption.find(sql)?.groupValues?.get(1)
 
-    private fun dynamicOgnlRootProperties(request: MyBatisPreparationRequest): Set<String> = buildSet {
-        request.inputEnvironment.aliases.forEach { add(it.name) }
-        request.parameterContract.internalBindings
-            .filter { it.kind == InternalBindingKind.BIND }
-            .forEach { add(it.name) }
-    }
+    private fun dynamicOgnlRootProperties(request: MyBatisPreparationRequest): Set<String> =
+        request.inputEnvironment.aliases.mapTo(linkedSetOf()) { it.name }
 
     private fun resolveAnnotationParameterType(parameterTypes: List<JavaTypeIdentity>): ParameterTypeResolution? {
         val resolved = mutableListOf<Class<*>>()
