@@ -13,9 +13,9 @@ import org.apache.ibatis.parsing.GenericTokenParser
 /**
  * Admits the statically supported `${...}` subset without evaluating it.
  *
- * MyBatis renders `${...}` first and only then parses the rendered text for `#{...}` mappings.  A raw
- * value must therefore be proven unable to create, remove, or mutate a bound token before MyBatis is
- * allowed to evaluate the raw expression.
+ * MyBatis renders `${...}` first and only then parses the rendered text for `#{...}` mappings. A raw
+ * value must therefore be proven unable to create, remove, replace, escape, or mutate a source bound
+ * token before MyBatis is allowed to evaluate the raw expression.
  */
 internal object StaticRawSubstitutionAdmission {
     private const val AUTHORITY_MISMATCH = "raw-interpolation-source-authority-mismatch"
@@ -33,18 +33,18 @@ internal object StaticRawSubstitutionAdmission {
         request: MyBatisPreparationRequest,
     ): PreparationFailure? {
         val sourceExpressions = mutableListOf<String>()
-        val slotMarkers = mutableListOf<String>()
-        var slotIndex = 0
+        val rawSlotMarkers = mutableListOf<String>()
+        var rawSlotIndex = 0
         val structuralSql = GenericTokenParser(rawOpen, "}") { content ->
             sourceExpressions += content.trim()
-            val marker = "\u0000zmybatis_raw_slot_${slotIndex++}\u0000"
-            slotMarkers += marker
+            val marker = "\u0000zmybatis_raw_slot_${rawSlotIndex++}\u0000"
+            rawSlotMarkers += marker
             marker
         }.parse(script)
 
         val rawRequirements = request.parameterContract.rawRequirements()
 
-        // Escaped or malformed `${...}` is intentionally outside the statically proven subset.  The
+        // Escaped or malformed `${...}` is intentionally outside the statically proven subset. The
         // stock token parser leaves a literal `${` behind in both cases.
         if (structuralSql.contains(rawOpen)) return authorityMismatch()
         if (sourceExpressions.isEmpty()) {
@@ -91,10 +91,10 @@ internal object StaticRawSubstitutionAdmission {
             requirementByExpression[expression] = requirementId
         }
 
-        // Reuse MyBatis's own bound-token tokenizer over a non-evaluated structural skeleton.  A raw
-        // slot already inside a source `#{...}` could change mapping options and is never admitted.
+        // A raw slot already inside a source `#{...}` could change its property or mapping options and
+        // is never admitted.
         val sourceBoundPayloads = boundPayloads(structuralSql)
-        if (sourceBoundPayloads.any { payload -> slotMarkers.any { marker -> payload.contains(marker) } }) {
+        if (sourceBoundPayloads.any { payload -> rawSlotMarkers.any { marker -> payload.contains(marker) } }) {
             return unsupported(BOUND_CONTEXT_UNSUPPORTED)
         }
 
@@ -105,17 +105,30 @@ internal object StaticRawSubstitutionAdmission {
             rawValuesByRequirement[requirementId] = raw
         }
 
-        // Preserve only characters that influence GenericTokenParser's `#{...}` structure.  All other
-        // characters become inert sentinels.  This is not SQL rendering: it proves that raw replacement
-        // cannot create, delete, escape, close, or otherwise rewire the bound-token payload sequence.
-        var projectedSql = structuralSql
-        for (index in slotMarkers.indices) {
+        // Give every source bound token a unique analysis-only identity while preserving its `#{...}`
+        // opener. After raw substitution, MyBatis's own tokenizer must still observe exactly these
+        // marker-bearing source tokens in the same order. A raw-created token is unmarked; a removed,
+        // escaped, replaced, or truncated source token loses its marker, so either case fails closed.
+        val expectedLabeledPayloads = mutableListOf<String>()
+        var boundIndex = 0
+        val labeledStructuralSql = GenericTokenParser(boundOpen, "}") { content ->
+            val marker = "\u0001zmybatis_bound_${boundIndex++}\u0001"
+            val labeledPayload = content + marker
+            expectedLabeledPayloads += labeledPayload
+            boundOpen + labeledPayload + "}"
+        }.parse(structuralSql)
+
+        // Preserve only characters that can affect GenericTokenParser's `#{...}` structure. All other
+        // raw characters become inert sentinels. This is not SQL rendering or OGNL evaluation; it is a
+        // structural proof over the same token parser MyBatis uses for parameter mappings.
+        var projectedSql = labeledStructuralSql
+        for (index in rawSlotMarkers.indices) {
             val expression = sourceExpressions[index]
             val requirementId = requirementByExpression[expression] ?: return authorityMismatch()
             val raw = rawValuesByRequirement[requirementId] ?: return authorityMismatch()
-            projectedSql = projectedSql.replace(slotMarkers[index], projectBoundTokenMetasyntax(raw))
+            projectedSql = projectedSql.replace(rawSlotMarkers[index], projectBoundTokenMetasyntax(raw))
         }
-        if (boundPayloads(projectedSql) != sourceBoundPayloads) {
+        if (boundPayloads(projectedSql) != expectedLabeledPayloads) {
             return unsupported(TOKEN_TOPOLOGY_UNSUPPORTED)
         }
 
