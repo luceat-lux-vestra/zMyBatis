@@ -70,7 +70,7 @@ internal object StaticRawSubstitutionAdmission {
             return authorityMismatch()
         }
 
-        val aliasesByName = request.inputEnvironment.aliases.associateBy { it.name }
+        val aliasesByName = request.inputEnvironment.aliases.groupBy { it.name }
         val requirementByExpression = linkedMapOf<String, InputRequirementId>()
         for (expression in sourceExpressions.distinct()) {
             if (!simplePath.matches(expression) || expression.split('.').any { it == "class" }) {
@@ -86,8 +86,8 @@ internal object StaticRawSubstitutionAdmission {
 
             val requirementId = candidateIds.single()
             val root = expression.substringBefore('.')
-            val alias = aliasesByName[root] ?: return authorityMismatch()
-            if (alias.requirementId != requirementId) return authorityMismatch()
+            val aliases = aliasesByName[root].orEmpty()
+            if (aliases.size != 1 || aliases.single().requirementId != requirementId) return authorityMismatch()
             requirementByExpression[expression] = requirementId
         }
 
@@ -96,7 +96,7 @@ internal object StaticRawSubstitutionAdmission {
         // options into that mapping and is therefore not admitted.
         var rawInsideBoundToken = false
         GenericTokenParser(boundOpen, "}") { content ->
-            if (slotMarkers.any(content::contains)) rawInsideBoundToken = true
+            if (slotMarkers.any { marker -> content.contains(marker) }) rawInsideBoundToken = true
             ""
         }.parse(structuralSql)
         if (rawInsideBoundToken) return unsupported(BOUND_CONTEXT_UNSUPPORTED)
