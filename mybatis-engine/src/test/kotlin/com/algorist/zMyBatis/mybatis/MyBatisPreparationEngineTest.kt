@@ -56,7 +56,7 @@ class MyBatisPreparationEngineTest {
             execution.orderedBindings.map { it.value },
         )
         assertEquals(listOf(0, 1), execution.orderedBindings.map { it.index })
-        assertTrue(execution.orderedBindings.all { !it.metadata.additionalParameter })
+        assertTrue(execution.orderedBindings.all { !it.additionalParameter })
         assertEquals("org.mybatis:mybatis", execution.preparationMetadata.engineIdentity)
         assertEquals("3.5.19", execution.preparationMetadata.engineVersion)
     }
