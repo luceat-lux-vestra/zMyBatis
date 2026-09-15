@@ -31,6 +31,7 @@ internal object StaticRawSubstitutionAdmission {
     private val boundOpen = String(charArrayOf('#', '{'))
     private val aliasName = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val supportedStringTypes = setOf("java.lang.String", "String")
+    private val reservedContextNames = setOf("_parameter", "_databaseId")
 
     fun failureOrNull(
         script: String,
@@ -82,7 +83,9 @@ internal object StaticRawSubstitutionAdmission {
         val aliasesByName = request.inputEnvironment.aliases.groupBy { it.name }
         val requirementByExpression = linkedMapOf<String, InputRequirementId>()
         for (expression in sourceExpressions.distinct()) {
-            if (!aliasName.matches(expression)) return unsupported(EXPRESSION_UNSUPPORTED)
+            if (!aliasName.matches(expression) || expression in reservedContextNames) {
+                return unsupported(EXPRESSION_UNSUPPORTED)
+            }
 
             val candidateIds = authorities
                 .asSequence()
