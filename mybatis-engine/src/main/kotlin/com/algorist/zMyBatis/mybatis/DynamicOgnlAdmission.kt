@@ -4,34 +4,10 @@ import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InternalBinding
 import com.algorist.zMyBatis.core.input.InternalBindingKind
 import org.apache.ibatis.builder.xml.XMLMapperEntityResolver
-import org.apache.ibatis.ognl.ASTConst
-import org.apache.ibatis.ognl.ASTProperty
-import org.apache.ibatis.ognl.Node
-import org.apache.ibatis.ognl.Ognl
 import org.apache.ibatis.parsing.XNode
 import org.apache.ibatis.parsing.XPathParser
 
 internal object DynamicOgnlAdmission {
-    private val allowedNodeTypes = setOf(
-        "ASTAdd",
-        "ASTAnd",
-        "ASTChain",
-        "ASTConst",
-        "ASTDivide",
-        "ASTEq",
-        "ASTGreater",
-        "ASTGreaterEq",
-        "ASTLess",
-        "ASTLessEq",
-        "ASTMultiply",
-        "ASTNegate",
-        "ASTNot",
-        "ASTNotEq",
-        "ASTOr",
-        "ASTProperty",
-        "ASTRemainder",
-        "ASTSubtract",
-    )
     private val reservedContextNames = setOf("_parameter", "_databaseId")
 
     fun inspect(
@@ -46,7 +22,14 @@ internal object DynamicOgnlAdmission {
         } ?: return Result.MalformedScript(IllegalArgumentException("Dynamic script root is unavailable"))
 
         val sourceBindNames = linkedSetOf<String>()
-        val inspected = inspectElements(root, callerRootProperties, internalBindings, sourceBindNames)
+        val expressions = mutableListOf<String>()
+        val inspected = inspectElements(
+            root,
+            callerRootProperties,
+            internalBindings,
+            sourceBindNames,
+            expressions,
+        )
         if (inspected !is Result.Admitted) return inspected
 
         val contractBindNames = internalBindings
@@ -58,7 +41,14 @@ internal object DynamicOgnlAdmission {
         if (sourceBindNames != contractBindNames.toSet()) {
             return Result.BindAuthority(null, BindAuthorityProblem.SOURCE_CONTRACT_MISMATCH)
         }
-        return Result.Admitted
+
+        return when (val admission = IsolatedOgnlAstAdmission.inspect(expressions, callerRootProperties)) {
+            IsolatedOgnlAstAdmission.Result.Admitted -> Result.Admitted
+            is IsolatedOgnlAstAdmission.Result.Unsupported -> Result.Unsupported(admission.nodeType)
+            is IsolatedOgnlAstAdmission.Result.UnprovenProperty -> Result.UnprovenProperty(admission.property)
+            is IsolatedOgnlAstAdmission.Result.Malformed -> Result.MalformedExpression(admission.diagnosticType)
+            is IsolatedOgnlAstAdmission.Result.Invariant -> Result.Invariant(admission.diagnosticType)
+        }
     }
 
     private fun inspectElements(
@@ -66,26 +56,35 @@ internal object DynamicOgnlAdmission {
         callerRootProperties: Set<String>,
         internalBindings: List<InternalBinding>,
         sourceBindNames: MutableSet<String>,
+        expressions: MutableList<String>,
     ): Result {
         // Positive foreach support is outside #143 because generated item/index authority is not yet
         // modeled. Refuse the tag itself before MyBatis can iterate or synthesize __frch_* locals.
         if (node.name == "foreach") return Result.Unsupported("DynamicTag[foreach]")
 
-        val expression = when (node.name) {
-            "if", "when" -> node.getStringAttribute("test")
+        when (node.name) {
+            "if", "when" -> {
+                val expression = node.getStringAttribute("test")
+                    ?: return Result.MalformedScript(IllegalArgumentException("dynamic test expression is unavailable"))
+                expressions += expression
+            }
             "bind" -> {
                 val bindResult = inspectBindAuthority(node, callerRootProperties, internalBindings, sourceBindNames)
                 if (bindResult !is Result.Admitted) return bindResult
-                node.getStringAttribute("value")
+                val expression = node.getStringAttribute("value")
+                    ?: return Result.MalformedScript(IllegalArgumentException("bind value is unavailable"))
+                expressions += expression
             }
-            else -> null
         }
-        if (expression != null) {
-            val result = inspectExpression(expression, callerRootProperties)
-            if (result !is Result.Admitted) return result
-        }
+
         for (child in node.children) {
-            val result = inspectElements(child, callerRootProperties, internalBindings, sourceBindNames)
+            val result = inspectElements(
+                child,
+                callerRootProperties,
+                internalBindings,
+                sourceBindNames,
+                expressions,
+            )
             if (result !is Result.Admitted) return result
         }
         return Result.Admitted
@@ -125,64 +124,6 @@ internal object DynamicOgnlAdmission {
         return Result.Admitted
     }
 
-    private fun inspectExpression(
-        expression: String,
-        allowedRootProperties: Set<String>,
-    ): Result {
-        val parsed = try {
-            Ognl.parseExpression(expression)
-        } catch (failure: Exception) {
-            return Result.MalformedExpression(failure)
-        }
-        val root = parsed as? Node
-            ?: return Result.Unsupported("non-node-expression")
-        return inspectNode(root, allowedRootProperties, rootProperty = root is ASTProperty)
-    }
-
-    private fun inspectNode(
-        node: Node,
-        allowedRootProperties: Set<String>,
-        rootProperty: Boolean,
-    ): Result {
-        val nodeType = node.javaClass.simpleName
-        if (nodeType !in allowedNodeTypes) return Result.Unsupported(nodeType)
-
-        if (node is ASTProperty) {
-            if (node.isIndexedAccess) return Result.Unsupported("ASTProperty[indexed]")
-            if (node.jjtGetNumChildren() != 1) return Result.Unsupported("ASTProperty[shape]")
-            val property = (node.jjtGetChild(0) as? ASTConst)?.value as? String
-                ?: return Result.Unsupported("ASTProperty[dynamic]")
-            if (property == "class") return Result.Unsupported("ASTProperty[class]")
-            if (rootProperty && property !in allowedRootProperties) {
-                return Result.UnprovenProperty(property)
-            }
-        }
-
-        if (nodeType == "ASTChain") {
-            for (index in 0 until node.jjtGetNumChildren()) {
-                val child = node.jjtGetChild(index)
-                val result = inspectNode(
-                    child,
-                    allowedRootProperties,
-                    rootProperty = index == 0 && child is ASTProperty,
-                )
-                if (result !is Result.Admitted) return result
-            }
-            return Result.Admitted
-        }
-
-        for (index in 0 until node.jjtGetNumChildren()) {
-            val child = node.jjtGetChild(index)
-            val result = inspectNode(
-                child,
-                allowedRootProperties,
-                rootProperty = child is ASTProperty,
-            )
-            if (result !is Result.Admitted) return result
-        }
-        return Result.Admitted
-    }
-
     enum class BindAuthorityProblem {
         MISSING,
         AMBIGUOUS,
@@ -212,7 +153,11 @@ internal object DynamicOgnlAdmission {
         ) : Result
 
         data class MalformedExpression(
-            val failure: Throwable,
+            val diagnosticType: String,
+        ) : Result
+
+        data class Invariant(
+            val diagnosticType: String,
         ) : Result
     }
 }
