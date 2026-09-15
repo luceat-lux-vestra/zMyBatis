@@ -2,7 +2,7 @@
 #
 # Gates, in dependency order:
 # - build:       assembles the distributable plugin ZIP and keeps it as an artifact.
-# - test:        ./gradlew check (unit tests + Kover coverage report generation).
+# - test:        root + core + mybatis-engine checks, including Kover coverage report generation.
 # - inspectCode: fail-closed full-repository Qodana static analysis.
 # - verify:      plugin structure verification + IntelliJ Plugin Verifier.
 #
@@ -99,7 +99,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew check 2>&1 | tee gradle-check.log
+          ./gradlew check :core:check :mybatis-engine:check 2>&1 | tee gradle-check.log
 
       - name: Reject hidden IntelliJ test-harness failures
         if: ${{ always() }}
@@ -120,7 +120,10 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tests-result
-          path: ${{ github.workspace }}/build/reports/tests
+          path: |
+            ${{ github.workspace }}/build/reports/tests
+            ${{ github.workspace }}/core/build/reports/tests
+            ${{ github.workspace }}/mybatis-engine/build/reports/tests
 
       - name: Upload Coverage Artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
