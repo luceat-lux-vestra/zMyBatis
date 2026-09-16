@@ -89,22 +89,11 @@ internal object IsolatedDynamicMyBatisPreparation {
         val boundSqlClass = Class.forName(BOUND_SQL, true, loader)
         val parameterMappingClass = Class.forName(PARAMETER_MAPPING, true, loader)
         val paramMapClass = Class.forName(PARAM_MAP, true, loader)
-        val foreachSqlNodeClass = Class.forName(FOREACH_SQL_NODE, true, loader)
-        if (foreachSqlNodeClass.classLoader !== loader) {
-            return Result.Failed(invariantFailure("mybatis-foreach-node-not-isolated"))
-        }
-        val foreachItemPrefix = foreachSqlNodeClass.getField("ITEM_PREFIX").get(null) as? String
-            ?: return Result.Failed(invariantFailure("mybatis-foreach-item-prefix-unavailable"))
-        if (foreachItemPrefix.isBlank()) {
-            return Result.Failed(invariantFailure("mybatis-foreach-item-prefix-invalid"))
-        }
-        val foreachItemizeMethod = foreachSqlNodeClass.getDeclaredMethod(
-            "itemizeItem",
-            String::class.java,
-            Int::class.javaPrimitiveType,
-        )
-        if (!foreachItemizeMethod.trySetAccessible()) {
-            return Result.Failed(invariantFailure("mybatis-foreach-itemizer-inaccessible"))
+        val foreachRuntimeIdentity = if (admittedForeachLocals.isNotEmpty()) {
+            resolveForeachRuntimeIdentity(loader)
+                ?: return Result.Failed(invariantFailure("mybatis-foreach-runtime-identity-unavailable"))
+        } else {
+            null
         }
 
         val configuration = configurationClass.getDeclaredConstructor().newInstance()
@@ -154,8 +143,7 @@ internal object IsolatedDynamicMyBatisPreparation {
                 parameterMappingClass = parameterMappingClass,
                 mapping = mapping,
                 parameterObject = parameterObject,
-                foreachItemPrefix = foreachItemPrefix,
-                foreachItemizeMethod = foreachItemizeMethod,
+                foreachRuntimeIdentity = foreachRuntimeIdentity,
                 admittedForeachLocals = admittedForeachLocals,
             )
         }
@@ -167,6 +155,20 @@ internal object IsolatedDynamicMyBatisPreparation {
                 languageDriverIdentity = languageDriver.javaClass.name,
             ),
         )
+    }
+
+    private fun resolveForeachRuntimeIdentity(loader: URLClassLoader): ForeachRuntimeIdentity? {
+        val foreachSqlNodeClass = Class.forName(FOREACH_SQL_NODE, true, loader)
+        if (foreachSqlNodeClass.classLoader !== loader) return null
+        val itemPrefix = foreachSqlNodeClass.getField("ITEM_PREFIX").get(null) as? String ?: return null
+        if (itemPrefix.isBlank()) return null
+        val itemizeMethod = foreachSqlNodeClass.getDeclaredMethod(
+            "itemizeItem",
+            String::class.java,
+            Int::class.javaPrimitiveType,
+        )
+        if (!itemizeMethod.trySetAccessible()) return null
+        return ForeachRuntimeIdentity(itemPrefix, itemizeMethod)
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -191,8 +193,7 @@ internal object IsolatedDynamicMyBatisPreparation {
         parameterMappingClass: Class<*>,
         mapping: Any,
         parameterObject: Any?,
-        foreachItemPrefix: String,
-        foreachItemizeMethod: Method,
+        foreachRuntimeIdentity: ForeachRuntimeIdentity?,
         admittedForeachLocals: Map<String, InternalBindingKind>,
     ): MyBatisParameterMappingSnapshot {
         val property = parameterMappingClass.getMethod("getProperty").invoke(mapping) as? String
@@ -208,11 +209,10 @@ internal object IsolatedDynamicMyBatisPreparation {
                 .getMethod("hasAdditionalParameter", String::class.java)
                 .invoke(boundSql, it) as Boolean
         } ?: false
-        val generatedLocal = if (additional && property != null) {
+        val generatedLocal = if (additional && property != null && foreachRuntimeIdentity != null) {
             generatedLocalSnapshot(
                 property = property,
-                itemPrefix = foreachItemPrefix,
-                itemizeMethod = foreachItemizeMethod,
+                runtimeIdentity = foreachRuntimeIdentity,
                 admittedForeachLocals = admittedForeachLocals,
             )
         } else {
@@ -249,20 +249,19 @@ internal object IsolatedDynamicMyBatisPreparation {
 
     private fun generatedLocalSnapshot(
         property: String,
-        itemPrefix: String,
-        itemizeMethod: Method,
+        runtimeIdentity: ForeachRuntimeIdentity,
         admittedForeachLocals: Map<String, InternalBindingKind>,
     ): MyBatisGeneratedLocalSnapshot? {
         if (admittedForeachLocals.isEmpty()) return null
         val root = property.substringBefore('.')
-        if (!root.startsWith(itemPrefix)) return null
+        if (!root.startsWith(runtimeIdentity.itemPrefix)) return null
         val uniqueNumber = root.substringAfterLast('_', missingDelimiterValue = "")
             .toIntOrNull()
             ?.takeIf { it >= 0 }
             ?: return null
 
         val matches = admittedForeachLocals.mapNotNull { (sourceLocal, kind) ->
-            val runtimeGeneratedRoot = itemizeMethod.invoke(null, sourceLocal, uniqueNumber) as? String
+            val runtimeGeneratedRoot = runtimeIdentity.itemizeMethod.invoke(null, sourceLocal, uniqueNumber) as? String
                 ?: throw IllegalStateException("MyBatis foreach itemizer returned a non-string identity")
             if (root != runtimeGeneratedRoot) return@mapNotNull null
             MyBatisGeneratedLocalSnapshot(sourceLocal, kind, uniqueNumber)
@@ -447,6 +446,11 @@ internal object IsolatedDynamicMyBatisPreparation {
         }
         if (fatal != null) throw fatal
     }
+
+    private data class ForeachRuntimeIdentity(
+        val itemPrefix: String,
+        val itemizeMethod: Method,
+    )
 
     sealed interface Result {
         data class Ready(
