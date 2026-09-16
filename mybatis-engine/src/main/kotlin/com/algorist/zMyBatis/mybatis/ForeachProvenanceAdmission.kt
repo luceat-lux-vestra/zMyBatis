@@ -36,6 +36,7 @@ internal object ForeachProvenanceAdmission {
     private const val LOCAL_IDENTIFIER_UNSUPPORTED = "mybatis-foreach-local-identifier-unsupported"
     private const val COLLECTION_EXPRESSION_UNSUPPORTED = "mybatis-foreach-collection-expression-unsupported"
     private const val PARSE_FAILURE = "mybatis-sql-source-parse-failure"
+    private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
 
     private val simpleIdentifier = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val reservedContextNames = setOf("_parameter", "_databaseId")
@@ -173,6 +174,29 @@ internal object ForeachProvenanceAdmission {
             return failure(
                 PreparationFailureKind.BINDING_RESOLUTION,
                 COLLECTION_PROVENANCE_MISSING,
+                collection,
+            )
+        }
+        when (val ognl = IsolatedOgnlAstAdmission.inspectExactRootProperty(collection, collection)) {
+            IsolatedOgnlAstAdmission.Result.Admitted -> Unit
+            is IsolatedOgnlAstAdmission.Result.Invariant ->
+                return failure(
+                    PreparationFailureKind.PREPARATION_INVARIANT,
+                    INVARIANT_FAILURE,
+                    diagnosticType = ognl.diagnosticType,
+                )
+            is IsolatedOgnlAstAdmission.Result.Malformed ->
+                return failure(
+                    PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                    COLLECTION_EXPRESSION_UNSUPPORTED,
+                    collection,
+                    ognl.diagnosticType,
+                )
+            is IsolatedOgnlAstAdmission.Result.Unsupported,
+            is IsolatedOgnlAstAdmission.Result.UnprovenProperty,
+            -> return failure(
+                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                COLLECTION_EXPRESSION_UNSUPPORTED,
                 collection,
             )
         }
