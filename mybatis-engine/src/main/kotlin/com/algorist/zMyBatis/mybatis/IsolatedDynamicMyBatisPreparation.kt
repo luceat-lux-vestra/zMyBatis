@@ -21,7 +21,7 @@ internal object IsolatedDynamicMyBatisPreparation {
     private const val SQL_SOURCE = "org.apache.ibatis.mapping.SqlSource"
     private const val BOUND_SQL = "org.apache.ibatis.mapping.BoundSql"
     private const val PARAMETER_MAPPING = "org.apache.ibatis.mapping.ParameterMapping"
-    private const val PARAM_MAP = "org.apache.ibatis.binding.MapperMethod\$ParamMap"
+    private const val PARAM_MAP = "org.apache.ibatis.binding.MapperMethod\u0024ParamMap"
     private const val OGNL_RUNTIME = "org.apache.ibatis.ognl.OgnlRuntime"
 
     private const val PARSE_FAILURE = "mybatis-sql-source-parse-failure"
@@ -169,13 +169,11 @@ internal object IsolatedDynamicMyBatisPreparation {
         val typeHandlerIdentity = typeHandler?.javaClass?.name
         val numericScale = parameterMappingClass.getMethod("getNumericScale").invoke(mapping) as? Int
 
-        val additional = if (property == null) {
-            false
-        } else {
+        val additional = property?.let {
             boundSqlClass
                 .getMethod("hasAdditionalParameter", String::class.java)
-                .invoke(boundSql, property) as Boolean
-        }
+                .invoke(boundSql, it) as Boolean
+        } ?: false
 
         val runtimeValue = if (property == null) {
             MyBatisRuntimeValueSnapshot.Ready(null)
@@ -270,15 +268,10 @@ internal object IsolatedDynamicMyBatisPreparation {
                 safeInboundValue(key) && safeInboundValue(item)
             }
             is List<*> -> value.all(::safeInboundValue)
-            else -> {
-                if (!value.javaClass.isArray) {
-                    true
-                } else {
-                    (0 until ReflectArray.getLength(value)).all { index ->
-                        safeInboundValue(ReflectArray.get(value, index))
-                    }
+            else -> !value.javaClass.isArray ||
+                (0 until ReflectArray.getLength(value)).all { index ->
+                    safeInboundValue(ReflectArray.get(value, index))
                 }
-            }
         }
     }
 
@@ -323,11 +316,11 @@ internal object IsolatedDynamicMyBatisPreparation {
         }
 
         val valueLoader = value.javaClass.classLoader
-        if (valueLoader === loader) return CrossLoaderValue.Unsupported(value.javaClass.name)
-        if (valueLoader == null || valueLoader === platformLoader) {
-            return CrossLoaderValue.Ready(value)
+        return when {
+            valueLoader === loader -> CrossLoaderValue.Unsupported(value.javaClass.name)
+            valueLoader == null || valueLoader === platformLoader -> CrossLoaderValue.Ready(value)
+            else -> CrossLoaderValue.Unsupported(value.javaClass.name)
         }
-        return CrossLoaderValue.Unsupported(value.javaClass.name)
     }
 
     private fun enumName(value: Any?): String? = (value as? Enum<*>)?.name
@@ -378,7 +371,9 @@ internal object IsolatedDynamicMyBatisPreparation {
     )
 
     private fun rethrowFatal(failure: Throwable) {
-        val fatal = throwableChain(failure).firstOrNull { it is VirtualMachineError || it is ThreadDeath }
+        val fatal = throwableChain(failure).firstOrNull {
+            it is VirtualMachineError || it.javaClass.name == "java.lang.ThreadDeath"
+        }
         if (fatal != null) throw fatal
     }
 
