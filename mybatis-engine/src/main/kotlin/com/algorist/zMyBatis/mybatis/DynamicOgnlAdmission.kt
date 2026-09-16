@@ -11,6 +11,7 @@ import org.apache.ibatis.parsing.XPathParser
 internal object DynamicOgnlAdmission {
     private const val MAX_SCRIPT_LENGTH = 2 * 1024 * 1024
     private const val MAX_DYNAMIC_NODES = 65_536
+    private const val MAX_DYNAMIC_DEPTH = 256
 
     private val reservedContextNames = setOf("_parameter", "_databaseId")
 
@@ -67,8 +68,8 @@ internal object DynamicOgnlAdmission {
         sourceBindNames: MutableSet<String>,
         expressions: MutableList<String>,
     ): Result {
-        val pending = ArrayDeque<XNode>()
-        pending.addLast(root)
+        val pending = ArrayDeque<Pair<XNode, Int>>()
+        pending.addLast(root to 0)
         var visitedNodes = 0
 
         while (pending.isNotEmpty()) {
@@ -76,7 +77,11 @@ internal object DynamicOgnlAdmission {
                 return Result.Unsupported("DynamicScript[node-budget]")
             }
 
-            val node = pending.removeLast()
+            val (node, depth) = pending.removeLast()
+            if (depth > MAX_DYNAMIC_DEPTH) {
+                return Result.Unsupported("DynamicScript[depth]")
+            }
+
             // Positive foreach support is outside #143 because generated item/index authority is not yet
             // modeled. Refuse the tag itself before MyBatis can iterate or synthesize __frch_* locals.
             if (node.name == "foreach") return Result.Unsupported("DynamicTag[foreach]")
@@ -105,7 +110,7 @@ internal object DynamicOgnlAdmission {
 
             val children = node.children
             for (index in children.indices.reversed()) {
-                pending.addLast(children[index])
+                pending.addLast(children[index] to depth + 1)
             }
         }
 
