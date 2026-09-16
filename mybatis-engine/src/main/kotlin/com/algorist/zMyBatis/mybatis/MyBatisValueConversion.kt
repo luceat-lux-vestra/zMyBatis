@@ -2,6 +2,7 @@ package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.InputAlias
 import com.algorist.zMyBatis.core.input.InputRequirement
+import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
@@ -28,6 +29,8 @@ internal object MyBatisValueConversion {
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
     private const val MAX_INPUT_DEPTH = 128
     private const val MAX_INPUT_NODES = 65_536
+    private const val MAX_DECLARED_TYPE_LENGTH = 4_096
+    private const val MAX_DECLARED_TYPE_DEPTH = 32
 
     fun resolveParameterType(parameterTypes: List<JavaTypeIdentity>): MyBatisParameterType? {
         val resolved = mutableListOf<Class<*>>()
@@ -42,7 +45,10 @@ internal object MyBatisValueConversion {
         }
     }
 
-    fun parameterValues(request: MyBatisPreparationRequest): ParameterValuesResult {
+    fun parameterValues(
+        request: MyBatisPreparationRequest,
+        typedStructuredRequirementIds: Set<InputRequirementId> = emptySet(),
+    ): ParameterValuesResult {
         if (!inputComplexityIsBounded(request.inputEnvironment.values.values.map { it.value })) {
             return ParameterValuesResult.Failed(
                 PreparationFailure(
@@ -67,7 +73,11 @@ internal object MyBatisValueConversion {
                         bindingProperty = name,
                     ),
                 )
-            val converted = toRuntimeValue(provided.value, requirement.expectedType.javaTypeIdentity)
+            val converted = if (requirementId in typedStructuredRequirementIds) {
+                toTypedStructuredRuntimeValue(provided.value, requirement.expectedType.javaTypeIdentity)
+            } else {
+                toRuntimeValue(provided.value, requirement.expectedType.javaTypeIdentity)
+            }
             if (converted is RuntimeValueResult.Failed) {
                 return ParameterValuesResult.Failed(converted.failure.copy(bindingProperty = name))
             }
@@ -291,6 +301,141 @@ internal object MyBatisValueConversion {
         }
     }
 
+    private fun toTypedStructuredRuntimeValue(
+        value: InputValue,
+        declaredType: JavaTypeIdentity?,
+    ): RuntimeValueResult {
+        if (value is InputValue.NullValue) return RuntimeValueResult.Ready(null)
+        val descriptor = declaredType
+            ?.takeIf { it.value.length <= MAX_DECLARED_TYPE_LENGTH }
+            ?.let { parseDeclaredType(it.value, depth = 0) }
+            ?: return unsupportedValue()
+        return toTypedRuntimeValue(value, descriptor)
+    }
+
+    private fun toTypedRuntimeValue(value: InputValue, descriptor: DeclaredType): RuntimeValueResult {
+        if (value is InputValue.NullValue) return RuntimeValueResult.Ready(null)
+        return when (descriptor) {
+            is DeclaredType.Simple -> {
+                if (descriptor.name in setOf("java.util.List", "java.util.Collection", "java.util.Map")) {
+                    unsupportedValue()
+                } else {
+                    toRuntimeValue(value, JavaTypeIdentity(descriptor.name))
+                }
+            }
+            is DeclaredType.Parameterized -> when (descriptor.rawType) {
+                "java.util.List", "java.util.Collection" -> {
+                    if (descriptor.arguments.size != 1 || value !is InputValue.ListValue) {
+                        typeMismatch()
+                    } else {
+                        val converted = ArrayList<Any?>(value.elements.size)
+                        for (element in value.elements) {
+                            when (val item = toTypedRuntimeValue(element, descriptor.arguments.single())) {
+                                is RuntimeValueResult.Ready -> converted += item.value
+                                is RuntimeValueResult.Failed -> return item
+                            }
+                        }
+                        RuntimeValueResult.Ready(converted)
+                    }
+                }
+                "java.util.Map" -> {
+                    if (
+                        descriptor.arguments.size != 2 ||
+                        descriptor.arguments.first() !is DeclaredType.Simple ||
+                        (descriptor.arguments.first() as DeclaredType.Simple).name !in
+                        setOf("java.lang.String", "String") ||
+                        value !is InputValue.MapValue
+                    ) {
+                        typeMismatch()
+                    } else {
+                        val valueType = descriptor.arguments[1]
+                        val converted = linkedMapOf<String, Any?>()
+                        for ((key, entryValue) in value.entries) {
+                            when (val item = toTypedRuntimeValue(entryValue, valueType)) {
+                                is RuntimeValueResult.Ready -> converted[key] = item.value
+                                is RuntimeValueResult.Failed -> return item
+                            }
+                        }
+                        RuntimeValueResult.Ready(converted)
+                    }
+                }
+                else -> unsupportedValue()
+            }
+            is DeclaredType.ArrayType -> {
+                if (value !is InputValue.ArrayValue) return typeMismatch()
+                val componentClass = runtimeClass(descriptor.component) ?: return unsupportedValue()
+                val target = ReflectArray.newInstance(componentClass, value.elements.size)
+                for ((index, element) in value.elements.withIndex()) {
+                    when (val converted = toTypedRuntimeValue(element, descriptor.component)) {
+                        is RuntimeValueResult.Ready -> try {
+                            ReflectArray.set(target, index, converted.value)
+                        } catch (_: IllegalArgumentException) {
+                            return typeMismatch()
+                        }
+                        is RuntimeValueResult.Failed -> return converted
+                    }
+                }
+                RuntimeValueResult.Ready(target)
+            }
+        }
+    }
+
+    private fun runtimeClass(descriptor: DeclaredType): Class<*>? = when (descriptor) {
+        is DeclaredType.Simple -> resolveSafeJavaType(JavaTypeIdentity(descriptor.name))
+        is DeclaredType.Parameterized -> resolveSafeJavaType(JavaTypeIdentity(descriptor.rawType))
+        is DeclaredType.ArrayType -> runtimeClass(descriptor.component)?.let { ReflectArray.newInstance(it, 0).javaClass }
+    }
+
+    private fun parseDeclaredType(text: String, depth: Int): DeclaredType? {
+        if (depth > MAX_DECLARED_TYPE_DEPTH) return null
+        val canonical = text.trim()
+        if (canonical.isEmpty()) return null
+        if (canonical.endsWith("[]")) {
+            val component = parseDeclaredType(canonical.removeSuffix("[]"), depth + 1) ?: return null
+            return DeclaredType.ArrayType(component)
+        }
+
+        val genericStart = canonical.indexOf('<')
+        if (genericStart < 0) {
+            if (canonical.any { it == '>' || it == ',' || it.isWhitespace() }) return null
+            return DeclaredType.Simple(canonical)
+        }
+        if (!canonical.endsWith('>')) return null
+        val rawType = canonical.substring(0, genericStart).trim()
+        if (rawType.isEmpty() || rawType.any { it == '<' || it == '>' || it == ',' || it.isWhitespace() }) return null
+        val argumentsText = canonical.substring(genericStart + 1, canonical.length - 1)
+        val argumentTexts = splitTopLevelArguments(argumentsText) ?: return null
+        val arguments = argumentTexts.map { parseDeclaredType(it, depth + 1) ?: return null }
+        return DeclaredType.Parameterized(rawType, arguments)
+    }
+
+    private fun splitTopLevelArguments(text: String): List<String>? {
+        if (text.isBlank()) return null
+        val arguments = mutableListOf<String>()
+        var depth = 0
+        var start = 0
+        for (index in text.indices) {
+            when (text[index]) {
+                '<' -> depth++
+                '>' -> {
+                    depth--
+                    if (depth < 0) return null
+                }
+                ',' -> if (depth == 0) {
+                    val argument = text.substring(start, index).trim()
+                    if (argument.isEmpty()) return null
+                    arguments += argument
+                    start = index + 1
+                }
+            }
+        }
+        if (depth != 0) return null
+        val last = text.substring(start).trim()
+        if (last.isEmpty()) return null
+        arguments += last
+        return arguments
+    }
+
     private fun integerRuntimeValue(value: BigInteger, rawTypeName: String): RuntimeValueResult = try {
         when (rawTypeName) {
             "byte", "java.lang.Byte" -> RuntimeValueResult.Ready(value.byteValueExact())
@@ -363,6 +508,10 @@ internal object MyBatisValueConversion {
         PreparationFailure(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, VALUE_OUT_OF_RANGE),
     )
 
+    private fun unsupportedValue() = RuntimeValueResult.Failed(
+        PreparationFailure(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, UNSUPPORTED_VALUE),
+    )
+
     sealed interface ParameterValuesResult {
         data class Ready(
             val values: Map<String, Any?>,
@@ -371,6 +520,21 @@ internal object MyBatisValueConversion {
         data class Failed(
             val failure: PreparationFailure,
         ) : ParameterValuesResult
+    }
+
+    private sealed interface DeclaredType {
+        data class Simple(
+            val name: String,
+        ) : DeclaredType
+
+        data class Parameterized(
+            val rawType: String,
+            val arguments: List<DeclaredType>,
+        ) : DeclaredType
+
+        data class ArrayType(
+            val component: DeclaredType,
+        ) : DeclaredType
     }
 
     private sealed interface RuntimeValueResult {
