@@ -63,7 +63,7 @@ class MyBatisFinalSafetyAdversarialTest {
 
     @Test
     fun deeplyNestedDynamicTagsAreRejectedBeforeStockMyBatisEvaluation() {
-        val depth = 257
+        val depth = 65
         val script = buildString {
             append("<script>")
             repeat(depth) { append("<if test=\"flag\">") }
