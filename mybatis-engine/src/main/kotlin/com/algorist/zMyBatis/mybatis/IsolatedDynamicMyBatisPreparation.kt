@@ -1,5 +1,6 @@
 package com.algorist.zMyBatis.mybatis
 
+import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import java.lang.reflect.Array as ReflectArray
@@ -23,6 +24,7 @@ internal object IsolatedDynamicMyBatisPreparation {
     private const val PARAMETER_MAPPING = "org.apache.ibatis.mapping.ParameterMapping"
     private const val PARAM_MAP = $$"org.apache.ibatis.binding.MapperMethod$ParamMap"
     private const val OGNL_RUNTIME = "org.apache.ibatis.ognl.OgnlRuntime"
+    private const val FOREACH_SQL_NODE = "org.apache.ibatis.scripting.xmltags.ForEachSqlNode"
 
     private const val PARSE_FAILURE = "mybatis-sql-source-parse-failure"
     private const val OGNL_FAILURE = "mybatis-ognl-evaluation-failure"
@@ -35,12 +37,19 @@ internal object IsolatedDynamicMyBatisPreparation {
         script: String,
         parameterType: MyBatisParameterType,
         parameterValues: Map<String, Any?>,
+        admittedForeachLocals: Map<String, InternalBindingKind> = emptyMap(),
     ): Result {
         if (!safeParameterType(parameterType)) {
             return Result.Failed(invariantFailure("mybatis-isolated-parameter-type-not-jdk-owned"))
         }
         if (!safeInboundValue(parameterValues)) {
             return Result.Failed(invariantFailure("mybatis-isolated-parameter-value-not-jdk-owned"))
+        }
+        if (admittedForeachLocals.values.any {
+                it != InternalBindingKind.FOREACH_ITEM && it != InternalBindingKind.FOREACH_INDEX
+            }
+        ) {
+            return Result.Failed(invariantFailure("mybatis-isolated-foreach-local-kind-invalid"))
         }
 
         val myBatisLocation = Configuration::class.java.protectionDomain?.codeSource?.location
@@ -51,7 +60,7 @@ internal object IsolatedDynamicMyBatisPreparation {
 
         return try {
             URLClassLoader(arrayOf(myBatisLocation), platformLoader).use { loader ->
-                prepareIn(loader, script, parameterType, parameterValues)
+                prepareIn(loader, script, parameterType, parameterValues, admittedForeachLocals)
             }
         } catch (failure: Throwable) {
             rethrowFatal(failure)
@@ -64,6 +73,7 @@ internal object IsolatedDynamicMyBatisPreparation {
         script: String,
         parameterType: MyBatisParameterType,
         parameterValues: Map<String, Any?>,
+        admittedForeachLocals: Map<String, InternalBindingKind>,
     ): Result {
         val configurationClass = Class.forName(CONFIGURATION, true, loader)
         if (configurationClass.classLoader !== loader) {
@@ -78,6 +88,15 @@ internal object IsolatedDynamicMyBatisPreparation {
         val boundSqlClass = Class.forName(BOUND_SQL, true, loader)
         val parameterMappingClass = Class.forName(PARAMETER_MAPPING, true, loader)
         val paramMapClass = Class.forName(PARAM_MAP, true, loader)
+        val foreachSqlNodeClass = Class.forName(FOREACH_SQL_NODE, true, loader)
+        if (foreachSqlNodeClass.classLoader !== loader) {
+            return Result.Failed(invariantFailure("mybatis-foreach-node-not-isolated"))
+        }
+        val foreachItemPrefix = foreachSqlNodeClass.getField("ITEM_PREFIX").get(null) as? String
+            ?: return Result.Failed(invariantFailure("mybatis-foreach-item-prefix-unavailable"))
+        if (foreachItemPrefix.isBlank()) {
+            return Result.Failed(invariantFailure("mybatis-foreach-item-prefix-invalid"))
+        }
 
         val configuration = configurationClass.getDeclaredConstructor().newInstance()
         val languageDriver = configurationClass
@@ -126,6 +145,8 @@ internal object IsolatedDynamicMyBatisPreparation {
                 parameterMappingClass = parameterMappingClass,
                 mapping = mapping,
                 parameterObject = parameterObject,
+                foreachItemPrefix = foreachItemPrefix,
+                admittedForeachLocals = admittedForeachLocals,
             )
         }
 
@@ -160,6 +181,8 @@ internal object IsolatedDynamicMyBatisPreparation {
         parameterMappingClass: Class<*>,
         mapping: Any,
         parameterObject: Any?,
+        foreachItemPrefix: String,
+        admittedForeachLocals: Map<String, InternalBindingKind>,
     ): MyBatisParameterMappingSnapshot {
         val property = parameterMappingClass.getMethod("getProperty").invoke(mapping) as? String
         val mode = enumName(parameterMappingClass.getMethod("getMode").invoke(mapping))
@@ -174,6 +197,11 @@ internal object IsolatedDynamicMyBatisPreparation {
                 .getMethod("hasAdditionalParameter", String::class.java)
                 .invoke(boundSql, it) as Boolean
         } ?: false
+        val generatedLocal = if (additional && property != null) {
+            generatedLocalSnapshot(property, foreachItemPrefix, admittedForeachLocals)
+        } else {
+            null
+        }
 
         val runtimeValue = if (property == null) {
             MyBatisRuntimeValueSnapshot.Ready(null)
@@ -193,6 +221,7 @@ internal object IsolatedDynamicMyBatisPreparation {
         return MyBatisParameterMappingSnapshot(
             property = property,
             additionalParameter = additional,
+            generatedLocal = generatedLocal,
             runtimeValue = runtimeValue,
             mappingJavaTypeIdentity = javaType,
             jdbcTypeIdentity = jdbcType,
@@ -200,6 +229,27 @@ internal object IsolatedDynamicMyBatisPreparation {
             parameterMode = mode,
             numericScale = numericScale,
         )
+    }
+
+    private fun generatedLocalSnapshot(
+        property: String,
+        itemPrefix: String,
+        admittedForeachLocals: Map<String, InternalBindingKind>,
+    ): MyBatisGeneratedLocalSnapshot? {
+        if (admittedForeachLocals.isEmpty()) return null
+        val root = property.substringBefore('.')
+        val matches = admittedForeachLocals.mapNotNull { (sourceLocal, kind) ->
+            val generatedPrefix = "$itemPrefix${sourceLocal}_"
+            if (!root.startsWith(generatedPrefix)) return@mapNotNull null
+            val uniqueNumber = root.removePrefix(generatedPrefix).toIntOrNull()
+                ?.takeIf { it >= 0 }
+                ?: return@mapNotNull null
+            MyBatisGeneratedLocalSnapshot(sourceLocal, kind, uniqueNumber)
+        }
+        if (matches.size > 1) {
+            throw IllegalStateException("ambiguous MyBatis foreach generated local identity")
+        }
+        return matches.singleOrNull()
     }
 
     private fun snapshotRuntimeValue(
