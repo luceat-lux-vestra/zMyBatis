@@ -392,13 +392,10 @@ object MyBatisPreparationEngine {
             val requirement = alias?.let { request.parameterContract.requirement(it.requirementId) }
 
             val origin = if (mapping.additionalParameter) {
-                val internalBinding = resolveAdditionalBinding(mapping, rootProperty, request)
-                    ?: return bindingFailure(
-                        PreparationFailureKind.BINDING_RESOLUTION,
-                        ADDITIONAL_PROVENANCE_MISSING,
-                        property,
-                    )
-                PreparedBindingOrigin.MyBatisAdditional(internalBinding)
+                when (val resolved = resolveAdditionalBinding(mapping, rootProperty, request)) {
+                    is AdditionalBindingResult.Ready -> PreparedBindingOrigin.MyBatisAdditional(resolved.binding)
+                    is AdditionalBindingResult.Failed -> return BindingCaptureResult.Failed(resolved.failure)
+                }
             } else {
                 if (requirement?.kind == InputKind.RAW_INTERPOLATION) {
                     return bindingFailure(
@@ -486,19 +483,59 @@ object MyBatisPreparationEngine {
         mapping: MyBatisParameterMappingSnapshot,
         rootProperty: String,
         request: MyBatisPreparationRequest,
-    ): InternalBinding? {
+    ): AdditionalBindingResult {
         val generated = mapping.generatedLocal
         if (generated != null) {
-            val candidates = request.parameterContract.internalBindings.filter {
-                it.name == generated.sourceLocalName && it.kind == generated.kind
-            }
-            return candidates.singleOrNull()
+            return resolveInternalBinding(
+                candidates = request.parameterContract.internalBindings.filter {
+                    it.name == generated.sourceLocalName
+                },
+                expectedKind = generated.kind,
+                property = mapping.property,
+            )
         }
 
-        val candidates = request.parameterContract.internalBindings.filter { it.name == rootProperty }
-        if (candidates.size != 1) return null
-        val internalBinding = candidates.single()
-        return internalBinding.takeIf { it.kind == InternalBindingKind.BIND }
+        return resolveInternalBinding(
+            candidates = request.parameterContract.internalBindings.filter { it.name == rootProperty },
+            expectedKind = InternalBindingKind.BIND,
+            property = mapping.property,
+        )
+    }
+
+    private fun resolveInternalBinding(
+        candidates: List<InternalBinding>,
+        expectedKind: InternalBindingKind,
+        property: String?,
+    ): AdditionalBindingResult {
+        if (candidates.isEmpty()) {
+            return AdditionalBindingResult.Failed(
+                PreparationFailure(
+                    PreparationFailureKind.BINDING_RESOLUTION,
+                    ADDITIONAL_PROVENANCE_MISSING,
+                    property,
+                ),
+            )
+        }
+        if (candidates.size != 1) {
+            return AdditionalBindingResult.Failed(
+                PreparationFailure(
+                    PreparationFailureKind.BINDING_RESOLUTION,
+                    ADDITIONAL_PROVENANCE_AMBIGUOUS,
+                    property,
+                ),
+            )
+        }
+        val binding = candidates.single()
+        if (binding.kind != expectedKind) {
+            return AdditionalBindingResult.Failed(
+                PreparationFailure(
+                    PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                    ADDITIONAL_KIND_UNSUPPORTED,
+                    property,
+                ),
+            )
+        }
+        return AdditionalBindingResult.Ready(binding)
     }
 
     private fun classifyMyBatisFailure(failure: RuntimeException): PreparationFailure {
@@ -558,6 +595,16 @@ object MyBatisPreparationEngine {
         data class Failed(
             val failure: PreparationFailure,
         ) : RawInterpolationResult
+    }
+
+    private sealed interface AdditionalBindingResult {
+        data class Ready(
+            val binding: InternalBinding,
+        ) : AdditionalBindingResult
+
+        data class Failed(
+            val failure: PreparationFailure,
+        ) : AdditionalBindingResult
     }
 
     private sealed interface BindingCaptureResult {
