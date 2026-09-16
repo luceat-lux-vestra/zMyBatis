@@ -88,13 +88,13 @@ object MyBatisPreparationEngine {
             if (staticRawFailure != null) return PreparationResult.Failed(staticRawFailure)
         }
 
-        val admittedForeachLocals = if (dynamicScript) {
+        val foreachAdmission = if (dynamicScript) {
             when (val admission = ForeachProvenanceAdmission.inspect(script, request.parameterContract)) {
-                is ForeachProvenanceAdmission.Result.Admitted -> admission.locals
+                is ForeachProvenanceAdmission.Result.Admitted -> admission
                 is ForeachProvenanceAdmission.Result.Failed -> return PreparationResult.Failed(admission.failure)
             }
         } else {
-            emptyMap()
+            ForeachProvenanceAdmission.Result.Admitted(emptyMap(), emptySet())
         }
 
         if (dynamicScript) {
@@ -163,7 +163,10 @@ object MyBatisPreparationEngine {
             source.capture.parameters.map { it.typeIdentity },
         ) ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_PARAMETER_TYPE)
 
-        val parameterValuesResult = MyBatisValueConversion.parameterValues(request)
+        val parameterValuesResult = MyBatisValueConversion.parameterValues(
+            request,
+            foreachAdmission.collectionRequirementIds,
+        )
         if (parameterValuesResult is MyBatisValueConversion.ParameterValuesResult.Failed) {
             return PreparationResult.Failed(parameterValuesResult.failure)
         }
@@ -177,7 +180,7 @@ object MyBatisPreparationEngine {
                     script,
                     parameterType,
                     parameterValues,
-                    admittedForeachLocals,
+                    foreachAdmission.locals,
                 )
             ) {
                 is IsolatedDynamicMyBatisPreparation.Result.Ready -> isolated.boundSql
