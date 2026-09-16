@@ -43,6 +43,25 @@ internal object IsolatedOgnlAstAdmission {
     fun inspect(
         expressions: List<String>,
         allowedRootProperties: Set<String>,
+    ): Result = inspectParsed(expressions) { root ->
+        inspectTree(root, allowedRootProperties)
+    }
+
+    /**
+     * Proves that stock MyBatis' shaded OGNL parser sees [expression] as exactly one non-indexed
+     * root property with the expected name. Text equality is not enough because identifiers such as
+     * `null` or `true` are parsed as literals rather than caller-property access.
+     */
+    fun inspectExactRootProperty(
+        expression: String,
+        expectedProperty: String,
+    ): Result = inspectParsed(listOf(expression)) { root ->
+        inspectExactRootPropertyNode(root, expectedProperty)
+    }
+
+    private fun inspectParsed(
+        expressions: List<String>,
+        inspector: (Any) -> Result,
     ): Result {
         if (expressions.isEmpty()) return Result.Admitted
         if (expressions.any { it.length > MAX_EXPRESSION_LENGTH }) {
@@ -81,7 +100,7 @@ internal object IsolatedOgnlAstAdmission {
                     if (root == null || root.javaClass.classLoader !== loader) {
                         return Result.Invariant("mybatis-ognl-ast-not-isolated")
                     }
-                    val inspected = inspectTree(root, allowedRootProperties)
+                    val inspected = inspector(root)
                     if (inspected !is Result.Admitted) return inspected
                 }
                 Result.Admitted
@@ -92,6 +111,30 @@ internal object IsolatedOgnlAstAdmission {
             }
             rethrowFatal(failure)
             Result.Invariant(deepestDiagnosticType(failure))
+        }
+    }
+
+    private fun inspectExactRootPropertyNode(
+        root: Any,
+        expectedProperty: String,
+    ): Result {
+        if (root.javaClass.simpleName != "ASTProperty") {
+            return Result.Unsupported("ASTProperty[exact-root-required]")
+        }
+        val indexed = root.javaClass.getMethod("isIndexedAccess").invoke(root) as Boolean
+        if (indexed) return Result.Unsupported("ASTProperty[indexed]")
+        if (childCount(root) != 1) return Result.Unsupported("ASTProperty[shape]")
+        val constant = child(root, 0)
+        if (constant.javaClass.simpleName != "ASTConst") {
+            return Result.Unsupported("ASTProperty[dynamic]")
+        }
+        val property = constant.javaClass.getMethod("getValue").invoke(constant) as? String
+            ?: return Result.Unsupported("ASTProperty[dynamic]")
+        if (property == "class") return Result.Unsupported("ASTProperty[class]")
+        return if (property == expectedProperty) {
+            Result.Admitted
+        } else {
+            Result.UnprovenProperty(property)
         }
     }
 
