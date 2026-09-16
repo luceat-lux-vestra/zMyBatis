@@ -37,26 +37,24 @@ internal object StaticRawSubstitutionAdmission {
         script: String,
         request: MyBatisPreparationRequest,
     ): PreparationFailure? {
-        val sourceExpressions = mutableListOf<String>()
-        val rawSlotMarkers = mutableListOf<String>()
-        var rawSlotIndex = 0
-        val structuralSql = GenericTokenParser(rawOpen, "}") { content ->
-            sourceExpressions += content.trim()
-            val marker = freshMarker(
-                forbidden = script,
-                prefix = "zmybatis_raw_slot",
-                index = rawSlotIndex++,
-                delimiter = '\u0000',
-            )
-            rawSlotMarkers += marker
-            marker
-        }.parse(script)
-
         val rawRequirements = request.parameterContract.rawRequirements()
 
-        // Escaped or malformed `${...}` is intentionally outside the statically proven subset. The
-        // stock token parser leaves a literal `${` behind in both cases.
-        if (structuralSql.contains(rawOpen)) return authorityMismatch()
+        val rawSlotSentinels = unusedPrivateUseCharacters(listOf(script), count = 2)
+            ?: return unsupported(TOKEN_TOPOLOGY_UNSUPPORTED)
+        val rawSlotOpen = rawSlotSentinels[0].toString()
+        val rawSlotClose = rawSlotSentinels[1].toString()
+        val sourceExpressions = mutableListOf<String>()
+        var rawSlotIndex = 0
+
+        // Run the same raw-token parser MyBatis uses. Escaped or malformed `${...}` remains literal
+        // source text and is not mistaken for an executable raw requirement. Recognized raw slots are
+        // replaced by inert analysis sentinels so the later bound-token proof can preserve their exact
+        // source positions without repeatedly rewriting the whole SQL string.
+        val structuralRawSql = GenericTokenParser(rawOpen, "}") { content ->
+            sourceExpressions += content.trim()
+            rawSlotOpen + rawSlotIndex++ + rawSlotClose
+        }.parse(script)
+
         if (sourceExpressions.isEmpty()) {
             return if (rawRequirements.isEmpty()) null else authorityMismatch()
         }
@@ -101,13 +99,6 @@ internal object StaticRawSubstitutionAdmission {
             requirementByExpression[expression] = requirementId
         }
 
-        // A raw slot already inside a source `#{...}` could change its property or mapping options and
-        // is never admitted.
-        val sourceBoundPayloads = boundPayloads(structuralSql)
-        if (sourceBoundPayloads.any { payload -> rawSlotMarkers.any { marker -> payload.contains(marker) } }) {
-            return unsupported(BOUND_CONTEXT_UNSUPPORTED)
-        }
-
         val rawValuesByRequirement = linkedMapOf<InputRequirementId, String>()
         for (requirementId in requirementByExpression.values.toSet()) {
             val provided = request.inputEnvironment.value(requirementId) ?: return authorityMismatch()
@@ -115,35 +106,59 @@ internal object StaticRawSubstitutionAdmission {
             rawValuesByRequirement[requirementId] = raw
         }
 
-        // Give every source bound token a unique analysis-only identity while preserving its `#{...}`
-        // opener. The marker is selected to be absent from authoritative source text so a source literal
-        // can never masquerade as analysis metadata. After raw substitution, MyBatis's own tokenizer must
-        // still observe exactly these marker-bearing source tokens in the same order.
-        val expectedLabeledPayloads = mutableListOf<String>()
-        var boundIndex = 0
-        val labeledStructuralSql = GenericTokenParser(boundOpen, "}") { content ->
-            val marker = freshMarker(
-                forbidden = structuralSql,
-                prefix = "zmybatis_bound",
-                index = boundIndex++,
-                delimiter = '\u0001',
-            )
-            val labeledPayload = content + marker
-            expectedLabeledPayloads += labeledPayload
-            boundOpen + labeledPayload + "}"
-        }.parse(structuralSql)
+        // Select analysis characters that cannot be forged by either authoritative source text or a
+        // raw value. Private-use characters are analysis-only and never reach MyBatis execution.
+        val proofSentinels = unusedPrivateUseCharacters(
+            listOf(script, structuralRawSql) + rawValuesByRequirement.values,
+            count = 3,
+        ) ?: return unsupported(TOKEN_TOPOLOGY_UNSUPPORTED)
+        val escapedBoundOpen = proofSentinels[0].toString()
+        val escapedBoundClose = proofSentinels[1].toString()
+        val boundCanary = proofSentinels[2]
 
-        // Preserve only characters that can affect GenericTokenParser's `#{...}` structure. All other
-        // raw characters become inert sentinels. This is not SQL rendering or OGNL evaluation; it is a
-        // structural proof over the same token parser MyBatis uses for parameter mappings.
-        var projectedSql = labeledStructuralSql
-        for (index in rawSlotMarkers.indices) {
+        // GenericTokenParser removes the escape backslash when it encounters an escaped opener/closer.
+        // Protect those source forms before replacing authoritative source bindings with canaries, so
+        // the final verification pass cannot mistake the parser's analysis output for a newly created
+        // bound token.
+        val protectedStructuralSql = structuralRawSql
+            .replace("\\#{", escapedBoundOpen)
+            .replace("\\}", escapedBoundClose)
+
+        val expectedCanaryPayloads = mutableListOf<String>()
+        var boundIndex = 0
+        var rawInsideSourceBound = false
+        val canaryStructuralSql = GenericTokenParser(boundOpen, "}") { content ->
+            if (content.contains(rawSlotOpen)) rawInsideSourceBound = true
+            val payload = "$boundCanary${boundIndex++}$boundCanary"
+            expectedCanaryPayloads += payload
+            boundOpen + payload + "}"
+        }.parse(protectedStructuralSql)
+        if (rawInsideSourceBound) return unsupported(BOUND_CONTEXT_UNSUPPORTED)
+
+        // Substitute every recognized source raw slot exactly once in a single parser pass. Handler
+        // output is not recursively tokenized, matching GenericTokenParser/MyBatis behavior even when
+        // a raw value itself contains the analysis delimiter characters.
+        var slotOccurrence = 0
+        val projectedSql = GenericTokenParser(rawSlotOpen, rawSlotClose) { content ->
+            val index = content.toIntOrNull() ?: return@GenericTokenParser ""
+            if (index != slotOccurrence || index !in sourceExpressions.indices) {
+                return@GenericTokenParser ""
+            }
+            slotOccurrence++
             val expression = sourceExpressions[index]
-            val requirementId = requirementByExpression[expression] ?: return authorityMismatch()
-            val raw = rawValuesByRequirement[requirementId] ?: return authorityMismatch()
-            projectedSql = projectedSql.replace(rawSlotMarkers[index], projectBoundTokenMetasyntax(raw))
+            val requirementId = requirementByExpression[expression] ?: return@GenericTokenParser ""
+            val raw = rawValuesByRequirement[requirementId] ?: return@GenericTokenParser ""
+            projectBoundTokenMetasyntax(raw)
+        }.parse(canaryStructuralSql)
+        if (slotOccurrence != sourceExpressions.size || projectedSql.contains(rawSlotOpen)) {
+            return authorityMismatch()
         }
-        if (boundPayloads(projectedSql) != expectedLabeledPayloads) {
+
+        // At this point every authoritative source binding has become a unique, unforgeable canary.
+        // MyBatis's own bound-token parser must observe exactly those canaries, in order, and nothing
+        // else. A raw-created token adds an unmarked payload; an escaped/deleted/mutated source token
+        // removes or changes a canary, and a cross-boundary token changes the sequence as well.
+        if (boundPayloads(projectedSql) != expectedCanaryPayloads) {
             return unsupported(TOKEN_TOPOLOGY_UNSUPPORTED)
         }
 
@@ -159,29 +174,41 @@ internal object StaticRawSubstitutionAdmission {
         return payloads
     }
 
-    private fun freshMarker(
-        forbidden: String,
-        prefix: String,
-        index: Int,
-        delimiter: Char,
-    ): String {
-        var salt = 0L
-        while (true) {
-            val candidate = "$delimiter${prefix}_${index}_$salt$delimiter"
-            if (!forbidden.contains(candidate)) return candidate
-            salt++
+    private fun projectBoundTokenMetasyntax(raw: String): String = buildString {
+        var inertRun = false
+        raw.forEach { character ->
+            if (character == '#' || character == '{' || character == '}' || character == '\\') {
+                append(character)
+                inertRun = false
+            } else if (!inertRun) {
+                append('x')
+                inertRun = true
+            }
         }
     }
 
-    private fun projectBoundTokenMetasyntax(raw: String): String = buildString(raw.length) {
-        raw.forEach { character ->
-            append(
-                when (character) {
-                    '#', '{', '}', '\\' -> character
-                    else -> 'x'
-                },
-            )
+    private fun unusedPrivateUseCharacters(
+        forbidden: Collection<String>,
+        count: Int,
+    ): List<Char>? {
+        val used = BooleanArray(PRIVATE_USE_END - PRIVATE_USE_START + 1)
+        forbidden.forEach { text ->
+            text.forEach { character ->
+                val code = character.code
+                if (code in PRIVATE_USE_START..PRIVATE_USE_END) {
+                    used[code - PRIVATE_USE_START] = true
+                }
+            }
         }
+
+        val result = ArrayList<Char>(count)
+        for (offset in used.indices) {
+            if (!used[offset]) {
+                result += (PRIVATE_USE_START + offset).toChar()
+                if (result.size == count) return result
+            }
+        }
+        return null
     }
 
     private fun counts(values: List<String>): Map<String, Int> = values.groupingBy { it }.eachCount()
@@ -200,4 +227,7 @@ internal object StaticRawSubstitutionAdmission {
         val requirementId: InputRequirementId,
         val expression: String,
     )
+
+    private const val PRIVATE_USE_START = 0xE000
+    private const val PRIVATE_USE_END = 0xF8FF
 }
