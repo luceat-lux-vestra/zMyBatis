@@ -11,6 +11,7 @@ import com.algorist.zMyBatis.core.input.InputProvenance
 import com.algorist.zMyBatis.core.input.InputRequiredness
 import com.algorist.zMyBatis.core.input.InputRequirement
 import com.algorist.zMyBatis.core.input.InputRequirementId
+import com.algorist.zMyBatis.core.input.InputScalarType
 import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InternalBinding
 import com.algorist.zMyBatis.core.input.InternalBindingKind
@@ -43,6 +44,30 @@ class ForeachCollectionOgnlAdmissionTest {
         assertOgnlAliasRejected("class")
     }
 
+    @Test
+    fun scalarContractShapeCannotReachForeachEvaluation() {
+        val alias = "ids"
+        val result = ForeachProvenanceAdmission.inspect(
+            "<script><foreach collection=\"$alias\" item=\"item\">#{item}</foreach></script>",
+            contract(
+                alias = alias,
+                type = JavaTypeIdentity("java.lang.String"),
+                expectedType = ExpectedInputType(
+                    shape = InputShape.SCALAR,
+                    scalarType = InputScalarType.STRING,
+                    javaTypeIdentity = JavaTypeIdentity("java.lang.String"),
+                    nullability = InputNullability.NON_NULL,
+                ),
+            ),
+        )
+
+        assertTrue(result is ForeachProvenanceAdmission.Result.Failed)
+        result as ForeachProvenanceAdmission.Result.Failed
+        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
+        assertEquals("mybatis-foreach-collection-shape-unsupported", result.failure.code)
+        assertEquals(alias, result.failure.bindingProperty)
+    }
+
     private fun assertOgnlAliasRejected(alias: String) {
         val result = ForeachProvenanceAdmission.inspect(
             "<script><foreach collection=\"$alias\" item=\"item\">#{item}</foreach></script>",
@@ -56,11 +81,18 @@ class ForeachCollectionOgnlAdmissionTest {
         assertEquals(alias, result.failure.bindingProperty)
     }
 
-    private fun contract(alias: String): ParameterContract {
+    private fun contract(
+        alias: String,
+        type: JavaTypeIdentity = JavaTypeIdentity("java.util.List<java.lang.Long>"),
+        expectedType: ExpectedInputType = ExpectedInputType(
+            shape = InputShape.LIST,
+            javaTypeIdentity = type,
+            nullability = InputNullability.NON_NULL,
+        ),
+    ): ParameterContract {
         val fileId = SourceFileId("fixture/ForeachCollectionOgnl.java")
         val revision = SourceRevision("foreach-collection-ognl-revision")
         val source = SourceEvidence(fileId, revision, SourceRange(0, 16))
-        val type = JavaTypeIdentity("java.util.List<java.lang.Long>")
         val statementId = JavaStatementId(
             fileId,
             "fixture.ForeachCollectionOgnl",
@@ -80,11 +112,7 @@ class ForeachCollectionOgnlAdmissionTest {
                 InputRequirement(
                     id = requirementId,
                     kind = InputKind.BOUND,
-                    expectedType = ExpectedInputType(
-                        shape = InputShape.LIST,
-                        javaTypeIdentity = type,
-                        nullability = InputNullability.NON_NULL,
-                    ),
+                    expectedType = expectedType,
                     requiredness = InputRequiredness.REQUIRED,
                     provenance = provenance,
                 ),
