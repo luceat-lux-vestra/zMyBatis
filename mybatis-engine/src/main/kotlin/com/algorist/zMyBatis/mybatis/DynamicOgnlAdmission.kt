@@ -3,11 +3,15 @@ package com.algorist.zMyBatis.mybatis
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InternalBinding
 import com.algorist.zMyBatis.core.input.InternalBindingKind
+import java.util.ArrayDeque
 import org.apache.ibatis.builder.xml.XMLMapperEntityResolver
 import org.apache.ibatis.parsing.XNode
 import org.apache.ibatis.parsing.XPathParser
 
 internal object DynamicOgnlAdmission {
+    private const val MAX_SCRIPT_LENGTH = 2 * 1024 * 1024
+    private const val MAX_DYNAMIC_NODES = 65_536
+
     private val reservedContextNames = setOf("_parameter", "_databaseId")
 
     fun inspect(
@@ -15,8 +19,12 @@ internal object DynamicOgnlAdmission {
         callerRootProperties: Set<String>,
         internalBindings: List<InternalBinding>,
     ): Result {
+        if (script.length > MAX_SCRIPT_LENGTH) return Result.Unsupported("DynamicScript[length]")
+
         val root = try {
             XPathParser(script, false, null, XMLMapperEntityResolver()).evalNode("/script")
+        } catch (failure: StackOverflowError) {
+            return Result.Unsupported("DynamicScript[parser-depth]")
         } catch (failure: RuntimeException) {
             return Result.MalformedScript(failure)
         } ?: return Result.MalformedScript(IllegalArgumentException("Dynamic script root is unavailable"))
@@ -53,41 +61,54 @@ internal object DynamicOgnlAdmission {
     }
 
     private fun inspectElements(
-        node: XNode,
+        root: XNode,
         callerRootProperties: Set<String>,
         internalBindings: List<InternalBinding>,
         sourceBindNames: MutableSet<String>,
         expressions: MutableList<String>,
     ): Result {
-        // Positive foreach support is outside #143 because generated item/index authority is not yet
-        // modeled. Refuse the tag itself before MyBatis can iterate or synthesize __frch_* locals.
-        if (node.name == "foreach") return Result.Unsupported("DynamicTag[foreach]")
+        val pending = ArrayDeque<XNode>()
+        pending.addLast(root)
+        var visitedNodes = 0
 
-        when (node.name) {
-            "if", "when" -> {
-                val expression = node.getStringAttribute("test")
-                    ?: return Result.MalformedScript(IllegalArgumentException("dynamic test expression is unavailable"))
-                expressions += expression
+        while (pending.isNotEmpty()) {
+            if (++visitedNodes > MAX_DYNAMIC_NODES) {
+                return Result.Unsupported("DynamicScript[node-budget]")
             }
-            "bind" -> {
-                val bindResult = inspectBindAuthority(node, callerRootProperties, internalBindings, sourceBindNames)
-                if (bindResult !is Result.Admitted) return bindResult
-                val expression = node.getStringAttribute("value")
-                    ?: return Result.MalformedScript(IllegalArgumentException("bind value is unavailable"))
-                expressions += expression
+
+            val node = pending.removeLast()
+            // Positive foreach support is outside #143 because generated item/index authority is not yet
+            // modeled. Refuse the tag itself before MyBatis can iterate or synthesize __frch_* locals.
+            if (node.name == "foreach") return Result.Unsupported("DynamicTag[foreach]")
+
+            when (node.name) {
+                "if", "when" -> {
+                    val expression = node.getStringAttribute("test")
+                        ?: return Result.MalformedScript(
+                            IllegalArgumentException("dynamic test expression is unavailable"),
+                        )
+                    expressions += expression
+                }
+                "bind" -> {
+                    val bindResult = inspectBindAuthority(
+                        node,
+                        callerRootProperties,
+                        internalBindings,
+                        sourceBindNames,
+                    )
+                    if (bindResult !is Result.Admitted) return bindResult
+                    val expression = node.getStringAttribute("value")
+                        ?: return Result.MalformedScript(IllegalArgumentException("bind value is unavailable"))
+                    expressions += expression
+                }
+            }
+
+            val children = node.children
+            for (index in children.indices.reversed()) {
+                pending.addLast(children[index])
             }
         }
 
-        for (child in node.children) {
-            val result = inspectElements(
-                child,
-                callerRootProperties,
-                internalBindings,
-                sourceBindNames,
-                expressions,
-            )
-            if (result !is Result.Admitted) return result
-        }
         return Result.Admitted
     }
 
