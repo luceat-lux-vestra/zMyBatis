@@ -3,6 +3,7 @@ package com.algorist.zMyBatis.mybatis
 import com.algorist.zMyBatis.core.input.ForeachLocalRole
 import com.algorist.zMyBatis.core.input.InputAlias
 import com.algorist.zMyBatis.core.input.InputEvidence
+import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
@@ -69,6 +70,7 @@ internal object ForeachProvenanceAdmission {
         }
 
         val sourceLocals = linkedMapOf<String, InternalBindingKind>()
+        val collectionRequirements = linkedSetOf<InputRequirementId>()
         val pending = ArrayDeque<PendingNode>()
         pending.addLast(PendingNode(root, depth = 0, insideForeach = false))
         var visitedNodes = 0
@@ -95,6 +97,7 @@ internal object ForeachProvenanceAdmission {
                     callerAliases = callerAliases,
                     bindNames = bindNames,
                     sourceLocals = sourceLocals,
+                    collectionRequirements = collectionRequirements,
                 )
                 if (admitted != null) return Result.Failed(admitted)
             }
@@ -130,7 +133,10 @@ internal object ForeachProvenanceAdmission {
             }
         }
 
-        return Result.Admitted(sourceLocals.toMap())
+        return Result.Admitted(
+            locals = sourceLocals.toMap(),
+            collectionRequirementIds = collectionRequirements.toSet(),
+        )
     }
 
     private fun inspectForeach(
@@ -139,6 +145,7 @@ internal object ForeachProvenanceAdmission {
         callerAliases: Map<String, InputAlias>,
         bindNames: Set<String>,
         sourceLocals: MutableMap<String, InternalBindingKind>,
+        collectionRequirements: MutableSet<InputRequirementId>,
     ): PreparationFailure? {
         val collection = node.getStringAttribute("collection")?.takeIf { it.isNotBlank() }
             ?: return failure(PreparationFailureKind.UNSUPPORTED_SEMANTIC, COLLECTION_EXPRESSION_UNSUPPORTED)
@@ -169,6 +176,7 @@ internal object ForeachProvenanceAdmission {
                 collection,
             )
         }
+        collectionRequirements += requirement.id
 
         val item = node.getStringAttribute("item")?.takeIf { it.isNotBlank() }
             ?: return failure(PreparationFailureKind.UNSUPPORTED_SEMANTIC, LOCAL_IDENTIFIER_UNSUPPORTED)
@@ -285,6 +293,7 @@ internal object ForeachProvenanceAdmission {
     sealed interface Result {
         data class Admitted(
             val locals: Map<String, InternalBindingKind>,
+            val collectionRequirementIds: Set<InputRequirementId>,
         ) : Result
 
         data class Failed(
