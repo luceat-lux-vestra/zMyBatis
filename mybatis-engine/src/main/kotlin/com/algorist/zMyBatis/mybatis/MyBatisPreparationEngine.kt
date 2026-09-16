@@ -1,10 +1,8 @@
 package com.algorist.zMyBatis.mybatis
 
-import com.algorist.zMyBatis.core.input.InputAlias
 import com.algorist.zMyBatis.core.input.InputKind
-import com.algorist.zMyBatis.core.input.InputRequirement
-import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InputValue
+import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
@@ -13,50 +11,49 @@ import com.algorist.zMyBatis.core.preparation.PreparationResult
 import com.algorist.zMyBatis.core.preparation.PreparationSource
 import com.algorist.zMyBatis.core.preparation.PreparedBinding
 import com.algorist.zMyBatis.core.preparation.PreparedBindingMetadata
+import com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin
 import com.algorist.zMyBatis.core.preparation.PreparedExecution
 import com.algorist.zMyBatis.core.preparation.PreparedRawInterpolation
 import com.algorist.zMyBatis.core.preparation.rawRequirements
-import com.algorist.zMyBatis.core.source.JavaTypeIdentity
 import org.apache.ibatis.binding.BindingException
 import org.apache.ibatis.binding.MapperMethod
 import org.apache.ibatis.builder.BuilderException
 import org.apache.ibatis.mapping.BoundSql
 import org.apache.ibatis.mapping.ParameterMapping
-import org.apache.ibatis.mapping.ParameterMode
 import org.apache.ibatis.reflection.ReflectionException
 import org.apache.ibatis.session.Configuration
-import java.lang.reflect.Array as ReflectArray
-import java.math.BigDecimal
-import java.math.BigInteger
-import java.time.Instant
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
-import java.util.UUID
 
 object MyBatisPreparationEngine {
     private const val ENGINE_ID = "org.mybatis:mybatis"
     private const val ENGINE_VERSION = "3.5.19"
-    private const val ROW_BOUNDS_TYPE = "org.apache.ibatis.session.RowBounds"
-    private const val RESULT_HANDLER_TYPE = "org.apache.ibatis.session.ResultHandler"
     private const val UNSUPPORTED_SOURCE = "preparation-source-kind-unsupported"
     private const val UNSUPPORTED_PARAMETER_TYPE = "java-annotation-parameter-type-unavailable"
     private const val UNSUPPORTED_PARAMETER_MODE = "mybatis-parameter-mode-unsupported"
     private const val UNSUPPORTED_TYPE_HANDLER = "mybatis-custom-type-handler-unsupported"
     private const val EXPLICIT_JAVA_TYPE = "mybatis-explicit-java-type-unsupported"
+    private const val DYNAMIC_RAW_INTERPOLATION = "java-annotation-dynamic-raw-interpolation-unsupported"
+    private const val DYNAMIC_NUMERIC_CHARACTER_REFERENCE =
+        "java-annotation-dynamic-numeric-character-reference-unsupported"
+    private const val DYNAMIC_OGNL_UNSUPPORTED = "java-annotation-dynamic-ognl-node-unsupported"
+    private const val DYNAMIC_OGNL_PROPERTY_UNPROVEN = "java-annotation-dynamic-ognl-property-unproven"
+    private const val DYNAMIC_OGNL_PARSE_FAILURE = "java-annotation-dynamic-ognl-parse-failure"
+    private const val BIND_SOURCE_PROVENANCE_MISMATCH = "mybatis-bind-source-provenance-mismatch"
+    private const val BIND_RESERVED_CONTEXT = "mybatis-bind-reserved-context-name-unsupported"
     private const val MISSING_MAPPING_PROPERTY = "mybatis-parameter-mapping-property-missing"
     private const val UNRESOLVED_MAPPING = "mybatis-parameter-mapping-unresolved"
+    private const val ADDITIONAL_PROVENANCE_MISSING = "mybatis-additional-parameter-provenance-missing"
+    private const val ADDITIONAL_PROVENANCE_AMBIGUOUS = "mybatis-additional-parameter-provenance-ambiguous"
+    private const val ADDITIONAL_KIND_UNSUPPORTED = "mybatis-additional-parameter-kind-unsupported"
     private const val RAW_INPUT_MISSING = "raw-interpolation-input-missing"
     private const val RAW_BOUND_CONFLATION = "raw-interpolation-bound-mapping-conflation"
     private const val UNSUPPORTED_VALUE = "mybatis-binding-value-unsupported"
-    private const val VALUE_OUT_OF_RANGE = "java-parameter-value-out-of-range"
-    private const val VALUE_TYPE_MISMATCH = "java-parameter-value-type-mismatch"
     private const val EMPTY_SQL = "mybatis-prepared-sql-empty"
     private const val PARSE_FAILURE = "mybatis-sql-source-parse-failure"
     private const val OGNL_FAILURE = "mybatis-ognl-evaluation-failure"
     private const val BINDING_FAILURE = "mybatis-binding-resolution-failure"
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
 
+    private val rawInterpolationPrefix = String(charArrayOf('$', '{'))
     private val explicitRuntimeClassOption = Regex(
         pattern = "#\\{[^}]*\\b(typeHandler|javaType)\\s*=",
         option = RegexOption.IGNORE_CASE,
@@ -66,7 +63,17 @@ object MyBatisPreparationEngine {
         val source = request.source as? PreparationSource.JavaAnnotation
             ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_SOURCE)
 
-        val explicitClassOption = source.capture.sqlSegments.firstNotNullOfOrNull(::runtimeClassOption)
+        val script = source.capture.sqlSegments.joinToString(separator = " ").trim()
+        val dynamicScript = containsDynamicScript(script)
+        val rawRequirements = request.parameterContract.rawRequirements()
+        if (dynamicScript && script.contains("&#")) {
+            return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_NUMERIC_CHARACTER_REFERENCE)
+        }
+        if (dynamicScript && (script.contains(rawInterpolationPrefix) || rawRequirements.isNotEmpty())) {
+            return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_RAW_INTERPOLATION)
+        }
+
+        val explicitClassOption = runtimeClassOption(script)
         if (explicitClassOption != null) {
             return if (explicitClassOption.equals("typeHandler", ignoreCase = true)) {
                 failed(PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER, UNSUPPORTED_TYPE_HANDLER)
@@ -75,22 +82,102 @@ object MyBatisPreparationEngine {
             }
         }
 
-        val configuration = Configuration()
-        val languageDriver = configuration.defaultScriptingLanguageInstance
-        val parameterType = resolveAnnotationParameterType(source.capture.parameters.map { it.typeIdentity })
-            ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_PARAMETER_TYPE)
-        val parameterObjectResult = buildParameterObject(request)
-        if (parameterObjectResult is ParameterObjectResult.Failed) {
-            return PreparationResult.Failed(parameterObjectResult.failure)
+        if (!dynamicScript) {
+            val staticRawFailure = StaticRawSubstitutionAdmission.failureOrNull(script, request)
+            if (staticRawFailure != null) return PreparationResult.Failed(staticRawFailure)
         }
-        val parameterObject = (parameterObjectResult as ParameterObjectResult.Ready).value
-        val script = source.capture.sqlSegments.joinToString(separator = " ").trim()
 
-        val boundSql = try {
-            val sqlSource = languageDriver.createSqlSource(configuration, script, parameterType.type)
-            sqlSource.getBoundSql(parameterObject)
-        } catch (failure: RuntimeException) {
-            return PreparationResult.Failed(classifyMyBatisFailure(failure))
+        if (dynamicScript) {
+            when (
+                val admission = DynamicOgnlAdmission.inspect(
+                    script,
+                    dynamicOgnlRootProperties(request),
+                    request.parameterContract.internalBindings,
+                )
+            ) {
+                DynamicOgnlAdmission.Result.Admitted -> Unit
+                is DynamicOgnlAdmission.Result.Unsupported ->
+                    return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_OGNL_UNSUPPORTED)
+                is DynamicOgnlAdmission.Result.UnprovenProperty ->
+                    return PreparationResult.Failed(
+                        PreparationFailure(
+                            kind = PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                            code = DYNAMIC_OGNL_PROPERTY_UNPROVEN,
+                            bindingProperty = admission.property,
+                        ),
+                    )
+                is DynamicOgnlAdmission.Result.BindAuthority -> {
+                    val kind = when (admission.problem) {
+                        DynamicOgnlAdmission.BindAuthorityProblem.KIND_UNSUPPORTED,
+                        DynamicOgnlAdmission.BindAuthorityProblem.RESERVED_CONTEXT,
+                        -> PreparationFailureKind.UNSUPPORTED_SEMANTIC
+                        DynamicOgnlAdmission.BindAuthorityProblem.MISSING,
+                        DynamicOgnlAdmission.BindAuthorityProblem.AMBIGUOUS,
+                        DynamicOgnlAdmission.BindAuthorityProblem.SOURCE_CONTRACT_MISMATCH,
+                        -> PreparationFailureKind.BINDING_RESOLUTION
+                    }
+                    val code = when (admission.problem) {
+                        DynamicOgnlAdmission.BindAuthorityProblem.MISSING -> ADDITIONAL_PROVENANCE_MISSING
+                        DynamicOgnlAdmission.BindAuthorityProblem.AMBIGUOUS -> ADDITIONAL_PROVENANCE_AMBIGUOUS
+                        DynamicOgnlAdmission.BindAuthorityProblem.KIND_UNSUPPORTED -> ADDITIONAL_KIND_UNSUPPORTED
+                        DynamicOgnlAdmission.BindAuthorityProblem.SOURCE_CONTRACT_MISMATCH ->
+                            BIND_SOURCE_PROVENANCE_MISMATCH
+                        DynamicOgnlAdmission.BindAuthorityProblem.RESERVED_CONTEXT -> BIND_RESERVED_CONTEXT
+                    }
+                    return PreparationResult.Failed(
+                        PreparationFailure(kind, code, bindingProperty = admission.name),
+                    )
+                }
+                is DynamicOgnlAdmission.Result.MalformedScript ->
+                    return failed(
+                        PreparationFailureKind.MYBATIS_PARSE,
+                        PARSE_FAILURE,
+                        diagnosticType = admission.failure.javaClass.name,
+                    )
+                is DynamicOgnlAdmission.Result.MalformedExpression ->
+                    return failed(
+                        PreparationFailureKind.OGNL,
+                        DYNAMIC_OGNL_PARSE_FAILURE,
+                        diagnosticType = admission.diagnosticType,
+                    )
+                is DynamicOgnlAdmission.Result.Invariant ->
+                    return failed(
+                        PreparationFailureKind.PREPARATION_INVARIANT,
+                        INVARIANT_FAILURE,
+                        diagnosticType = admission.diagnosticType,
+                    )
+            }
+        }
+
+        val parameterType = MyBatisValueConversion.resolveParameterType(
+            source.capture.parameters.map { it.typeIdentity },
+        ) ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_PARAMETER_TYPE)
+
+        val parameterValuesResult = MyBatisValueConversion.parameterValues(request)
+        if (parameterValuesResult is MyBatisValueConversion.ParameterValuesResult.Failed) {
+            return PreparationResult.Failed(parameterValuesResult.failure)
+        }
+        val parameterValues =
+            (parameterValuesResult as MyBatisValueConversion.ParameterValuesResult.Ready).values
+
+        val requiresIsolatedDynamicRuntime = dynamicScript || rawRequirements.isNotEmpty()
+        val boundSql = if (requiresIsolatedDynamicRuntime) {
+            when (
+                val isolated = IsolatedDynamicMyBatisPreparation.prepare(
+                    script,
+                    parameterType,
+                    parameterValues,
+                )
+            ) {
+                is IsolatedDynamicMyBatisPreparation.Result.Ready -> isolated.boundSql
+                is IsolatedDynamicMyBatisPreparation.Result.Failed ->
+                    return PreparationResult.Failed(isolated.failure)
+            }
+        } else {
+            when (val static = prepareStaticBoundSql(script, parameterType, parameterValues)) {
+                is StaticBoundSqlResult.Ready -> static.boundSql
+                is StaticBoundSqlResult.Failed -> return PreparationResult.Failed(static.failure)
+            }
         }
 
         if (boundSql.sql.isBlank()) {
@@ -102,12 +189,12 @@ object MyBatisPreparationEngine {
             return PreparationResult.Failed(rawInterpolations.failure)
         }
 
-        val bindingResult = captureBindings(configuration, boundSql, parameterObject, request)
+        val bindingResult = captureBindings(boundSql, request)
         if (bindingResult is BindingCaptureResult.Failed) {
             return PreparationResult.Failed(bindingResult.failure)
         }
         val bindings = (bindingResult as BindingCaptureResult.Ready).bindings
-        if (bindings.size != boundSql.parameterMappings.size) {
+        if (bindings.size != boundSql.mappings.size) {
             return failed(
                 PreparationFailureKind.PARAMETER_MAPPING_MISMATCH,
                 "mybatis-parameter-mapping-cardinality-mismatch",
@@ -126,7 +213,7 @@ object MyBatisPreparationEngine {
                     preparationMetadata = PreparationMetadata(
                         engineIdentity = ENGINE_ID,
                         engineVersion = ENGINE_VERSION,
-                        languageDriverIdentity = languageDriver.javaClass.name,
+                        languageDriverIdentity = boundSql.languageDriverIdentity,
                     ),
                 ),
             )
@@ -139,88 +226,101 @@ object MyBatisPreparationEngine {
         }
     }
 
+    private fun containsDynamicScript(sql: String): Boolean = sql.startsWith("<script>")
+
     private fun runtimeClassOption(sql: String): String? =
         explicitRuntimeClassOption.find(sql)?.groupValues?.get(1)
 
-    private fun resolveAnnotationParameterType(parameterTypes: List<JavaTypeIdentity>): ParameterTypeResolution? {
-        val resolved = mutableListOf<Class<*>>()
-        for (typeIdentity in parameterTypes) {
-            if (isMyBatisSpecialParameter(typeIdentity)) continue
-            resolved += resolveSafeJavaType(typeIdentity) ?: return null
+    private fun dynamicOgnlRootProperties(request: MyBatisPreparationRequest): Set<String> =
+        request.inputEnvironment.aliases.mapTo(linkedSetOf()) { it.name }
+
+    private fun prepareStaticBoundSql(
+        script: String,
+        parameterType: MyBatisParameterType,
+        parameterValues: Map<String, Any?>,
+    ): StaticBoundSqlResult {
+        val configuration = Configuration()
+        val languageDriver = configuration.defaultScriptingLanguageInstance
+        val parameterObject = parentParameterObject(parameterValues)
+        val resolvedParameterType = when (parameterType) {
+            MyBatisParameterType.None -> null
+            is MyBatisParameterType.Single -> parameterType.type
+            MyBatisParameterType.Multi -> MapperMethod.ParamMap::class.java
         }
-        return ParameterTypeResolution(
-            when (resolved.size) {
-                0 -> null
-                1 -> resolved.single()
-                else -> MapperMethod.ParamMap::class.java
-            },
+
+        val boundSql = try {
+            val sqlSource = languageDriver.createSqlSource(configuration, script, resolvedParameterType)
+            sqlSource.getBoundSql(parameterObject)
+        } catch (failure: RuntimeException) {
+            return StaticBoundSqlResult.Failed(classifyMyBatisFailure(failure))
+        }
+
+        val mappings = boundSql.parameterMappings.map { mapping ->
+            snapshotStaticMapping(configuration, boundSql, parameterObject, mapping)
+        }
+        return StaticBoundSqlResult.Ready(
+            MyBatisBoundSqlSnapshot(
+                sql = boundSql.sql,
+                mappings = mappings,
+                languageDriverIdentity = languageDriver.javaClass.name,
+            ),
         )
     }
 
-    private fun isMyBatisSpecialParameter(typeIdentity: JavaTypeIdentity): Boolean =
-        typeIdentity.value.substringBefore('<').trim() in setOf(ROW_BOUNDS_TYPE, RESULT_HANDLER_TYPE)
-
-    private fun resolveSafeJavaType(typeIdentity: JavaTypeIdentity): Class<*>? {
-        val canonical = typeIdentity.value.trim()
-        if (canonical.endsWith("[]")) {
-            val component = resolveSafeJavaType(JavaTypeIdentity(canonical.removeSuffix("[]"))) ?: return null
-            return ReflectArray.newInstance(component, 0).javaClass
-        }
-        return when (canonical.substringBefore('<').trim()) {
-            "boolean" -> Boolean::class.javaPrimitiveType
-            "byte" -> Byte::class.javaPrimitiveType
-            "short" -> Short::class.javaPrimitiveType
-            "int" -> Int::class.javaPrimitiveType
-            "long" -> Long::class.javaPrimitiveType
-            "float" -> Float::class.javaPrimitiveType
-            "double" -> Double::class.javaPrimitiveType
-            "char" -> Char::class.javaPrimitiveType
-            "java.lang.Boolean" -> Boolean::class.javaObjectType
-            "java.lang.Byte" -> Byte::class.javaObjectType
-            "java.lang.Short" -> Short::class.javaObjectType
-            "java.lang.Integer" -> Int::class.javaObjectType
-            "java.lang.Long" -> Long::class.javaObjectType
-            "java.lang.Float" -> Float::class.javaObjectType
-            "java.lang.Double" -> Double::class.javaObjectType
-            "java.lang.Character" -> Char::class.javaObjectType
-            "java.lang.String" -> String::class.java
-            "java.math.BigInteger" -> BigInteger::class.java
-            "java.math.BigDecimal" -> BigDecimal::class.java
-            "java.util.UUID" -> UUID::class.java
-            "java.time.LocalDate" -> LocalDate::class.java
-            "java.time.LocalTime" -> LocalTime::class.java
-            "java.time.LocalDateTime" -> LocalDateTime::class.java
-            "java.time.Instant" -> Instant::class.java
-            "java.util.List" -> List::class.java
-            "java.util.Collection" -> Collection::class.java
-            "java.util.Map" -> Map::class.java
-            else -> null
-        }
+    private fun parentParameterObject(parameterValues: Map<String, Any?>): Any? {
+        if (parameterValues.isEmpty()) return null
+        return MapperMethod.ParamMap<Any?>().apply { putAll(parameterValues) }
     }
 
-    private fun buildParameterObject(request: MyBatisPreparationRequest): ParameterObjectResult {
-        if (request.inputEnvironment.values.isEmpty()) return ParameterObjectResult.Ready(null)
-
-        val params = MapperMethod.ParamMap<Any?>()
-        for ((name, requirementId) in request.inputEnvironment.aliases) {
-            val provided = request.inputEnvironment.value(requirementId) ?: continue
-            val requirement = request.parameterContract.requirement(requirementId)
-                ?: return ParameterObjectResult.Failed(
-                    PreparationFailure(
-                        PreparationFailureKind.PREPARATION_INVARIANT,
-                        INVARIANT_FAILURE,
-                        bindingProperty = name,
-                    ),
+    private fun snapshotStaticMapping(
+        configuration: Configuration,
+        boundSql: BoundSql,
+        parameterObject: Any?,
+        mapping: ParameterMapping,
+    ): MyBatisParameterMappingSnapshot {
+        val property = mapping.property
+        val additional = property?.let(boundSql::hasAdditionalParameter) ?: false
+        val runtimeValue = if (property == null) {
+            MyBatisRuntimeValueSnapshot.Ready(null)
+        } else {
+            try {
+                MyBatisRuntimeValueSnapshot.Ready(
+                    resolveStaticMappingValue(configuration, boundSql, parameterObject, mapping),
                 )
-            val converted = toRuntimeValue(provided.value, requirement.expectedType.javaTypeIdentity)
-            if (converted is RuntimeValueResult.Failed) {
-                return ParameterObjectResult.Failed(
-                    converted.failure.copy(bindingProperty = name),
+            } catch (failure: RuntimeException) {
+                val chain = generateSequence<Throwable>(failure) { it.cause }.toList()
+                MyBatisRuntimeValueSnapshot.Failed(
+                    bindingFailure = chain.any { it is BindingException || it is ReflectionException },
+                    diagnosticType = failure.javaClass.name,
                 )
             }
-            params[name] = (converted as RuntimeValueResult.Ready).value
         }
-        return ParameterObjectResult.Ready(params)
+
+        return MyBatisParameterMappingSnapshot(
+            property = property,
+            additionalParameter = additional,
+            runtimeValue = runtimeValue,
+            mappingJavaTypeIdentity = mapping.javaType?.name,
+            jdbcTypeIdentity = mapping.jdbcType?.name,
+            typeHandlerIdentity = mapping.typeHandler?.javaClass?.name,
+            parameterMode = mapping.mode?.name,
+            numericScale = mapping.numericScale,
+        )
+    }
+
+    private fun resolveStaticMappingValue(
+        configuration: Configuration,
+        boundSql: BoundSql,
+        parameterObject: Any?,
+        mapping: ParameterMapping,
+    ): Any? {
+        val property = mapping.property
+        return when {
+            boundSql.hasAdditionalParameter(property) -> boundSql.getAdditionalParameter(property)
+            parameterObject == null -> null
+            configuration.typeHandlerRegistry.hasTypeHandler(parameterObject.javaClass) -> parameterObject
+            else -> configuration.newMetaObject(parameterObject).getValue(property)
+        }
     }
 
     private fun captureRawInterpolations(request: MyBatisPreparationRequest): RawInterpolationResult {
@@ -247,16 +347,14 @@ object MyBatisPreparationEngine {
     }
 
     private fun captureBindings(
-        configuration: Configuration,
-        boundSql: BoundSql,
-        parameterObject: Any?,
+        boundSql: MyBatisBoundSqlSnapshot,
         request: MyBatisPreparationRequest,
     ): BindingCaptureResult {
-        val aliasesByName = request.inputEnvironment.aliases.associateBy(InputAlias::name)
+        val aliasesByName = request.inputEnvironment.aliases.groupBy { it.name }
         val bindings = mutableListOf<PreparedBinding>()
 
-        for ((index, mapping) in boundSql.parameterMappings.withIndex()) {
-            if (mapping.mode != ParameterMode.IN) {
+        for ((index, mapping) in boundSql.mappings.withIndex()) {
+            if (mapping.parameterMode != "IN") {
                 return bindingFailure(
                     PreparationFailureKind.UNSUPPORTED_SEMANTIC,
                     UNSUPPORTED_PARAMETER_MODE,
@@ -269,34 +367,69 @@ object MyBatisPreparationEngine {
                     MISSING_MAPPING_PROPERTY,
                     null,
                 )
-
-            val additional = boundSql.hasAdditionalParameter(property)
-            val alias = aliasesByName[property.substringBefore('.')]
+            val rootProperty = property.substringBefore('.')
+            val aliasCandidates = aliasesByName[rootProperty].orEmpty()
+            if (aliasCandidates.size > 1) {
+                return bindingFailure(
+                    PreparationFailureKind.BINDING_RESOLUTION,
+                    UNRESOLVED_MAPPING,
+                    property,
+                )
+            }
+            val alias = aliasCandidates.singleOrNull()
             val requirement = alias?.let { request.parameterContract.requirement(it.requirementId) }
-            if (requirement?.kind == InputKind.RAW_INTERPOLATION) {
-                return bindingFailure(
-                    PreparationFailureKind.PARAMETER_MAPPING_MISMATCH,
-                    RAW_BOUND_CONFLATION,
-                    property,
-                )
-            }
-            if (!additional && requirement == null) {
-                return bindingFailure(
-                    PreparationFailureKind.BINDING_RESOLUTION,
-                    UNRESOLVED_MAPPING,
-                    property,
-                )
-            }
-            if (!additional && requirement != null && !pathExists(request, alias, requirement, property)) {
-                return bindingFailure(
-                    PreparationFailureKind.BINDING_RESOLUTION,
-                    UNRESOLVED_MAPPING,
-                    property,
-                )
+
+            val origin = if (mapping.additionalParameter) {
+                val candidates = request.parameterContract.internalBindings.filter { it.name == rootProperty }
+                if (candidates.isEmpty()) {
+                    return bindingFailure(
+                        PreparationFailureKind.BINDING_RESOLUTION,
+                        ADDITIONAL_PROVENANCE_MISSING,
+                        property,
+                    )
+                }
+                if (candidates.size != 1) {
+                    return bindingFailure(
+                        PreparationFailureKind.BINDING_RESOLUTION,
+                        ADDITIONAL_PROVENANCE_AMBIGUOUS,
+                        property,
+                    )
+                }
+                val internalBinding = candidates.single()
+                if (internalBinding.kind != InternalBindingKind.BIND) {
+                    return bindingFailure(
+                        PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                        ADDITIONAL_KIND_UNSUPPORTED,
+                        property,
+                    )
+                }
+                PreparedBindingOrigin.MyBatisAdditional(internalBinding)
+            } else {
+                if (requirement?.kind == InputKind.RAW_INTERPOLATION) {
+                    return bindingFailure(
+                        PreparationFailureKind.PARAMETER_MAPPING_MISMATCH,
+                        RAW_BOUND_CONFLATION,
+                        property,
+                    )
+                }
+                if (requirement == null || alias == null) {
+                    return bindingFailure(
+                        PreparationFailureKind.BINDING_RESOLUTION,
+                        UNRESOLVED_MAPPING,
+                        property,
+                    )
+                }
+                if (!MyBatisValueConversion.pathExists(request, alias, requirement, property)) {
+                    return bindingFailure(
+                        PreparationFailureKind.BINDING_RESOLUTION,
+                        UNRESOLVED_MAPPING,
+                        property,
+                    )
+                }
+                PreparedBindingOrigin.CallerInput(requirement.id, requirement.provenance)
             }
 
-            val typeHandler = mapping.typeHandler
-            val typeHandlerName = typeHandler?.javaClass?.name
+            val typeHandlerName = mapping.typeHandlerIdentity
                 ?: return bindingFailure(
                     PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER,
                     UNSUPPORTED_TYPE_HANDLER,
@@ -311,12 +444,24 @@ object MyBatisPreparationEngine {
                 )
             }
 
-            val runtimeValue = try {
-                resolveMappingValue(configuration, boundSql, parameterObject, mapping)
-            } catch (failure: RuntimeException) {
-                return BindingCaptureResult.Failed(classifyBindingFailure(failure, property))
+            val runtimeValue = when (val value = mapping.runtimeValue) {
+                is MyBatisRuntimeValueSnapshot.Ready -> value.value
+                is MyBatisRuntimeValueSnapshot.Failed ->
+                    return bindingFailure(
+                        if (value.bindingFailure) {
+                            PreparationFailureKind.BINDING_RESOLUTION
+                        } else {
+                            PreparationFailureKind.PREPARATION_INVARIANT
+                        },
+                        if (value.bindingFailure) BINDING_FAILURE else INVARIANT_FAILURE,
+                        property,
+                        value.diagnosticType,
+                    )
             }
-            val coreValue = toCoreValue(runtimeValue, requirement, property, alias)
+
+            val callerRequirement = (origin as? PreparedBindingOrigin.CallerInput)?.let { requirement }
+            val callerAlias = if (callerRequirement != null) alias else null
+            val coreValue = MyBatisValueConversion.toCoreValue(runtimeValue, callerRequirement, property, callerAlias)
                 ?: return bindingFailure(
                     PreparationFailureKind.UNSUPPORTED_BINDING_VALUE,
                     UNSUPPORTED_VALUE,
@@ -327,240 +472,19 @@ object MyBatisPreparationEngine {
             bindings += PreparedBinding(
                 index = index,
                 property = property,
-                requirementId = requirement?.id,
                 value = coreValue,
-                provenance = requirement?.provenance,
+                origin = origin,
                 metadata = PreparedBindingMetadata(
-                    declaredJavaTypeIdentity = requirement?.expectedType?.javaTypeIdentity,
-                    mappingJavaTypeIdentity = mapping.javaType?.name,
-                    jdbcTypeIdentity = mapping.jdbcType?.name,
+                    declaredJavaTypeIdentity = callerRequirement?.expectedType?.javaTypeIdentity,
+                    mappingJavaTypeIdentity = mapping.mappingJavaTypeIdentity,
+                    jdbcTypeIdentity = mapping.jdbcTypeIdentity,
                     typeHandlerIdentity = typeHandlerName,
-                    parameterMode = mapping.mode.name,
+                    parameterMode = mapping.parameterMode,
                     numericScale = mapping.numericScale,
-                    additionalParameter = additional,
                 ),
             )
         }
         return BindingCaptureResult.Ready(bindings)
-    }
-
-    private fun resolveMappingValue(
-        configuration: Configuration,
-        boundSql: BoundSql,
-        parameterObject: Any?,
-        mapping: ParameterMapping,
-    ): Any? {
-        val property = mapping.property
-        return when {
-            boundSql.hasAdditionalParameter(property) -> boundSql.getAdditionalParameter(property)
-            parameterObject == null -> null
-            configuration.typeHandlerRegistry.hasTypeHandler(parameterObject.javaClass) -> parameterObject
-            else -> configuration.newMetaObject(parameterObject).getValue(property)
-        }
-    }
-
-    private fun pathExists(
-        request: MyBatisPreparationRequest,
-        alias: InputAlias,
-        requirement: InputRequirement,
-        property: String,
-    ): Boolean {
-        val provided = request.inputEnvironment.value(alias.requirementId) ?: return false
-        if (requirement.id != provided.requirementId) return false
-        val path = property.split('.')
-        if (path.firstOrNull() != alias.name) return false
-        var current: InputValue = provided.value
-        for (segment in path.drop(1)) {
-            current = when (current) {
-                is InputValue.ObjectValue -> current.entries[segment]
-                is InputValue.MapValue -> current.entries[segment]
-                else -> null
-            } ?: return false
-        }
-        return true
-    }
-
-    private fun toRuntimeValue(value: InputValue, declaredType: JavaTypeIdentity?): RuntimeValueResult {
-        if (value is InputValue.NullValue) return RuntimeValueResult.Ready(null)
-        val typeName = declaredType?.value?.trim().orEmpty()
-        val rawTypeName = typeName.substringBefore('<').trim()
-
-        return when (value) {
-            InputValue.NullValue -> RuntimeValueResult.Ready(null)
-            is InputValue.Text -> if (rawTypeName == "java.lang.String" || rawTypeName == "String") {
-                RuntimeValueResult.Ready(value.value)
-            } else {
-                typeMismatch()
-            }
-            is InputValue.RawText -> if (rawTypeName == "java.lang.String" || rawTypeName == "String") {
-                RuntimeValueResult.Ready(value.value)
-            } else {
-                typeMismatch()
-            }
-            is InputValue.BooleanValue -> when (rawTypeName) {
-                "boolean", "java.lang.Boolean" -> RuntimeValueResult.Ready(value.value)
-                else -> typeMismatch()
-            }
-            is InputValue.IntegerValue -> integerRuntimeValue(value.value, rawTypeName)
-            is InputValue.DecimalValue -> decimalRuntimeValue(value.value, rawTypeName)
-            is InputValue.DateValue -> when (rawTypeName) {
-                "java.time.LocalDate" -> RuntimeValueResult.Ready(value.value)
-                else -> typeMismatch()
-            }
-            is InputValue.TimeValue -> when (rawTypeName) {
-                "java.time.LocalTime" -> RuntimeValueResult.Ready(value.value)
-                else -> typeMismatch()
-            }
-            is InputValue.DateTimeValue -> when (rawTypeName) {
-                "java.time.LocalDateTime" -> RuntimeValueResult.Ready(value.value)
-                else -> typeMismatch()
-            }
-            is InputValue.InstantValue -> when (rawTypeName) {
-                "java.time.Instant" -> RuntimeValueResult.Ready(value.value)
-                else -> typeMismatch()
-            }
-            is InputValue.UuidValue -> when (rawTypeName) {
-                "java.util.UUID" -> RuntimeValueResult.Ready(value.value)
-                else -> typeMismatch()
-            }
-            is InputValue.ObjectValue -> RuntimeValueResult.Ready(
-                value.entries.mapValuesTo(linkedMapOf()) { toUntypedRuntimeValue(it.value) },
-            )
-            is InputValue.MapValue -> RuntimeValueResult.Ready(
-                value.entries.mapValuesTo(linkedMapOf()) { toUntypedRuntimeValue(it.value) },
-            )
-            is InputValue.ListValue -> RuntimeValueResult.Ready(value.elements.map(::toUntypedRuntimeValue))
-            is InputValue.ArrayValue -> arrayRuntimeValue(value, rawTypeName)
-        }
-    }
-
-    private fun integerRuntimeValue(value: BigInteger, rawTypeName: String): RuntimeValueResult = try {
-        when (rawTypeName) {
-            "byte", "java.lang.Byte" -> RuntimeValueResult.Ready(value.byteValueExact())
-            "short", "java.lang.Short" -> RuntimeValueResult.Ready(value.shortValueExact())
-            "int", "java.lang.Integer" -> RuntimeValueResult.Ready(value.intValueExact())
-            "long", "java.lang.Long" -> RuntimeValueResult.Ready(value.longValueExact())
-            "java.math.BigInteger" -> RuntimeValueResult.Ready(value)
-            else -> typeMismatch()
-        }
-    } catch (_: ArithmeticException) {
-        outOfRange()
-    }
-
-    private fun decimalRuntimeValue(value: BigDecimal, rawTypeName: String): RuntimeValueResult = when (rawTypeName) {
-        "float", "java.lang.Float" -> {
-            val converted = value.toFloat()
-            if (converted.isFinite()) RuntimeValueResult.Ready(converted) else outOfRange()
-        }
-        "double", "java.lang.Double" -> {
-            val converted = value.toDouble()
-            if (converted.isFinite()) RuntimeValueResult.Ready(converted) else outOfRange()
-        }
-        "java.math.BigDecimal" -> RuntimeValueResult.Ready(value)
-        else -> typeMismatch()
-    }
-
-    private fun arrayRuntimeValue(value: InputValue.ArrayValue, rawTypeName: String): RuntimeValueResult {
-        if (!rawTypeName.endsWith("[]")) return typeMismatch()
-        val componentIdentity = JavaTypeIdentity(rawTypeName.removeSuffix("[]"))
-        val componentClass = resolveSafeJavaType(componentIdentity)
-            ?: return RuntimeValueResult.Failed(
-                PreparationFailure(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, UNSUPPORTED_VALUE),
-            )
-        val target = ReflectArray.newInstance(componentClass, value.elements.size)
-        for ((index, element) in value.elements.withIndex()) {
-            val converted = toRuntimeValue(element, componentIdentity)
-            if (converted is RuntimeValueResult.Failed) return converted
-            try {
-                ReflectArray.set(target, index, (converted as RuntimeValueResult.Ready).value)
-            } catch (_: IllegalArgumentException) {
-                return typeMismatch()
-            }
-        }
-        return RuntimeValueResult.Ready(target)
-    }
-
-    private fun toUntypedRuntimeValue(value: InputValue): Any? = when (value) {
-        InputValue.NullValue -> null
-        is InputValue.Text -> value.value
-        is InputValue.RawText -> value.value
-        is InputValue.BooleanValue -> value.value
-        is InputValue.IntegerValue -> value.value
-        is InputValue.DecimalValue -> value.value
-        is InputValue.DateValue -> value.value
-        is InputValue.TimeValue -> value.value
-        is InputValue.DateTimeValue -> value.value
-        is InputValue.InstantValue -> value.value
-        is InputValue.UuidValue -> value.value
-        is InputValue.ObjectValue -> value.entries.mapValuesTo(linkedMapOf()) { toUntypedRuntimeValue(it.value) }
-        is InputValue.MapValue -> value.entries.mapValuesTo(linkedMapOf()) { toUntypedRuntimeValue(it.value) }
-        is InputValue.ListValue -> value.elements.map(::toUntypedRuntimeValue)
-        is InputValue.ArrayValue -> value.elements.map(::toUntypedRuntimeValue).toTypedArray()
-    }
-
-    private fun typeMismatch() = RuntimeValueResult.Failed(
-        PreparationFailure(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, VALUE_TYPE_MISMATCH),
-    )
-
-    private fun outOfRange() = RuntimeValueResult.Failed(
-        PreparationFailure(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, VALUE_OUT_OF_RANGE),
-    )
-
-    private fun toCoreValue(
-        value: Any?,
-        requirement: InputRequirement?,
-        property: String,
-        alias: InputAlias?,
-    ): InputValue? {
-        if (value == null) return InputValue.NullValue
-        return when (value) {
-            is String -> InputValue.Text(value)
-            is Boolean -> InputValue.BooleanValue(value)
-            is BigInteger -> InputValue.IntegerValue(value)
-            is Byte -> InputValue.IntegerValue(BigInteger.valueOf(value.toLong()))
-            is Short -> InputValue.IntegerValue(BigInteger.valueOf(value.toLong()))
-            is Int -> InputValue.IntegerValue(BigInteger.valueOf(value.toLong()))
-            is Long -> InputValue.IntegerValue(BigInteger.valueOf(value))
-            is BigDecimal -> InputValue.DecimalValue(value)
-            is Float -> InputValue.DecimalValue(BigDecimal(value.toString()))
-            is Double -> InputValue.DecimalValue(BigDecimal(value.toString()))
-            is LocalDate -> InputValue.DateValue(value)
-            is LocalTime -> InputValue.TimeValue(value)
-            is LocalDateTime -> InputValue.DateTimeValue(value)
-            is Instant -> InputValue.InstantValue(value)
-            is UUID -> InputValue.UuidValue(value)
-            is Map<*, *> -> {
-                val entries = linkedMapOf<String, InputValue>()
-                for ((key, item) in value) {
-                    if (key !is String) return null
-                    entries[key] = toCoreValue(item, null, property, null) ?: return null
-                }
-                if (
-                    requirement?.expectedType?.shape == InputShape.OBJECT &&
-                    alias != null &&
-                    property == alias.name
-                ) {
-                    InputValue.ObjectValue(entries)
-                } else {
-                    InputValue.MapValue(entries)
-                }
-            }
-            is List<*> -> {
-                val elements = mutableListOf<InputValue>()
-                for (item in value) {
-                    elements += toCoreValue(item, null, property, null) ?: return null
-                }
-                InputValue.ListValue(elements)
-            }
-            else -> {
-                if (!value.javaClass.isArray) return null
-                val elements = mutableListOf<InputValue>()
-                for (index in 0 until ReflectArray.getLength(value)) {
-                    elements += toCoreValue(ReflectArray.get(value, index), null, property, null) ?: return null
-                }
-                InputValue.ArrayValue(elements)
-            }
-        }
     }
 
     private fun classifyMyBatisFailure(failure: RuntimeException): PreparationFailure {
@@ -589,25 +513,6 @@ object MyBatisPreparationEngine {
         }
     }
 
-    private fun classifyBindingFailure(failure: RuntimeException, property: String): PreparationFailure {
-        val chain = generateSequence<Throwable>(failure) { it.cause }.toList()
-        return if (chain.any { it is BindingException || it is ReflectionException }) {
-            PreparationFailure(
-                PreparationFailureKind.BINDING_RESOLUTION,
-                BINDING_FAILURE,
-                bindingProperty = property,
-                diagnosticType = failure.javaClass.name,
-            )
-        } else {
-            PreparationFailure(
-                PreparationFailureKind.PREPARATION_INVARIANT,
-                INVARIANT_FAILURE,
-                bindingProperty = property,
-                diagnosticType = failure.javaClass.name,
-            )
-        }
-    }
-
     private fun bindingFailure(
         kind: PreparationFailureKind,
         code: String,
@@ -621,25 +526,33 @@ object MyBatisPreparationEngine {
         diagnosticType: String? = null,
     ) = PreparationResult.Failed(PreparationFailure(kind, code, diagnosticType = diagnosticType))
 
-    private data class ParameterTypeResolution(val type: Class<*>?)
+    private sealed interface StaticBoundSqlResult {
+        data class Ready(
+            val boundSql: MyBatisBoundSqlSnapshot,
+        ) : StaticBoundSqlResult
 
-    private sealed interface ParameterObjectResult {
-        data class Ready(val value: Any?) : ParameterObjectResult
-        data class Failed(val failure: PreparationFailure) : ParameterObjectResult
-    }
-
-    private sealed interface RuntimeValueResult {
-        data class Ready(val value: Any?) : RuntimeValueResult
-        data class Failed(val failure: PreparationFailure) : RuntimeValueResult
+        data class Failed(
+            val failure: PreparationFailure,
+        ) : StaticBoundSqlResult
     }
 
     private sealed interface RawInterpolationResult {
-        data class Ready(val interpolations: List<PreparedRawInterpolation>) : RawInterpolationResult
-        data class Failed(val failure: PreparationFailure) : RawInterpolationResult
+        data class Ready(
+            val interpolations: List<PreparedRawInterpolation>,
+        ) : RawInterpolationResult
+
+        data class Failed(
+            val failure: PreparationFailure,
+        ) : RawInterpolationResult
     }
 
     private sealed interface BindingCaptureResult {
-        data class Ready(val bindings: List<PreparedBinding>) : BindingCaptureResult
-        data class Failed(val failure: PreparationFailure) : BindingCaptureResult
+        data class Ready(
+            val bindings: List<PreparedBinding>,
+        ) : BindingCaptureResult
+
+        data class Failed(
+            val failure: PreparationFailure,
+        ) : BindingCaptureResult
     }
 }

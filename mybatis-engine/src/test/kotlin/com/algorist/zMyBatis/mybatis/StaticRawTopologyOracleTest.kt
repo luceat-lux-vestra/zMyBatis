@@ -1,0 +1,177 @@
+package com.algorist.zMyBatis.mybatis
+
+import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
+import com.algorist.zMyBatis.core.input.ExpectedInputType
+import com.algorist.zMyBatis.core.input.InputAlias
+import com.algorist.zMyBatis.core.input.InputAliasKind
+import com.algorist.zMyBatis.core.input.InputEnvironment
+import com.algorist.zMyBatis.core.input.InputEnvironmentResult
+import com.algorist.zMyBatis.core.input.InputEvidence
+import com.algorist.zMyBatis.core.input.InputKind
+import com.algorist.zMyBatis.core.input.InputNullability
+import com.algorist.zMyBatis.core.input.InputProvenance
+import com.algorist.zMyBatis.core.input.InputRequiredness
+import com.algorist.zMyBatis.core.input.InputRequirement
+import com.algorist.zMyBatis.core.input.InputRequirementId
+import com.algorist.zMyBatis.core.input.InputScalarType
+import com.algorist.zMyBatis.core.input.InputShape
+import com.algorist.zMyBatis.core.input.InputValue
+import com.algorist.zMyBatis.core.input.ParameterContract
+import com.algorist.zMyBatis.core.input.ProvidedInput
+import com.algorist.zMyBatis.core.input.SourceEvidence
+import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
+import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
+import com.algorist.zMyBatis.core.preparation.PreparationSource
+import com.algorist.zMyBatis.core.source.CapturedStatement
+import com.algorist.zMyBatis.core.source.JavaAnnotationStatementCapture
+import com.algorist.zMyBatis.core.source.JavaMethodParameterMetadata
+import com.algorist.zMyBatis.core.source.JavaStatementId
+import com.algorist.zMyBatis.core.source.JavaTypeIdentity
+import com.algorist.zMyBatis.core.source.MethodSignature
+import com.algorist.zMyBatis.core.source.SourceFileId
+import com.algorist.zMyBatis.core.source.SourceRange
+import com.algorist.zMyBatis.core.source.SourceRevision
+import com.algorist.zMyBatis.core.source.SourceSnapshot
+import com.algorist.zMyBatis.core.source.StatementKind
+import com.algorist.zMyBatis.core.source.StatementSourceGraph
+import org.apache.ibatis.parsing.GenericTokenParser
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class StaticRawTopologyOracleTest {
+    @Test
+    fun admissionMatchesMyBatisBoundTopologyAcrossSmallMetasyntaxSpace() {
+        val rawSlot = "${'$'}{raw}"
+        val templates = listOf(
+            "$rawSlot#{source0}",
+            "#{source0}$rawSlot",
+            "#{source0}$rawSlot#{source1}",
+            "#$rawSlot{source0}",
+            "\\#{source0}$rawSlot",
+            "$rawSlot\\#{source0}",
+            "$rawSlot#{source0\\}tail}",
+        )
+
+        for (template in templates) {
+            val baselinePayloads = boundPayloads(renderRaw(template, "x"))
+            for (raw in metasyntaxValues(maxLength = 4)) {
+                val actualPayloads = boundPayloads(renderRaw(template, raw))
+                val expectedSafe = actualPayloads == baselinePayloads
+                val failure = StaticRawSubstitutionAdmission.failureOrNull(
+                    template,
+                    rawRequest(template, raw),
+                )
+                assertEquals(
+                    "template=$template raw=${raw.escapeForMessage()} baseline=$baselinePayloads actual=$actualPayloads",
+                    expectedSafe,
+                    failure == null,
+                )
+            }
+        }
+    }
+
+    private fun renderRaw(source: String, raw: String): String =
+        GenericTokenParser("${'$'}{", "}") { raw }.parse(source)
+
+    private fun boundPayloads(source: String): List<String> {
+        val payloads = mutableListOf<String>()
+        GenericTokenParser("#{", "}") { content ->
+            payloads += content
+            "?"
+        }.parse(source)
+        return payloads
+    }
+
+    private fun metasyntaxValues(maxLength: Int): List<String> {
+        val alphabet = charArrayOf('#', '{', '}', '\\', 'x')
+        val values = mutableListOf("")
+        var frontier = listOf("")
+        repeat(maxLength) {
+            frontier = frontier.flatMap { prefix -> alphabet.map { character -> prefix + character } }
+            values += frontier
+        }
+        return values
+    }
+
+    private fun rawRequest(script: String, value: String): MyBatisPreparationRequest {
+        val fileId = SourceFileId("fixture/StaticRawTopologyMapper.java")
+        val revision = SourceRevision("static-raw-topology-revision-1")
+        val snapshot = SourceSnapshot(fileId, revision, "authoritative-static-raw-topology-source")
+        val typeIdentity = JavaTypeIdentity("java.lang.String")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.StaticRawTopologyMapper",
+            MethodSignature("query", listOf(typeIdentity)),
+        )
+        val range = SourceRange(0, snapshot.content.length)
+        val capture = JavaAnnotationStatementCapture(
+            StatementSourceGraph(
+                CapturedStatement(statementId, StatementKind.SELECT, range),
+                listOf(snapshot),
+                emptyList(),
+            ),
+            listOf(script),
+            listOf(JavaMethodParameterMetadata(0, "raw", typeIdentity, "raw")),
+        )
+        val source = SourceEvidence(fileId, revision, range)
+        val requirementId = InputRequirementId("static-raw-topology-param:0")
+        val provenance = InputProvenance(
+            listOf(
+                InputEvidence.MapperMethodParameter(0, "raw", typeIdentity, source),
+                InputEvidence.ExplicitParamAlias(0, "raw", source),
+                InputEvidence.Placeholder(InputKind.RAW_INTERPOLATION, "raw", source),
+            ),
+        )
+        val requirement = InputRequirement(
+            id = requirementId,
+            kind = InputKind.RAW_INTERPOLATION,
+            expectedType = ExpectedInputType(
+                shape = InputShape.RAW_TEXT,
+                scalarType = InputScalarType.STRING,
+                javaTypeIdentity = typeIdentity,
+                nullability = InputNullability.NON_NULL,
+            ),
+            requiredness = InputRequiredness.REQUIRED,
+            provenance = provenance,
+        )
+        val contract = ParameterContract(
+            statementId = statementId,
+            requirements = listOf(requirement),
+            aliases = listOf(
+                InputAlias(
+                    name = "raw",
+                    requirementId = requirementId,
+                    kind = InputAliasKind.EXPLICIT_PARAM,
+                    provenance = provenance,
+                ),
+            ),
+            internalBindings = emptyList(),
+            blockingProblems = emptyList(),
+            sourceRevisions = mapOf(fileId to revision),
+        )
+        val environment = InputEnvironment.validate(
+            contract,
+            listOf(
+                ProvidedInput(
+                    requirementId,
+                    InputValue.RawText(value),
+                    ExecutionInputOrigin.USER_ENTERED,
+                ),
+            ),
+        )
+        check(environment is InputEnvironmentResult.Success)
+        val request = MyBatisPreparationRequest.create(
+            PreparationSource.JavaAnnotation(capture),
+            contract,
+            environment.environment,
+        )
+        check(request is PreparationRequestResult.Ready)
+        return request.request
+    }
+
+    private fun String.escapeForMessage(): String =
+        replace("\\", "\\\\")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+}
