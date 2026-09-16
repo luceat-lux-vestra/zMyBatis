@@ -59,6 +59,22 @@ class MyBatisIsolationEdgeCaseTest {
     }
 
     @Test
+    fun reservedRawCallerAliasCannotBeReinterpretedAsMyBatisContext() {
+        val request = rawRequest(
+            script = "select ${'$'}{_databaseId}",
+            alias = "_databaseId",
+            value = "users",
+        )
+
+        val result = MyBatisPreparationEngine.prepare(request)
+
+        assertTrue(result is PreparationResult.Failed)
+        result as PreparationResult.Failed
+        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
+        assertEquals("raw-interpolation-expression-unsupported", result.failure.code)
+    }
+
+    @Test
     fun zeroParameterDynamicScriptPreparesThroughIsolatedRuntime() {
         val result = MyBatisPreparationEngine.prepare(noParameterRequest("<script>select 1</script>"))
 
