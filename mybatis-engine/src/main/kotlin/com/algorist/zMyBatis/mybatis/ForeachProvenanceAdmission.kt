@@ -191,10 +191,17 @@ internal object ForeachProvenanceAdmission {
         )
         if (itemFailure != null) return itemFailure
 
-        val index = node.getStringAttribute("index")?.takeIf { it.isNotBlank() }
-        if (index != null) {
+        val indexAttribute = node.getStringAttribute("index")
+        if (indexAttribute != null) {
+            if (indexAttribute.isBlank()) {
+                return failure(
+                    PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                    LOCAL_IDENTIFIER_UNSUPPORTED,
+                    indexAttribute,
+                )
+            }
             return inspectLocal(
-                name = index,
+                name = indexAttribute,
                 expectedKind = InternalBindingKind.FOREACH_INDEX,
                 expectedRole = ForeachLocalRole.INDEX,
                 contract = contract,
