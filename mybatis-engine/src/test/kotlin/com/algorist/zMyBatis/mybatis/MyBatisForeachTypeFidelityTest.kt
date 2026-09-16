@@ -51,7 +51,7 @@ class MyBatisForeachTypeFidelityTest {
             value = InputValue.ListValue(
                 listOf(
                     InputValue.IntegerValue(BigInteger.ONE),
-                    InputValue.IntegerValue(BigInteger.TWO),
+                    InputValue.IntegerValue(BigInteger.valueOf(2)),
                 ),
             ),
         )
@@ -80,11 +80,7 @@ class MyBatisForeachTypeFidelityTest {
             value = InputValue.ListValue(listOf(InputValue.IntegerValue(BigInteger.ONE))),
         )
 
-        assertTrue(result is PreparationResult.Failed)
-        result as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, result.failure.kind)
-        assertEquals("mybatis-binding-value-unsupported", result.failure.code)
-        assertEquals("ids", result.failure.bindingProperty)
+        assertUnsupportedCollection(result)
     }
 
     @Test
@@ -94,6 +90,26 @@ class MyBatisForeachTypeFidelityTest {
             value = InputValue.ListValue(listOf(InputValue.IntegerValue(BigInteger.ONE))),
         )
 
+        assertUnsupportedCollection(result)
+    }
+
+    @Test
+    fun applicationPojoElementTypeFailsClosedInsteadOfBecomingAMap() {
+        val result = prepare(
+            declaredType = "java.util.List<fixture.Row>",
+            value = InputValue.ListValue(
+                listOf(
+                    InputValue.ObjectValue(
+                        linkedMapOf("id" to InputValue.IntegerValue(BigInteger.ONE)),
+                    ),
+                ),
+            ),
+        )
+
+        assertUnsupportedCollection(result)
+    }
+
+    private fun assertUnsupportedCollection(result: PreparationResult) {
         assertTrue(result is PreparationResult.Failed)
         result as PreparationResult.Failed
         assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, result.failure.kind)
@@ -104,7 +120,8 @@ class MyBatisForeachTypeFidelityTest {
     private fun prepare(declaredType: String, value: InputValue): PreparationResult {
         val fileId = SourceFileId("fixture/ForeachTypeFidelity.java")
         val revision = SourceRevision("foreach-type-fidelity-revision")
-        val sourceRange = SourceRange(0, 32)
+        val snapshot = SourceSnapshot(fileId, revision, "authoritative-foreach-type-source")
+        val sourceRange = SourceRange(0, snapshot.content.length)
         val source = SourceEvidence(fileId, revision, sourceRange)
         val type = JavaTypeIdentity(declaredType)
         val statementId = JavaStatementId(
@@ -114,7 +131,7 @@ class MyBatisForeachTypeFidelityTest {
         )
         val graph = StatementSourceGraph(
             rootStatement = CapturedStatement(statementId, StatementKind.SELECT, sourceRange),
-            sourceSnapshots = listOf(SourceSnapshot(fileId, revision, "authoritative-foreach-type-source")),
+            sourceSnapshots = listOf(snapshot),
             dependencies = emptyList(),
         )
         val script = """
