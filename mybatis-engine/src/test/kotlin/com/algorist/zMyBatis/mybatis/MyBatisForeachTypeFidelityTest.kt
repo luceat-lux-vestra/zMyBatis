@@ -56,21 +56,38 @@ class MyBatisForeachTypeFidelityTest {
             ),
         )
 
-        assertTrue(result is PreparationResult.Success)
-        result as PreparationResult.Success
-        assertEquals(2, result.execution.orderedBindings.size)
-        result.execution.orderedBindings.forEachIndexed { index, binding ->
-            assertEquals(
-                InputValue.IntegerValue(BigInteger.valueOf((index + 1).toLong())),
-                binding.value,
-            )
-            assertEquals("java.lang.Long", binding.metadata.mappingJavaTypeIdentity)
-            assertEquals("org.apache.ibatis.type.LongTypeHandler", binding.metadata.typeHandlerIdentity)
-            assertEquals(InternalBindingKind.FOREACH_ITEM, binding.origin.let {
-                (it as com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin.MyBatisAdditional)
-                    .internalBinding.kind
-            })
-        }
+        assertLongBindings(result, 1, 2)
+    }
+
+    @Test
+    fun collectionLongPreservesElementRuntimeTypeForMyBatisMapping() {
+        val result = prepare(
+            declaredType = "java.util.Collection<java.lang.Long>",
+            value = InputValue.ListValue(
+                listOf(
+                    InputValue.IntegerValue(BigInteger.valueOf(3)),
+                    InputValue.IntegerValue(BigInteger.valueOf(4)),
+                ),
+            ),
+        )
+
+        assertLongBindings(result, 3, 4)
+    }
+
+    @Test
+    fun boxedLongArrayPreservesElementRuntimeTypeForMyBatisMapping() {
+        val result = prepare(
+            declaredType = "java.lang.Long[]",
+            shape = InputShape.ARRAY,
+            value = InputValue.ArrayValue(
+                listOf(
+                    InputValue.IntegerValue(BigInteger.valueOf(5)),
+                    InputValue.IntegerValue(BigInteger.valueOf(6)),
+                ),
+            ),
+        )
+
+        assertLongBindings(result, 5, 6)
     }
 
     @Test
@@ -109,6 +126,24 @@ class MyBatisForeachTypeFidelityTest {
         assertUnsupportedCollection(result)
     }
 
+    private fun assertLongBindings(result: PreparationResult, vararg expected: Long) {
+        assertTrue(result is PreparationResult.Success)
+        result as PreparationResult.Success
+        assertEquals(expected.size, result.execution.orderedBindings.size)
+        result.execution.orderedBindings.forEachIndexed { index, binding ->
+            assertEquals(
+                InputValue.IntegerValue(BigInteger.valueOf(expected[index])),
+                binding.value,
+            )
+            assertEquals("java.lang.Long", binding.metadata.mappingJavaTypeIdentity)
+            assertEquals("org.apache.ibatis.type.LongTypeHandler", binding.metadata.typeHandlerIdentity)
+            assertEquals(InternalBindingKind.FOREACH_ITEM, binding.origin.let {
+                (it as com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin.MyBatisAdditional)
+                    .internalBinding.kind
+            })
+        }
+    }
+
     private fun assertUnsupportedCollection(result: PreparationResult) {
         assertTrue(result is PreparationResult.Failed)
         result as PreparationResult.Failed
@@ -117,7 +152,11 @@ class MyBatisForeachTypeFidelityTest {
         assertEquals("ids", result.failure.bindingProperty)
     }
 
-    private fun prepare(declaredType: String, value: InputValue): PreparationResult {
+    private fun prepare(
+        declaredType: String,
+        value: InputValue,
+        shape: InputShape = InputShape.LIST,
+    ): PreparationResult {
         val fileId = SourceFileId("fixture/ForeachTypeFidelity.java")
         val revision = SourceRevision("foreach-type-fidelity-revision")
         val snapshot = SourceSnapshot(fileId, revision, "authoritative-foreach-type-source")
@@ -157,7 +196,7 @@ class MyBatisForeachTypeFidelityTest {
             id = requirementId,
             kind = InputKind.BOUND,
             expectedType = ExpectedInputType(
-                shape = InputShape.LIST,
+                shape = shape,
                 javaTypeIdentity = type,
                 nullability = InputNullability.NON_NULL,
             ),
