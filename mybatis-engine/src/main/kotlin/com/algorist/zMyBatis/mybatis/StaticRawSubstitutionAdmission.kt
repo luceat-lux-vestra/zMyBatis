@@ -139,18 +139,35 @@ internal object StaticRawSubstitutionAdmission {
         // output is not recursively tokenized, matching GenericTokenParser/MyBatis behavior even when
         // a raw value itself contains the analysis delimiter characters.
         var slotOccurrence = 0
+        var slotFailure = false
         val projectedSql = GenericTokenParser(rawSlotOpen, rawSlotClose) { content ->
-            val index = content.toIntOrNull() ?: return@GenericTokenParser ""
-            if (index != slotOccurrence || index !in sourceExpressions.indices) {
-                return@GenericTokenParser ""
+            val index = content.toIntOrNull()
+            if (
+                slotFailure ||
+                index == null ||
+                index != slotOccurrence ||
+                index !in sourceExpressions.indices
+            ) {
+                slotFailure = true
+                ""
+            } else {
+                val expression = sourceExpressions[index]
+                val requirementId = requirementByExpression[expression]
+                val raw = requirementId?.let(rawValuesByRequirement::get)
+                if (raw == null) {
+                    slotFailure = true
+                    ""
+                } else {
+                    slotOccurrence++
+                    projectBoundTokenMetasyntax(raw)
+                }
             }
-            slotOccurrence++
-            val expression = sourceExpressions[index]
-            val requirementId = requirementByExpression[expression] ?: return@GenericTokenParser ""
-            val raw = rawValuesByRequirement[requirementId] ?: return@GenericTokenParser ""
-            projectBoundTokenMetasyntax(raw)
         }.parse(canaryStructuralSql)
-        if (slotOccurrence != sourceExpressions.size || projectedSql.contains(rawSlotOpen)) {
+        if (
+            slotFailure ||
+            slotOccurrence != sourceExpressions.size ||
+            projectedSql.contains(rawSlotOpen)
+        ) {
             return authorityMismatch()
         }
 
