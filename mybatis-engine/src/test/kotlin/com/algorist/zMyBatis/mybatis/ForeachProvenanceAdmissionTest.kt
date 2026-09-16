@@ -82,12 +82,47 @@ class ForeachProvenanceAdmissionTest {
     }
 
     @Test
+    fun itemAndIndexCannotShareOneLocalName() {
+        val result = ForeachProvenanceAdmission.inspect(
+            "<script><foreach collection=\"ids\" item=\"dup\" index=\"dup\">#{dup}</foreach></script>",
+            contract(
+                locals = listOf(LocalSpec("dup", InternalBindingKind.FOREACH_ITEM, ForeachLocalRole.ITEM)),
+            ),
+        )
+
+        assertFailure(
+            result,
+            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+            "mybatis-foreach-local-shadowing-unsupported",
+            "dup",
+        )
+    }
+
+    @Test
     fun callerAliasCannotOccupyGeneratedForeachNamespace() {
         val result = ForeachProvenanceAdmission.inspect(
             foreachScript(),
             contract(
                 locals = listOf(LocalSpec("item", InternalBindingKind.FOREACH_ITEM, ForeachLocalRole.ITEM)),
                 extraAliases = listOf("__frch_forged_0"),
+            ),
+        )
+
+        assertFailure(
+            result,
+            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+            "mybatis-foreach-generated-namespace-collision",
+            null,
+        )
+    }
+
+    @Test
+    fun bindCannotOccupyGeneratedForeachNamespace() {
+        val result = ForeachProvenanceAdmission.inspect(
+            foreachScript(),
+            contract(
+                locals = listOf(LocalSpec("item", InternalBindingKind.FOREACH_ITEM, ForeachLocalRole.ITEM)),
+                bindNames = listOf("__frch_forged_0"),
             ),
         )
 
