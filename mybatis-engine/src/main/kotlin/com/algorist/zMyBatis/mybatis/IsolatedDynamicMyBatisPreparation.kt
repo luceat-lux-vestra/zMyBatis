@@ -4,6 +4,7 @@ import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import java.lang.reflect.Array as ReflectArray
+import java.lang.reflect.Method
 import java.net.URLClassLoader
 import org.apache.ibatis.session.Configuration
 
@@ -97,6 +98,14 @@ internal object IsolatedDynamicMyBatisPreparation {
         if (foreachItemPrefix.isBlank()) {
             return Result.Failed(invariantFailure("mybatis-foreach-item-prefix-invalid"))
         }
+        val foreachItemizeMethod = foreachSqlNodeClass.getDeclaredMethod(
+            "itemizeItem",
+            String::class.java,
+            Int::class.javaPrimitiveType,
+        )
+        if (!foreachItemizeMethod.trySetAccessible()) {
+            return Result.Failed(invariantFailure("mybatis-foreach-itemizer-inaccessible"))
+        }
 
         val configuration = configurationClass.getDeclaredConstructor().newInstance()
         val languageDriver = configurationClass
@@ -146,6 +155,7 @@ internal object IsolatedDynamicMyBatisPreparation {
                 mapping = mapping,
                 parameterObject = parameterObject,
                 foreachItemPrefix = foreachItemPrefix,
+                foreachItemizeMethod = foreachItemizeMethod,
                 admittedForeachLocals = admittedForeachLocals,
             )
         }
@@ -182,6 +192,7 @@ internal object IsolatedDynamicMyBatisPreparation {
         mapping: Any,
         parameterObject: Any?,
         foreachItemPrefix: String,
+        foreachItemizeMethod: Method,
         admittedForeachLocals: Map<String, InternalBindingKind>,
     ): MyBatisParameterMappingSnapshot {
         val property = parameterMappingClass.getMethod("getProperty").invoke(mapping) as? String
@@ -198,7 +209,12 @@ internal object IsolatedDynamicMyBatisPreparation {
                 .invoke(boundSql, it) as Boolean
         } ?: false
         val generatedLocal = if (additional && property != null) {
-            generatedLocalSnapshot(property, foreachItemPrefix, admittedForeachLocals)
+            generatedLocalSnapshot(
+                property = property,
+                itemPrefix = foreachItemPrefix,
+                itemizeMethod = foreachItemizeMethod,
+                admittedForeachLocals = admittedForeachLocals,
+            )
         } else {
             null
         }
@@ -234,16 +250,21 @@ internal object IsolatedDynamicMyBatisPreparation {
     private fun generatedLocalSnapshot(
         property: String,
         itemPrefix: String,
+        itemizeMethod: Method,
         admittedForeachLocals: Map<String, InternalBindingKind>,
     ): MyBatisGeneratedLocalSnapshot? {
         if (admittedForeachLocals.isEmpty()) return null
         val root = property.substringBefore('.')
+        if (!root.startsWith(itemPrefix)) return null
+        val uniqueNumber = root.substringAfterLast('_', missingDelimiterValue = "")
+            .toIntOrNull()
+            ?.takeIf { it >= 0 }
+            ?: return null
+
         val matches = admittedForeachLocals.mapNotNull { (sourceLocal, kind) ->
-            val generatedPrefix = "$itemPrefix${sourceLocal}_"
-            if (!root.startsWith(generatedPrefix)) return@mapNotNull null
-            val uniqueNumber = root.removePrefix(generatedPrefix).toIntOrNull()
-                ?.takeIf { it >= 0 }
-                ?: return@mapNotNull null
+            val runtimeGeneratedRoot = itemizeMethod.invoke(null, sourceLocal, uniqueNumber) as? String
+                ?: throw IllegalStateException("MyBatis foreach itemizer returned a non-string identity")
+            if (root != runtimeGeneratedRoot) return@mapNotNull null
             MyBatisGeneratedLocalSnapshot(sourceLocal, kind, uniqueNumber)
         }
         if (matches.size > 1) {
