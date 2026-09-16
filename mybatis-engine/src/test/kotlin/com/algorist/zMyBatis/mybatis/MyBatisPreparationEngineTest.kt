@@ -56,9 +56,20 @@ class MyBatisPreparationEngineTest {
             execution.orderedBindings.map { it.value },
         )
         assertEquals(listOf(0, 1), execution.orderedBindings.map { it.index })
-        assertTrue(execution.orderedBindings.all { !it.metadata.additionalParameter })
+        assertTrue(execution.orderedBindings.all { !it.additionalParameter })
         assertEquals("org.mybatis:mybatis", execution.preparationMetadata.engineIdentity)
         assertEquals("3.5.19", execution.preparationMetadata.engineVersion)
+    }
+
+    @Test
+    fun zeroParameterStaticSqlPreparesThroughIsolatedBoundary() {
+        val result = MyBatisPreparationEngine.prepare(request("select 1", emptyList()))
+
+        assertTrue(result is PreparationResult.Success)
+        val execution = (result as PreparationResult.Success).execution
+        assertEquals("select 1", execution.sqlWithPlaceholders)
+        assertTrue(execution.orderedBindings.isEmpty())
+        assertTrue(execution.rawInterpolations.isEmpty())
     }
 
     @Test

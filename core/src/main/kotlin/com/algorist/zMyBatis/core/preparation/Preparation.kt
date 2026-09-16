@@ -8,6 +8,7 @@ import com.algorist.zMyBatis.core.input.InputProvenance
 import com.algorist.zMyBatis.core.input.InputRequirement
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InputValue
+import com.algorist.zMyBatis.core.input.InternalBinding
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.source.JavaAnnotationStatementCapture
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
@@ -85,7 +86,6 @@ class MyBatisPreparationRequest private constructor(
         private const val REVISION_DRIFT = "preparation-source-revision-drift"
         private const val ENVIRONMENT_DRIFT = "preparation-input-environment-drift"
         private const val JAVA_DEPENDENCY_UNSUPPORTED = "java-annotation-preparation-dependency-unsupported"
-        private const val JAVA_DYNAMIC_SCRIPT_UNSUPPORTED = "java-annotation-dynamic-script-preparation-unsupported"
 
         fun create(
             source: PreparationSource,
@@ -141,14 +141,6 @@ class MyBatisPreparationRequest private constructor(
                             ),
                         )
                     }
-                    if (source.capture.sqlSegments.any(::containsDynamicScript)) {
-                        return PreparationRequestResult.Failed(
-                            PreparationFailure(
-                                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-                                JAVA_DYNAMIC_SCRIPT_UNSUPPORTED,
-                            ),
-                        )
-                    }
                 }
             }
 
@@ -156,8 +148,6 @@ class MyBatisPreparationRequest private constructor(
                 MyBatisPreparationRequest(source, parameterContract, inputEnvironment),
             )
         }
-
-        private fun containsDynamicScript(sql: String): Boolean = sql.indexOf("<script", ignoreCase = true) >= 0
     }
 }
 
@@ -168,7 +158,6 @@ data class PreparedBindingMetadata(
     val typeHandlerIdentity: String,
     val parameterMode: String,
     val numericScale: Int?,
-    val additionalParameter: Boolean,
 ) {
     init {
         require(mappingJavaTypeIdentity == null || mappingJavaTypeIdentity.isNotBlank()) {
@@ -182,22 +171,41 @@ data class PreparedBindingMetadata(
     }
 }
 
+sealed interface PreparedBindingOrigin {
+    data class CallerInput(
+        val requirementId: InputRequirementId,
+        val provenance: InputProvenance,
+    ) : PreparedBindingOrigin
+
+    data class MyBatisAdditional(
+        val internalBinding: InternalBinding,
+    ) : PreparedBindingOrigin
+}
+
 data class PreparedBinding(
     val index: Int,
     val property: String,
-    val requirementId: InputRequirementId?,
     val value: InputValue,
-    val provenance: InputProvenance?,
+    val origin: PreparedBindingOrigin,
     val metadata: PreparedBindingMetadata,
 ) {
     init {
         require(index >= 0) { "prepared binding index must not be negative" }
         require(property.isNotBlank()) { "prepared binding property must not be blank" }
         require(value !is InputValue.RawText) { "raw interpolation cannot become a bound parameter value" }
-        require(requirementId == null || provenance != null) {
-            "caller-backed prepared bindings must preserve input provenance"
-        }
     }
+
+    val requirementId: InputRequirementId?
+        get() = (origin as? PreparedBindingOrigin.CallerInput)?.requirementId
+
+    val provenance: InputProvenance
+        get() = when (origin) {
+            is PreparedBindingOrigin.CallerInput -> origin.provenance
+            is PreparedBindingOrigin.MyBatisAdditional -> origin.internalBinding.provenance
+        }
+
+    val additionalParameter: Boolean
+        get() = origin is PreparedBindingOrigin.MyBatisAdditional
 }
 
 data class PreparedRawInterpolation(
