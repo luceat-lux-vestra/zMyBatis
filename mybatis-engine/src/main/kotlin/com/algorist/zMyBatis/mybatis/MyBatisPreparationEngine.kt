@@ -2,6 +2,7 @@ package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.InputKind
 import com.algorist.zMyBatis.core.input.InputValue
+import com.algorist.zMyBatis.core.input.InternalBinding
 import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
@@ -87,6 +88,15 @@ object MyBatisPreparationEngine {
             if (staticRawFailure != null) return PreparationResult.Failed(staticRawFailure)
         }
 
+        val admittedForeachLocals = if (dynamicScript) {
+            when (val admission = ForeachProvenanceAdmission.inspect(script, request.parameterContract)) {
+                is ForeachProvenanceAdmission.Result.Admitted -> admission.locals
+                is ForeachProvenanceAdmission.Result.Failed -> return PreparationResult.Failed(admission.failure)
+            }
+        } else {
+            emptyMap()
+        }
+
         if (dynamicScript) {
             when (
                 val admission = DynamicOgnlAdmission.inspect(
@@ -167,6 +177,7 @@ object MyBatisPreparationEngine {
                     script,
                     parameterType,
                     parameterValues,
+                    admittedForeachLocals,
                 )
             ) {
                 is IsolatedDynamicMyBatisPreparation.Result.Ready -> isolated.boundSql
@@ -299,6 +310,7 @@ object MyBatisPreparationEngine {
         return MyBatisParameterMappingSnapshot(
             property = property,
             additionalParameter = additional,
+            generatedLocal = null,
             runtimeValue = runtimeValue,
             mappingJavaTypeIdentity = mapping.javaType?.name,
             jdbcTypeIdentity = mapping.jdbcType?.name,
@@ -380,29 +392,12 @@ object MyBatisPreparationEngine {
             val requirement = alias?.let { request.parameterContract.requirement(it.requirementId) }
 
             val origin = if (mapping.additionalParameter) {
-                val candidates = request.parameterContract.internalBindings.filter { it.name == rootProperty }
-                if (candidates.isEmpty()) {
-                    return bindingFailure(
+                val internalBinding = resolveAdditionalBinding(mapping, rootProperty, request)
+                    ?: return bindingFailure(
                         PreparationFailureKind.BINDING_RESOLUTION,
                         ADDITIONAL_PROVENANCE_MISSING,
                         property,
                     )
-                }
-                if (candidates.size != 1) {
-                    return bindingFailure(
-                        PreparationFailureKind.BINDING_RESOLUTION,
-                        ADDITIONAL_PROVENANCE_AMBIGUOUS,
-                        property,
-                    )
-                }
-                val internalBinding = candidates.single()
-                if (internalBinding.kind != InternalBindingKind.BIND) {
-                    return bindingFailure(
-                        PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-                        ADDITIONAL_KIND_UNSUPPORTED,
-                        property,
-                    )
-                }
                 PreparedBindingOrigin.MyBatisAdditional(internalBinding)
             } else {
                 if (requirement?.kind == InputKind.RAW_INTERPOLATION) {
@@ -485,6 +480,25 @@ object MyBatisPreparationEngine {
             )
         }
         return BindingCaptureResult.Ready(bindings)
+    }
+
+    private fun resolveAdditionalBinding(
+        mapping: MyBatisParameterMappingSnapshot,
+        rootProperty: String,
+        request: MyBatisPreparationRequest,
+    ): InternalBinding? {
+        val generated = mapping.generatedLocal
+        if (generated != null) {
+            val candidates = request.parameterContract.internalBindings.filter {
+                it.name == generated.sourceLocalName && it.kind == generated.kind
+            }
+            return candidates.singleOrNull()
+        }
+
+        val candidates = request.parameterContract.internalBindings.filter { it.name == rootProperty }
+        if (candidates.size != 1) return null
+        val internalBinding = candidates.single()
+        return internalBinding.takeIf { it.kind == InternalBindingKind.BIND }
     }
 
     private fun classifyMyBatisFailure(failure: RuntimeException): PreparationFailure {
