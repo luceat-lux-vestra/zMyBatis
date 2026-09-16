@@ -174,7 +174,8 @@ internal object IsolatedOgnlAstAdmission {
     private fun rethrowFatal(failure: Throwable) {
         val fatal = throwableChain(failure)
             .firstOrNull {
-                (it is VirtualMachineError && it !is StackOverflowError) || it is ThreadDeath
+                (it is VirtualMachineError && it !is StackOverflowError) ||
+                    it.javaClass.name == "java.lang.ThreadDeath"
             }
         if (fatal != null) throw fatal
     }
