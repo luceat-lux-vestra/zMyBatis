@@ -2,6 +2,7 @@ package com.algorist.zMyBatis.mybatis
 
 import java.lang.reflect.InvocationTargetException
 import java.net.URLClassLoader
+import java.util.ArrayDeque
 import org.apache.ibatis.session.Configuration
 
 /**
@@ -13,6 +14,8 @@ import org.apache.ibatis.session.Configuration
 internal object IsolatedOgnlAstAdmission {
     private const val OGNL = "org.apache.ibatis.ognl.Ognl"
     private const val EXPRESSION_SYNTAX = "org.apache.ibatis.ognl.ExpressionSyntaxException"
+    private const val MAX_EXPRESSION_LENGTH = 65_536
+    private const val MAX_AST_NODES = 131_072
 
     private val allowedNodeTypes = setOf(
         "ASTAdd",
@@ -41,6 +44,9 @@ internal object IsolatedOgnlAstAdmission {
         allowedRootProperties: Set<String>,
     ): Result {
         if (expressions.isEmpty()) return Result.Admitted
+        if (expressions.any { it.length > MAX_EXPRESSION_LENGTH }) {
+            return Result.Unsupported("OGNL[expression-length]")
+        }
 
         val myBatisLocation = Configuration::class.java.protectionDomain?.codeSource?.location
             ?: return Result.Invariant("mybatis-code-source-unavailable")
@@ -61,6 +67,9 @@ internal object IsolatedOgnlAstAdmission {
                         parseExpression.invoke(null, expression)
                     } catch (failure: InvocationTargetException) {
                         val target = failure.targetException ?: failure
+                        if (target is StackOverflowError) {
+                            return Result.Unsupported("OGNL[parser-depth]")
+                        }
                         rethrowFatal(target)
                         return if (target.javaClass.name == EXPRESSION_SYNTAX) {
                             Result.Malformed(target.javaClass.name)
@@ -71,68 +80,68 @@ internal object IsolatedOgnlAstAdmission {
                     if (root == null || root.javaClass.classLoader !== loader) {
                         return Result.Invariant("mybatis-ognl-ast-not-isolated")
                     }
-                    val inspected = inspectNode(
-                        root,
-                        allowedRootProperties,
-                        rootProperty = root.javaClass.simpleName == "ASTProperty",
-                    )
+                    val inspected = inspectTree(root, allowedRootProperties)
                     if (inspected !is Result.Admitted) return inspected
                 }
                 Result.Admitted
             }
         } catch (failure: Throwable) {
+            if (throwableChain(failure).any { it is StackOverflowError }) {
+                return Result.Unsupported("OGNL[parser-depth]")
+            }
             rethrowFatal(failure)
             Result.Invariant(deepestDiagnosticType(failure))
         }
     }
 
-    private fun inspectNode(
-        node: Any,
+    private fun inspectTree(
+        root: Any,
         allowedRootProperties: Set<String>,
-        rootProperty: Boolean,
     ): Result {
-        val nodeType = node.javaClass.simpleName
-        if (nodeType !in allowedNodeTypes) return Result.Unsupported(nodeType)
+        val pending = ArrayDeque<PendingNode>()
+        pending.addLast(PendingNode(root, root.javaClass.simpleName == "ASTProperty"))
+        var visitedNodes = 0
 
-        if (nodeType == "ASTProperty") {
-            val indexed = node.javaClass.getMethod("isIndexedAccess").invoke(node) as Boolean
-            if (indexed) return Result.Unsupported("ASTProperty[indexed]")
-            val childCount = childCount(node)
-            if (childCount != 1) return Result.Unsupported("ASTProperty[shape]")
-            val constant = child(node, 0)
-            if (constant.javaClass.simpleName != "ASTConst") {
-                return Result.Unsupported("ASTProperty[dynamic]")
+        while (pending.isNotEmpty()) {
+            if (++visitedNodes > MAX_AST_NODES) {
+                return Result.Unsupported("OGNL[ast-node-budget]")
             }
-            val property = constant.javaClass.getMethod("getValue").invoke(constant) as? String
-                ?: return Result.Unsupported("ASTProperty[dynamic]")
-            if (property == "class") return Result.Unsupported("ASTProperty[class]")
-            if (rootProperty && property !in allowedRootProperties) {
-                return Result.UnprovenProperty(property)
+
+            val current = pending.removeLast()
+            val node = current.node
+            val nodeType = node.javaClass.simpleName
+            if (nodeType !in allowedNodeTypes) return Result.Unsupported(nodeType)
+
+            if (nodeType == "ASTProperty") {
+                val indexed = node.javaClass.getMethod("isIndexedAccess").invoke(node) as Boolean
+                if (indexed) return Result.Unsupported("ASTProperty[indexed]")
+                val count = childCount(node)
+                if (count != 1) return Result.Unsupported("ASTProperty[shape]")
+                val constant = child(node, 0)
+                if (constant.javaClass.simpleName != "ASTConst") {
+                    return Result.Unsupported("ASTProperty[dynamic]")
+                }
+                val property = constant.javaClass.getMethod("getValue").invoke(constant) as? String
+                    ?: return Result.Unsupported("ASTProperty[dynamic]")
+                if (property == "class") return Result.Unsupported("ASTProperty[class]")
+                if (current.rootProperty && property !in allowedRootProperties) {
+                    return Result.UnprovenProperty(property)
+                }
+            }
+
+            val count = childCount(node)
+            for (index in count - 1 downTo 0) {
+                val currentChild = child(node, index)
+                val childIsProperty = currentChild.javaClass.simpleName == "ASTProperty"
+                val childIsRoot = if (nodeType == "ASTChain") {
+                    index == 0 && childIsProperty
+                } else {
+                    childIsProperty
+                }
+                pending.addLast(PendingNode(currentChild, childIsRoot))
             }
         }
 
-        if (nodeType == "ASTChain") {
-            for (index in 0 until childCount(node)) {
-                val current = child(node, index)
-                val result = inspectNode(
-                    current,
-                    allowedRootProperties,
-                    rootProperty = index == 0 && current.javaClass.simpleName == "ASTProperty",
-                )
-                if (result !is Result.Admitted) return result
-            }
-            return Result.Admitted
-        }
-
-        for (index in 0 until childCount(node)) {
-            val current = child(node, index)
-            val result = inspectNode(
-                current,
-                allowedRootProperties,
-                rootProperty = current.javaClass.simpleName == "ASTProperty",
-            )
-            if (result !is Result.Admitted) return result
-        }
         return Result.Admitted
     }
 
@@ -145,14 +154,24 @@ internal object IsolatedOgnlAstAdmission {
             .invoke(node, index)
             ?: error("OGNL AST child is unavailable")
 
+    private fun throwableChain(failure: Throwable): List<Throwable> =
+        generateSequence(failure) { it.cause }.toList()
+
     private fun deepestDiagnosticType(failure: Throwable): String =
-        generateSequence(failure) { it.cause }.lastOrNull()?.javaClass?.name ?: failure.javaClass.name
+        throwableChain(failure).lastOrNull()?.javaClass?.name ?: failure.javaClass.name
 
     private fun rethrowFatal(failure: Throwable) {
-        val fatal = generateSequence(failure) { it.cause }
-            .firstOrNull { it is VirtualMachineError || it is ThreadDeath }
+        val fatal = throwableChain(failure)
+            .firstOrNull {
+                (it is VirtualMachineError && it !is StackOverflowError) || it is ThreadDeath
+            }
         if (fatal != null) throw fatal
     }
+
+    private data class PendingNode(
+        val node: Any,
+        val rootProperty: Boolean,
+    )
 
     sealed interface Result {
         data object Admitted : Result
