@@ -65,10 +65,11 @@ object MyBatisPreparationEngine {
 
         val script = source.capture.sqlSegments.joinToString(separator = " ").trim()
         val dynamicScript = containsDynamicScript(script)
+        val rawRequirements = request.parameterContract.rawRequirements()
         if (dynamicScript && script.contains("&#")) {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_NUMERIC_CHARACTER_REFERENCE)
         }
-        if (dynamicScript && script.contains(rawInterpolationPrefix)) {
+        if (dynamicScript && (script.contains(rawInterpolationPrefix) || rawRequirements.isNotEmpty())) {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_RAW_INTERPOLATION)
         }
 
@@ -159,8 +160,7 @@ object MyBatisPreparationEngine {
         val parameterValues =
             (parameterValuesResult as MyBatisValueConversion.ParameterValuesResult.Ready).values
 
-        val requiresIsolatedDynamicRuntime =
-            dynamicScript || request.parameterContract.rawRequirements().isNotEmpty()
+        val requiresIsolatedDynamicRuntime = dynamicScript || rawRequirements.isNotEmpty()
         val boundSql = if (requiresIsolatedDynamicRuntime) {
             when (
                 val isolated = IsolatedDynamicMyBatisPreparation.prepare(
