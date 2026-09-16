@@ -61,16 +61,16 @@ internal object StaticRawSubstitutionAdmission {
         if (rawRequirements.isEmpty()) return authorityMismatch()
 
         val authorities = mutableListOf<RawAuthority>()
-        for (requirement in rawRequirements) {
-            val placeholders = requirement.provenance.evidence.filterIsInstance<InputEvidence.Placeholder>()
+        for ((requirementId, _, expectedType, _, provenance) in rawRequirements) {
+            val placeholders = provenance.evidence.filterIsInstance<InputEvidence.Placeholder>()
             if (placeholders.any { it.kind != InputKind.RAW_INTERPOLATION }) return authorityMismatch()
             val rawPlaceholders = placeholders.filter { it.kind == InputKind.RAW_INTERPOLATION }
             if (rawPlaceholders.isEmpty()) return authorityMismatch()
-            if (requirement.expectedType.javaTypeIdentity?.value?.trim() !in supportedStringTypes) {
+            if (expectedType.javaTypeIdentity?.value?.trim() !in supportedStringTypes) {
                 return unsupported(EXPRESSION_UNSUPPORTED)
             }
             rawPlaceholders.forEach { evidence ->
-                authorities += RawAuthority(requirement.id, evidence.expression.trim())
+                authorities += RawAuthority(requirementId, evidence.expression.trim())
             }
         }
 
@@ -131,7 +131,7 @@ internal object StaticRawSubstitutionAdmission {
             if (content.contains(rawSlotOpen)) rawInsideSourceBound = true
             val payload = "$boundCanary${boundIndex++}$boundCanary"
             expectedCanaryPayloads += payload
-            boundOpen + payload + "}"
+            "$boundOpen$payload}"
         }.parse(protectedStructuralSql)
         if (rawInsideSourceBound) return unsupported(BOUND_CONTEXT_UNSUPPORTED)
 
