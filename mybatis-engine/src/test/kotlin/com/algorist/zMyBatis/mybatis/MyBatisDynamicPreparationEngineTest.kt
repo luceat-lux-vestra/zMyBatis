@@ -191,7 +191,7 @@ class MyBatisDynamicPreparationEngineTest {
     }
 
     @Test
-    fun foreachIsRejectedBeforeGeneratedLocalsCanBecomeAuthority() {
+    fun foreachWithoutCollectionEvidenceFailsBeforeEvaluation() {
         val script = """
             <script>
               select * from users where id in
@@ -217,9 +217,9 @@ class MyBatisDynamicPreparationEngineTest {
 
         assertFailure(
             result,
-            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "java-annotation-dynamic-ognl-node-unsupported",
-            null,
+            PreparationFailureKind.BINDING_RESOLUTION,
+            "mybatis-foreach-collection-provenance-missing",
+            "ids",
         )
     }
 
@@ -372,9 +372,17 @@ class MyBatisDynamicPreparationEngineTest {
                         when (spec.kind) {
                             InternalBindingKind.BIND -> InputEvidence.BindLocal(spec.name, spec.expression, source)
                             InternalBindingKind.FOREACH_ITEM ->
-                                InputEvidence.ForeachLocal(spec.name, com.algorist.zMyBatis.core.input.ForeachLocalRole.ITEM, source)
+                                InputEvidence.ForeachLocal(
+                                    spec.name,
+                                    com.algorist.zMyBatis.core.input.ForeachLocalRole.ITEM,
+                                    source,
+                                )
                             InternalBindingKind.FOREACH_INDEX ->
-                                InputEvidence.ForeachLocal(spec.name, com.algorist.zMyBatis.core.input.ForeachLocalRole.INDEX, source)
+                                InputEvidence.ForeachLocal(
+                                    spec.name,
+                                    com.algorist.zMyBatis.core.input.ForeachLocalRole.INDEX,
+                                    source,
+                                )
                             InternalBindingKind.ADDITIONAL_PARAMETER,
                             InternalBindingKind.MYBATIS_CONTEXT,
                             -> InputEvidence.OgnlExpression(spec.expression, source)
