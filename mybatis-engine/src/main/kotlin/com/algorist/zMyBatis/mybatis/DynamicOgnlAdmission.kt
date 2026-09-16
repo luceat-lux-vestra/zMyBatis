@@ -82,10 +82,6 @@ internal object DynamicOgnlAdmission {
                 return Result.Unsupported("DynamicScript[depth]")
             }
 
-            // Positive foreach support is outside #143 because generated item/index authority is not yet
-            // modeled. Refuse the tag itself before MyBatis can iterate or synthesize __frch_* locals.
-            if (node.name == "foreach") return Result.Unsupported("DynamicTag[foreach]")
-
             when (node.name) {
                 "if", "when" -> {
                     val expression = node.getStringAttribute("test")
