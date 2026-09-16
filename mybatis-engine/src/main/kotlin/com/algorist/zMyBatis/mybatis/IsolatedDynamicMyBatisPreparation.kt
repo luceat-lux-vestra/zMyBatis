@@ -21,7 +21,7 @@ internal object IsolatedDynamicMyBatisPreparation {
     private const val SQL_SOURCE = "org.apache.ibatis.mapping.SqlSource"
     private const val BOUND_SQL = "org.apache.ibatis.mapping.BoundSql"
     private const val PARAMETER_MAPPING = "org.apache.ibatis.mapping.ParameterMapping"
-    private const val PARAM_MAP = "org.apache.ibatis.binding.MapperMethod\u0024ParamMap"
+    private const val PARAM_MAP = $$"org.apache.ibatis.binding.MapperMethod$ParamMap"
     private const val OGNL_RUNTIME = "org.apache.ibatis.ognl.OgnlRuntime"
 
     private const val PARSE_FAILURE = "mybatis-sql-source-parse-failure"
