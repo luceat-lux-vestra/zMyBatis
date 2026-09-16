@@ -50,6 +50,19 @@ class DynamicOgnlAdmissionContractTest {
     }
 
     @Test
+    fun reservedCallerRootCannotMasqueradeAsMyBatisContext() {
+        val result = DynamicOgnlAdmission.inspect(
+            "<script><if test=\"_parameter != null\">select 1</if></script>",
+            setOf("_parameter"),
+            emptyList(),
+        )
+
+        assertTrue(result is DynamicOgnlAdmission.Result.UnprovenProperty)
+        result as DynamicOgnlAdmission.Result.UnprovenProperty
+        assertEquals("_parameter", result.property)
+    }
+
+    @Test
     fun bindNameCannotShadowCallerAuthorityInThisSlice() {
         val expression = "name + 'x'"
         val result = DynamicOgnlAdmission.inspect(
