@@ -197,7 +197,6 @@ internal object ForeachProvenanceAdmission {
                 return failure(
                     PreparationFailureKind.UNSUPPORTED_SEMANTIC,
                     LOCAL_IDENTIFIER_UNSUPPORTED,
-                    indexAttribute,
                 )
             }
             return inspectLocal(
