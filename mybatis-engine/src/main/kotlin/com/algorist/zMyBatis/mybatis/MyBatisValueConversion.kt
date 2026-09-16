@@ -15,6 +15,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.util.ArrayDeque
 import java.util.UUID
 
 internal object MyBatisValueConversion {
@@ -23,7 +24,10 @@ internal object MyBatisValueConversion {
     private const val UNSUPPORTED_VALUE = "mybatis-binding-value-unsupported"
     private const val VALUE_OUT_OF_RANGE = "java-parameter-value-out-of-range"
     private const val VALUE_TYPE_MISMATCH = "java-parameter-value-type-mismatch"
+    private const val VALUE_TOO_COMPLEX = "mybatis-binding-value-too-complex"
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
+    private const val MAX_INPUT_DEPTH = 128
+    private const val MAX_INPUT_NODES = 65_536
 
     fun resolveParameterType(parameterTypes: List<JavaTypeIdentity>): MyBatisParameterType? {
         val resolved = mutableListOf<Class<*>>()
@@ -39,6 +43,15 @@ internal object MyBatisValueConversion {
     }
 
     fun parameterValues(request: MyBatisPreparationRequest): ParameterValuesResult {
+        if (!inputComplexityIsBounded(request.inputEnvironment.values.values.map { it.value })) {
+            return ParameterValuesResult.Failed(
+                PreparationFailure(
+                    PreparationFailureKind.UNSUPPORTED_BINDING_VALUE,
+                    VALUE_TOO_COMPLEX,
+                ),
+            )
+        }
+
         if (request.inputEnvironment.values.isEmpty()) {
             return ParameterValuesResult.Ready(linkedMapOf())
         }
@@ -147,6 +160,38 @@ internal object MyBatisValueConversion {
                 InputValue.ArrayValue(elements)
             }
         }
+    }
+
+    private fun inputComplexityIsBounded(values: Collection<InputValue>): Boolean {
+        val pending = ArrayDeque<Pair<InputValue, Int>>()
+        values.forEach { pending.addLast(it to 0) }
+        var visitedNodes = 0
+
+        while (pending.isNotEmpty()) {
+            if (++visitedNodes > MAX_INPUT_NODES) return false
+            val (value, depth) = pending.removeLast()
+            if (depth > MAX_INPUT_DEPTH) return false
+
+            when (value) {
+                is InputValue.ObjectValue -> value.entries.values.forEach { pending.addLast(it to depth + 1) }
+                is InputValue.MapValue -> value.entries.values.forEach { pending.addLast(it to depth + 1) }
+                is InputValue.ListValue -> value.elements.forEach { pending.addLast(it to depth + 1) }
+                is InputValue.ArrayValue -> value.elements.forEach { pending.addLast(it to depth + 1) }
+                InputValue.NullValue,
+                is InputValue.Text,
+                is InputValue.RawText,
+                is InputValue.BooleanValue,
+                is InputValue.IntegerValue,
+                is InputValue.DecimalValue,
+                is InputValue.DateValue,
+                is InputValue.TimeValue,
+                is InputValue.DateTimeValue,
+                is InputValue.InstantValue,
+                is InputValue.UuidValue,
+                -> Unit
+            }
+        }
+        return true
     }
 
     private fun isMyBatisSpecialParameter(typeIdentity: JavaTypeIdentity): Boolean =
