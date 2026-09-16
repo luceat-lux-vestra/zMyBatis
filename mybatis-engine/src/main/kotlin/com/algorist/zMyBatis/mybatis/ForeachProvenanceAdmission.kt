@@ -1,8 +1,8 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ForeachLocalRole
+import com.algorist.zMyBatis.core.input.InputAlias
 import com.algorist.zMyBatis.core.input.InputEvidence
-import com.algorist.zMyBatis.core.input.InternalBinding
 import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
@@ -121,7 +121,8 @@ internal object ForeachProvenanceAdmission {
         if (foreachCount > 0) {
             val generatedPrefix = ForEachSqlNode.ITEM_PREFIX
             val namespaceCollision =
-                callerAliases.keys.any { it.startsWith(generatedPrefix) } ||
+                script.contains(generatedPrefix) ||
+                    callerAliases.keys.any { it.startsWith(generatedPrefix) } ||
                     bindNames.any { it.startsWith(generatedPrefix) } ||
                     sourceLocals.keys.any { it.startsWith(generatedPrefix) }
             if (namespaceCollision) {
@@ -135,7 +136,7 @@ internal object ForeachProvenanceAdmission {
     private fun inspectForeach(
         node: XNode,
         contract: ParameterContract,
-        callerAliases: Map<String, com.algorist.zMyBatis.core.input.InputAlias>,
+        callerAliases: Map<String, InputAlias>,
         bindNames: Set<String>,
         sourceLocals: MutableMap<String, InternalBindingKind>,
     ): PreparationFailure? {
