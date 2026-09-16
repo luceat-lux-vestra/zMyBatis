@@ -91,6 +91,38 @@ class MyBatisForeachTypeFidelityTest {
     }
 
     @Test
+    fun primitiveLongArrayPreservesElementRuntimeTypeForMyBatisMapping() {
+        val result = prepare(
+            declaredType = "long[]",
+            shape = InputShape.ARRAY,
+            value = InputValue.ArrayValue(
+                listOf(
+                    InputValue.IntegerValue(BigInteger.valueOf(7)),
+                    InputValue.IntegerValue(BigInteger.valueOf(8)),
+                ),
+            ),
+        )
+
+        assertLongBindings(result, 7, 8)
+    }
+
+    @Test
+    fun mapStringLongPreservesValueRuntimeTypeForMyBatisMapping() {
+        val result = prepare(
+            declaredType = "java.util.Map<java.lang.String,java.lang.Long>",
+            shape = InputShape.MAP,
+            value = InputValue.MapValue(
+                linkedMapOf(
+                    "left" to InputValue.IntegerValue(BigInteger.valueOf(9)),
+                    "right" to InputValue.IntegerValue(BigInteger.valueOf(10)),
+                ),
+            ),
+        )
+
+        assertLongBindings(result, 9, 10)
+    }
+
+    @Test
     fun rawListCollectionTypeFailsClosedInsteadOfUsingUntypedElements() {
         val result = prepare(
             declaredType = "java.util.List",
