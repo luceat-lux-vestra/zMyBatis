@@ -125,7 +125,7 @@ class ForeachProvenanceAdmissionTest {
             result,
             PreparationFailureKind.UNSUPPORTED_SEMANTIC,
             "mybatis-foreach-local-identifier-unsupported",
-            "",
+            null,
         )
     }
 
