@@ -16,6 +16,7 @@ internal object IsolatedOgnlAstAdmission {
     private const val EXPRESSION_SYNTAX = "org.apache.ibatis.ognl.ExpressionSyntaxException"
     private const val MAX_EXPRESSION_LENGTH = 65_536
     private const val MAX_AST_NODES = 131_072
+    private const val MAX_AST_DEPTH = 256
 
     private val allowedNodeTypes = setOf(
         "ASTAdd",
@@ -99,7 +100,7 @@ internal object IsolatedOgnlAstAdmission {
         allowedRootProperties: Set<String>,
     ): Result {
         val pending = ArrayDeque<PendingNode>()
-        pending.addLast(PendingNode(root, root.javaClass.simpleName == "ASTProperty"))
+        pending.addLast(PendingNode(root, root.javaClass.simpleName == "ASTProperty", depth = 1))
         var visitedNodes = 0
 
         while (pending.isNotEmpty()) {
@@ -108,6 +109,10 @@ internal object IsolatedOgnlAstAdmission {
             }
 
             val current = pending.removeLast()
+            if (current.depth > MAX_AST_DEPTH) {
+                return Result.Unsupported("OGNL[ast-depth]")
+            }
+
             val node = current.node
             val nodeType = node.javaClass.simpleName
             if (nodeType !in allowedNodeTypes) return Result.Unsupported(nodeType)
@@ -138,7 +143,13 @@ internal object IsolatedOgnlAstAdmission {
                 } else {
                     childIsProperty
                 }
-                pending.addLast(PendingNode(currentChild, childIsRoot))
+                pending.addLast(
+                    PendingNode(
+                        node = currentChild,
+                        rootProperty = childIsRoot,
+                        depth = current.depth + 1,
+                    ),
+                )
             }
         }
 
@@ -171,6 +182,7 @@ internal object IsolatedOgnlAstAdmission {
     private data class PendingNode(
         val node: Any,
         val rootProperty: Boolean,
+        val depth: Int,
     )
 
     sealed interface Result {
