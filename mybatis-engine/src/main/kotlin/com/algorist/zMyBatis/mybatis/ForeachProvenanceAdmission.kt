@@ -4,6 +4,7 @@ import com.algorist.zMyBatis.core.input.ForeachLocalRole
 import com.algorist.zMyBatis.core.input.InputAlias
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputRequirementId
+import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
@@ -28,6 +29,7 @@ internal object ForeachProvenanceAdmission {
 
     private const val SOURCE_CONTRACT_MISMATCH = "mybatis-foreach-source-contract-mismatch"
     private const val COLLECTION_PROVENANCE_MISSING = "mybatis-foreach-collection-provenance-missing"
+    private const val COLLECTION_SHAPE_UNSUPPORTED = "mybatis-foreach-collection-shape-unsupported"
     private const val LOCAL_PROVENANCE_MISSING = "mybatis-foreach-local-provenance-missing"
     private const val LOCAL_PROVENANCE_AMBIGUOUS = "mybatis-foreach-local-provenance-ambiguous"
     private const val LOCAL_SHADOWING = "mybatis-foreach-local-shadowing-unsupported"
@@ -40,6 +42,7 @@ internal object ForeachProvenanceAdmission {
 
     private val simpleIdentifier = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val reservedContextNames = setOf("_parameter", "_databaseId")
+    private val supportedCollectionShapes = setOf(InputShape.LIST, InputShape.ARRAY, InputShape.MAP)
 
     fun inspect(script: String, contract: ParameterContract): Result {
         if (script.length > MAX_SCRIPT_LENGTH) {
@@ -174,6 +177,13 @@ internal object ForeachProvenanceAdmission {
             return failure(
                 PreparationFailureKind.BINDING_RESOLUTION,
                 COLLECTION_PROVENANCE_MISSING,
+                collection,
+            )
+        }
+        if (requirement.expectedType.shape !in supportedCollectionShapes) {
+            return failure(
+                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                COLLECTION_SHAPE_UNSUPPORTED,
                 collection,
             )
         }
