@@ -11,7 +11,7 @@ import org.apache.ibatis.parsing.XPathParser
 internal object DynamicOgnlAdmission {
     private const val MAX_SCRIPT_LENGTH = 2 * 1024 * 1024
     private const val MAX_DYNAMIC_NODES = 65_536
-    private const val MAX_DYNAMIC_DEPTH = 256
+    private const val MAX_DYNAMIC_DEPTH = 64
 
     private val reservedContextNames = setOf("_parameter", "_databaseId")
 
