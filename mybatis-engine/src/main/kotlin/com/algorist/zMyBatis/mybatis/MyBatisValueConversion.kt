@@ -100,8 +100,16 @@ internal object MyBatisValueConversion {
             is Int -> InputValue.IntegerValue(BigInteger.valueOf(value.toLong()))
             is Long -> InputValue.IntegerValue(BigInteger.valueOf(value))
             is BigDecimal -> InputValue.DecimalValue(value)
-            is Float -> InputValue.DecimalValue(BigDecimal(value.toString()))
-            is Double -> InputValue.DecimalValue(BigDecimal(value.toString()))
+            is Float -> if (value.isFinite()) {
+                InputValue.DecimalValue(BigDecimal(value.toString()))
+            } else {
+                null
+            }
+            is Double -> if (value.isFinite()) {
+                InputValue.DecimalValue(BigDecimal(value.toString()))
+            } else {
+                null
+            }
             is LocalDate -> InputValue.DateValue(value)
             is LocalTime -> InputValue.TimeValue(value)
             is LocalDateTime -> InputValue.DateTimeValue(value)
