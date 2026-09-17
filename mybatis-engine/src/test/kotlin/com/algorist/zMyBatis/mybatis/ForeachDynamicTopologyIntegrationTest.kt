@@ -38,6 +38,20 @@ class ForeachDynamicTopologyIntegrationTest {
         )
     }
 
+    @Test
+    fun explicitNullableAttributeRemainsOutsideThisForeachSlice() {
+        val result = ForeachProvenanceAdmission.inspect(
+            "<script><foreach collection=\"ids\" item=\"item\" nullable=\"true\">#{item}</foreach></script>",
+            emptyContract(),
+        )
+
+        assertTrue(result is ForeachProvenanceAdmission.Result.Failed)
+        result as ForeachProvenanceAdmission.Result.Failed
+        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
+        assertEquals("mybatis-foreach-nullable-unsupported", result.failure.code)
+        assertEquals(null, result.failure.bindingProperty)
+    }
+
     private fun assertTopologyFailure(script: String) {
         val result = ForeachProvenanceAdmission.inspect(script, emptyContract())
         assertTrue(result is ForeachProvenanceAdmission.Result.Failed)
