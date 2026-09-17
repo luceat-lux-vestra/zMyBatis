@@ -5,10 +5,13 @@ import com.intellij.database.psi.DbDataSource
 import com.intellij.database.psi.DbPsiFacade
 import com.intellij.database.util.DbImplUtil
 import com.intellij.ide.util.PropertiesComponent
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.project.ProjectManagerListener
 import com.intellij.openapi.util.CheckedDisposable
 import com.intellij.openapi.util.Disposer
 import java.util.concurrent.ConcurrentHashMap
@@ -65,7 +68,28 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     @Volatile
     private var shuttingDown = false
 
+    init {
+        // The connection is parented to this project service, not to Project itself. IntelliJ
+        // disposes project services on both project close and dynamic plugin unload, so the
+        // listener cannot outlive the plugin classloader. projectClosing only flips the already
+        // created service into the same shutdown gate; it never performs a new service lookup.
+        ApplicationManager.getApplication()
+            .messageBus
+            .connect(this)
+            .subscribe(ProjectManager.TOPIC, object : ProjectManagerListener {
+                override fun projectClosing(closingProject: Project) {
+                    handleProjectClosing(closingProject)
+                }
+            })
+    }
+
     internal fun isShuttingDown(): Boolean = shuttingDown
+
+    internal fun handleProjectClosing(closingProject: Project) {
+        if (closingProject !== project) return
+        LOG.info("zMyBatis: project closing — marking shutdown for session preservation")
+        markShuttingDown()
+    }
 
     /**
      * Returns a live cached console only while the project session lifecycle is active.
