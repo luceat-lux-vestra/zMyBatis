@@ -22,6 +22,7 @@ import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
 import com.algorist.zMyBatis.core.source.XmlStatementId
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -54,6 +55,20 @@ class XmlMapperPreparationEngineAdversarialTest {
         val result = prepare(graph, contract(graph))
         val execution = (result as PreparationResult.Success).execution
         assertEquals("SELECT id, name FROM users", normalize(execution.sqlWithPlaceholders))
+    }
+
+    @Test
+    fun mapperNamespaceCannotInitializeApplicationVisibleClass() {
+        assertEquals(0, NamespaceTrapProbe.initializations.get())
+        val namespace = NamespaceTrap::class.java.name
+        val graph = graph(
+            body = "<select id=\"find\">SELECT 1</select>",
+            namespace = namespace,
+        )
+
+        val result = prepare(graph, contract(graph))
+        assertEquals("SELECT 1", normalize((result as PreparationResult.Success).execution.sqlWithPlaceholders))
+        assertEquals(0, NamespaceTrapProbe.initializations.get())
     }
 
     @Test
@@ -123,12 +138,16 @@ class XmlMapperPreparationEngineAdversarialTest {
         sourceRevisions = graph.sourceSnapshots.associate { it.fileId to it.revision },
     )
 
-    private fun graph(body: String, file: String = "vfs:/mapper.xml"): StatementSourceGraph {
+    private fun graph(
+        body: String,
+        file: String = "vfs:/mapper.xml",
+        namespace: String = "example.Mapper",
+    ): StatementSourceGraph {
         val fileId = SourceFileId(file)
-        val content = mapper("example.Mapper", body)
+        val content = mapper(namespace, body)
         return StatementSourceGraph(
             CapturedStatement(
-                XmlStatementId(fileId, "example.Mapper", "find"),
+                XmlStatementId(fileId, namespace, "find"),
                 StatementKind.SELECT,
                 SourceRange(0, content.length),
             ),
@@ -144,4 +163,16 @@ class XmlMapperPreparationEngineAdversarialTest {
     """.trimIndent()
 
     private fun normalize(sql: String): String = sql.trim().replace(Regex("\\s+"), " ")
+}
+
+private class NamespaceTrap {
+    companion object {
+        init {
+            NamespaceTrapProbe.initializations.incrementAndGet()
+        }
+    }
+}
+
+private object NamespaceTrapProbe {
+    val initializations = AtomicInteger()
 }
