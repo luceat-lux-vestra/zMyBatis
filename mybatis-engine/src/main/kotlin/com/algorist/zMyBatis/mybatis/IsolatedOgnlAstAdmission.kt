@@ -43,10 +43,44 @@ internal object IsolatedOgnlAstAdmission {
     fun inspect(
         expressions: List<String>,
         allowedRootProperties: Set<String>,
+    ): Result = inspectParsed(expressions, includeExpressionInFailure = false) { _, root ->
+        inspectTree(root, allowedRootProperties)
+    }
+
+    /**
+     * Proves that stock MyBatis' shaded OGNL parser sees [expression] as exactly one non-indexed
+     * root property with the expected name. Text equality is not enough because identifiers such as
+     * `null` or `true` are parsed as literals rather than caller-property access.
+     */
+    fun inspectExactRootProperty(
+        expression: String,
+        expectedProperty: String,
+    ): Result = inspectParsed(listOf(expression), includeExpressionInFailure = true) { _, root ->
+        inspectExactRootPropertyNode(root, expectedProperty)
+    }
+
+    /**
+     * Batch form used by foreach admission. All expressions are parsed inside one disposable
+     * MyBatis classloader so a large number of sibling foreach nodes cannot create one loader per
+     * collection expression.
+     */
+    fun inspectExactRootProperties(expressions: Collection<String>): Result =
+        inspectParsed(expressions.distinct(), includeExpressionInFailure = true) { expression, root ->
+            inspectExactRootPropertyNode(root, expression)
+        }
+
+    private fun inspectParsed(
+        expressions: List<String>,
+        includeExpressionInFailure: Boolean,
+        inspector: (String, Any) -> Result,
     ): Result {
         if (expressions.isEmpty()) return Result.Admitted
-        if (expressions.any { it.length > MAX_EXPRESSION_LENGTH }) {
-            return Result.Unsupported("OGNL[expression-length]")
+        val oversized = expressions.firstOrNull { it.length > MAX_EXPRESSION_LENGTH }
+        if (oversized != null) {
+            return Result.Unsupported(
+                nodeType = "OGNL[expression-length]",
+                expression = oversized.takeIf { includeExpressionInFailure },
+            )
         }
 
         val myBatisLocation = Configuration::class.java.protectionDomain?.codeSource?.location
@@ -69,11 +103,17 @@ internal object IsolatedOgnlAstAdmission {
                     } catch (failure: InvocationTargetException) {
                         val target = failure.targetException ?: failure
                         if (target is StackOverflowError) {
-                            return Result.Unsupported("OGNL[parser-depth]")
+                            return Result.Unsupported(
+                                nodeType = "OGNL[parser-depth]",
+                                expression = expression.takeIf { includeExpressionInFailure },
+                            )
                         }
                         rethrowFatal(target)
                         return if (target.javaClass.name == EXPRESSION_SYNTAX) {
-                            Result.Malformed(target.javaClass.name)
+                            Result.Malformed(
+                                diagnosticType = target.javaClass.name,
+                                expression = expression.takeIf { includeExpressionInFailure },
+                            )
                         } else {
                             Result.Invariant(target.javaClass.name)
                         }
@@ -81,7 +121,7 @@ internal object IsolatedOgnlAstAdmission {
                     if (root == null || root.javaClass.classLoader !== loader) {
                         return Result.Invariant("mybatis-ognl-ast-not-isolated")
                     }
-                    val inspected = inspectTree(root, allowedRootProperties)
+                    val inspected = inspector(expression, root)
                     if (inspected !is Result.Admitted) return inspected
                 }
                 Result.Admitted
@@ -92,6 +132,30 @@ internal object IsolatedOgnlAstAdmission {
             }
             rethrowFatal(failure)
             Result.Invariant(deepestDiagnosticType(failure))
+        }
+    }
+
+    private fun inspectExactRootPropertyNode(
+        root: Any,
+        expectedProperty: String,
+    ): Result {
+        if (root.javaClass.simpleName != "ASTProperty") {
+            return Result.Unsupported("ASTProperty[exact-root-required]", expectedProperty)
+        }
+        val indexed = root.javaClass.getMethod("isIndexedAccess").invoke(root) as Boolean
+        if (indexed) return Result.Unsupported("ASTProperty[indexed]", expectedProperty)
+        if (childCount(root) != 1) return Result.Unsupported("ASTProperty[shape]", expectedProperty)
+        val constant = child(root, 0)
+        if (constant.javaClass.simpleName != "ASTConst") {
+            return Result.Unsupported("ASTProperty[dynamic]", expectedProperty)
+        }
+        val property = constant.javaClass.getMethod("getValue").invoke(constant) as? String
+            ?: return Result.Unsupported("ASTProperty[dynamic]", expectedProperty)
+        if (property == "class") return Result.Unsupported("ASTProperty[class]", expectedProperty)
+        return if (property == expectedProperty) {
+            Result.Admitted
+        } else {
+            Result.UnprovenProperty(property)
         }
     }
 
@@ -191,6 +255,7 @@ internal object IsolatedOgnlAstAdmission {
 
         data class Unsupported(
             val nodeType: String,
+            val expression: String? = null,
         ) : Result
 
         data class UnprovenProperty(
@@ -199,6 +264,7 @@ internal object IsolatedOgnlAstAdmission {
 
         data class Malformed(
             val diagnosticType: String,
+            val expression: String? = null,
         ) : Result
 
         data class Invariant(
