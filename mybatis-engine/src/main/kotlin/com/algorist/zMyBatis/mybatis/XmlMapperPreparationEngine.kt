@@ -323,12 +323,16 @@ object XmlMapperPreparationEngine {
         }.lastOrNull()?.javaClass?.name ?: failure.javaClass.name
 
     private fun rethrowFatal(failure: Throwable) {
-        if (
-            failure is VirtualMachineError ||
-            failure is LinkageError ||
-            failure.javaClass.name == "java.lang.ThreadDeath"
-        ) {
+        if (failure is VirtualMachineError || failure is LinkageError) {
             throw failure
+        }
+
+        var type: Class<*>? = failure.javaClass
+        while (type != null) {
+            if (type.name == "java.lang.ThreadDeath") {
+                throw failure
+            }
+            type = type.superclass
         }
     }
 }
