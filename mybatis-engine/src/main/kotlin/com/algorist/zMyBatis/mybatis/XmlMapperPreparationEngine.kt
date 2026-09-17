@@ -287,7 +287,7 @@ object XmlMapperPreparationEngine {
 
     private fun preflight(snapshot: SourceSnapshot): PreparationFailure? {
         val content = snapshot.content
-        if (placeholder.containsMatchIn(content)) {
+        if (containsPlaceholder(content)) {
             return PreparationFailure(PreparationFailureKind.UNSUPPORTED_SEMANTIC, PLACEHOLDER_UNSUPPORTED)
         }
         if (dangerousAttribute.containsMatchIn(content) || dangerousElement.containsMatchIn(content)) {
@@ -302,6 +302,45 @@ object XmlMapperPreparationEngine {
         }
         return null
     }
+
+    private fun containsPlaceholder(content: String): Boolean =
+        content.indices.any { index ->
+            index + 1 < content.length &&
+                content[index + 1] == '{' &&
+                (content[index] == '#' || content[index] == '        "zmybatis:${snapshot.fileId.value}@${snapshot.revision.value}"
+
+    private fun failed(
+        kind: PreparationFailureKind,
+        code: String,
+        diagnosticType: String? = null,
+    ): PreparationResult.Failed = PreparationResult.Failed(
+        PreparationFailure(kind, code, diagnosticType = diagnosticType),
+    )
+
+    private fun diagnosticType(failure: Throwable): String =
+        generateSequence(failure) { current ->
+            when (current) {
+                is InvocationTargetException -> current.targetException
+                else -> current.cause
+            }
+        }.lastOrNull()?.javaClass?.name ?: failure.javaClass.name
+
+    private fun rethrowFatal(failure: Throwable) {
+        if (failure is VirtualMachineError || failure is LinkageError) {
+            throw failure
+        }
+
+        var type: Class<*>? = failure.javaClass
+        while (type != null) {
+            if (type.name == "java.lang.ThreadDeath") {
+                throw failure
+            }
+            type = type.superclass
+        }
+    }
+}
+)
+        }
 
     private fun resourceIdentity(snapshot: SourceSnapshot): String =
         "zmybatis:${snapshot.fileId.value}@${snapshot.revision.value}"
