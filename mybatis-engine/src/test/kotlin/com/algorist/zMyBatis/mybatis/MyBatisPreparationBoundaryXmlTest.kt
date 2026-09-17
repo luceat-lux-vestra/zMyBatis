@@ -24,6 +24,8 @@ class MyBatisPreparationBoundaryXmlTest {
         val fileId = SourceFileId("vfs:/mapper.xml")
         val revision = SourceRevision("r1")
         val content = """
+            <?xml version="1.0" encoding="UTF-8" ?>
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
             <mapper namespace="example.Mapper">
                 <select id="find">SELECT 1</select>
             </mapper>
