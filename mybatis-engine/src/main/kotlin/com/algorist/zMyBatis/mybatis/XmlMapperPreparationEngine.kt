@@ -90,13 +90,21 @@ object XmlMapperPreparationEngine {
             }
         } catch (failure: Throwable) {
             rethrowFatal(failure)
-            PreparationResult.Failed(
-                PreparationFailure(
-                    kind = PreparationFailureKind.MYBATIS_PARSE,
-                    code = PARSE_FAILURE,
-                    diagnosticType = diagnosticType(failure),
-                ),
-            )
+            if (failure is SecurityException) {
+                failed(
+                    PreparationFailureKind.PREPARATION_INVARIANT,
+                    CLASSLOADER_INVARIANT,
+                    failure.javaClass.name,
+                )
+            } else {
+                PreparationResult.Failed(
+                    PreparationFailure(
+                        kind = PreparationFailureKind.MYBATIS_PARSE,
+                        code = PARSE_FAILURE,
+                        diagnosticType = diagnosticType(failure),
+                    ),
+                )
+            }
         }
     }
 
@@ -108,20 +116,14 @@ object XmlMapperPreparationEngine {
     ): PreparationResult {
         val thread = Thread.currentThread()
         val previousContextLoader = thread.contextClassLoader
+        var switched = false
         return try {
             thread.contextClassLoader = loader
+            switched = true
             prepareIn(loader, source, statementId, request)
-        } catch (failure: SecurityException) {
-            failed(
-                PreparationFailureKind.PREPARATION_INVARIANT,
-                CLASSLOADER_INVARIANT,
-                failure.javaClass.name,
-            )
         } finally {
-            try {
+            if (switched) {
                 thread.contextClassLoader = previousContextLoader
-            } catch (failure: SecurityException) {
-                rethrowFatal(failure)
             }
         }
     }
