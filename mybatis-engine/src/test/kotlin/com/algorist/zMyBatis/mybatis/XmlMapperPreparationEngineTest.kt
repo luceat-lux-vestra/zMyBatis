@@ -85,6 +85,40 @@ class XmlMapperPreparationEngineTest {
     }
 
     @Test
+    fun nestedCrossNamespaceIncludeGraphUsesOnlyCapturedSnapshots() {
+        val commonFile = SourceFileId("vfs:/a-common.xml")
+        val auditFile = SourceFileId("vfs:/c-audit.xml")
+        val common = SourceSnapshot(
+            commonFile,
+            SourceRevision("r-common"),
+            mapperDocument(
+                "example.Common",
+                "<sql id=\"columns\">id, <include refid=\"example.Audit.created\"/></sql>",
+            ),
+        )
+        val audit = SourceSnapshot(
+            auditFile,
+            SourceRevision("r-audit"),
+            mapperDocument("example.Audit", "<sql id=\"created\">created_at</sql>"),
+        )
+        val rootFile = SourceFileId("vfs:/b-root.xml")
+        val fixture = fixture(
+            file = rootFile.value,
+            content = mapperDocument(
+                "example.Mapper",
+                "<select id=\"find\">SELECT <include refid=\"example.Common.columns\"/> FROM users</select>",
+            ),
+            additionalSnapshots = listOf(common, audit),
+            dependencies = listOf(
+                SourceDependencyEdge(rootFile, commonFile, SourceRange(0, 0)),
+                SourceDependencyEdge(commonFile, auditFile, SourceRange(0, 0)),
+            ),
+        )
+
+        assertEquals("SELECT id, created_at FROM users", normalize(success(prepare(fixture)).sqlWithPlaceholders))
+    }
+
+    @Test
     fun boundAndRawPlaceholdersFailBeforeMapperEvaluation() {
         listOf(
             "SELECT * FROM users WHERE id = #{id}",
@@ -172,7 +206,7 @@ class XmlMapperPreparationEngineTest {
     }
 
     @Test
-    fun missingRootAndMalformedMapperReturnTypedFailures() {
+    fun missingRootMalformedMapperAndIncompleteIncludeReturnTypedFailures() {
         val missing = fixture(
             statementId = "missing",
             content = mapperDocument("example.Mapper", "<select id=\"actual\">SELECT 1</select>"),
@@ -190,6 +224,18 @@ class XmlMapperPreparationEngineTest {
             prepare(malformed),
             PreparationFailureKind.MYBATIS_PARSE,
             "mybatis-xml-mapper-parse-failure",
+        )
+
+        val incomplete = fixture(
+            content = mapperDocument(
+                "example.Mapper",
+                "<select id=\"find\">SELECT <include refid=\"example.Missing.columns\"/> FROM users</select>",
+            ),
+        )
+        assertFailure(
+            prepare(incomplete),
+            PreparationFailureKind.MYBATIS_PARSE,
+            "xml-preparation-root-statement-missing",
         )
     }
 
