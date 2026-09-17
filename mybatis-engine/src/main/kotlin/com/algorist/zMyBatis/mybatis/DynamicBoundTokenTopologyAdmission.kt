@@ -15,10 +15,9 @@ import org.w3c.dom.Node
  * source fragment.
  *
  * Dynamic tags concatenate independently parsed text and structural attributes. Without this gate,
- * fragments such as foreach `open="#{"` plus body text `id}` can synthesize a new `#{id}` mapping
- * that did not exist as one source placeholder. This admission does not evaluate dynamic SQL; it
- * only rejects fragments whose residual opener/escape metasyntax could create, escape, or extend a
- * bound token when MyBatis later combines fragments.
+ * fragments can synthesize a new `#{...}` mapping or escape an existing opener across a dynamic
+ * boundary. This admission does not evaluate dynamic SQL; it only rejects incomplete/escaped
+ * opener topology and fragment endings that can change topology when another fragment is appended.
  */
 internal object DynamicBoundTokenTopologyAdmission {
     private const val TOPOLOGY_UNSUPPORTED = "java-annotation-dynamic-bound-token-topology-unsupported"
@@ -91,11 +90,15 @@ internal object DynamicBoundTokenTopologyAdmission {
 
     private fun fragmentIsTopologySafe(fragment: String): Boolean {
         val residual = boundTokenParser.parse(fragment)
-        // A residual '#' can become the first half of a new '#{' opener when dynamic fragments are
-        // concatenated. A residual backslash can escape a following authoritative opener. A lone
-        // '{' cannot create a bound token once residual '#' is forbidden, so ordinary brace syntax
-        // remains supportable.
-        return residual.none { it == '#' || it == '\\' }
+        // A complete source-local '#{...}' becomes the inert marker 'x'. If '#{' survives, the
+        // opener was incomplete or escaped and its eventual mapping topology is not source-local.
+        if (residual.contains("#{")) return false
+
+        // Some MyBatis dynamic contexts concatenate adjacent fragments without inserting a space.
+        // Only boundary metacharacters can then create/escape an opener in the next fragment.
+        // Hash/backslash elsewhere (e.g. PostgreSQL '#>' or ordinary escaped string content) does
+        // not change bound-token topology and remains supported.
+        return !fragment.endsWith('#') && !fragment.endsWith('\\')
     }
 
     private fun unsupported() = PreparationFailure(
