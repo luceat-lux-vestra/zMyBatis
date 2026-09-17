@@ -5,6 +5,14 @@ import org.junit.Test
 
 class IsolatedOgnlExactRootBatchAdmissionTest {
     @Test
+    fun singleExactRootPropertyRemainsAvailableForFocusedAdmissionChecks() {
+        assertEquals(
+            IsolatedOgnlAstAdmission.Result.Admitted,
+            IsolatedOgnlAstAdmission.inspectExactRootProperty("ids", "ids"),
+        )
+    }
+
+    @Test
     fun multipleExactRootPropertiesAreAdmittedInOneBatch() {
         assertEquals(
             IsolatedOgnlAstAdmission.Result.Admitted,
