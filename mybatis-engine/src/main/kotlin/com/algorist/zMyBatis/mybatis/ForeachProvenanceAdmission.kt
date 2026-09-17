@@ -75,6 +75,7 @@ internal object ForeachProvenanceAdmission {
 
         val sourceLocals = linkedMapOf<String, InternalBindingKind>()
         val sourceCollections = linkedMapOf<CollectionAuthority, Int>()
+        val collectionExpressions = linkedSetOf<String>()
         val collectionRequirements = linkedSetOf<InputRequirementId>()
         val pending = ArrayDeque<PendingNode>()
         pending.addLast(PendingNode(root, depth = 0, insideForeach = false))
@@ -103,6 +104,7 @@ internal object ForeachProvenanceAdmission {
                     bindNames = bindNames,
                     sourceLocals = sourceLocals,
                     sourceCollections = sourceCollections,
+                    collectionExpressions = collectionExpressions,
                     collectionRequirements = collectionRequirements,
                 )
                 if (admitted != null) return Result.Failed(admitted)
@@ -140,6 +142,35 @@ internal object ForeachProvenanceAdmission {
             return failed(PreparationFailureKind.BINDING_RESOLUTION, SOURCE_CONTRACT_MISMATCH)
         }
 
+        when (val ognl = IsolatedOgnlAstAdmission.inspectExactRootProperties(collectionExpressions)) {
+            IsolatedOgnlAstAdmission.Result.Admitted -> Unit
+            is IsolatedOgnlAstAdmission.Result.Invariant ->
+                return failed(
+                    PreparationFailureKind.PREPARATION_INVARIANT,
+                    INVARIANT_FAILURE,
+                    diagnosticType = ognl.diagnosticType,
+                )
+            is IsolatedOgnlAstAdmission.Result.Malformed ->
+                return failed(
+                    PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                    COLLECTION_EXPRESSION_UNSUPPORTED,
+                    property = ognl.expression,
+                    diagnosticType = ognl.diagnosticType,
+                )
+            is IsolatedOgnlAstAdmission.Result.Unsupported ->
+                return failed(
+                    PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                    COLLECTION_EXPRESSION_UNSUPPORTED,
+                    property = ognl.expression,
+                )
+            is IsolatedOgnlAstAdmission.Result.UnprovenProperty ->
+                return failed(
+                    PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                    COLLECTION_EXPRESSION_UNSUPPORTED,
+                    property = ognl.property,
+                )
+        }
+
         if (foreachCount > 0) {
             val generatedPrefix = ForEachSqlNode.ITEM_PREFIX
             val namespaceCollision =
@@ -165,6 +196,7 @@ internal object ForeachProvenanceAdmission {
         bindNames: Set<String>,
         sourceLocals: MutableMap<String, InternalBindingKind>,
         sourceCollections: MutableMap<CollectionAuthority, Int>,
+        collectionExpressions: MutableSet<String>,
         collectionRequirements: MutableSet<InputRequirementId>,
     ): PreparationFailure? {
         val collection = node.getStringAttribute("collection")?.takeIf { it.isNotBlank() }
@@ -203,30 +235,8 @@ internal object ForeachProvenanceAdmission {
                 collection,
             )
         }
-        when (val ognl = IsolatedOgnlAstAdmission.inspectExactRootProperty(collection, collection)) {
-            IsolatedOgnlAstAdmission.Result.Admitted -> Unit
-            is IsolatedOgnlAstAdmission.Result.Invariant ->
-                return failure(
-                    PreparationFailureKind.PREPARATION_INVARIANT,
-                    INVARIANT_FAILURE,
-                    diagnosticType = ognl.diagnosticType,
-                )
-            is IsolatedOgnlAstAdmission.Result.Malformed ->
-                return failure(
-                    PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-                    COLLECTION_EXPRESSION_UNSUPPORTED,
-                    collection,
-                    ognl.diagnosticType,
-                )
-            is IsolatedOgnlAstAdmission.Result.Unsupported,
-            is IsolatedOgnlAstAdmission.Result.UnprovenProperty,
-            -> return failure(
-                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-                COLLECTION_EXPRESSION_UNSUPPORTED,
-                collection,
-            )
-        }
         increment(sourceCollections, CollectionAuthority(requirement.id, collection))
+        collectionExpressions += collection
         collectionRequirements += requirement.id
 
         val item = node.getStringAttribute("item")?.takeIf { it.isNotBlank() }
