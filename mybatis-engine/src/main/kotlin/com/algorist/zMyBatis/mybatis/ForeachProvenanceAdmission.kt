@@ -35,6 +35,7 @@ internal object ForeachProvenanceAdmission {
     private const val LOCAL_SHADOWING = "mybatis-foreach-local-shadowing-unsupported"
     private const val GENERATED_NAMESPACE_COLLISION = "mybatis-foreach-generated-namespace-collision"
     private const val NESTING_UNSUPPORTED = "mybatis-foreach-nesting-unsupported"
+    private const val NULLABLE_UNSUPPORTED = "mybatis-foreach-nullable-unsupported"
     private const val LOCAL_IDENTIFIER_UNSUPPORTED = "mybatis-foreach-local-identifier-unsupported"
     private const val COLLECTION_EXPRESSION_UNSUPPORTED = "mybatis-foreach-collection-expression-unsupported"
     private const val PARSE_FAILURE = "mybatis-sql-source-parse-failure"
@@ -203,6 +204,10 @@ internal object ForeachProvenanceAdmission {
         collectionExpressions: MutableSet<String>,
         collectionRequirements: MutableSet<InputRequirementId>,
     ): PreparationFailure? {
+        if (node.getStringAttribute("nullable") != null) {
+            return failure(PreparationFailureKind.UNSUPPORTED_SEMANTIC, NULLABLE_UNSUPPORTED)
+        }
+
         val collection = node.getStringAttribute("collection")?.takeIf { it.isNotBlank() }
             ?: return failure(PreparationFailureKind.UNSUPPORTED_SEMANTIC, COLLECTION_EXPRESSION_UNSUPPORTED)
         if (!simpleIdentifier.matches(collection) || collection in reservedContextNames) {
