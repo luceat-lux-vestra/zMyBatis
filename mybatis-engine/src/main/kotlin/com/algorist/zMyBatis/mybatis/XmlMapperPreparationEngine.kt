@@ -343,39 +343,3 @@ object XmlMapperPreparationEngine {
         }
     }
 }
-)
-        }
-
-    private fun resourceIdentity(snapshot: SourceSnapshot): String =
-        "zmybatis:${snapshot.fileId.value}@${snapshot.revision.value}"
-
-    private fun failed(
-        kind: PreparationFailureKind,
-        code: String,
-        diagnosticType: String? = null,
-    ): PreparationResult.Failed = PreparationResult.Failed(
-        PreparationFailure(kind, code, diagnosticType = diagnosticType),
-    )
-
-    private fun diagnosticType(failure: Throwable): String =
-        generateSequence(failure) { current ->
-            when (current) {
-                is InvocationTargetException -> current.targetException
-                else -> current.cause
-            }
-        }.lastOrNull()?.javaClass?.name ?: failure.javaClass.name
-
-    private fun rethrowFatal(failure: Throwable) {
-        if (failure is VirtualMachineError || failure is LinkageError) {
-            throw failure
-        }
-
-        var type: Class<*>? = failure.javaClass
-        while (type != null) {
-            if (type.name == "java.lang.ThreadDeath") {
-                throw failure
-            }
-            type = type.superclass
-        }
-    }
-}
