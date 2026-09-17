@@ -49,6 +49,10 @@ internal object ForeachProvenanceAdmission {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, COLLECTION_EXPRESSION_UNSUPPORTED)
         }
 
+        DynamicBoundTokenTopologyAdmission.failureOrNull(script)?.let { failure ->
+            return Result.Failed(failure)
+        }
+
         val root = try {
             XPathParser(script, false, null, XMLMapperEntityResolver()).evalNode("/script")
         } catch (_: StackOverflowError) {
