@@ -324,7 +324,13 @@ class XmlMapperPreparationEngineTest {
         <mapper namespace="$namespace">$body</mapper>
     """.trimIndent()
 
-    private fun success(result: PreparationResult) = (result as PreparationResult.Success).execution
+    private fun success(result: PreparationResult) = when (result) {
+        is PreparationResult.Success -> result.execution
+        is PreparationResult.Failed -> throw AssertionError(
+            "Expected XML preparation success but got kind=${result.failure.kind}, " +
+                "code=${result.failure.code}, diagnosticType=${result.failure.diagnosticType}",
+        )
+    }
 
     private fun assertFailure(result: PreparationResult, kind: PreparationFailureKind, code: String) {
         val failure = (result as PreparationResult.Failed).failure
