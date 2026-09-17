@@ -28,6 +28,15 @@ class DynamicBoundTokenTopologyAdmissionTest {
     }
 
     @Test
+    fun ordinaryBraceSyntaxDoesNotBecomeBoundTokenMetasyntax() {
+        assertNull(
+            DynamicBoundTokenTopologyAdmission.failureOrNull(
+                "<script>select '{json}' <if test=\"enabled\">from users</if></script>",
+            ),
+        )
+    }
+
+    @Test
     fun foreachOpenCannotSynthesizeABoundTokenWithBodyText() {
         assertTopologyFailure(
             """
