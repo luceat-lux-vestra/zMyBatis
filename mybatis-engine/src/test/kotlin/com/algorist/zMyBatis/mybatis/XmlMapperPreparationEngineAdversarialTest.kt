@@ -52,9 +52,41 @@ class XmlMapperPreparationEngineAdversarialTest {
             listOf(SourceDependencyEdge(rootFile, commonFile, SourceRange(0, 0))),
         )
 
-        val result = prepare(graph, contract(graph))
-        val execution = (result as PreparationResult.Success).execution
+        val execution = (prepare(graph, contract(graph)) as PreparationResult.Success).execution
         assertEquals("SELECT id, name FROM users", normalize(execution.sqlWithPlaceholders))
+    }
+
+    @Test
+    fun mappedStatementMustComeFromGraphClaimedRootSource() {
+        val rootFile = SourceFileId("vfs:/root.xml")
+        val otherFile = SourceFileId("vfs:/other.xml")
+        val rootContent = mapper("example.Mapper", "<sql id=\"rootOnly\">1</sql>")
+        val otherContent = mapper("example.Mapper", "<select id=\"find\">SELECT 1</select>")
+        val graph = StatementSourceGraph(
+            CapturedStatement(
+                XmlStatementId(rootFile, "example.Mapper", "find"),
+                StatementKind.SELECT,
+                SourceRange(0, rootContent.length),
+            ),
+            listOf(
+                SourceSnapshot(rootFile, SourceRevision("root-r1"), rootContent),
+                SourceSnapshot(otherFile, SourceRevision("other-r1"), otherContent),
+            ),
+            listOf(SourceDependencyEdge(rootFile, otherFile, SourceRange(0, 0))),
+        )
+
+        val failure = (prepare(graph, contract(graph)) as PreparationResult.Failed).failure
+        assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, failure.kind)
+        assertEquals("xml-preparation-root-resource-mismatch", failure.code)
+    }
+
+    @Test
+    fun mappedStatementKindMustMatchAuthoritativeGraphKind() {
+        val graph = graph("<update id=\"find\">UPDATE users SET active = 1</update>")
+
+        val failure = (prepare(graph, contract(graph)) as PreparationResult.Failed).failure
+        assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, failure.kind)
+        assertEquals("xml-preparation-statement-kind-mismatch", failure.code)
     }
 
     @Test
