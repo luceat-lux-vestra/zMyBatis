@@ -88,9 +88,11 @@ class XmlMapperPreparationEngineTest {
     fun nestedCrossNamespaceIncludeGraphUsesOnlyCapturedSnapshots() {
         val commonFile = SourceFileId("vfs:/a-common.xml")
         val auditFile = SourceFileId("vfs:/c-audit.xml")
+        val commonRevision = SourceRevision("r-common")
+        val auditRevision = SourceRevision("r-audit")
         val common = SourceSnapshot(
             commonFile,
-            SourceRevision("r-common"),
+            commonRevision,
             mapperDocument(
                 "example.Common",
                 "<sql id=\"columns\">id, <include refid=\"example.Audit.created\"/></sql>",
@@ -98,12 +100,14 @@ class XmlMapperPreparationEngineTest {
         )
         val audit = SourceSnapshot(
             auditFile,
-            SourceRevision("r-audit"),
+            auditRevision,
             mapperDocument("example.Audit", "<sql id=\"created\">created_at</sql>"),
         )
         val rootFile = SourceFileId("vfs:/b-root.xml")
+        val rootRevision = SourceRevision("r1")
         val fixture = fixture(
             file = rootFile.value,
+            revision = rootRevision.value,
             content = mapperDocument(
                 "example.Mapper",
                 "<select id=\"find\">SELECT <include refid=\"example.Common.columns\"/> FROM users</select>",
@@ -115,7 +119,12 @@ class XmlMapperPreparationEngineTest {
             ),
         )
 
-        assertEquals("SELECT id, created_at FROM users", normalize(success(prepare(fixture)).sqlWithPlaceholders))
+        val execution = success(prepare(fixture))
+        assertEquals("SELECT id, created_at FROM users", normalize(execution.sqlWithPlaceholders))
+        assertEquals(3, execution.sourceRevisions.size)
+        assertEquals(rootRevision, execution.sourceRevisions[rootFile])
+        assertEquals(commonRevision, execution.sourceRevisions[commonFile])
+        assertEquals(auditRevision, execution.sourceRevisions[auditFile])
     }
 
     @Test
