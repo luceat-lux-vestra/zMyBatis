@@ -1,6 +1,7 @@
 package com.algorist.zMyBatis.services
 
 import com.intellij.ide.util.PropertiesComponent
+import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.charset.StandardCharsets
 import java.util.Base64
@@ -99,7 +100,7 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
     fun testShutdownGateRejectsNewSelection() {
         // Shutdown is irreversible in production. Use a fresh service instance so this test cannot
         // leak the shutdown marker into other platform tests that share the project fixture.
-        val cache = ConsoleCacheService(project)
+        val cache = newIsolatedCache()
         val mapperKey = "file:///tmp/zmybatis/ClosingMapper.xml"
 
         assertFalse(cache.isShuttingDown())
@@ -110,6 +111,17 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
 
         assertTrue(cache.isShuttingDown())
         assertFalse(cache.beginSelection(mapperKey))
+    }
+
+    fun testProjectClosingHookEntersSameShutdownGate() {
+        val cache = newIsolatedCache()
+
+        assertFalse(cache.isShuttingDown())
+
+        cache.handleProjectClosing(project)
+
+        assertTrue(cache.isShuttingDown())
+        assertFalse(cache.beginSelection("file:///tmp/zmybatis/AfterCloseMapper.xml"))
     }
 
     fun testShutdownGatePreservesPersistedStateAgainstLateCleanup() {
@@ -126,7 +138,7 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
         projectStore.setValue(V2_INDEX, id)
         projectStore.setValue("$V2_RECORD_PREFIX$id", raw)
         // Keep the irreversible shutdown state local to this test instance.
-        val cache = ConsoleCacheService(project)
+        val cache = newIsolatedCache()
 
         cache.markShuttingDown()
         cache.clearSession(mapperKey)
@@ -149,6 +161,9 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
             super.tearDown()
         }
     }
+
+    private fun newIsolatedCache(): ConsoleCacheService =
+        ConsoleCacheService(project).also { Disposer.register(testRootDisposable, it) }
 
     private fun encodeField(value: String): String =
         Base64.getUrlEncoder().withoutPadding()
