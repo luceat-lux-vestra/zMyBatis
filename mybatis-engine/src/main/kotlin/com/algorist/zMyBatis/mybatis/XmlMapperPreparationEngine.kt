@@ -31,6 +31,7 @@ object XmlMapperPreparationEngine {
     private const val MAPPED_STATEMENT = "org.apache.ibatis.mapping.MappedStatement"
     private const val DYNAMIC_SQL_SOURCE = "org.apache.ibatis.scripting.xmltags.DynamicSqlSource"
     private const val BOUND_SQL = "org.apache.ibatis.mapping.BoundSql"
+    private const val RESOURCES = "org.apache.ibatis.io.Resources"
 
     private const val WRONG_SOURCE = "xml-preparation-source-kind-unsupported"
     private const val INPUT_CONTRACT_UNSUPPORTED = "xml-preparation-input-contract-unsupported"
@@ -43,6 +44,7 @@ object XmlMapperPreparationEngine {
     private const val EMPTY_SQL = "mybatis-prepared-sql-empty"
     private const val PARSE_FAILURE = "mybatis-xml-mapper-parse-failure"
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
+    private const val CLASSLOADER_INVARIANT = "mybatis-xml-classloader-isolation-failure"
 
     private val placeholder = Regex("[#\\$]\\{")
     private val dangerousAttribute = Regex(
@@ -84,7 +86,7 @@ object XmlMapperPreparationEngine {
 
         return try {
             URLClassLoader(arrayOf(myBatisLocation), platformLoader).use { loader ->
-                prepareIn(loader, source, statementId, request)
+                prepareWithContextLoader(loader, source, statementId, request)
             }
         } catch (failure: Throwable) {
             rethrowFatal(failure)
@@ -98,12 +100,42 @@ object XmlMapperPreparationEngine {
         }
     }
 
+    private fun prepareWithContextLoader(
+        loader: URLClassLoader,
+        source: XmlMapperPreparationSource,
+        statementId: XmlStatementId,
+        request: MyBatisPreparationRequest,
+    ): PreparationResult {
+        val thread = Thread.currentThread()
+        val previousContextLoader = thread.contextClassLoader
+        return try {
+            thread.contextClassLoader = loader
+            prepareIn(loader, source, statementId, request)
+        } catch (failure: SecurityException) {
+            failed(
+                PreparationFailureKind.PREPARATION_INVARIANT,
+                CLASSLOADER_INVARIANT,
+                failure.javaClass.name,
+            )
+        } finally {
+            try {
+                thread.contextClassLoader = previousContextLoader
+            } catch (failure: SecurityException) {
+                rethrowFatal(failure)
+            }
+        }
+    }
+
     private fun prepareIn(
         loader: URLClassLoader,
         source: XmlMapperPreparationSource,
         statementId: XmlStatementId,
         request: MyBatisPreparationRequest,
     ): PreparationResult {
+        if (!hardenMyBatisResourceClassLoaders(loader)) {
+            return failed(PreparationFailureKind.PREPARATION_INVARIANT, CLASSLOADER_INVARIANT)
+        }
+
         val configurationClass = Class.forName(CONFIGURATION, true, loader)
         if (configurationClass.classLoader !== loader) {
             return failed(PreparationFailureKind.PREPARATION_INVARIANT, "mybatis-configuration-not-isolated")
@@ -206,6 +238,33 @@ object XmlMapperPreparationEngine {
                 failure.javaClass.name,
             )
         }
+    }
+
+    /**
+     * MyBatis 3.5.19 Resources.classForName() falls back through default, TCCL, its own loader,
+     * and the system classloader, and initializes a class once found. Because this Resources copy
+     * lives in a fresh child loader, pinning both mutable fallback fields to that child is local to
+     * one preparation and prevents mapper namespaces from escaping to plugin/test/application
+     * classloaders. prepareWithContextLoader() pins the TCCL leg for the same interval.
+     */
+    private fun hardenMyBatisResourceClassLoaders(loader: URLClassLoader): Boolean {
+        val resourcesClass = Class.forName(RESOURCES, true, loader)
+        if (resourcesClass.classLoader !== loader) return false
+
+        resourcesClass
+            .getMethod("setDefaultClassLoader", ClassLoader::class.java)
+            .invoke(null, loader)
+        if (resourcesClass.getMethod("getDefaultClassLoader").invoke(null) !== loader) return false
+
+        val wrapperField = resourcesClass.getDeclaredField("classLoaderWrapper")
+        if (!wrapperField.trySetAccessible()) return false
+        val wrapper = wrapperField.get(null) ?: return false
+        if (wrapper.javaClass.classLoader !== loader) return false
+
+        val systemLoaderField = wrapper.javaClass.getDeclaredField("systemClassLoader")
+        if (!systemLoaderField.trySetAccessible()) return false
+        systemLoaderField.set(wrapper, loader)
+        return systemLoaderField.get(wrapper) === loader
     }
 
     private fun preflight(snapshot: SourceSnapshot): PreparationFailure? {
