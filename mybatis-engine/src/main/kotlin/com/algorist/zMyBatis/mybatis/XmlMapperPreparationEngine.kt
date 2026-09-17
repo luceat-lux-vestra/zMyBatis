@@ -40,6 +40,8 @@ object XmlMapperPreparationEngine {
     private const val CLASS_LOADING_UNSUPPORTED = "xml-preparation-runtime-class-loading-unsupported"
     private const val EXTERNAL_ENTITY_UNSUPPORTED = "xml-preparation-external-entity-unsupported"
     private const val ROOT_STATEMENT_MISSING = "xml-preparation-root-statement-missing"
+    private const val ROOT_RESOURCE_MISMATCH = "xml-preparation-root-resource-mismatch"
+    private const val STATEMENT_KIND_MISMATCH = "xml-preparation-statement-kind-mismatch"
     private const val MAPPING_UNEXPECTED = "xml-preparation-parameter-mapping-unexpected"
     private const val EMPTY_SQL = "mybatis-prepared-sql-empty"
     private const val PARSE_FAILURE = "mybatis-xml-mapper-parse-failure"
@@ -161,7 +163,7 @@ object XmlMapperPreparationEngine {
         )
 
         source.sourceGraph.sourceSnapshots.forEach { snapshot ->
-            val resource = "zmybatis:${snapshot.fileId.value}@${snapshot.revision.value}"
+            val resource = resourceIdentity(snapshot)
             ByteArrayInputStream(snapshot.content.toByteArray(StandardCharsets.UTF_8)).use { input ->
                 val builder = constructor.newInstance(input, configuration, resource, sqlFragments)
                 builderClass.getMethod("parse").invoke(builder)
@@ -184,6 +186,20 @@ object XmlMapperPreparationEngine {
         }
         if (mappedStatement == null || !mappedStatementClass.isInstance(mappedStatement)) {
             return failed(PreparationFailureKind.MYBATIS_PARSE, ROOT_STATEMENT_MISSING)
+        }
+
+        val rootSnapshot = source.sourceGraph.sourceSnapshots.singleOrNull {
+            it.fileId == statementId.sourceFileId
+        } ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
+        val mappedResource = mappedStatementClass.getMethod("getResource").invoke(mappedStatement) as? String
+        if (mappedResource != resourceIdentity(rootSnapshot)) {
+            return failed(PreparationFailureKind.PREPARATION_INVARIANT, ROOT_RESOURCE_MISMATCH)
+        }
+
+        val sqlCommandType = mappedStatementClass.getMethod("getSqlCommandType").invoke(mappedStatement) as? Enum<*>
+            ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
+        if (sqlCommandType.name != request.statementKind.name) {
+            return failed(PreparationFailureKind.PREPARATION_INVARIANT, STATEMENT_KIND_MISMATCH)
         }
 
         val sqlSource = mappedStatementClass.getMethod("getSqlSource").invoke(mappedStatement)
@@ -286,6 +302,9 @@ object XmlMapperPreparationEngine {
         }
         return null
     }
+
+    private fun resourceIdentity(snapshot: SourceSnapshot): String =
+        "zmybatis:${snapshot.fileId.value}@${snapshot.revision.value}"
 
     private fun failed(
         kind: PreparationFailureKind,
