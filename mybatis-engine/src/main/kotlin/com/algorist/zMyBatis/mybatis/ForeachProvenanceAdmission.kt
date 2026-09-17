@@ -74,6 +74,7 @@ internal object ForeachProvenanceAdmission {
         }
 
         val sourceLocals = linkedMapOf<String, InternalBindingKind>()
+        val sourceCollections = linkedMapOf<CollectionAuthority, Int>()
         val collectionRequirements = linkedSetOf<InputRequirementId>()
         val pending = ArrayDeque<PendingNode>()
         pending.addLast(PendingNode(root, depth = 0, insideForeach = false))
@@ -101,6 +102,7 @@ internal object ForeachProvenanceAdmission {
                     callerAliases = callerAliases,
                     bindNames = bindNames,
                     sourceLocals = sourceLocals,
+                    sourceCollections = sourceCollections,
                     collectionRequirements = collectionRequirements,
                 )
                 if (admitted != null) return Result.Failed(admitted)
@@ -119,9 +121,22 @@ internal object ForeachProvenanceAdmission {
             }
         }
 
-        val sourceAuthority = sourceLocals.mapTo(linkedSetOf()) { it.key to it.value }
-        val contractAuthority = foreachContractBindings.mapTo(linkedSetOf()) { it.name to it.kind }
-        if (sourceAuthority != contractAuthority) {
+        val sourceLocalAuthority = sourceLocals.mapTo(linkedSetOf()) { it.key to it.value }
+        val contractLocalAuthority = foreachContractBindings.mapTo(linkedSetOf()) { it.name to it.kind }
+        if (sourceLocalAuthority != contractLocalAuthority) {
+            return failed(PreparationFailureKind.BINDING_RESOLUTION, SOURCE_CONTRACT_MISMATCH)
+        }
+
+        val contractCollections = linkedMapOf<CollectionAuthority, Int>()
+        for (requirement in contract.requirements) {
+            for (evidence in requirement.provenance.evidence.filterIsInstance<InputEvidence.ForeachCollection>()) {
+                increment(
+                    contractCollections,
+                    CollectionAuthority(requirement.id, evidence.expression),
+                )
+            }
+        }
+        if (sourceCollections != contractCollections) {
             return failed(PreparationFailureKind.BINDING_RESOLUTION, SOURCE_CONTRACT_MISMATCH)
         }
 
@@ -149,6 +164,7 @@ internal object ForeachProvenanceAdmission {
         callerAliases: Map<String, InputAlias>,
         bindNames: Set<String>,
         sourceLocals: MutableMap<String, InternalBindingKind>,
+        sourceCollections: MutableMap<CollectionAuthority, Int>,
         collectionRequirements: MutableSet<InputRequirementId>,
     ): PreparationFailure? {
         val collection = node.getStringAttribute("collection")?.takeIf { it.isNotBlank() }
@@ -173,7 +189,7 @@ internal object ForeachProvenanceAdmission {
                 collection,
             )
         val collectionEvidence = requirement.provenance.evidence.filterIsInstance<InputEvidence.ForeachCollection>()
-        if (collectionEvidence.size != 1 || collectionEvidence.single().expression != collection) {
+        if (collectionEvidence.none { it.expression == collection }) {
             return failure(
                 PreparationFailureKind.BINDING_RESOLUTION,
                 COLLECTION_PROVENANCE_MISSING,
@@ -210,6 +226,7 @@ internal object ForeachProvenanceAdmission {
                 collection,
             )
         }
+        increment(sourceCollections, CollectionAuthority(requirement.id, collection))
         collectionRequirements += requirement.id
 
         val item = node.getStringAttribute("item")?.takeIf { it.isNotBlank() }
@@ -310,6 +327,13 @@ internal object ForeachProvenanceAdmission {
         return null
     }
 
+    private fun increment(
+        counts: MutableMap<CollectionAuthority, Int>,
+        authority: CollectionAuthority,
+    ) {
+        counts[authority] = counts.getOrDefault(authority, 0) + 1
+    }
+
     private fun failed(
         kind: PreparationFailureKind,
         code: String,
@@ -328,6 +352,11 @@ internal object ForeachProvenanceAdmission {
         val node: XNode,
         val depth: Int,
         val insideForeach: Boolean,
+    )
+
+    private data class CollectionAuthority(
+        val requirementId: InputRequirementId,
+        val expression: String,
     )
 
     sealed interface Result {
