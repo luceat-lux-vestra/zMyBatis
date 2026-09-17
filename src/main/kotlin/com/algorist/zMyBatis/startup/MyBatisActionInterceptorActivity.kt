@@ -10,8 +10,6 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.ProjectManager
-import com.intellij.openapi.project.ProjectManagerListener
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.VirtualFileManager
@@ -26,23 +24,38 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         LOG.info("zMyBatis: startup activity running")
 
-        // Register before crossing the EDT scheduling boundary so project-close cannot race past
-        // the shutdown marker.
-        ProjectManager.getInstance().addProjectManagerListener(project, object : ProjectManagerListener {
-            override fun projectClosing(closingProject: Project) {
-                if (closingProject === project) {
-                    LOG.info("zMyBatis: project closing — marking shutdown for session preservation")
-                    ConsoleCacheService.getInstance(project).markShuttingDown()
-                }
-            }
-        })
+        scheduleStartupRestore(
+            project = project,
+            cacheProvider = ConsoleCacheService::getInstance,
+            scheduler = { task, expired ->
+                ApplicationManager.getApplication().invokeLater(task) { expired() }
+            },
+            restore = ::restoreSessionsIntoCache
+        )
+    }
 
-        ApplicationManager.getApplication().invokeLater {
-            if (project.isDisposed) return@invokeLater
-            val cache = ConsoleCacheService.getInstance(project)
-            if (cache.isShuttingDown()) return@invokeLater
-            restoreSessionsIntoCache(project, cache)
+    /**
+     * Acquires the project service before crossing the asynchronous EDT boundary. The scheduled
+     * callback only retains that proven service instance; it never performs a new service lookup.
+     *
+     * [scheduler] receives the same lifecycle predicate used by the callback so the platform can
+     * drop queued work after project close or plugin-unload disposal, while the callback also
+     * re-checks the predicate defensively if it has already been dequeued.
+     */
+    internal fun scheduleStartupRestore(
+        project: Project,
+        cacheProvider: (Project) -> ConsoleCacheService,
+        scheduler: (Runnable, () -> Boolean) -> Unit,
+        restore: (Project, ConsoleCacheService) -> Unit
+    ) {
+        val cache = cacheProvider(project)
+        val expired = { project.isDisposed || cache.isShuttingDown() }
+        val task = Runnable {
+            if (!expired()) {
+                restore(project, cache)
+            }
         }
+        scheduler(task, expired)
     }
 
     private fun restoreSessionsIntoCache(project: Project, cache: ConsoleCacheService) {
