@@ -142,6 +142,7 @@ class MyBatisPreparationRequest private constructor(
                         )
                     }
                 }
+                is XmlMapperPreparationSource -> Unit
             }
 
             return PreparationRequestResult.Ready(
