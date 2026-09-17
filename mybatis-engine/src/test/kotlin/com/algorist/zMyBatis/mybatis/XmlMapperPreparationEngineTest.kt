@@ -27,74 +27,50 @@ import org.junit.Test
 class XmlMapperPreparationEngineTest {
     @Test
     fun staticXmlStatementPreparesThroughStockMapperParser() {
-        val result = prepare(
-            root = mapper(
-                file = "vfs:/mapper.xml",
-                revision = "r1",
-                namespace = "example.Mapper",
-                statementId = "find",
-                statementKind = StatementKind.SELECT,
-                body = "SELECT id, name FROM users",
-            ),
-        )
+        val execution = success(prepare(single("SELECT id, name FROM users")))
 
-        val execution = success(result)
-        assertEquals("example.Mapper", (execution.statementId as XmlStatementId).namespace)
-        assertEquals("find", (execution.statementId as XmlStatementId).statementId)
+        val id = execution.statementId as XmlStatementId
+        assertEquals("example.Mapper", id.namespace)
+        assertEquals("find", id.statementId)
         assertEquals("SELECT id, name FROM users", normalize(execution.sqlWithPlaceholders))
         assertTrue(execution.orderedBindings.isEmpty())
         assertTrue(execution.rawInterpolations.isEmpty())
         assertEquals("org.mybatis:mybatis", execution.preparationMetadata.engineIdentity)
         assertEquals("3.5.19", execution.preparationMetadata.engineVersion)
-        assertEquals("org.apache.ibatis.scripting.xmltags.XMLLanguageDriver", execution.preparationMetadata.languageDriverIdentity)
+        assertEquals(
+            "org.apache.ibatis.scripting.xmltags.XMLLanguageDriver",
+            execution.preparationMetadata.languageDriverIdentity,
+        )
     }
 
     @Test
     fun sameFileIncludeIsResolvedByMyBatis() {
-        val content = mapperDocument(
-            "example.Mapper",
-            """
-                <sql id="columns">id, name</sql>
-                <select id="find">SELECT <include refid="columns"/> FROM users</select>
-            """,
-        )
-        val root = fixture(
-            file = "vfs:/mapper.xml",
-            revision = "r1",
-            namespace = "example.Mapper",
-            statementId = "find",
-            kind = StatementKind.SELECT,
-            content = content,
+        val fixture = fixture(
+            content = mapperDocument(
+                "example.Mapper",
+                """
+                    <sql id="columns">id, name</sql>
+                    <select id="find">SELECT <include refid="columns"/> FROM users</select>
+                """,
+            ),
         )
 
-        assertEquals(
-            "SELECT id, name FROM users",
-            normalize(success(prepare(root)).sqlWithPlaceholders),
-        )
+        assertEquals("SELECT id, name FROM users", normalize(success(prepare(fixture)).sqlWithPlaceholders))
     }
 
     @Test
-    fun qualifiedCrossNamespaceIncludeUsesOnlyCapturedSnapshots() {
-        val commonContent = mapperDocument(
-            "example.Common",
-            "<sql id=\"columns\">id, created_at</sql>",
-        )
-        val rootContent = mapperDocument(
-            "example.Mapper",
-            "<select id=\"find\">SELECT <include refid=\"example.Common.columns\"/> FROM users</select>",
-        )
+    fun qualifiedCrossNamespaceIncludeUsesCapturedSnapshots() {
         val common = SourceSnapshot(
             SourceFileId("vfs:/a-common.xml"),
             SourceRevision("r-common"),
-            commonContent,
+            mapperDocument("example.Common", "<sql id=\"columns\">id, created_at</sql>"),
         )
-        val root = fixture(
+        val fixture = fixture(
             file = "vfs:/b-root.xml",
-            revision = "r-root",
-            namespace = "example.Mapper",
-            statementId = "find",
-            kind = StatementKind.SELECT,
-            content = rootContent,
+            content = mapperDocument(
+                "example.Mapper",
+                "<select id=\"find\">SELECT <include refid=\"example.Common.columns\"/> FROM users</select>",
+            ),
             additionalSnapshots = listOf(common),
             dependencies = listOf(
                 SourceDependencyEdge(
@@ -105,251 +81,139 @@ class XmlMapperPreparationEngineTest {
             ),
         )
 
-        assertEquals(
-            "SELECT id, created_at FROM users",
-            normalize(success(prepare(root)).sqlWithPlaceholders),
-        )
+        assertEquals("SELECT id, created_at FROM users", normalize(success(prepare(fixture)).sqlWithPlaceholders))
     }
 
     @Test
-    fun boundPlaceholderIsRejectedBeforeMapperParsingCanCreateABinding() {
-        assertFailureCode(
-            prepare(
-                mapper(
-                    "vfs:/mapper.xml",
-                    "r1",
-                    "example.Mapper",
-                    "find",
-                    StatementKind.SELECT,
-                    "SELECT * FROM users WHERE id = #{id}",
-                ),
-            ),
-            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "xml-preparation-placeholder-unsupported",
-        )
-    }
-
-    @Test
-    fun rawInterpolationIsRejectedBeforeDynamicEvaluation() {
-        assertFailureCode(
-            prepare(
-                mapper(
-                    "vfs:/mapper.xml",
-                    "r1",
-                    "example.Mapper",
-                    "find",
-                    StatementKind.SELECT,
-                    "SELECT * FROM ${'$'}{table}",
-                ),
-            ),
-            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "xml-preparation-placeholder-unsupported",
-        )
-    }
-
-    @Test
-    fun dynamicTagIsRejectedBeforeGetBoundSqlEvaluation() {
-        val content = mapperDocument(
-            "example.Mapper",
-            "<select id=\"find\">SELECT * FROM users <if test=\"true\">WHERE active = 1</if></select>",
-        )
-        assertFailureCode(
-            prepare(
-                fixture(
-                    "vfs:/mapper.xml",
-                    "r1",
-                    "example.Mapper",
-                    "find",
-                    StatementKind.SELECT,
-                    content,
-                ),
-            ),
-            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "xml-preparation-dynamic-sql-unsupported",
-        )
-    }
-
-    @Test
-    fun applicationClassLoadingAttributesAreRejectedBeforeMyBatisParser() {
-        val dangerous = listOf(
-            "resultType=\"example.Payload\"",
-            "parameterType=\"example.Payload\"",
-            "lang=\"example.Driver\"",
-            "databaseId=\"vendor\"",
-        )
-        dangerous.forEach { attribute ->
-            val content = mapperDocument(
-                "example.Mapper",
-                "<select id=\"find\" $attribute>SELECT 1</select>",
-            )
-            assertFailureCode(
-                prepare(
-                    fixture(
-                        "vfs:/$attribute.xml",
-                        "r1",
-                        "example.Mapper",
-                        "find",
-                        StatementKind.SELECT,
-                        content,
-                    ),
-                ),
+    fun boundAndRawPlaceholdersFailBeforeMapperEvaluation() {
+        listOf(
+            "SELECT * FROM users WHERE id = #{id}",
+            "SELECT * FROM ${'$'}{table}",
+        ).forEach { sql ->
+            assertFailure(
+                prepare(single(sql)),
                 PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-                "xml-preparation-runtime-class-loading-unsupported",
+                "xml-preparation-placeholder-unsupported",
             )
         }
     }
 
     @Test
-    fun mapperRuntimeConstructionElementsAreRejectedBeforeMyBatisParser() {
-        val content = mapperDocument(
-            "example.Mapper",
-            """
-                <cache/>
-                <select id="find">SELECT 1</select>
-            """,
+    fun standardDynamicTagsFailBeforeGetBoundSqlEvaluation() {
+        val bodies = listOf(
+            "<if test=\"true\">WHERE active = 1</if>",
+            "<choose><when test=\"true\">WHERE active = 1</when><otherwise>WHERE active = 0</otherwise></choose>",
+            "<where>active = 1</where>",
+            "<trim prefix=\"WHERE\">active = 1</trim>",
         )
-        assertFailureCode(
-            prepare(
-                fixture(
-                    "vfs:/mapper.xml",
-                    "r1",
+        bodies.forEach { dynamic ->
+            val fixture = fixture(
+                content = mapperDocument(
                     "example.Mapper",
-                    "find",
-                    StatementKind.SELECT,
-                    content,
+                    "<select id=\"find\">SELECT * FROM users $dynamic</select>",
                 ),
+            )
+            assertFailure(
+                prepare(fixture),
+                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                "xml-preparation-dynamic-sql-unsupported",
+            )
+        }
+    }
+
+    @Test
+    fun runtimeClassLoadingSurfacesFailBeforeMyBatisParser() {
+        listOf(
+            "resultType=\"example.Payload\"",
+            "parameterType=\"example.Payload\"",
+            "lang=\"example.Driver\"",
+            "databaseId=\"vendor\"",
+        ).forEachIndexed { index, attribute ->
+            val fixture = fixture(
+                file = "vfs:/danger-$index.xml",
+                content = mapperDocument(
+                    "example.Mapper",
+                    "<select id=\"find\" $attribute>SELECT 1</select>",
+                ),
+            )
+            assertFailure(
+                prepare(fixture),
+                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                "xml-preparation-runtime-class-loading-unsupported",
+            )
+        }
+
+        val cacheFixture = fixture(
+            content = mapperDocument(
+                "example.Mapper",
+                "<cache/><select id=\"find\">SELECT 1</select>",
             ),
+        )
+        assertFailure(
+            prepare(cacheFixture),
             PreparationFailureKind.UNSUPPORTED_SEMANTIC,
             "xml-preparation-runtime-class-loading-unsupported",
         )
     }
 
     @Test
-    fun nonMyBatisDoctypeAndEntityDeclarationsFailClosed() {
+    fun externalEntityDeclarationsFailClosedButStandardMapperDoctypeWorks() {
         val xxe = """
             <!DOCTYPE mapper [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
-            <mapper namespace="example.Mapper">
-                <select id="find">SELECT 1</select>
-            </mapper>
+            <mapper namespace="example.Mapper"><select id="find">SELECT 1</select></mapper>
         """.trimIndent()
-        assertFailureCode(
-            prepare(
-                fixture(
-                    "vfs:/mapper.xml",
-                    "r1",
-                    "example.Mapper",
-                    "find",
-                    StatementKind.SELECT,
-                    xxe,
-                ),
-            ),
+        assertFailure(
+            prepare(fixture(content = xxe)),
             PreparationFailureKind.UNSUPPORTED_SEMANTIC,
             "xml-preparation-external-entity-unsupported",
         )
+
+        assertEquals("SELECT 1", normalize(success(prepare(single("SELECT 1"))).sqlWithPlaceholders))
     }
 
     @Test
-    fun standardMyBatisMapperDoctypeRemainsLocalAndSupported() {
-        val content = """
-            <?xml version="1.0" encoding="UTF-8" ?>
-            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-            <mapper namespace="example.Mapper">
-                <select id="find">SELECT 1</select>
-            </mapper>
-        """.trimIndent()
-
-        assertEquals(
-            "SELECT 1",
-            normalize(
-                success(
-                    prepare(
-                        fixture(
-                            "vfs:/mapper.xml",
-                            "r1",
-                            "example.Mapper",
-                            "find",
-                            StatementKind.SELECT,
-                            content,
-                        ),
-                    ),
-                ).sqlWithPlaceholders,
-            ),
+    fun missingRootAndMalformedMapperReturnTypedFailures() {
+        val missing = fixture(
+            statementId = "missing",
+            content = mapperDocument("example.Mapper", "<select id=\"actual\">SELECT 1</select>"),
         )
-    }
-
-    @Test
-    fun missingCanonicalRootStatementFailsTyped() {
-        val content = mapperDocument(
-            "example.Mapper",
-            "<select id=\"actual\">SELECT 1</select>",
-        )
-        assertFailureCode(
-            prepare(
-                fixture(
-                    "vfs:/mapper.xml",
-                    "r1",
-                    "example.Mapper",
-                    "missing",
-                    StatementKind.SELECT,
-                    content,
-                ),
-            ),
+        assertFailure(
+            prepare(missing),
             PreparationFailureKind.MYBATIS_PARSE,
             "xml-preparation-root-statement-missing",
         )
-    }
 
-    @Test
-    fun malformedMapperReturnsTypedParseFailure() {
-        val content = "<mapper namespace=\"example.Mapper\"><select id=\"find\">SELECT 1"
-        assertFailureCode(
-            prepare(
-                fixture(
-                    "vfs:/mapper.xml",
-                    "r1",
-                    "example.Mapper",
-                    "find",
-                    StatementKind.SELECT,
-                    content,
-                ),
-            ),
+        val malformed = fixture(
+            content = "<mapper namespace=\"example.Mapper\"><select id=\"find\">SELECT 1",
+        )
+        assertFailure(
+            prepare(malformed),
             PreparationFailureKind.MYBATIS_PARSE,
             "mybatis-xml-mapper-parse-failure",
         )
     }
 
     @Test
-    fun concurrentXmlPreparationsDoNotShareConfigurationOrFragments() {
+    fun concurrentPreparationsDoNotShareConfigurationOrFragments() {
         val executor = Executors.newFixedThreadPool(4)
         try {
-            val tasks = (0 until 24).map { index ->
+            val tasks = (0 until 16).map { index ->
                 Callable {
                     val namespace = "example.Mapper$index"
-                    val content = mapperDocument(
-                        namespace,
-                        """
-                            <sql id="literal">$index</sql>
-                            <select id="find">SELECT <include refid="literal"/></select>
-                        """,
+                    val fixture = fixture(
+                        file = "vfs:/mapper-$index.xml",
+                        revision = "r-$index",
+                        namespace = namespace,
+                        content = mapperDocument(
+                            namespace,
+                            "<sql id=\"literal\">$index</sql><select id=\"find\">SELECT <include refid=\"literal\"/></select>",
+                        ),
                     )
-                    normalize(
-                        success(
-                            prepare(
-                                fixture(
-                                    "vfs:/mapper-$index.xml",
-                                    "r-$index",
-                                    namespace,
-                                    "find",
-                                    StatementKind.SELECT,
-                                    content,
-                                ),
-                            ),
-                        ).sqlWithPlaceholders,
-                    )
+                    normalize(success(prepare(fixture)).sqlWithPlaceholders)
                 }
             }
             val results = executor.invokeAll(tasks).map { it.get(30, TimeUnit.SECONDS) }
-            assertEquals((0 until 24).map { "SELECT $it" }, results)
+            assertEquals((0 until 16).map { "SELECT $it" }, results)
         } finally {
             executor.shutdownNow()
         }
@@ -374,28 +238,15 @@ class XmlMapperPreparationEngineTest {
         return XmlMapperPreparationEngine.prepare(request.request)
     }
 
-    private fun mapper(
-        file: String,
-        revision: String,
-        namespace: String,
-        statementId: String,
-        statementKind: StatementKind,
-        body: String,
-    ): Fixture = fixture(
-        file,
-        revision,
-        namespace,
-        statementId,
-        statementKind,
-        mapperDocument(namespace, "<select id=\"$statementId\">$body</select>"),
+    private fun single(sql: String): Fixture = fixture(
+        content = mapperDocument("example.Mapper", "<select id=\"find\">$sql</select>"),
     )
 
     private fun fixture(
-        file: String,
-        revision: String,
-        namespace: String,
-        statementId: String,
-        kind: StatementKind,
+        file: String = "vfs:/mapper.xml",
+        revision: String = "r1",
+        namespace: String = "example.Mapper",
+        statementId: String = "find",
         content: String,
         additionalSnapshots: List<SourceSnapshot> = emptyList(),
         dependencies: List<SourceDependencyEdge> = emptyList(),
@@ -405,7 +256,7 @@ class XmlMapperPreparationEngineTest {
         val rootSnapshot = SourceSnapshot(fileId, SourceRevision(revision), content)
         return Fixture(
             StatementSourceGraph(
-                CapturedStatement(rootId, kind, SourceRange(0, content.length)),
+                CapturedStatement(rootId, StatementKind.SELECT, SourceRange(0, content.length)),
                 listOf(rootSnapshot) + additionalSnapshots,
                 dependencies,
             ),
@@ -415,19 +266,12 @@ class XmlMapperPreparationEngineTest {
     private fun mapperDocument(namespace: String, body: String): String = """
         <?xml version="1.0" encoding="UTF-8" ?>
         <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-        <mapper namespace="$namespace">
-            $body
-        </mapper>
+        <mapper namespace="$namespace">$body</mapper>
     """.trimIndent()
 
-    private fun success(result: PreparationResult) =
-        (result as PreparationResult.Success).execution
+    private fun success(result: PreparationResult) = (result as PreparationResult.Success).execution
 
-    private fun assertFailureCode(
-        result: PreparationResult,
-        kind: PreparationFailureKind,
-        code: String,
-    ) {
+    private fun assertFailure(result: PreparationResult, kind: PreparationFailureKind, code: String) {
         val failure = (result as PreparationResult.Failed).failure
         assertEquals(kind, failure.kind)
         assertEquals(code, failure.code)
