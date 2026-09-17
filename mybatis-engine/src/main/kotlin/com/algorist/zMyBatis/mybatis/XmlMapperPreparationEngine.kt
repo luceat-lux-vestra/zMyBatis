@@ -307,7 +307,11 @@ object XmlMapperPreparationEngine {
         content.indices.any { index ->
             index + 1 < content.length &&
                 content[index + 1] == '{' &&
-                (content[index] == '#' || content[index] == '        "zmybatis:${snapshot.fileId.value}@${snapshot.revision.value}"
+                (content[index] == '#' || content[index].code == 36)
+        }
+
+    private fun resourceIdentity(snapshot: SourceSnapshot): String =
+        "zmybatis:${snapshot.fileId.value}@${snapshot.revision.value}"
 
     private fun failed(
         kind: PreparationFailureKind,
