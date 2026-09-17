@@ -5,7 +5,6 @@ import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import java.util.ArrayDeque
 import org.apache.ibatis.builder.xml.XMLMapperEntityResolver
 import org.apache.ibatis.parsing.GenericTokenParser
-import org.apache.ibatis.parsing.XNode
 import org.apache.ibatis.parsing.XPathParser
 import org.w3c.dom.CharacterData
 import org.w3c.dom.Node
@@ -18,8 +17,8 @@ import org.w3c.dom.Node
  * Dynamic tags concatenate independently parsed text and structural attributes. Without this gate,
  * fragments such as foreach `open="#{"` plus body text `id}` can synthesize a new `#{id}` mapping
  * that did not exist as one source placeholder. This admission does not evaluate dynamic SQL; it
- * only rejects fragments whose residual token metasyntax could create, escape, or extend a bound
- * token when MyBatis later combines fragments.
+ * only rejects fragments whose residual opener/escape metasyntax could create, escape, or extend a
+ * bound token when MyBatis later combines fragments.
  */
 internal object DynamicBoundTokenTopologyAdmission {
     private const val TOPOLOGY_UNSUPPORTED = "java-annotation-dynamic-bound-token-topology-unsupported"
@@ -92,7 +91,11 @@ internal object DynamicBoundTokenTopologyAdmission {
 
     private fun fragmentIsTopologySafe(fragment: String): Boolean {
         val residual = boundTokenParser.parse(fragment)
-        return residual.none { it == '#' || it == '{' || it == '\\' }
+        // A residual '#' can become the first half of a new '#{' opener when dynamic fragments are
+        // concatenated. A residual backslash can escape a following authoritative opener. A lone
+        // '{' cannot create a bound token once residual '#' is forbidden, so ordinary brace syntax
+        // remains supportable.
+        return residual.none { it == '#' || it == '\\' }
     }
 
     private fun unsupported() = PreparationFailure(
