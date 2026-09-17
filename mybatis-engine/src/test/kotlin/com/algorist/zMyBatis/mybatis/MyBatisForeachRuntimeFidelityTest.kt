@@ -41,7 +41,6 @@ import java.math.BigInteger
 import java.net.URLClassLoader
 import org.apache.ibatis.session.Configuration
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -84,7 +83,7 @@ class MyBatisForeachRuntimeFidelityTest {
         """.trimIndent()
         val isolated = IsolatedDynamicMyBatisPreparation.prepare(
             script = script,
-            parameterType = MyBatisParameterType.Multi,
+            parameterType = MyBatisParameterType.Single(List::class.java),
             parameterValues = mapOf("ids" to listOf(17L)),
             admittedForeachLocals = mapOf("item" to InternalBindingKind.FOREACH_ITEM),
         )
@@ -92,11 +91,9 @@ class MyBatisForeachRuntimeFidelityTest {
         assertTrue(isolated is IsolatedDynamicMyBatisPreparation.Result.Ready)
         isolated as IsolatedDynamicMyBatisPreparation.Result.Ready
         val mapping = isolated.boundSql.mappings.single()
-        val generated = mapping.generatedLocal
-        assertNotNull(generated)
-        generated!!
+        val generated = requireNotNull(mapping.generatedLocal)
 
-        val myBatisLocation = Configuration::class.java.protectionDomain.codeSource.location
+        val myBatisLocation = requireNotNull(Configuration::class.java.protectionDomain.codeSource?.location)
         URLClassLoader(arrayOf(myBatisLocation), ClassLoader.getPlatformClassLoader()).use { loader ->
             val foreachClass = Class.forName(
                 "org.apache.ibatis.scripting.xmltags.ForEachSqlNode",
@@ -110,7 +107,7 @@ class MyBatisForeachRuntimeFidelityTest {
             )
             itemize.isAccessible = true
             val expectedRoot = itemize.invoke(null, "item", generated.uniqueNumber) as String
-            assertEquals(expectedRoot, mapping.property!!.substringBefore('.'))
+            assertEquals(expectedRoot, requireNotNull(mapping.property).substringBefore('.'))
         }
         assertEquals("item", generated.sourceLocalName)
         assertEquals(InternalBindingKind.FOREACH_ITEM, generated.kind)
