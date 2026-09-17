@@ -135,11 +135,11 @@ internal object ForeachProvenanceAdmission {
         }
 
         val contractCollections = linkedMapOf<CollectionAuthority, Int>()
-        for (requirement in contract.requirements) {
-            for (evidence in requirement.provenance.evidence.filterIsInstance<InputEvidence.ForeachCollection>()) {
+        for ((id, _, _, _, provenance) in contract.requirements) {
+            for ((expression) in provenance.evidence.filterIsInstance<InputEvidence.ForeachCollection>()) {
                 increment(
                     contractCollections,
-                    CollectionAuthority(requirement.id, evidence.expression),
+                    CollectionAuthority(id, expression),
                 )
             }
         }
