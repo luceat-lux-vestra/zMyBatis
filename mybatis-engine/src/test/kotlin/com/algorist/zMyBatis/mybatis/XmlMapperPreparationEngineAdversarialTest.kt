@@ -137,11 +137,15 @@ class XmlMapperPreparationEngineAdversarialTest {
     }
 
     @Test
-    fun remainingStandardDynamicNodesFailWithoutRuntimeEvaluation() {
+    fun allStandardDynamicNodeFamiliesFailWithoutRuntimeEvaluation() {
         val dynamicNodes = listOf(
+            "<if test=\"true\">WHERE active = 1</if>",
+            "<choose><when test=\"true\">WHERE active = 1</when><otherwise>WHERE active = 0</otherwise></choose>",
             "<foreach collection=\"items\" item=\"item\">x</foreach>",
             "<bind name=\"x\" value=\"1\"/>x",
-            "<set>value = 1</set>",
+            "<where>active = 1</where>",
+            "<set>active = 1</set>",
+            "<trim prefix=\"WHERE\">active = 1</trim>",
         )
         dynamicNodes.forEachIndexed { index, node ->
             val graph = graph("<select id=\"find\">SELECT * FROM users $node</select>", "vfs:/dynamic-$index.xml")
