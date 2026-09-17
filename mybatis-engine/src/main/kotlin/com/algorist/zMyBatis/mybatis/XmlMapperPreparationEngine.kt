@@ -48,7 +48,7 @@ object XmlMapperPreparationEngine {
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
     private const val CLASSLOADER_INVARIANT = "mybatis-xml-classloader-isolation-failure"
 
-    private val placeholder = Regex("[#\\$]\\{")
+    private val placeholder = Regex("""[#${'$'}]\{""")
     private val dangerousAttribute = Regex(
         """(?i)\b(?:databaseId|lang|parameterType|parameterMap|resultType|resultMap|typeHandler|javaType)\s*=""",
     )
@@ -56,7 +56,7 @@ object XmlMapperPreparationEngine {
         """(?i)<\s*(?:resultMap|parameterMap|cache|cache-ref|selectKey)\b""",
     )
     private val safeMapperDoctype = Regex(
-        """(?is)<!DOCTYPE\s+mapper\s+PUBLIC\s+[\"']-//mybatis\.org//DTD Mapper 3\.0//EN[\"']\s+[\"']https?://mybatis\.org/dtd/mybatis-3-mapper\.dtd[\"']\s*>""",
+        """(?is)<!DOCTYPE\s+mapper\s+PUBLIC\s+["']-//mybatis\.org//DTD Mapper 3\.0//EN["']\s+["']https?://mybatis\.org/dtd/mybatis-3-mapper\.dtd["']\s*>""",
     )
     private val platformLoader = ClassLoader.getPlatformClassLoader()
 
@@ -323,10 +323,12 @@ object XmlMapperPreparationEngine {
         }.lastOrNull()?.javaClass?.name ?: failure.javaClass.name
 
     private fun rethrowFatal(failure: Throwable) {
-        when (failure) {
-            is VirtualMachineError -> throw failure
-            is ThreadDeath -> throw failure
-            is LinkageError -> throw failure
+        if (
+            failure is VirtualMachineError ||
+            failure is LinkageError ||
+            failure.javaClass.name == "java.lang.ThreadDeath"
+        ) {
+            throw failure
         }
     }
 }
