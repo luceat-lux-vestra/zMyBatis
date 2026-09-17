@@ -18,6 +18,7 @@ import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
 import com.algorist.zMyBatis.core.source.XmlStatementId
 import java.util.concurrent.Callable
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
@@ -250,25 +251,42 @@ class XmlMapperPreparationEngineTest {
 
     @Test
     fun concurrentPreparationsDoNotShareConfigurationOrFragments() {
-        val executor = Executors.newFixedThreadPool(4)
+        val parallelism = 16
+        val rounds = 8
+        val executor = Executors.newFixedThreadPool(parallelism)
         try {
-            val tasks = (0 until 16).map { index ->
-                Callable {
-                    val namespace = "example.Mapper$index"
-                    val fixture = fixture(
-                        file = "vfs:/mapper-$index.xml",
-                        revision = "r-$index",
-                        namespace = namespace,
-                        content = mapperDocument(
-                            namespace,
-                            "<sql id=\"literal\">$index</sql><select id=\"find\">SELECT <include refid=\"literal\"/></select>",
-                        ),
+            repeat(rounds) { round ->
+                val ready = CountDownLatch(parallelism)
+                val start = CountDownLatch(1)
+                val futures = (0 until parallelism).map { index ->
+                    executor.submit(
+                        Callable {
+                            ready.countDown()
+                            check(start.await(30, TimeUnit.SECONDS)) { "parallel XML preparation start timed out" }
+                            val identity = round * parallelism + index
+                            val namespace = "example.Mapper$identity"
+                            val fixture = fixture(
+                                file = "vfs:/mapper-$identity.xml",
+                                revision = "r-$identity",
+                                namespace = namespace,
+                                content = mapperDocument(
+                                    namespace,
+                                    "<sql id=\"literal\">$identity</sql>" +
+                                        "<select id=\"find\">SELECT <include refid=\"literal\"/></select>",
+                                ),
+                            )
+                            normalize(success(prepare(fixture)).sqlWithPlaceholders)
+                        },
                     )
-                    normalize(success(prepare(fixture)).sqlWithPlaceholders)
                 }
+                check(ready.await(30, TimeUnit.SECONDS)) { "parallel XML preparation workers did not become ready" }
+                start.countDown()
+                val results = futures.map { it.get(30, TimeUnit.SECONDS) }
+                assertEquals(
+                    (0 until parallelism).map { "SELECT ${round * parallelism + it}" },
+                    results,
+                )
             }
-            val results = executor.invokeAll(tasks).map { it.get(30, TimeUnit.SECONDS) }
-            assertEquals((0 until 16).map { "SELECT $it" }, results)
         } finally {
             executor.shutdownNow()
         }
