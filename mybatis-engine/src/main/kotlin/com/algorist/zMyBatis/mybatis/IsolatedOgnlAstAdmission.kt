@@ -43,7 +43,7 @@ internal object IsolatedOgnlAstAdmission {
     fun inspect(
         expressions: List<String>,
         allowedRootProperties: Set<String>,
-    ): Result = inspectParsed(expressions) { _, root ->
+    ): Result = inspectParsed(expressions, includeExpressionInFailure = false) { _, root ->
         inspectTree(root, allowedRootProperties)
     }
 
@@ -55,7 +55,7 @@ internal object IsolatedOgnlAstAdmission {
     fun inspectExactRootProperty(
         expression: String,
         expectedProperty: String,
-    ): Result = inspectParsed(listOf(expression)) { _, root ->
+    ): Result = inspectParsed(listOf(expression), includeExpressionInFailure = true) { _, root ->
         inspectExactRootPropertyNode(root, expectedProperty)
     }
 
@@ -65,18 +65,22 @@ internal object IsolatedOgnlAstAdmission {
      * collection expression.
      */
     fun inspectExactRootProperties(expressions: Collection<String>): Result =
-        inspectParsed(expressions.distinct()) { expression, root ->
+        inspectParsed(expressions.distinct(), includeExpressionInFailure = true) { expression, root ->
             inspectExactRootPropertyNode(root, expression)
         }
 
     private fun inspectParsed(
         expressions: List<String>,
+        includeExpressionInFailure: Boolean,
         inspector: (String, Any) -> Result,
     ): Result {
         if (expressions.isEmpty()) return Result.Admitted
         val oversized = expressions.firstOrNull { it.length > MAX_EXPRESSION_LENGTH }
         if (oversized != null) {
-            return Result.Unsupported("OGNL[expression-length]", oversized)
+            return Result.Unsupported(
+                nodeType = "OGNL[expression-length]",
+                expression = oversized.takeIf { includeExpressionInFailure },
+            )
         }
 
         val myBatisLocation = Configuration::class.java.protectionDomain?.codeSource?.location
@@ -99,11 +103,17 @@ internal object IsolatedOgnlAstAdmission {
                     } catch (failure: InvocationTargetException) {
                         val target = failure.targetException ?: failure
                         if (target is StackOverflowError) {
-                            return Result.Unsupported("OGNL[parser-depth]", expression)
+                            return Result.Unsupported(
+                                nodeType = "OGNL[parser-depth]",
+                                expression = expression.takeIf { includeExpressionInFailure },
+                            )
                         }
                         rethrowFatal(target)
                         return if (target.javaClass.name == EXPRESSION_SYNTAX) {
-                            Result.Malformed(target.javaClass.name, expression)
+                            Result.Malformed(
+                                diagnosticType = target.javaClass.name,
+                                expression = expression.takeIf { includeExpressionInFailure },
+                            )
                         } else {
                             Result.Invariant(target.javaClass.name)
                         }
