@@ -37,6 +37,20 @@ class DynamicBoundTokenTopologyAdmissionTest {
     }
 
     @Test
+    fun ordinaryHashOperatorAndNonBoundaryBackslashRemainSupported() {
+        assertNull(
+            DynamicBoundTokenTopologyAdmission.failureOrNull(
+                """
+                    <script>
+                      select payload #> '{path}', 'dir\name'
+                      <if test="enabled">from docs</if>
+                    </script>
+                """.trimIndent(),
+            ),
+        )
+    }
+
+    @Test
     fun foreachOpenCannotSynthesizeABoundTokenWithBodyText() {
         assertTopologyFailure(
             """
@@ -59,6 +73,17 @@ class DynamicBoundTokenTopologyAdmissionTest {
                     <if test="enabled">#{</if>
                     id}
                   </trim>
+                </script>
+            """.trimIndent(),
+        )
+    }
+
+    @Test
+    fun trailingHashCannotBecomeAnOpenerAcrossAFragmentBoundary() {
+        assertTopologyFailure(
+            """
+                <script>
+                  <trim><if test="enabled">#</if>{id}</trim>
                 </script>
             """.trimIndent(),
         )
