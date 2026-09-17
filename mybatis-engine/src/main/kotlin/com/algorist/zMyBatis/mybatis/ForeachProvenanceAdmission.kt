@@ -128,8 +128,8 @@ internal object ForeachProvenanceAdmission {
             }
         }
 
-        val sourceLocalAuthority = sourceLocals.mapTo(linkedSetOf()) { it.key to it.value }
-        val contractLocalAuthority = foreachContractBindings.mapTo(linkedSetOf()) { it.name to it.kind }
+        val sourceLocalAuthority = sourceLocals.mapTo(linkedSetOf()) { (name, kind) -> name to kind }
+        val contractLocalAuthority = foreachContractBindings.mapTo(linkedSetOf()) { (name, kind) -> name to kind }
         if (sourceLocalAuthority != contractLocalAuthority) {
             return failed(PreparationFailureKind.BINDING_RESOLUTION, SOURCE_CONTRACT_MISMATCH)
         }
