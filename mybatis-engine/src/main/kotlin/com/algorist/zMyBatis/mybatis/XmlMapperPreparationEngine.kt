@@ -121,6 +121,7 @@ object XmlMapperPreparationEngine {
                 )
             }
         }
+    }
 
     private fun prepareWithContextLoader(
         runtime: IsolatedRuntime,
@@ -312,7 +313,7 @@ object XmlMapperPreparationEngine {
      * is hardened once during isolated-runtime initialization and is never mutated per preparation.
      * prepareWithContextLoader() pins the TCCL leg to the same isolated loader for each call.
      */
-    private fun hardenMyBatisResourceClassLoaders(loader: URLClassLoader): Boolean {    private fun hardenMyBatisResourceClassLoaders(loader: URLClassLoader): Boolean {
+    private fun hardenMyBatisResourceClassLoaders(loader: URLClassLoader): Boolean {
         val resourcesClass = Class.forName(RESOURCES, true, loader)
         if (resourcesClass.classLoader !== loader) return false
 
