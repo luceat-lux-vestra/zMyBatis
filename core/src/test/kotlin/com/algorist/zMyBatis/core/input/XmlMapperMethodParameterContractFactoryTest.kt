@@ -3,6 +3,7 @@ package com.algorist.zMyBatis.core.input
 import com.algorist.zMyBatis.core.source.CapturedStatement
 import com.algorist.zMyBatis.core.source.JavaMethodParameterMetadata
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
+import com.algorist.zMyBatis.core.source.SourceDependencyEdge
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRange
 import com.algorist.zMyBatis.core.source.SourceRevision
@@ -266,6 +267,80 @@ class XmlMapperMethodParameterContractFactoryTest {
         assertEquals(XML_FILE, placeholder.source.sourceFileId)
         assertEquals(XML_REVISION, placeholder.source.sourceRevision)
         assertEquals(null, placeholder.source.sourceRange)
+    }
+
+    @Test
+    fun mapperAuthorityCannotOverrideDependencyOrNestedXmlRefusal() {
+        val base = graph("select * from users where id = #{id}")
+        val dependentFile = SourceFileId("src/main/resources/com/acme/Common.xml")
+        val dependentRevision = SourceRevision("document:101")
+        val dependentGraph = StatementSourceGraph(
+            rootStatement = base.rootStatement,
+            sourceSnapshots = base.sourceSnapshots + SourceSnapshot(
+                dependentFile,
+                dependentRevision,
+                "<mapper namespace=\"com.acme.Common\"><sql id=\"base\">id</sql></mapper>",
+            ),
+            dependencies = listOf(
+                SourceDependencyEdge(
+                    dependentFileId = XML_FILE,
+                    requiredFileId = dependentFile,
+                    referenceRange = SourceRange(0, 1),
+                ),
+            ),
+        )
+        val mapper = mapper(
+            base,
+            listOf(parameter(0, "long", "id", "id")),
+        )
+
+        val dependencyContract = XmlMapperMethodParameterContractFactory.build(dependentGraph, mapper)
+        assertTrue(dependencyContract.isPreparationBlocked)
+        assertTrue(dependencyContract.requirements.isEmpty())
+        assertEquals(
+            "xml-dependent-fragment-provenance-unsupported",
+            dependencyContract.blockingProblems.single().code,
+        )
+
+        val nestedGraph = graph(
+            "select * from users <if test=\"id != null\">where id = #{id}</if>",
+        )
+        val nestedContract = XmlMapperMethodParameterContractFactory.build(
+            nestedGraph,
+            mapper(nestedGraph, listOf(parameter(0, "long", "id", "id"))),
+        )
+        assertTrue(nestedContract.isPreparationBlocked)
+        assertTrue(nestedContract.requirements.isEmpty())
+        assertEquals(
+            "xml-nested-element-input-discovery-unsupported",
+            nestedContract.blockingProblems.single().code,
+        )
+    }
+
+    @Test
+    fun conflictingMapperSourceRevisionFailsClosedBeforeAuthorityWidening() {
+        val graph = graph("select * from users where id = #{id}")
+        val conflictingMapper = XmlMapperMethodCapture(
+            statementId = graph.rootStatement.id as XmlStatementId,
+            mapperSource = SourceSnapshot(
+                XML_FILE,
+                SourceRevision("document:conflict"),
+                "x".repeat(256),
+            ),
+            methodSourceRange = JAVA_METHOD_RANGE,
+            parameters = listOf(parameter(0, "long", "id", "id")),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, conflictingMapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertTrue(contract.aliases.isEmpty())
+        assertEquals(
+            "xml-mapper-method-source-revision-conflict",
+            contract.blockingProblems.single().code,
+        )
+        assertEquals(mapOf(XML_FILE to XML_REVISION), contract.sourceRevisions)
     }
 
     @Test
