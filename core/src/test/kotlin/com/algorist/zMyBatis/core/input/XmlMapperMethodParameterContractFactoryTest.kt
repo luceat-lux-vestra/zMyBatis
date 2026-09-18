@@ -384,6 +384,59 @@ class XmlMapperMethodParameterContractFactoryTest {
     }
 
     @Test
+    fun collectionShortcutRuntimeValueMustRemainNonNullForAliasSoundness() {
+        val graph = graph("select * from users where id in #{list}")
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", null)),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputNullability.UNKNOWN, requirement.expectedType.nullability)
+
+        val validation = InputEnvironment.validate(
+            contract,
+            listOf(
+                ProvidedInput(
+                    requirementId = requirement.id,
+                    value = InputValue.NullValue,
+                    origin = ExecutionInputOrigin.USER_ENTERED,
+                ),
+            ),
+        )
+        val failure = validation as InputEnvironmentResult.Failure
+        assertEquals(
+            listOf(InputEnvironmentFailure(InputEnvironmentFailureKind.NULL_NOT_ALLOWED, requirement.id)),
+            failure.failures,
+        )
+    }
+
+    @Test
+    fun mixedRawAndBoundCollectionShortcutAliasesRemainAmbiguous() {
+        val graph = graph("select " + raw("list") + " from users where id in #{collection}")
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "java.util.List<java.lang.String>", "values", null)),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertTrue(contract.aliases.isEmpty())
+        assertEquals("xml-mixed-raw-bound-input", contract.blockingProblems.single().code)
+        assertEquals(
+            listOf("list", "collection"),
+            contract.blockingProblems.single().provenance!!.evidence
+                .filterIsInstance<InputEvidence.GeneratedAlias>()
+                .map { it.alias },
+        )
+    }
+
+    @Test
     fun soleUnannotatedCollectionExposesOnlyCollectionAlias() {
         val graph = graph("select * from users where id in #{collection}")
         val mapper = mapper(
