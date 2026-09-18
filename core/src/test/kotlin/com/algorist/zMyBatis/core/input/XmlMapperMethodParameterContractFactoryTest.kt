@@ -357,12 +357,26 @@ class XmlMapperMethodParameterContractFactoryTest {
             listOf(InputAliasKind.COLLECTION, InputAliasKind.LIST),
             contract.aliases.map { it.kind },
         )
+        val generatedRequirementAliases = contract.requirements.single().provenance.evidence
+            .filterIsInstance<InputEvidence.GeneratedAlias>()
+        assertEquals(listOf("collection", "list"), generatedRequirementAliases.map { it.alias })
         assertTrue(
-            contract.requirements.single().provenance.evidence
-                .filterIsInstance<InputEvidence.GeneratedAlias>()
-                .map { it.alias }
-                .containsAll(listOf("collection", "list")),
+            generatedRequirementAliases.all {
+                it.parameterIndex == 0 &&
+                    it.ruleId == "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
+            },
         )
+        contract.aliases.forEach { alias ->
+            val generatedAlias = alias.provenance.evidence
+                .filterIsInstance<InputEvidence.GeneratedAlias>()
+                .single()
+            assertEquals(0, generatedAlias.parameterIndex)
+            assertEquals(alias.name, generatedAlias.alias)
+            assertEquals(
+                "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection",
+                generatedAlias.ruleId,
+            )
+        }
         assertEquals(
             mapOf(XML_FILE to XML_REVISION, JAVA_FILE to JAVA_REVISION),
             contract.sourceRevisions,
