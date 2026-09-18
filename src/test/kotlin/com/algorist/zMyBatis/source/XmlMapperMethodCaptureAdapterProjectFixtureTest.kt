@@ -249,6 +249,157 @@ class XmlMapperMethodCaptureAdapterProjectFixtureTest : LightJavaCodeInsightFixt
         )
     }
 
+    fun testSourceCaptureFailuresAndPsiMismatchFailClosed() {
+        myFixture.addFileToProject(
+            "fixture/SourceFailureMapper.java",
+            """
+            package fixture;
+
+            interface SourceFailureMapper {
+                Object find(int id);
+            }
+            """.trimIndent(),
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+        val id = statementId("fixture.SourceFailureMapper", "find")
+
+        assertFailure(
+            XmlMapperMethodCaptureAdapter.capture(
+                project = project,
+                statementId = id,
+                maxSourceLength = 8,
+            ),
+            XmlMapperMethodCaptureFailure.MAPPER_SOURCE_TOO_LARGE,
+        )
+
+        assertFailure(
+            XmlMapperMethodCaptureAdapter.capture(
+                project = project,
+                statementId = id,
+                maxSourceLength = 1024,
+                sourceCapture = { _, _ -> DependentMapperSourceCaptureResult.InvalidSource },
+            ),
+            XmlMapperMethodCaptureFailure.MAPPER_SOURCE_UNAVAILABLE,
+        )
+
+        assertFailure(
+            XmlMapperMethodCaptureAdapter.capture(
+                project = project,
+                statementId = id,
+                maxSourceLength = 1024,
+                sourceCapture = { _, _ -> DependentMapperSourceCaptureResult.SourceChangedDuringCapture },
+            ),
+            XmlMapperMethodCaptureFailure.SOURCE_CHANGED_DURING_CAPTURE,
+        )
+
+        assertFailure(
+            XmlMapperMethodCaptureAdapter.capture(
+                project = project,
+                statementId = id,
+                maxSourceLength = 1024,
+                sourceCapture = { virtualFile, maxLength ->
+                    when (
+                        val result = DependentMapperSourceSnapshotAdapter.capture(
+                            virtualFile,
+                            maxLength,
+                        )
+                    ) {
+                        is DependentMapperSourceCaptureResult.Captured ->
+                            DependentMapperSourceCaptureResult.Captured(
+                                result.snapshot.copy(
+                                    content = result.snapshot.content + "\n// deterministic mismatch",
+                                ),
+                            )
+                        else -> result
+                    }
+                },
+            ),
+            XmlMapperMethodCaptureFailure.SOURCE_PSI_MISMATCH,
+        )
+    }
+
+    fun testDuplicateQualifiedMapperTypesFailAmbiguous() {
+        myFixture.addFileToProject(
+            "fixture/DuplicateMapperA.java",
+            """
+            package fixture;
+
+            interface DuplicateMapper {
+                Object find(int id);
+            }
+            """.trimIndent(),
+        )
+        myFixture.addFileToProject(
+            "fixture/DuplicateMapperB.java",
+            """
+            package fixture;
+
+            interface DuplicateMapper {
+                Object find(String id);
+            }
+            """.trimIndent(),
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        assertFailure(
+            XmlMapperMethodCaptureAdapter.capture(
+                project,
+                statementId("fixture.DuplicateMapper", "find"),
+            ),
+            XmlMapperMethodCaptureFailure.AMBIGUOUS_MAPPER_TYPE,
+        )
+    }
+
+    fun testStaticPrivateAndDefaultMethodsFailUnsupported() {
+        myFixture.addFileToProject(
+            "fixture/UnsupportedMethodMapper.java",
+            """
+            package fixture;
+
+            interface UnsupportedMethodMapper {
+                static Object staticFind(int id) { return null; }
+                private Object privateFind(int id) { return null; }
+                default Object defaultFind(int id) { return null; }
+            }
+            """.trimIndent(),
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        listOf("staticFind", "privateFind", "defaultFind").forEach { methodName ->
+            assertFailure(
+                XmlMapperMethodCaptureAdapter.capture(
+                    project,
+                    statementId("fixture.UnsupportedMethodMapper", methodName),
+                ),
+                XmlMapperMethodCaptureFailure.UNSUPPORTED_METHOD_FORM,
+            )
+        }
+    }
+
+    fun testBlankParamAliasFailsClosed() {
+        myFixture.addFileToProject(
+            "fixture/BlankAliasMapper.java",
+            """
+            package fixture;
+
+            import org.apache.ibatis.annotations.Param;
+
+            interface BlankAliasMapper {
+                Object find(@Param("") int id);
+            }
+            """.trimIndent(),
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        assertFailure(
+            XmlMapperMethodCaptureAdapter.capture(
+                project,
+                statementId("fixture.BlankAliasMapper", "find"),
+            ),
+            XmlMapperMethodCaptureFailure.UNRESOLVED_PARAM_ALIAS,
+        )
+    }
+
     fun testNonLiteralParamAliasAndUnresolvedParameterTypeFailClosed() {
         myFixture.addFileToProject(
             "fixture/AliasMapper.java",
