@@ -48,7 +48,6 @@ object XmlMapperPreparationEngine {
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
     private const val CLASSLOADER_INVARIANT = "mybatis-xml-classloader-isolation-failure"
 
-    private val placeholder = Regex("""[#${'$'}]\{""")
     private val dangerousAttribute = Regex(
         """(?i)\b(?:databaseId|lang|parameterType|parameterMap|resultType|resultMap|typeHandler|javaType)\s*=""",
     )
@@ -59,6 +58,24 @@ object XmlMapperPreparationEngine {
         """(?is)<!DOCTYPE\s+mapper\s+PUBLIC\s+["']-//mybatis\.org//DTD Mapper 3\.0//EN["']\s+["']https?://mybatis\.org/dtd/mybatis-3-mapper\.dtd["']\s*>""",
     )
     private val platformLoader = ClassLoader.getPlatformClassLoader()
+    private val isolatedRuntime: IsolatedRuntime by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        createIsolatedRuntime()
+    }
+
+    private data class IsolatedRuntime(
+        val loader: URLClassLoader,
+        val configurationClass: Class<*>,
+        val builderClass: Class<*>,
+        val mappedStatementClass: Class<*>,
+        val dynamicSqlSourceClass: Class<*>,
+        val boundSqlClass: Class<*>,
+    )
+
+    private class IsolationFailure(
+        val failureCode: String,
+        cause: Throwable? = null,
+    ) : RuntimeException(failureCode, cause)
+
 
     fun prepare(request: MyBatisPreparationRequest): PreparationResult {
         val source = request.source as? XmlMapperPreparationSource
@@ -80,26 +97,22 @@ object XmlMapperPreparationEngine {
             preflight(snapshot)?.let { return PreparationResult.Failed(it) }
         }
 
-        val myBatisLocation = Configuration::class.java.protectionDomain?.codeSource?.location
-            ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, "mybatis-code-source-unavailable")
-        if (myBatisLocation.protocol != "file") {
-            return failed(PreparationFailureKind.PREPARATION_INVARIANT, "mybatis-code-source-non-local")
-        }
-
         return try {
-            URLClassLoader(arrayOf(myBatisLocation), platformLoader).use { loader ->
-                prepareWithContextLoader(loader, source, statementId, request)
-            }
+            prepareWithContextLoader(isolatedRuntime, source, statementId, request)
         } catch (failure: Throwable) {
             rethrowFatal(failure)
-            if (failure is SecurityException) {
-                failed(
+            when (failure) {
+                is IsolationFailure -> failed(
+                    PreparationFailureKind.PREPARATION_INVARIANT,
+                    failure.failureCode,
+                    failure.cause?.javaClass?.name,
+                )
+                is SecurityException -> failed(
                     PreparationFailureKind.PREPARATION_INVARIANT,
                     CLASSLOADER_INVARIANT,
                     failure.javaClass.name,
                 )
-            } else {
-                PreparationResult.Failed(
+                else -> PreparationResult.Failed(
                     PreparationFailure(
                         kind = PreparationFailureKind.MYBATIS_PARSE,
                         code = PARSE_FAILURE,
@@ -108,10 +121,9 @@ object XmlMapperPreparationEngine {
                 )
             }
         }
-    }
 
     private fun prepareWithContextLoader(
-        loader: URLClassLoader,
+        runtime: IsolatedRuntime,
         source: XmlMapperPreparationSource,
         statementId: XmlStatementId,
         request: MyBatisPreparationRequest,
@@ -120,9 +132,9 @@ object XmlMapperPreparationEngine {
         val previousContextLoader = thread.contextClassLoader
         var switched = false
         return try {
-            thread.contextClassLoader = loader
+            thread.contextClassLoader = runtime.loader
             switched = true
-            prepareIn(loader, source, statementId, request)
+            prepareIn(runtime, source, statementId, request)
         } finally {
             if (switched) {
                 thread.contextClassLoader = previousContextLoader
@@ -131,28 +143,18 @@ object XmlMapperPreparationEngine {
     }
 
     private fun prepareIn(
-        loader: URLClassLoader,
+        runtime: IsolatedRuntime,
         source: XmlMapperPreparationSource,
         statementId: XmlStatementId,
         request: MyBatisPreparationRequest,
     ): PreparationResult {
-        if (!hardenMyBatisResourceClassLoaders(loader)) {
-            return failed(PreparationFailureKind.PREPARATION_INVARIANT, CLASSLOADER_INVARIANT)
-        }
+        val configurationClass = runtime.configurationClass
+        val builderClass = runtime.builderClass
+        val mappedStatementClass = runtime.mappedStatementClass
+        val dynamicSqlSourceClass = runtime.dynamicSqlSourceClass
+        val boundSqlClass = runtime.boundSqlClass
 
-        val configurationClass = Class.forName(CONFIGURATION, true, loader)
-        if (configurationClass.classLoader !== loader) {
-            return failed(PreparationFailureKind.PREPARATION_INVARIANT, "mybatis-configuration-not-isolated")
-        }
-        val builderClass = Class.forName(XML_MAPPER_BUILDER, true, loader)
-        if (builderClass.classLoader !== loader) {
-            return failed(PreparationFailureKind.PREPARATION_INVARIANT, "mybatis-xml-builder-not-isolated")
-        }
-        val mappedStatementClass = Class.forName(MAPPED_STATEMENT, true, loader)
-        val dynamicSqlSourceClass = Class.forName(DYNAMIC_SQL_SOURCE, true, loader)
-        val boundSqlClass = Class.forName(BOUND_SQL, true, loader)
-
-        val configuration = configurationClass.getDeclaredConstructor().newInstance()
+        val configuration = configurationClass.getDeclaredConstructor().newInstance()        val configuration = configurationClass.getDeclaredConstructor().newInstance()
         val sqlFragments = configurationClass.getMethod("getSqlFragments").invoke(configuration) as? Map<*, *>
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
         val constructor = builderClass.getConstructor(
@@ -229,7 +231,7 @@ object XmlMapperPreparationEngine {
 
         val languageDriver = mappedStatementClass.getMethod("getLang").invoke(mappedStatement)
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
-        if (languageDriver.javaClass.classLoader !== loader) {
+        if (languageDriver.javaClass.classLoader !== runtime.loader) {
             return failed(PreparationFailureKind.PREPARATION_INVARIANT, "mybatis-language-driver-not-isolated")
         }
 
@@ -259,13 +261,58 @@ object XmlMapperPreparationEngine {
     }
 
     /**
-     * MyBatis 3.5.19 Resources.classForName() falls back through default, TCCL, its own loader,
-     * and the system classloader, and initializes a class once found. Because this Resources copy
-     * lives in a fresh child loader, pinning both mutable fallback fields to that child is local to
-     * one preparation and prevents mapper namespaces from escaping to plugin/test/application
-     * classloaders. prepareWithContextLoader() pins the TCCL leg for the same interval.
+     * The isolated runtime loader is created once for the plugin lifetime and then treated as
+     * immutable. Every preparation still owns a fresh MyBatis Configuration, mapper builders, and
+     * fragment map. Reusing the loader avoids racing URLClassLoader.close() against concurrent local
+     * DTD reads from the same MyBatis JAR while keeping application/plugin classes unreachable.
      */
-    private fun hardenMyBatisResourceClassLoaders(loader: URLClassLoader): Boolean {
+    private fun createIsolatedRuntime(): IsolatedRuntime {
+        val myBatisLocation = Configuration::class.java.protectionDomain?.codeSource?.location
+            ?: throw IsolationFailure("mybatis-code-source-unavailable")
+        if (myBatisLocation.protocol != "file") {
+            throw IsolationFailure("mybatis-code-source-non-local")
+        }
+
+        val loader = URLClassLoader(arrayOf(myBatisLocation), platformLoader)
+        try {
+            if (!hardenMyBatisResourceClassLoaders(loader)) {
+                throw IsolationFailure(CLASSLOADER_INVARIANT)
+            }
+
+            val configurationClass = Class.forName(CONFIGURATION, true, loader)
+            if (configurationClass.classLoader !== loader) {
+                throw IsolationFailure("mybatis-configuration-not-isolated")
+            }
+            val builderClass = Class.forName(XML_MAPPER_BUILDER, true, loader)
+            if (builderClass.classLoader !== loader) {
+                throw IsolationFailure("mybatis-xml-builder-not-isolated")
+            }
+
+            return IsolatedRuntime(
+                loader = loader,
+                configurationClass = configurationClass,
+                builderClass = builderClass,
+                mappedStatementClass = Class.forName(MAPPED_STATEMENT, true, loader),
+                dynamicSqlSourceClass = Class.forName(DYNAMIC_SQL_SOURCE, true, loader),
+                boundSqlClass = Class.forName(BOUND_SQL, true, loader),
+            )
+        } catch (failure: Throwable) {
+            try {
+                loader.close()
+            } catch (_: Throwable) {
+                // Preserve the initialization failure that caused the runtime to be rejected.
+            }
+            throw failure
+        }
+    }
+
+    /**
+     * MyBatis 3.5.19 Resources.classForName() falls back through default, TCCL, its own loader,
+     * and the system classloader, and initializes a class once found. This dedicated Resources copy
+     * is hardened once during isolated-runtime initialization and is never mutated per preparation.
+     * prepareWithContextLoader() pins the TCCL leg to the same isolated loader for each call.
+     */
+    private fun hardenMyBatisResourceClassLoaders(loader: URLClassLoader): Boolean {    private fun hardenMyBatisResourceClassLoaders(loader: URLClassLoader): Boolean {
         val resourcesClass = Class.forName(RESOURCES, true, loader)
         if (resourcesClass.classLoader !== loader) return false
 
