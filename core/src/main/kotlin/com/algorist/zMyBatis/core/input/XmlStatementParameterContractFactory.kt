@@ -1,6 +1,5 @@
 package com.algorist.zMyBatis.core.input
 
-import com.algorist.zMyBatis.core.source.SourceEvidence
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.SourceSnapshot
