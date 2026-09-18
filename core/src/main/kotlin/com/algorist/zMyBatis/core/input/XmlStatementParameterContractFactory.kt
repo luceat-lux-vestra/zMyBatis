@@ -217,7 +217,7 @@ object XmlStatementParameterContractFactory {
                             continue
                         }
 
-                        if (targetDepth >= 0 && depth > targetDepth) {
+                        if (targetDepth >= 0) {
                             return StatementScan.Failed(
                                 InputContractProblemKind.UNSUPPORTED,
                                 NESTED_ELEMENT_PROBLEM,
