@@ -225,6 +225,7 @@ enum class InputAliasKind {
     COLLECTION,
     LIST,
     ARRAY,
+    XML_PLACEHOLDER_ROOT,
 }
 
 data class InputAlias(
