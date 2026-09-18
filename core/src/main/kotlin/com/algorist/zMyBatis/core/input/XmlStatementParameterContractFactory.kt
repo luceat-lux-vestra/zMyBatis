@@ -13,12 +13,12 @@ import javax.xml.stream.XMLStreamException
 import javax.xml.stream.XMLStreamReader
 
 /**
- * Derives the statically provable root-only XML subset of the #63 input contract.
+ * Derives source-backed XML placeholder evidence for the #63 input contract.
  *
- * The authoritative graph supplies statement identity and immutable source revisions. This factory
- * reparses only the captured root snapshot with JDK StAX to isolate the exact root statement text.
- * Dependency-backed graphs and nested mapper elements remain blocked until richer source provenance
- * exists; no MyBatis runtime or application class loading participates here.
+ * The XML source graph proves statement identity and source use, but it does not prove the mapper
+ * method parameter-object semantics that MyBatis will apply at runtime. Therefore a placeholder use
+ * is retained as provenance while caller-input authority remains blocked. A placeholder-free static
+ * root statement can produce an empty non-blocking contract.
  */
 object XmlStatementParameterContractFactory {
     private const val DEPENDENCY_PROVENANCE_PROBLEM = "xml-dependent-fragment-provenance-unsupported"
@@ -29,7 +29,7 @@ object XmlStatementParameterContractFactory {
     private const val COMPLEX_PLACEHOLDER_PROBLEM = "xml-complex-placeholder-expression"
     private const val RESERVED_ROOT_PROBLEM = "xml-reserved-internal-placeholder-root"
     private const val MIXED_KIND_PROBLEM = "xml-mixed-raw-bound-input"
-    private const val UNPROVEN_BOUND_SHAPE_PROBLEM = "xml-unproven-bound-input-shape"
+    private const val CALLER_AUTHORITY_PROBLEM = "xml-caller-input-authority-unproven"
     private const val UNSAFE_DTD_PROBLEM = "xml-parameter-contract-unsafe-dtd"
 
     private val simpleRoot = Regex("[A-Za-z_][A-Za-z0-9_]*")
@@ -105,11 +105,7 @@ object XmlStatementParameterContractFactory {
             usesByRoot.getOrPut(use.expression) { mutableListOf() } += use
         }
 
-        val requirements = mutableListOf<InputRequirement>()
-        val aliases = mutableListOf<InputAlias>()
-        val problems = mutableListOf<InputContractProblem>()
-
-        usesByRoot.forEach { (root, uses) ->
+        val problems = usesByRoot.map { (root, uses) ->
             val provenance = InputProvenance(
                 uses.map { use ->
                     InputEvidence.Placeholder(
@@ -119,60 +115,25 @@ object XmlStatementParameterContractFactory {
                     )
                 },
             )
+            val kinds = uses.mapTo(linkedSetOf()) { it.kind }
 
-            if (root in reservedInternalRoots) {
-                problems += InputContractProblem(
+            when {
+                root in reservedInternalRoots -> InputContractProblem(
                     kind = InputContractProblemKind.UNSUPPORTED,
                     code = RESERVED_ROOT_PROBLEM,
                     requirementId = null,
                     provenance = provenance,
                 )
-                return@forEach
-            }
-
-            val kinds = uses.mapTo(linkedSetOf()) { it.kind }
-            if (kinds.size != 1) {
-                problems += InputContractProblem(
+                kinds.size != 1 -> InputContractProblem(
                     kind = InputContractProblemKind.AMBIGUOUS,
                     code = MIXED_KIND_PROBLEM,
                     requirementId = null,
                     provenance = provenance,
                 )
-                return@forEach
-            }
-
-            val kind = kinds.single()
-            val requirementId = InputRequirementId("xml-root:" + root)
-            val expectedType = when (kind) {
-                InputKind.BOUND -> ExpectedInputType(
-                    shape = InputShape.UNKNOWN,
-                    nullability = InputNullability.UNKNOWN,
-                )
-                InputKind.RAW_INTERPOLATION -> ExpectedInputType(
-                    shape = InputShape.RAW_TEXT,
-                    scalarType = InputScalarType.STRING,
-                    nullability = InputNullability.NON_NULL,
-                )
-            }
-            requirements += InputRequirement(
-                id = requirementId,
-                kind = kind,
-                expectedType = expectedType,
-                requiredness = InputRequiredness.REQUIRED,
-                provenance = provenance,
-            )
-            aliases += InputAlias(
-                name = root,
-                requirementId = requirementId,
-                kind = InputAliasKind.XML_PLACEHOLDER_ROOT,
-                provenance = provenance,
-            )
-
-            if (kind == InputKind.BOUND) {
-                problems += InputContractProblem(
+                else -> InputContractProblem(
                     kind = InputContractProblemKind.UNKNOWN,
-                    code = UNPROVEN_BOUND_SHAPE_PROBLEM,
-                    requirementId = requirementId,
+                    code = CALLER_AUTHORITY_PROBLEM,
+                    requirementId = null,
                     provenance = provenance,
                 )
             }
@@ -180,8 +141,8 @@ object XmlStatementParameterContractFactory {
 
         return ParameterContract(
             statementId = statementId,
-            requirements = requirements,
-            aliases = aliases,
+            requirements = emptyList(),
+            aliases = emptyList(),
             internalBindings = emptyList(),
             blockingProblems = problems,
             sourceRevisions = sourceRevisions,
@@ -300,7 +261,7 @@ object XmlStatementParameterContractFactory {
             try {
                 reader.close()
             } catch (_: XMLStreamException) {
-                // The immutable source outcome has already been determined.
+                // Parsing outcome is already fixed.
             }
         }
     }
@@ -314,7 +275,7 @@ object XmlStatementParameterContractFactory {
             while (cursor < segment.length - 1) {
                 val kind = when {
                     segment[cursor] == '#' && segment[cursor + 1] == '{' -> InputKind.BOUND
-                    segment[cursor] == '$' && segment[cursor + 1] == '{' -> InputKind.RAW_INTERPOLATION
+                    segment[cursor].code == 36 && segment[cursor + 1] == '{' -> InputKind.RAW_INTERPOLATION
                     else -> {
                         cursor += 1
                         continue
@@ -343,7 +304,6 @@ object XmlStatementParameterContractFactory {
                 } else {
                     payload
                 }
-
                 if (expression.isEmpty() || !simpleRoot.matches(expression)) {
                     failures += PlaceholderFailure(
                         kind = kind,
