@@ -15,32 +15,22 @@ import org.junit.Test
 
 class XmlStatementParameterContractFactoryTest {
     @Test
-    fun rawRootProducesExecutableSourceProvenContract() {
-        val graph = graph(
-            body = "select * from " + raw("table"),
-        )
+    fun rawRootIsPreservedAsSourceEvidenceButDoesNotInventCallerAuthority() {
+        val graph = graph(body = "select * from " + raw("table"))
 
         val contract = XmlStatementParameterContractFactory.build(graph)
 
-        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.isPreparationBlocked)
         assertEquals(graph.rootStatement.id, contract.statementId)
         assertEquals(mapOf(ROOT_FILE to ROOT_REVISION), contract.sourceRevisions)
-        assertEquals(1, contract.requirements.size)
+        assertTrue(contract.requirements.isEmpty())
+        assertTrue(contract.aliases.isEmpty())
 
-        val requirement = contract.requirements.single()
-        assertEquals(InputRequirementId("xml-root:table"), requirement.id)
-        assertEquals(InputKind.RAW_INTERPOLATION, requirement.kind)
-        assertEquals(InputShape.RAW_TEXT, requirement.expectedType.shape)
-        assertEquals(InputScalarType.STRING, requirement.expectedType.scalarType)
-        assertEquals(InputNullability.NON_NULL, requirement.expectedType.nullability)
-        assertEquals(InputRequiredness.REQUIRED, requirement.requiredness)
-
-        val alias = contract.aliases.single()
-        assertEquals("table", alias.name)
-        assertEquals(requirement.id, alias.requirementId)
-        assertEquals(InputAliasKind.XML_PLACEHOLDER_ROOT, alias.kind)
-
-        val placeholder = requirement.provenance.evidence.single() as InputEvidence.Placeholder
+        val problem = contract.blockingProblems.single()
+        assertEquals(InputContractProblemKind.UNKNOWN, problem.kind)
+        assertEquals("xml-caller-input-authority-unproven", problem.code)
+        assertEquals(null, problem.requirementId)
+        val placeholder = problem.provenance!!.evidence.single() as InputEvidence.Placeholder
         assertEquals(InputKind.RAW_INTERPOLATION, placeholder.kind)
         assertEquals("table", placeholder.expression)
         assertEquals(ROOT_FILE, placeholder.source.sourceFileId)
@@ -49,98 +39,91 @@ class XmlStatementParameterContractFactoryTest {
     }
 
     @Test
-    fun boundRootIsDiscoveredButShapeRemainsExplicitlyUnknownAndBlocking() {
-        val graph = graph(
-            body = "select * from users where id = #{id,jdbcType=BIGINT}",
+    fun boundRootWithOptionsPreservesLeadingPropertyEvidenceButStillBlocksAuthority() {
+        val contract = XmlStatementParameterContractFactory.build(
+            graph(body = "select * from users where id = #{id,jdbcType=BIGINT}"),
         )
-
-        val contract = XmlStatementParameterContractFactory.build(graph)
 
         assertTrue(contract.isPreparationBlocked)
-        val requirement = contract.requirements.single()
-        assertEquals(InputRequirementId("xml-root:id"), requirement.id)
-        assertEquals(InputKind.BOUND, requirement.kind)
-        assertEquals(InputShape.UNKNOWN, requirement.expectedType.shape)
-        assertEquals(InputScalarType.UNKNOWN, requirement.expectedType.scalarType)
-        assertEquals(InputNullability.UNKNOWN, requirement.expectedType.nullability)
-
+        assertTrue(contract.requirements.isEmpty())
+        assertTrue(contract.aliases.isEmpty())
         val problem = contract.blockingProblems.single()
         assertEquals(InputContractProblemKind.UNKNOWN, problem.kind)
-        assertEquals("xml-unproven-bound-input-shape", problem.code)
-        assertEquals(requirement.id, problem.requirementId)
-        assertEquals(requirement.provenance, problem.provenance)
-
-        assertEquals("id", contract.aliases.single().name)
-        assertEquals(InputAliasKind.XML_PLACEHOLDER_ROOT, contract.aliases.single().kind)
+        assertEquals("xml-caller-input-authority-unproven", problem.code)
+        val placeholder = problem.provenance!!.evidence.single() as InputEvidence.Placeholder
+        assertEquals(InputKind.BOUND, placeholder.kind)
+        assertEquals("id", placeholder.expression)
     }
 
     @Test
-    fun unrelatedStatementCannotCreateGhostRequirements() {
-        val graph = graph(
-            body = "select * from " + raw("table"),
-            trailingDeclarations = "<select id=\"other\">select #{ghost} from " + raw("ghostRaw") + "</select>",
+    fun unrelatedStatementCannotCreateGhostPlaceholderProblems() {
+        val contract = XmlStatementParameterContractFactory.build(
+            graph(
+                body = "select * from " + raw("table"),
+                trailingDeclarations =
+                    "<select id=\"other\">select #{ghost} from " + raw("ghostRaw") + "</select>",
+            ),
         )
 
-        val contract = XmlStatementParameterContractFactory.build(graph)
-
-        assertFalse(contract.isPreparationBlocked)
-        assertEquals(listOf("table"), contract.aliases.map { it.name })
-        assertEquals(listOf(InputRequirementId("xml-root:table")), contract.requirements.map { it.id })
+        assertEquals(1, contract.blockingProblems.size)
+        val placeholder = contract.blockingProblems.single().provenance!!
+            .evidence.single() as InputEvidence.Placeholder
+        assertEquals("table", placeholder.expression)
     }
 
     @Test
-    fun commentsDoNotCreateInputsAndCdataTextDoes() {
-        val graph = graph(
-            body = buildString {
-                append("select * from ")
-                append(raw("table"))
-                append("<!-- ")
-                append(raw("ghost"))
-                append(" -->")
-                append("<![CDATA[ order by ")
-                append(raw("column"))
-                append(" ]]>")
+    fun commentsDoNotCreateEvidenceAndCdataTextDoes() {
+        val contract = XmlStatementParameterContractFactory.build(
+            graph(
+                body = buildString {
+                    append("select * from ")
+                    append(raw("table"))
+                    append("<!-- ")
+                    append(raw("ghost"))
+                    append(" -->")
+                    append("<![CDATA[ order by ")
+                    append(raw("column"))
+                    append(" ]]>")
+                },
+            ),
+        )
+
+        assertTrue(contract.isPreparationBlocked)
+        assertEquals(
+            listOf("table", "column"),
+            contract.blockingProblems.map { problem ->
+                (problem.provenance!!.evidence.single() as InputEvidence.Placeholder).expression
             },
         )
-
-        val contract = XmlStatementParameterContractFactory.build(graph)
-
-        assertFalse(contract.isPreparationBlocked)
-        assertEquals(listOf("table", "column"), contract.aliases.map { it.name })
-        assertEquals(
-            setOf("table", "column"),
-            contract.requirements.map { it.id.value.removePrefix("xml-root:") }.toSet(),
+        assertTrue(
+            contract.blockingProblems.all { it.code == "xml-caller-input-authority-unproven" },
         )
     }
 
     @Test
-    fun escapedOpenTokenMatchesMyBatisAndDoesNotBecomeCallerInput() {
-        val graph = graph(
-            body = "select \\#{literal}, * from " + raw("table"),
+    fun escapedOpenTokenMatchesMyBatisAndDoesNotCreateCallerEvidence() {
+        val contract = XmlStatementParameterContractFactory.build(
+            graph(body = "select \\#{literal}"),
         )
 
-        val contract = XmlStatementParameterContractFactory.build(graph)
-
         assertFalse(contract.isPreparationBlocked)
-        assertEquals(listOf("table"), contract.aliases.map { it.name })
-        assertEquals(1, contract.requirements.size)
+        assertTrue(contract.requirements.isEmpty())
+        assertTrue(contract.aliases.isEmpty())
+        assertTrue(contract.blockingProblems.isEmpty())
     }
 
     @Test
     fun standardMapperDoctypeRemainsLocallyParseable() {
-        val graph = graph(
-            body = "select * from " + raw("table"),
-            withDoctype = true,
+        val contract = XmlStatementParameterContractFactory.build(
+            graph(body = "select 1", withDoctype = true),
         )
 
-        val contract = XmlStatementParameterContractFactory.build(graph)
-
         assertFalse(contract.isPreparationBlocked)
-        assertEquals("table", contract.aliases.single().name)
+        assertTrue(contract.blockingProblems.isEmpty())
     }
 
     @Test
-    fun statementWithoutPlaceholdersProducesEmptyNonBlockingContract() {
+    fun placeholderFreeStatementProducesEmptyNonBlockingContract() {
         val contract = XmlStatementParameterContractFactory.build(
             graph(body = "select 1"),
         )
@@ -157,8 +140,7 @@ class XmlStatementParameterContractFactoryTest {
         trailingDeclarations: String = "",
         withDoctype: Boolean = false,
     ): StatementSourceGraph {
-        val element = "select"
-        val declaration = "<$element id=\"find\">$body</$element>"
+        val declaration = "<select id=\"find\">$body</select>"
         val doctype = if (withDoctype) {
             "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" " +
                 "\"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">"
@@ -170,12 +152,11 @@ class XmlStatementParameterContractFactoryTest {
             declaration +
             trailingDeclarations +
             "</mapper>"
-        val start = xml.indexOf("<$element id=\"find\">")
+        val start = xml.indexOf("<select id=\"find\">")
         val end = xml.indexOf('>', start) + 1
-        val statementId = XmlStatementId(ROOT_FILE, "com.acme.UserMapper", "find")
         return StatementSourceGraph(
             rootStatement = CapturedStatement(
-                id = statementId,
+                id = XmlStatementId(ROOT_FILE, "com.acme.UserMapper", "find"),
                 kind = StatementKind.SELECT,
                 sourceRange = SourceRange(start, end),
             ),
