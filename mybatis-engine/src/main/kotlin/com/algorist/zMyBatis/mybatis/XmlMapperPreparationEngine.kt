@@ -155,7 +155,7 @@ object XmlMapperPreparationEngine {
         val dynamicSqlSourceClass = runtime.dynamicSqlSourceClass
         val boundSqlClass = runtime.boundSqlClass
 
-        val configuration = configurationClass.getDeclaredConstructor().newInstance()        val configuration = configurationClass.getDeclaredConstructor().newInstance()
+        val configuration = configurationClass.getDeclaredConstructor().newInstance()
         val sqlFragments = configurationClass.getMethod("getSqlFragments").invoke(configuration) as? Map<*, *>
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
         val constructor = builderClass.getConstructor(
