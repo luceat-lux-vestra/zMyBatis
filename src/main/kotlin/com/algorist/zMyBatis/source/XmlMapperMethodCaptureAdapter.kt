@@ -2,7 +2,6 @@ package com.algorist.zMyBatis.source
 
 import com.algorist.zMyBatis.core.source.JavaMethodParameterMetadata
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
-import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.XmlMapperMethodCapture
 import com.algorist.zMyBatis.core.source.XmlStatementId
 import com.algorist.zMyBatis.core.source.SourceRange
