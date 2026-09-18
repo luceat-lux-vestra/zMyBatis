@@ -43,7 +43,7 @@ object XmlStatementParameterContractFactory {
         val statementSource = SourceEvidence(
             sourceFileId = statementId.sourceFileId,
             sourceRevision = rootRevision,
-            sourceRange = graph.rootStatement.sourceRange,
+            sourceRange = null,
         )
 
         if (graph.dependencies.isNotEmpty()) {
