@@ -92,6 +92,13 @@ class XmlMapperMethodParameterContractFactoryTest {
         )
         assertEquals(listOf("param1", "param2"), contract.aliases.map { it.name })
         assertTrue(contract.aliases.all { it.kind == InputAliasKind.GENERIC_PARAM })
+        assertEquals(
+            mapOf(
+                XML_FILE to XML_REVISION,
+                JAVA_FILE to JAVA_REVISION,
+            ),
+            contract.sourceRevisions,
+        )
 
         contract.requirements.forEachIndexed { index, requirement ->
             val generated = requirement.provenance.evidence
@@ -143,6 +150,29 @@ class XmlMapperMethodParameterContractFactoryTest {
                 .filterIsInstance<InputEvidence.GeneratedAlias>()
                 .size,
         )
+    }
+
+    @Test
+    fun explicitAliasOnDifferentParameterSuppressesFirstGeneratedAlias() {
+        val graph = graph("select * from users where value = #{param1}")
+        val mapper = mapper(
+            graph,
+            listOf(
+                parameter(0, "long", "first", "first"),
+                parameter(1, "java.lang.String", "second", "param1"),
+            ),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputRequirementId("xml-java-param:1"), requirement.id)
+        assertEquals(JavaTypeIdentity("java.lang.String"), requirement.expectedType.javaTypeIdentity)
+        val alias = contract.aliases.single()
+        assertEquals("param1", alias.name)
+        assertEquals(InputAliasKind.EXPLICIT_PARAM, alias.kind)
+        assertTrue(alias.provenance.evidence.none { it is InputEvidence.GeneratedAlias })
     }
 
     @Test
