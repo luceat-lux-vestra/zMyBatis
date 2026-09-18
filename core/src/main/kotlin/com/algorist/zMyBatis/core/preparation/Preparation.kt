@@ -78,7 +78,7 @@ class MyBatisPreparationRequest private constructor(
         get() = source.sourceGraph.rootStatement.kind
 
     val sourceRevisions: Map<SourceFileId, SourceRevision>
-        get() = source.sourceGraph.sourceSnapshots.associate { it.fileId to it.revision }
+        get() = source.authoritySourceRevisions()
 
     companion object {
         private const val BLOCKED_CONTRACT = "preparation-input-contract-blocked"
@@ -105,7 +105,7 @@ class MyBatisPreparationRequest private constructor(
                 )
             }
 
-            val sourceRevisions = source.sourceGraph.sourceSnapshots.associate { it.fileId to it.revision }
+            val sourceRevisions = source.authoritySourceRevisions()
             if (
                 parameterContract.sourceRevisions != sourceRevisions ||
                 inputEnvironment.sourceRevisions != sourceRevisions
@@ -150,6 +150,11 @@ class MyBatisPreparationRequest private constructor(
             )
         }
     }
+}
+
+private fun PreparationSource.authoritySourceRevisions(): Map<SourceFileId, SourceRevision> = when (this) {
+    is PreparationSource.JavaAnnotation -> sourceGraph.sourceSnapshots.associate { it.fileId to it.revision }
+    is XmlMapperPreparationSource -> sourceRevisions
 }
 
 data class PreparedBindingMetadata(

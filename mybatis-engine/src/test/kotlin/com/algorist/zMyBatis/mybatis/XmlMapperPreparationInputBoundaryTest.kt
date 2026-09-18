@@ -136,6 +136,50 @@ class XmlMapperPreparationInputBoundaryTest {
         assertEquals("preparation-source-revision-drift", failure.failure.code)
     }
 
+    @Test
+    fun mapperAuthorityRevisionMustBeOwnedByPreparationSource() {
+        val fixture = fixture()
+        val javaFile = SourceFileId("vfs:/Mapper.java")
+        val javaRevision = SourceRevision("java-r1")
+        val javaSnapshot = SourceSnapshot(
+            javaFile,
+            javaRevision,
+            "interface Mapper { Object find(long id); }",
+        )
+        val revisions = mapOf(
+            fixture.fileId to fixture.revision,
+            javaFile to javaRevision,
+        )
+        val contract = emptyContract(fixture.statementId, revisions)
+        val environment = (
+            InputEnvironment.validate(contract, emptyList()) as InputEnvironmentResult.Success
+            ).environment
+
+        val missingAuthority = MyBatisPreparationRequest.create(
+            XmlMapperPreparationSource(fixture.graph),
+            contract,
+            environment,
+        ) as PreparationRequestResult.Failed
+        assertEquals(PreparationFailureKind.SOURCE_REVISION_MISMATCH, missingAuthority.failure.kind)
+        assertEquals("preparation-source-revision-drift", missingAuthority.failure.code)
+
+        val authoritySnapshots = mutableListOf(javaSnapshot)
+        val source = XmlMapperPreparationSource(
+            fixture.graph,
+            additionalAuthoritySnapshots = authoritySnapshots,
+        )
+        authoritySnapshots.clear()
+
+        val ready = MyBatisPreparationRequest.create(
+            source,
+            contract,
+            environment,
+        ) as PreparationRequestResult.Ready
+
+        assertEquals(revisions, ready.request.sourceRevisions)
+        assertEquals(listOf(javaSnapshot), source.additionalAuthoritySnapshots)
+    }
+
     private fun emptyContract(
         statementId: XmlStatementId,
         revisions: Map<SourceFileId, SourceRevision>,
