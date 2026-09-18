@@ -61,6 +61,18 @@ object XmlMapperMethodCaptureAdapter {
         project: Project,
         statementId: XmlStatementId,
         maxSourceLength: Int = DEFAULT_MAX_SOURCE_LENGTH,
+    ): XmlMapperMethodCaptureResult = capture(
+        project = project,
+        statementId = statementId,
+        maxSourceLength = maxSourceLength,
+        sourceCapture = DependentMapperSourceSnapshotAdapter::capture,
+    )
+
+    internal fun capture(
+        project: Project,
+        statementId: XmlStatementId,
+        maxSourceLength: Int,
+        sourceCapture: (com.intellij.openapi.vfs.VirtualFile, Int) -> DependentMapperSourceCaptureResult,
     ): XmlMapperMethodCaptureResult {
         require(maxSourceLength in 1 until Int.MAX_VALUE) {
             "max source length must be positive and leave room for the overflow probe"
@@ -82,7 +94,7 @@ object XmlMapperMethodCaptureAdapter {
             ?: return failed(XmlMapperMethodCaptureFailure.MAPPER_SOURCE_UNAVAILABLE)
 
         val beforeSynchronization = when (
-            val result = DependentMapperSourceSnapshotAdapter.capture(virtualFile, maxSourceLength)
+            val result = sourceCapture(virtualFile, maxSourceLength)
         ) {
             is DependentMapperSourceCaptureResult.Captured -> result.snapshot
             is DependentMapperSourceCaptureResult.ContentTooLarge -> {
@@ -99,7 +111,7 @@ object XmlMapperMethodCaptureAdapter {
         synchronizeCachedDocument(project, virtualFile)
 
         val afterSynchronization = when (
-            val result = DependentMapperSourceSnapshotAdapter.capture(virtualFile, maxSourceLength)
+            val result = sourceCapture(virtualFile, maxSourceLength)
         ) {
             is DependentMapperSourceCaptureResult.Captured -> result.snapshot
             is DependentMapperSourceCaptureResult.ContentTooLarge -> {
