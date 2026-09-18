@@ -3,7 +3,6 @@ package com.algorist.zMyBatis.core.input
 import com.algorist.zMyBatis.core.source.JavaAnnotationStatementCapture
 import com.algorist.zMyBatis.core.source.JavaMethodParameterMetadata
 import com.algorist.zMyBatis.core.source.JavaStatementId
-import com.algorist.zMyBatis.core.source.JavaTypeIdentity
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRevision
 
