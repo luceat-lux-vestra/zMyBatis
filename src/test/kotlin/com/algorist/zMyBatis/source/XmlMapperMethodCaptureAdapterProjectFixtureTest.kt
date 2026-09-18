@@ -216,6 +216,39 @@ class XmlMapperMethodCaptureAdapterProjectFixtureTest : LightJavaCodeInsightFixt
         )
     }
 
+    fun testMyBatisRowBoundsAndResultHandlerParametersFailClosed() {
+        myFixture.addFileToProject(
+            "fixture/SpecialMapper.java",
+            """
+            package fixture;
+
+            import org.apache.ibatis.session.ResultHandler;
+            import org.apache.ibatis.session.RowBounds;
+
+            interface SpecialMapper {
+                Object withBounds(int id, RowBounds bounds);
+                void withHandler(int id, ResultHandler<Object> handler);
+            }
+            """.trimIndent(),
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        assertFailure(
+            XmlMapperMethodCaptureAdapter.capture(
+                project,
+                statementId("fixture.SpecialMapper", "withBounds"),
+            ),
+            XmlMapperMethodCaptureFailure.UNSUPPORTED_SPECIAL_PARAMETER,
+        )
+        assertFailure(
+            XmlMapperMethodCaptureAdapter.capture(
+                project,
+                statementId("fixture.SpecialMapper", "withHandler"),
+            ),
+            XmlMapperMethodCaptureFailure.UNSUPPORTED_SPECIAL_PARAMETER,
+        )
+    }
+
     fun testNonLiteralParamAliasAndUnresolvedParameterTypeFailClosed() {
         myFixture.addFileToProject(
             "fixture/AliasMapper.java",
