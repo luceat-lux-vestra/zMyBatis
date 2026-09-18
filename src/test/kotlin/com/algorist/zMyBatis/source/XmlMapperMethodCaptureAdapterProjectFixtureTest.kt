@@ -1,6 +1,7 @@
 package com.algorist.zMyBatis.source
 
 import com.algorist.zMyBatis.core.source.SourceFileId
+import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.XmlStatementId
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -213,6 +214,111 @@ class XmlMapperMethodCaptureAdapterProjectFixtureTest : LightJavaCodeInsightFixt
                 statementId("fixture.DefaultMapper", "find"),
             ),
             XmlMapperMethodCaptureFailure.UNSUPPORTED_METHOD_FORM,
+        )
+    }
+
+    fun testInjectedSnapshotPsiMismatchFailsClosed() {
+        myFixture.addFileToProject(
+            "fixture/MismatchMapper.java",
+            """
+            package fixture;
+
+            interface MismatchMapper {
+                Object find(int id);
+            }
+            """.trimIndent(),
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val result = XmlMapperMethodCaptureAdapter.capture(
+            project = project,
+            statementId = statementId("fixture.MismatchMapper", "find"),
+            maxSourceLength = 2 * 1024 * 1024,
+            sourceCapture = { virtualFile, maxSourceLength ->
+                when (
+                    val captured = DependentMapperSourceSnapshotAdapter.capture(
+                        virtualFile,
+                        maxSourceLength,
+                    )
+                ) {
+                    is DependentMapperSourceCaptureResult.Captured ->
+                        DependentMapperSourceCaptureResult.Captured(
+                            captured.snapshot.copy(
+                                content = captured.snapshot.content + "\n// injected-snapshot-drift",
+                            ),
+                        )
+                    else -> captured
+                }
+            },
+        )
+
+        assertFailure(result, XmlMapperMethodCaptureFailure.SOURCE_PSI_MISMATCH)
+    }
+
+    fun testSnapshotRevisionChangeBetweenReadsFailsClosed() {
+        myFixture.addFileToProject(
+            "fixture/RacingMapper.java",
+            """
+            package fixture;
+
+            interface RacingMapper {
+                Object find(int id);
+            }
+            """.trimIndent(),
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        var captureCount = 0
+        val result = XmlMapperMethodCaptureAdapter.capture(
+            project = project,
+            statementId = statementId("fixture.RacingMapper", "find"),
+            maxSourceLength = 2 * 1024 * 1024,
+            sourceCapture = { virtualFile, maxSourceLength ->
+                when (
+                    val captured = DependentMapperSourceSnapshotAdapter.capture(
+                        virtualFile,
+                        maxSourceLength,
+                    )
+                ) {
+                    is DependentMapperSourceCaptureResult.Captured -> {
+                        val snapshot = if (captureCount++ == 0) {
+                            captured.snapshot
+                        } else {
+                            captured.snapshot.copy(
+                                revision = SourceRevision(captured.snapshot.revision.value + ":changed"),
+                            )
+                        }
+                        DependentMapperSourceCaptureResult.Captured(snapshot)
+                    }
+                    else -> captured
+                }
+            },
+        )
+
+        assertEquals(2, captureCount)
+        assertFailure(result, XmlMapperMethodCaptureFailure.SOURCE_CHANGED_DURING_CAPTURE)
+    }
+
+    fun testOversizeMapperSourceFailsClosed() {
+        myFixture.addFileToProject(
+            "fixture/OversizeMapper.java",
+            """
+            package fixture;
+
+            interface OversizeMapper {
+                Object find(int id);
+            }
+            """.trimIndent(),
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        assertFailure(
+            XmlMapperMethodCaptureAdapter.capture(
+                project = project,
+                statementId = statementId("fixture.OversizeMapper", "find"),
+                maxSourceLength = 8,
+            ),
+            XmlMapperMethodCaptureFailure.MAPPER_SOURCE_TOO_LARGE,
         )
     }
 
