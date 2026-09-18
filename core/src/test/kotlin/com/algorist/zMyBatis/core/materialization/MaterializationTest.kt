@@ -13,7 +13,9 @@ import com.algorist.zMyBatis.core.preparation.PreparedBindingMetadata
 import com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin
 import com.algorist.zMyBatis.core.preparation.PreparedExecution
 import com.algorist.zMyBatis.core.preparation.PreparedRawInterpolation
+import com.algorist.zMyBatis.core.source.JavaStatementId
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
+import com.algorist.zMyBatis.core.source.MethodSignature
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRange
 import com.algorist.zMyBatis.core.source.SourceRevision
@@ -107,6 +109,66 @@ class MaterializationTest {
     }
 
     @Test
+    fun javaStatementIdentityParticipatesInFingerprint() {
+        val file = SourceFileId("vfs:/Mapper.java")
+        val firstStatement = JavaStatementId(
+            sourceFileId = file,
+            qualifiedMapperType = "fixture.Mapper",
+            methodSignature = MethodSignature("find", listOf(JavaTypeIdentity("java.lang.Long"))),
+        )
+        val secondStatement = JavaStatementId(
+            sourceFileId = file,
+            qualifiedMapperType = "fixture.Mapper",
+            methodSignature = MethodSignature("find", listOf(JavaTypeIdentity("java.lang.String"))),
+        )
+        val first = success(
+            ZeroBindingExecutionMaterializer.materialize(
+                prepared(statementId = firstStatement, sourceRevisions = mapOf(file to SourceRevision("r1"))),
+                TargetDialectIdentity("dialect-a"),
+            ),
+        )
+        val second = success(
+            ZeroBindingExecutionMaterializer.materialize(
+                prepared(statementId = secondStatement, sourceRevisions = mapOf(file to SourceRevision("r1"))),
+                TargetDialectIdentity("dialect-a"),
+            ),
+        )
+
+        assertNotEquals(first.fingerprint, second.fingerprint)
+    }
+
+    @Test
+    fun sourceRevisionInsertionOrderDoesNotChangeFingerprint() {
+        val root = SourceFileId("vfs:/mapper.xml")
+        val dependency = SourceFileId("vfs:/fragment.xml")
+        val statementId = XmlStatementId(root, "fixture.Mapper", "find")
+        val firstRevisions = linkedMapOf(
+            root to SourceRevision("root-r1"),
+            dependency to SourceRevision("fragment-r1"),
+        )
+        val secondRevisions = linkedMapOf(
+            dependency to SourceRevision("fragment-r1"),
+            root to SourceRevision("root-r1"),
+        )
+        val dialect = TargetDialectIdentity("dialect-a")
+
+        val first = success(
+            ZeroBindingExecutionMaterializer.materialize(
+                prepared(statementId = statementId, sourceRevisions = firstRevisions),
+                dialect,
+            ),
+        )
+        val second = success(
+            ZeroBindingExecutionMaterializer.materialize(
+                prepared(statementId = statementId, sourceRevisions = secondRevisions),
+                dialect,
+            ),
+        )
+
+        assertEquals(first.fingerprint, second.fingerprint)
+    }
+
+    @Test
     fun anyBoundMappingFailsWithoutGuessingLiteralization() {
         val prepared = prepared(
             sql = "select ?",
@@ -194,12 +256,16 @@ class MaterializationTest {
         namespace: String = "fixture.Mapper",
         bindings: List<PreparedBinding> = emptyList(),
         rawInterpolations: List<PreparedRawInterpolation> = emptyList(),
+        statementId: com.algorist.zMyBatis.core.source.StatementId? = null,
+        sourceRevisions: Map<SourceFileId, SourceRevision>? = null,
     ): PreparedExecution {
         val file = SourceFileId("vfs:/mapper.xml")
+        val resolvedStatementId = statementId ?: XmlStatementId(file, namespace, "find")
+        val resolvedRevisions = sourceRevisions ?: mapOf(file to SourceRevision(revision))
         return PreparedExecution(
-            statementId = XmlStatementId(file, namespace, "find"),
+            statementId = resolvedStatementId,
             statementKind = kind,
-            sourceRevisions = mapOf(file to SourceRevision(revision)),
+            sourceRevisions = resolvedRevisions,
             sqlWithPlaceholders = sql,
             orderedBindings = bindings,
             rawInterpolations = rawInterpolations,
