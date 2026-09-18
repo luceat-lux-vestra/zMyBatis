@@ -324,6 +324,7 @@ class XmlMapperMethodCaptureAdapterProjectFixtureTest : LightJavaCodeInsightFixt
             ),
             XmlMapperMethodCaptureFailure.SOURCE_CHANGED_DURING_CAPTURE,
         )
+        assertEquals(2, captureCount)
 
         assertFailure(
             XmlMapperMethodCaptureAdapter.capture(
