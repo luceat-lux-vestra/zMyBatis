@@ -340,6 +340,209 @@ class XmlMapperMethodParameterContractFactoryTest {
     }
 
     @Test
+    fun soleUnannotatedListExposesCollectionAndListAliases() {
+        val graph = graph("select * from users where id in #{collection} and id in #{list}")
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", null)),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertEquals(1, contract.requirements.size)
+        assertEquals(InputShape.LIST, contract.requirements.single().expectedType.shape)
+        assertEquals(listOf("collection", "list"), contract.aliases.map { it.name })
+        assertEquals(
+            listOf(InputAliasKind.COLLECTION, InputAliasKind.LIST),
+            contract.aliases.map { it.kind },
+        )
+        val generatedRequirementAliases = contract.requirements.single().provenance.evidence
+            .filterIsInstance<InputEvidence.GeneratedAlias>()
+        assertEquals(listOf("collection", "list"), generatedRequirementAliases.map { it.alias })
+        assertTrue(
+            generatedRequirementAliases.all {
+                it.parameterIndex == 0 &&
+                    it.ruleId == "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
+            },
+        )
+        contract.aliases.forEach { alias ->
+            val generatedAlias = alias.provenance.evidence
+                .filterIsInstance<InputEvidence.GeneratedAlias>()
+                .single()
+            assertEquals(0, generatedAlias.parameterIndex)
+            assertEquals(alias.name, generatedAlias.alias)
+            assertEquals(
+                "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection",
+                generatedAlias.ruleId,
+            )
+        }
+        assertEquals(
+            mapOf(XML_FILE to XML_REVISION, JAVA_FILE to JAVA_REVISION),
+            contract.sourceRevisions,
+        )
+    }
+
+    @Test
+    fun collectionShortcutRuntimeValueMustRemainNonNullForAliasSoundness() {
+        val graph = graph("select * from users where id in #{list}")
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", null)),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputNullability.UNKNOWN, requirement.expectedType.nullability)
+
+        val validation = InputEnvironment.validate(
+            contract,
+            listOf(
+                ProvidedInput(
+                    requirementId = requirement.id,
+                    value = InputValue.NullValue,
+                    origin = ExecutionInputOrigin.USER_ENTERED,
+                ),
+            ),
+        )
+        val failure = validation as InputEnvironmentResult.Failure
+        assertEquals(
+            listOf(InputEnvironmentFailure(InputEnvironmentFailureKind.NULL_NOT_ALLOWED, requirement.id)),
+            failure.failures,
+        )
+    }
+
+    @Test
+    fun mixedRawAndBoundCollectionShortcutAliasesRemainAmbiguous() {
+        val graph = graph("select " + raw("list") + " from users where id in #{collection}")
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "java.util.List<java.lang.String>", "values", null)),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertTrue(contract.aliases.isEmpty())
+        assertEquals("xml-mixed-raw-bound-input", contract.blockingProblems.single().code)
+        assertEquals(
+            listOf("list", "collection"),
+            contract.blockingProblems.single().provenance!!.evidence
+                .filterIsInstance<InputEvidence.GeneratedAlias>()
+                .map { it.alias },
+        )
+    }
+
+    @Test
+    fun soleUnannotatedCollectionExposesOnlyCollectionAlias() {
+        val graph = graph("select * from users where id in #{collection}")
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "java.util.Collection<java.lang.Long>", "ids", null)),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertEquals(InputShape.LIST, contract.requirements.single().expectedType.shape)
+        assertEquals(listOf("collection"), contract.aliases.map { it.name })
+        assertEquals(InputAliasKind.COLLECTION, contract.aliases.single().kind)
+
+        val blockedGraph = graph("select * from users where id in #{list}")
+        val blocked = XmlMapperMethodParameterContractFactory.build(
+            blockedGraph,
+            mapper(blockedGraph, listOf(parameter(0, "java.util.Collection<java.lang.Long>", "ids", null))),
+        )
+        assertTrue(blocked.isPreparationBlocked)
+        assertTrue(blocked.requirements.isEmpty())
+        assertEquals("xml-caller-input-authority-unproven", blocked.blockingProblems.single().code)
+    }
+
+    @Test
+    fun soleUnannotatedArrayExposesArrayAlias() {
+        val graph = graph("select * from users where id in #{array}")
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "long[]", "ids", null)),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertEquals(InputShape.ARRAY, contract.requirements.single().expectedType.shape)
+        assertEquals("array", contract.aliases.single().name)
+        assertEquals(InputAliasKind.ARRAY, contract.aliases.single().kind)
+    }
+
+    @Test
+    fun explicitParamDisablesSingleCollectionShortcuts() {
+        val graph = graph("select * from users where id in #{collection}")
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", "ids")),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertTrue(contract.aliases.isEmpty())
+        assertEquals("xml-caller-input-authority-unproven", contract.blockingProblems.single().code)
+    }
+
+    @Test
+    fun multiParameterMethodDoesNotExposeSingleCollectionShortcuts() {
+        val graph = graph("select * from users where id in #{list}")
+        val mapper = mapper(
+            graph,
+            listOf(
+                parameter(0, "java.util.List<java.lang.Long>", "ids", null),
+                parameter(1, "long", "limit", null),
+            ),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertEquals("xml-caller-input-authority-unproven", contract.blockingProblems.single().code)
+    }
+
+    @Test
+    fun rawCollectionShortcutRemainsBlockedAsNonString() {
+        val graph = graph("select " + raw("list") + " from users")
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "java.util.List<java.lang.String>", "columns", null)),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertEquals(InputAliasKind.LIST, contract.aliases.single().kind)
+        assertEquals("xml-raw-non-string-parameter", contract.blockingProblems.single().code)
+        assertEquals(contract.requirements.single().id, contract.blockingProblems.single().requirementId)
+    }
+
+    @Test
+    fun unsupportedCollectionSubtypeIsNotGuessedFromName() {
+        val graph = graph("select * from users where id in #{collection}")
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "java.util.ArrayList<java.lang.Long>", "ids", null)),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertEquals("xml-caller-input-authority-unproven", contract.blockingProblems.single().code)
+    }
+
+    @Test
     fun sourceNameWithoutExplicitParamRemainsBlocked() {
         val graph = graph("select * from users where id = #{id}")
         val mapper = mapper(

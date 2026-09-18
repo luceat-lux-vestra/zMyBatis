@@ -21,6 +21,8 @@ object XmlMapperMethodParameterContractFactory {
     private const val UNPROVEN_SHAPE_PROBLEM = "xml-unproven-parameter-shape"
     private const val RAW_NON_STRING_PROBLEM = "xml-raw-non-string-parameter"
     private const val GENERIC_ALIAS_RULE = "mybatis-3.5.19-param-name-resolver-generic"
+    private const val COLLECTION_SHORTCUT_RULE =
+        "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
 
     fun build(
         graph: StatementSourceGraph,
@@ -68,6 +70,7 @@ object XmlMapperMethodParameterContractFactory {
             .mapNotNull { parameter -> parameter.myBatisParamAlias?.let { alias -> alias to parameter } }
             .groupBy(keySelector = { it.first }, valueTransform = { it.second })
         val parametersByGenericAlias = genericAliases(mapperMethod.parameters, parametersByExplicitAlias)
+        val parametersByCollectionShortcutAlias = collectionShortcutAliases(mapperMethod.parameters)
 
         val problems = baseline.blockingProblems
             .filterNot { it.code == CALLER_AUTHORITY_PROBLEM }
@@ -129,6 +132,21 @@ object XmlMapperMethodParameterContractFactory {
                             parameterIndex = parameter.index,
                             alias = root,
                             ruleId = GENERIC_ALIAS_RULE,
+                        ),
+                    )
+                }
+                parametersByCollectionShortcutAlias[root] != null -> {
+                    val shortcut = parametersByCollectionShortcutAlias.getValue(root)
+                    resolvedByParameter.getOrPut(shortcut.parameter.index) { mutableListOf() } += ResolvedUse(
+                        parameter = shortcut.parameter,
+                        root = root,
+                        kind = kind,
+                        aliasKind = shortcut.aliasKind,
+                        placeholders = placeholders,
+                        generatedAlias = InputEvidence.GeneratedAlias(
+                            parameterIndex = shortcut.parameter.index,
+                            alias = root,
+                            ruleId = COLLECTION_SHORTCUT_RULE,
                         ),
                     )
                 }
@@ -235,22 +253,54 @@ object XmlMapperMethodParameterContractFactory {
         }
     }
 
+    private fun collectionShortcutAliases(
+        parameters: List<JavaMethodParameterMetadata>,
+    ): Map<String, CollectionShortcutAlias> {
+        if (parameters.size != 1) return emptyMap()
+        val parameter = parameters.single()
+        if (parameter.myBatisParamAlias != null) return emptyMap()
+
+        val canonical = parameter.typeIdentity.value.trim()
+        if (canonical.endsWith("[]")) {
+            return mapOf(
+                "array" to CollectionShortcutAlias(parameter, InputAliasKind.ARRAY),
+            )
+        }
+
+        return when (canonical.substringBefore('<').trim()) {
+            "java.util.List" -> linkedMapOf(
+                "collection" to CollectionShortcutAlias(parameter, InputAliasKind.COLLECTION),
+                "list" to CollectionShortcutAlias(parameter, InputAliasKind.LIST),
+            )
+            "java.util.Collection" -> mapOf(
+                "collection" to CollectionShortcutAlias(parameter, InputAliasKind.COLLECTION),
+            )
+            else -> emptyMap()
+        }
+    }
+
     private fun mapperEvidence(
         parameter: JavaMethodParameterMetadata,
         source: SourceEvidence,
-    ): List<InputEvidence> = listOf(
-        InputEvidence.MapperMethodParameter(
-            index = parameter.index,
-            sourceName = parameter.sourceName,
-            typeIdentity = parameter.typeIdentity,
-            source = source,
-        ),
-        InputEvidence.ExplicitParamAlias(
-            parameterIndex = parameter.index,
-            alias = requireNotNull(parameter.myBatisParamAlias),
-            source = source,
-        ),
-    )
+    ): List<InputEvidence> = buildList {
+        add(
+            InputEvidence.MapperMethodParameter(
+                index = parameter.index,
+                sourceName = parameter.sourceName,
+                typeIdentity = parameter.typeIdentity,
+                source = source,
+            ),
+        )
+        parameter.myBatisParamAlias?.let { alias ->
+            add(
+                InputEvidence.ExplicitParamAlias(
+                    parameterIndex = parameter.index,
+                    alias = alias,
+                    source = source,
+                ),
+            )
+        }
+    }
 
     private fun mergeSourceRevisions(
         baseline: Map<SourceFileId, SourceRevision>,
@@ -280,6 +330,11 @@ object XmlMapperMethodParameterContractFactory {
                 provenance = null,
             ),
         sourceRevisions = baseline.sourceRevisions,
+    )
+
+    private data class CollectionShortcutAlias(
+        val parameter: JavaMethodParameterMetadata,
+        val aliasKind: InputAliasKind,
     )
 
     private data class ResolvedUse(
