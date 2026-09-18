@@ -2,6 +2,7 @@ package com.algorist.zMyBatis.source
 
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRevision
+import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.XmlStatementId
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -394,6 +395,38 @@ class XmlMapperMethodCaptureAdapterProjectFixtureTest : LightJavaCodeInsightFixt
                 statementId = id,
                 maxSourceLength = 1024,
                 sourceCapture = { _, _ -> DependentMapperSourceCaptureResult.SourceChangedDuringCapture },
+            ),
+            XmlMapperMethodCaptureFailure.SOURCE_CHANGED_DURING_CAPTURE,
+        )
+
+        var captureCount = 0
+        assertFailure(
+            XmlMapperMethodCaptureAdapter.capture(
+                project = project,
+                statementId = id,
+                maxSourceLength = 1024,
+                sourceCapture = { virtualFile, maxLength ->
+                    when (
+                        val result = DependentMapperSourceSnapshotAdapter.capture(
+                            virtualFile,
+                            maxLength,
+                        )
+                    ) {
+                        is DependentMapperSourceCaptureResult.Captured -> {
+                            captureCount++
+                            if (captureCount == 2) {
+                                DependentMapperSourceCaptureResult.Captured(
+                                    result.snapshot.copy(
+                                        revision = SourceRevision(result.snapshot.revision.value + ":drift"),
+                                    ),
+                                )
+                            } else {
+                                result
+                            }
+                        }
+                        else -> result
+                    }
+                },
             ),
             XmlMapperMethodCaptureFailure.SOURCE_CHANGED_DURING_CAPTURE,
         )
