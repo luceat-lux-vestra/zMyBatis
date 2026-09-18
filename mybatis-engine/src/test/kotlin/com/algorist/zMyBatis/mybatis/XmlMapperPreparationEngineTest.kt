@@ -129,17 +129,17 @@ class XmlMapperPreparationEngineTest {
     }
 
     @Test
-    fun boundAndRawPlaceholdersFailBeforeMapperEvaluation() {
-        listOf(
-            "SELECT * FROM users WHERE id = #{id}",
-            "SELECT * FROM ${'$'}{table}",
-        ).forEach { sql ->
-            assertFailure(
-                prepare(single(sql)),
-                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-                "xml-preparation-placeholder-unsupported",
-            )
-        }
+    fun unprovenBoundAndRawPlaceholdersRemainFailClosed() {
+        assertFailure(
+            prepare(single("SELECT * FROM users WHERE id = #{id}")),
+            PreparationFailureKind.BINDING_RESOLUTION,
+            "xml-preparation-mapping-alias-unresolved",
+        )
+        assertFailure(
+            prepare(single("SELECT * FROM " + 36.toChar() + "{table}")),
+            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+            "xml-preparation-raw-input-unsupported",
+        )
     }
 
     @Test
@@ -198,6 +198,20 @@ class XmlMapperPreparationEngineTest {
             PreparationFailureKind.UNSUPPORTED_SEMANTIC,
             "xml-preparation-runtime-class-loading-unsupported",
         )
+    }
+
+    @Test
+    fun parameterMappingRuntimeClassOptionsFailBeforeMyBatisParser() {
+        listOf(
+            "SELECT * FROM users WHERE id = #{id,javaType=example.Payload}",
+            "SELECT * FROM users WHERE id = #{id,typeHandler=example.Handler}",
+        ).forEach { sql ->
+            assertFailure(
+                prepare(single(sql)),
+                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                "xml-preparation-runtime-class-loading-unsupported",
+            )
+        }
     }
 
     @Test

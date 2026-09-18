@@ -37,7 +37,7 @@ import org.junit.Test
 
 class XmlMapperPreparationInputBoundaryTest {
     @Test
-    fun callerRequirementAliasAndValueCannotEnterZeroInputIsland() {
+    fun unprovenSourceParameterNameAliasRemainsFailClosed() {
         val fixture = fixture()
         val requirementId = InputRequirementId("caller-id")
         val provenance = InputProvenance(
@@ -95,7 +95,7 @@ class XmlMapperPreparationInputBoundaryTest {
 
         val failure = (XmlMapperPreparationEngine.prepare(request.request) as PreparationResult.Failed).failure
         assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, failure.kind)
-        assertEquals("xml-preparation-input-contract-unsupported", failure.code)
+        assertEquals("xml-preparation-alias-kind-unsupported", failure.code)
     }
 
     @Test
