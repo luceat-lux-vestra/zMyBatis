@@ -35,7 +35,7 @@ class XmlStatementParameterContractFactoryTest {
         assertEquals("table", placeholder.expression)
         assertEquals(ROOT_FILE, placeholder.source.sourceFileId)
         assertEquals(ROOT_REVISION, placeholder.source.sourceRevision)
-        assertEquals(graph.rootStatement.sourceRange, placeholder.source.sourceRange)
+        assertEquals(null, placeholder.source.sourceRange)
     }
 
     @Test
