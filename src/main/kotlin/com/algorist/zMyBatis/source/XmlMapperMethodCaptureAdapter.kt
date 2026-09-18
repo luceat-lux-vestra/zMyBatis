@@ -35,6 +35,7 @@ enum class XmlMapperMethodCaptureFailure {
     MISSING_METHOD,
     AMBIGUOUS_METHOD,
     UNSUPPORTED_METHOD_FORM,
+    UNSUPPORTED_SPECIAL_PARAMETER,
     UNRESOLVED_PARAMETER_TYPE,
     UNRESOLVED_PARAM_ALIAS,
     MAPPER_SOURCE_UNAVAILABLE,
@@ -52,6 +53,10 @@ enum class XmlMapperMethodCaptureFailure {
 object XmlMapperMethodCaptureAdapter {
     private const val DEFAULT_MAX_SOURCE_LENGTH = 2 * 1024 * 1024
     private const val PARAM_ANNOTATION = "org.apache.ibatis.annotations.Param"
+    private val specialParameterTypes = setOf(
+        "org.apache.ibatis.session.RowBounds",
+        "org.apache.ibatis.session.ResultHandler",
+    )
 
     fun capture(
         project: Project,
@@ -155,6 +160,9 @@ object XmlMapperMethodCaptureAdapter {
 
         val parameters = mutableListOf<JavaMethodParameterMetadata>()
         method.parameterList.parameters.forEachIndexed { index, parameter ->
+            if (isSpecialParameter(parameter.type)) {
+                return failed(XmlMapperMethodCaptureFailure.UNSUPPORTED_SPECIAL_PARAMETER)
+            }
             val typeIdentity = parameterTypeIdentity(parameter.type)
                 ?: return failed(XmlMapperMethodCaptureFailure.UNRESOLVED_PARAMETER_TYPE)
             val paramAlias = parameter.getAnnotation(PARAM_ANNOTATION)?.let { annotation ->
@@ -216,6 +224,22 @@ object XmlMapperMethodCaptureAdapter {
             0 -> MethodResolution.Failed(XmlMapperMethodCaptureFailure.MISSING_METHOD)
             1 -> MethodResolution.Resolved(methods.single())
             else -> MethodResolution.Failed(XmlMapperMethodCaptureFailure.AMBIGUOUS_METHOD)
+        }
+    }
+
+    private fun isSpecialParameter(type: PsiType): Boolean {
+        val resolved = (type as? PsiClassType)?.resolve() ?: return false
+        return isSpecialParameterClass(resolved, mutableSetOf())
+    }
+
+    private fun isSpecialParameterClass(
+        psiClass: PsiClass,
+        visited: MutableSet<PsiClass>,
+    ): Boolean {
+        if (!visited.add(psiClass)) return false
+        if (psiClass.qualifiedName in specialParameterTypes) return true
+        return psiClass.supers.any { superClass ->
+            isSpecialParameterClass(superClass, visited)
         }
     }
 
