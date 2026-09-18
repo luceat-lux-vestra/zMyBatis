@@ -87,6 +87,8 @@ class XmlMapperPreparationInputBoundaryTest {
                 ),
             ) as InputEnvironmentResult.Success
             ).environment
+        assertEquals(InputAliasKind.SOURCE_PARAMETER_NAME, contract.aliases.single().kind)
+
         val request = MyBatisPreparationRequest.create(
             XmlMapperPreparationSource(fixture.graph),
             contract,
