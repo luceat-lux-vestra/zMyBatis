@@ -300,7 +300,7 @@ object XmlMapperPreparationEngine {
         } catch (failure: Throwable) {
             try {
                 loader.close()
-            } catch (_: Throwable) {
+            } catch (_: Exception) {
                 // Preserve the initialization failure that caused the runtime to be rejected.
             }
             throw failure
