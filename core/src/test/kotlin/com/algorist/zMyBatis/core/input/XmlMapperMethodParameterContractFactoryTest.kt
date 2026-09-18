@@ -73,6 +73,243 @@ class XmlMapperMethodParameterContractFactoryTest {
     }
 
     @Test
+    fun allExplicitParametersExposeProvableGenericParamAliases() {
+        val graph = graph("select * from users where id = #{param1} and name = #{param2}")
+        val mapper = mapper(
+            graph,
+            listOf(
+                parameter(0, "long", "id", "id"),
+                parameter(1, "java.lang.String", "name", "name"),
+            ),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertEquals(
+            listOf("xml-java-param:0", "xml-java-param:1"),
+            contract.requirements.map { it.id.value },
+        )
+        assertEquals(listOf("param1", "param2"), contract.aliases.map { it.name })
+        assertTrue(contract.aliases.all { it.kind == InputAliasKind.GENERIC_PARAM })
+
+        contract.requirements.forEachIndexed { index, requirement ->
+            val generated = requirement.provenance.evidence
+                .filterIsInstance<InputEvidence.GeneratedAlias>()
+                .single()
+            assertEquals(index, generated.parameterIndex)
+            assertEquals("param${index + 1}", generated.alias)
+            assertEquals("mybatis-3.5.19-param-name-resolver-generic", generated.ruleId)
+            assertTrue(
+                requirement.provenance.evidence.any {
+                    it is InputEvidence.ExplicitParamAlias && it.parameterIndex == index
+                },
+            )
+        }
+    }
+
+    @Test
+    fun explicitAliasCollisionSuppressesGenericAliasExactlyLikeMyBatis() {
+        val graph = graph("select * from users where first = #{param1} and second = #{param2}")
+        val mapper = mapper(
+            graph,
+            listOf(
+                parameter(0, "long", "first", "param1"),
+                parameter(1, "long", "second", "second"),
+            ),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertEquals(
+            listOf("xml-java-param:0", "xml-java-param:1"),
+            contract.requirements.map { it.id.value },
+        )
+        assertEquals(
+            listOf(InputAliasKind.EXPLICIT_PARAM, InputAliasKind.GENERIC_PARAM),
+            contract.aliases.map { it.kind },
+        )
+        assertEquals(listOf("param1", "param2"), contract.aliases.map { it.name })
+        assertEquals(
+            0,
+            contract.aliases.first().provenance.evidence
+                .filterIsInstance<InputEvidence.GeneratedAlias>()
+                .size,
+        )
+        assertEquals(
+            1,
+            contract.aliases.last().provenance.evidence
+                .filterIsInstance<InputEvidence.GeneratedAlias>()
+                .size,
+        )
+    }
+
+    @Test
+    fun mixedAnnotatedAndUnannotatedParametersDoNotProveGenericAliases() {
+        val graph = graph("select * from users where id = #{param1}")
+        val mapper = mapper(
+            graph,
+            listOf(
+                parameter(0, "long", "id", "id"),
+                parameter(1, "java.lang.String", "name", null),
+            ),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertTrue(contract.aliases.isEmpty())
+        assertEquals("xml-caller-input-authority-unproven", contract.blockingProblems.single().code)
+    }
+
+    @Test
+    fun allUnannotatedParametersDoNotProveGenericAliases() {
+        val graph = graph("select * from users where id = #{param1}")
+        val mapper = mapper(
+            graph,
+            listOf(
+                parameter(0, "long", "id", null),
+                parameter(1, "java.lang.String", "name", null),
+            ),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertEquals("xml-caller-input-authority-unproven", contract.blockingProblems.single().code)
+    }
+
+    @Test
+    fun duplicateExplicitAliasesPreventGenericAliasWidening() {
+        val graph = graph("select * from users where id = #{param1}")
+        val mapper = mapper(
+            graph,
+            listOf(
+                parameter(0, "long", "first", "same"),
+                parameter(1, "long", "second", "same"),
+            ),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertTrue(contract.aliases.isEmpty())
+        assertEquals("xml-caller-input-authority-unproven", contract.blockingProblems.single().code)
+    }
+
+    @Test
+    fun generatedAliasRetainsRawStringSafetyRule() {
+        val graph = graph("select * from users limit " + raw("param1"))
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "long", "limit", "limit")),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertEquals(InputAliasKind.GENERIC_PARAM, contract.aliases.single().kind)
+        val problem = contract.blockingProblems.single()
+        assertEquals("xml-raw-non-string-parameter", problem.code)
+        assertEquals(contract.requirements.single().id, problem.requirementId)
+    }
+
+    @Test
+    fun generatedAliasRetainsUnknownShapeSafetyRule() {
+        val graph = graph("select * from users where filter = #{param1}")
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "com.acme.Filter", "filter", "filter")),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertEquals(InputAliasKind.GENERIC_PARAM, contract.aliases.single().kind)
+        assertEquals(InputShape.UNKNOWN, contract.requirements.single().expectedType.shape)
+        assertEquals("xml-unproven-parameter-shape", contract.blockingProblems.single().code)
+        assertEquals(contract.requirements.single().id, contract.blockingProblems.single().requirementId)
+    }
+
+    @Test
+    fun explicitAndGenericNamesForSameParameterCollapseToOneRequirement() {
+        val graph = graph("select * from users where id = #{id} or parent_id = #{param1}")
+        val mapper = mapper(
+            graph,
+            listOf(
+                parameter(0, "long", "id", "id"),
+                parameter(1, "java.lang.String", "name", "name"),
+            ),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertEquals(1, contract.requirements.size)
+        assertEquals(
+            listOf("id", "param1"),
+            contract.aliases.map { it.name },
+        )
+        assertEquals(
+            listOf(InputAliasKind.EXPLICIT_PARAM, InputAliasKind.GENERIC_PARAM),
+            contract.aliases.map { it.kind },
+        )
+        assertEquals(
+            2,
+            contract.requirements.single().provenance.evidence
+                .filterIsInstance<InputEvidence.Placeholder>()
+                .size,
+        )
+    }
+
+    @Test
+    fun rawAndBoundNamesForSameParameterRemainAmbiguousAcrossAliasKinds() {
+        val graph = graph("select " + raw("param1") + " from users where id = #{id}")
+        val mapper = mapper(
+            graph,
+            listOf(
+                parameter(0, "java.lang.String", "id", "id"),
+                parameter(1, "long", "other", "other"),
+            ),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertTrue(contract.aliases.isEmpty())
+        assertEquals("xml-mixed-raw-bound-input", contract.blockingProblems.single().code)
+        assertEquals(
+            1,
+            contract.blockingProblems.single().provenance!!.evidence
+                .filterIsInstance<InputEvidence.GeneratedAlias>()
+                .size,
+        )
+    }
+
+    @Test
+    fun argNamesRemainUnprovenEvenWhenGenericAliasesAreProvable() {
+        val graph = graph("select * from users where id = #{arg0}")
+        val mapper = mapper(
+            graph,
+            listOf(
+                parameter(0, "long", "id", "id"),
+                parameter(1, "java.lang.String", "name", "name"),
+            ),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertEquals("xml-caller-input-authority-unproven", contract.blockingProblems.single().code)
+    }
+
+    @Test
     fun sourceNameWithoutExplicitParamRemainsBlocked() {
         val graph = graph("select * from users where id = #{id}")
         val mapper = mapper(
