@@ -37,7 +37,7 @@ import org.junit.Test
 
 class XmlMapperPreparationInputBoundaryTest {
     @Test
-    fun callerRequirementAliasAndValueCannotEnterZeroInputIsland() {
+    fun unprovenSourceParameterNameAliasRemainsFailClosed() {
         val fixture = fixture()
         val requirementId = InputRequirementId("caller-id")
         val provenance = InputProvenance(
@@ -87,6 +87,8 @@ class XmlMapperPreparationInputBoundaryTest {
                 ),
             ) as InputEnvironmentResult.Success
             ).environment
+        assertEquals(InputAliasKind.SOURCE_PARAMETER_NAME, contract.aliases.single().kind)
+
         val request = MyBatisPreparationRequest.create(
             XmlMapperPreparationSource(fixture.graph),
             contract,
@@ -95,7 +97,7 @@ class XmlMapperPreparationInputBoundaryTest {
 
         val failure = (XmlMapperPreparationEngine.prepare(request.request) as PreparationResult.Failed).failure
         assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, failure.kind)
-        assertEquals("xml-preparation-input-contract-unsupported", failure.code)
+        assertEquals("xml-preparation-alias-kind-unsupported", failure.code)
     }
 
     @Test
@@ -134,6 +136,50 @@ class XmlMapperPreparationInputBoundaryTest {
         ) as PreparationRequestResult.Failed
         assertEquals(PreparationFailureKind.SOURCE_REVISION_MISMATCH, failure.failure.kind)
         assertEquals("preparation-source-revision-drift", failure.failure.code)
+    }
+
+    @Test
+    fun mapperAuthorityRevisionMustBeOwnedByPreparationSource() {
+        val fixture = fixture()
+        val javaFile = SourceFileId("vfs:/Mapper.java")
+        val javaRevision = SourceRevision("java-r1")
+        val javaSnapshot = SourceSnapshot(
+            javaFile,
+            javaRevision,
+            "interface Mapper { Object find(long id); }",
+        )
+        val revisions = mapOf(
+            fixture.fileId to fixture.revision,
+            javaFile to javaRevision,
+        )
+        val contract = emptyContract(fixture.statementId, revisions)
+        val environment = (
+            InputEnvironment.validate(contract, emptyList()) as InputEnvironmentResult.Success
+            ).environment
+
+        val missingAuthority = MyBatisPreparationRequest.create(
+            XmlMapperPreparationSource(fixture.graph),
+            contract,
+            environment,
+        ) as PreparationRequestResult.Failed
+        assertEquals(PreparationFailureKind.SOURCE_REVISION_MISMATCH, missingAuthority.failure.kind)
+        assertEquals("preparation-source-revision-drift", missingAuthority.failure.code)
+
+        val authoritySnapshots = mutableListOf(javaSnapshot)
+        val source = XmlMapperPreparationSource(
+            fixture.graph,
+            additionalAuthoritySnapshots = authoritySnapshots,
+        )
+        authoritySnapshots.clear()
+
+        val ready = MyBatisPreparationRequest.create(
+            source,
+            contract,
+            environment,
+        ) as PreparationRequestResult.Ready
+
+        assertEquals(revisions, ready.request.sourceRevisions)
+        assertEquals(listOf(javaSnapshot), source.additionalAuthoritySnapshots)
     }
 
     private fun emptyContract(
