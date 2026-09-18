@@ -135,6 +135,70 @@ class XmlStatementParameterContractFactoryTest {
         assertTrue(contract.blockingProblems.isEmpty())
     }
 
+    @Test
+    fun repeatedSameRootCollapsesToOneAuthorityProblemWithAllUseEvidence() {
+        val contract = XmlStatementParameterContractFactory.build(
+            graph(body = "select * from users where id = #{id} or parent_id = #{id}"),
+        )
+
+        assertTrue(contract.isPreparationBlocked)
+        assertEquals(1, contract.blockingProblems.size)
+        val evidence = contract.blockingProblems.single().provenance!!.evidence
+            .filterIsInstance<InputEvidence.Placeholder>()
+        assertEquals(2, evidence.size)
+        assertTrue(evidence.all { it.kind == InputKind.BOUND && it.expression == "id" })
+    }
+
+    @Test
+    fun differentRawAndBoundRootsRemainIndependentUnknownAuthorityProblems() {
+        val contract = XmlStatementParameterContractFactory.build(
+            graph(body = "select * from " + raw("table") + " where id = #{id}"),
+        )
+
+        assertTrue(contract.isPreparationBlocked)
+        assertEquals(
+            listOf(
+                "xml-caller-input-authority-unproven",
+                "xml-caller-input-authority-unproven",
+            ),
+            contract.blockingProblems.map { it.code },
+        )
+        assertEquals(
+            listOf(InputKind.RAW_INTERPOLATION, InputKind.BOUND),
+            contract.blockingProblems.map {
+                (it.provenance!!.evidence.single() as InputEvidence.Placeholder).kind
+            },
+        )
+    }
+
+    @Test
+    fun unrelatedSnapshotWithoutDependencyPreservesRevisionWithoutCreatingEvidence() {
+        val root = graph(body = "select * from " + raw("table"))
+        val unrelatedFile = SourceFileId("src/main/resources/com/acme/Unrelated.xml")
+        val unrelatedRevision = SourceRevision("document:99")
+        val graph = StatementSourceGraph(
+            rootStatement = root.rootStatement,
+            sourceSnapshots = root.sourceSnapshots + SourceSnapshot(
+                unrelatedFile,
+                unrelatedRevision,
+                "<mapper namespace=\"com.acme.Unrelated\"><select id=\"x\">#{ghost}</select></mapper>",
+            ),
+            dependencies = emptyList(),
+        )
+
+        val contract = XmlStatementParameterContractFactory.build(graph)
+
+        assertEquals(
+            mapOf(ROOT_FILE to ROOT_REVISION, unrelatedFile to unrelatedRevision),
+            contract.sourceRevisions,
+        )
+        assertEquals(1, contract.blockingProblems.size)
+        val placeholder = contract.blockingProblems.single().provenance!!
+            .evidence.single() as InputEvidence.Placeholder
+        assertEquals("table", placeholder.expression)
+        assertEquals(ROOT_FILE, placeholder.source.sourceFileId)
+    }
+
     private fun graph(
         body: String,
         trailingDeclarations: String = "",
