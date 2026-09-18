@@ -2,7 +2,6 @@ package com.algorist.zMyBatis.source
 
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRevision
-import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.XmlStatementId
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
