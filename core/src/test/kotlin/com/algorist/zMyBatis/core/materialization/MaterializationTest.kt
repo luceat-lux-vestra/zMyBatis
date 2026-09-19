@@ -112,6 +112,82 @@ class MaterializationTest {
     }
 
     @Test
+    fun postgresqlBooleanBindingsMaterializeAsTypedBooleanCasts() {
+        val execution = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?, ?",
+                    bindings = listOf(
+                        booleanBinding(0, true),
+                        booleanBinding(1, false),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+
+        assertEquals(
+            "select CAST(TRUE AS BOOLEAN), CAST(FALSE AS BOOLEAN)",
+            execution.executionSql,
+        )
+    }
+
+    @Test
+    fun explicitBooleanJdbcTypeIsAdmitted() {
+        val execution = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?",
+                    bindings = listOf(booleanBinding(0, true, jdbcType = "BOOLEAN")),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+
+        assertEquals("select CAST(TRUE AS BOOLEAN)", execution.executionSql)
+    }
+
+    @Test
+    fun mixedBigintAndBooleanBindingsPreserveOrderAndFingerprintIdentity() {
+        val first = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?, ?, ?",
+                    bindings = listOf(
+                        longBinding(0, BigInteger.valueOf(41)),
+                        booleanBinding(1, true),
+                        longBinding(2, BigInteger.valueOf(43)),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+        val second = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?, ?, ?",
+                    bindings = listOf(
+                        longBinding(0, BigInteger.valueOf(41)),
+                        booleanBinding(1, false),
+                        longBinding(2, BigInteger.valueOf(43)),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+
+        assertEquals(
+            "select CAST(41 AS BIGINT), CAST(TRUE AS BOOLEAN), CAST(43 AS BIGINT)",
+            first.executionSql,
+        )
+        assertEquals(
+            "select CAST(41 AS BIGINT), CAST(FALSE AS BOOLEAN), CAST(43 AS BIGINT)",
+            second.executionSql,
+        )
+        assertNotEquals(first.fingerprint, second.fingerprint)
+    }
+
+    @Test
     fun multipleLongBindingsPreserveOrder() {
         val execution = success(
             MaintainedExecutionMaterializer.materialize(
@@ -245,7 +321,7 @@ class MaterializationTest {
             assertFailure(
                 result,
                 MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
-                "materialization-postgresql-bigint-preparation-metadata-unsupported",
+                "materialization-postgresql-preparation-metadata-unsupported",
             )
         }
     }
@@ -278,12 +354,12 @@ class MaterializationTest {
                 0,
                 BigInteger.ONE,
                 typeHandler = "org.apache.ibatis.type.IntegerTypeHandler",
-            ) to "materialization-postgresql-bigint-type-handler-unsupported",
+            ) to "materialization-postgresql-type-handler-unsupported",
             longBinding(
                 0,
                 BigInteger.ONE,
                 typeHandler = "com.example.CustomLongTypeHandler",
-            ) to "materialization-postgresql-bigint-type-handler-unsupported",
+            ) to "materialization-postgresql-type-handler-unsupported",
             longBinding(0, BigInteger.ONE, jdbcType = "INTEGER") to
                 "materialization-postgresql-bigint-jdbc-type-unsupported",
             longBinding(0, BigInteger.ONE, parameterMode = "OUT") to
@@ -302,11 +378,68 @@ class MaterializationTest {
     }
 
     @Test
-    fun nonIntegerValuesRemainOutsideTheMatrix() {
+    fun unsupportedBooleanMetadataFailsClosedByExactReason() {
+        val cases = listOf(
+            booleanBinding(0, true, mappingJavaType = "java.lang.String") to
+                "materialization-postgresql-boolean-mapping-java-type-unsupported",
+            booleanBinding(
+                0,
+                true,
+                typeHandler = "org.apache.ibatis.type.IntegerTypeHandler",
+            ) to "materialization-postgresql-type-handler-unsupported",
+            booleanBinding(
+                0,
+                true,
+                typeHandler = "com.example.CustomBooleanTypeHandler",
+            ) to "materialization-postgresql-type-handler-unsupported",
+            booleanBinding(0, true, jdbcType = "BIT") to
+                "materialization-postgresql-boolean-jdbc-type-unsupported",
+            booleanBinding(0, true, parameterMode = "OUT") to
+                "materialization-postgresql-boolean-parameter-mode-unsupported",
+            booleanBinding(0, true, numericScale = 0) to
+                "materialization-postgresql-boolean-numeric-scale-unsupported",
+        )
+
+        cases.forEach { (binding, code) ->
+            val result = MaintainedExecutionMaterializer.materialize(
+                prepared(sql = "select ?", bindings = listOf(binding)),
+                TargetDialectIdentity("postgresql"),
+            )
+            assertFailure(result, MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED, code)
+        }
+    }
+
+    @Test
+    fun nullBooleanRemainsOutsideTheMaintainedMatrix() {
+        val result = MaintainedExecutionMaterializer.materialize(
+            prepared(
+                sql = "select ?",
+                bindings = listOf(
+                    binding(
+                        index = 0,
+                        value = InputValue.NullValue,
+                        declaredJavaType = "java.lang.Boolean",
+                        mappingJavaType = "java.lang.Boolean",
+                        jdbcType = "BOOLEAN",
+                        typeHandler = "org.apache.ibatis.type.BooleanTypeHandler",
+                    ),
+                ),
+            ),
+            TargetDialectIdentity("postgresql"),
+        )
+
+        assertFailure(
+            result,
+            MaterializationFailureKind.BINDING_VALUE_UNSUPPORTED,
+            "materialization-postgresql-boolean-value-unsupported",
+        )
+    }
+
+    @Test
+    fun valuesOutsideBigintAndBooleanRemainOutsideTheMatrix() {
         val values = listOf<InputValue>(
             InputValue.NullValue,
             InputValue.Text("top-secret-value"),
-            InputValue.BooleanValue(true),
             InputValue.DecimalValue(BigDecimal("1.25")),
             InputValue.DateValue(LocalDate.of(2026, 9, 19)),
             InputValue.TimeValue(LocalTime.of(12, 34)),
@@ -670,10 +803,32 @@ class MaterializationTest {
         numericScale = numericScale,
     )
 
+    private fun booleanBinding(
+        index: Int,
+        value: Boolean,
+        mappingJavaType: String? = "java.lang.Boolean",
+        jdbcType: String? = null,
+        typeHandler: String = "org.apache.ibatis.type.BooleanTypeHandler",
+        parameterMode: String = "IN",
+        numericScale: Int? = null,
+        origin: PreparedBindingOrigin = callerOrigin(index),
+    ): PreparedBinding = binding(
+        index = index,
+        value = InputValue.BooleanValue(value),
+        origin = origin,
+        declaredJavaType = "java.lang.Boolean",
+        mappingJavaType = mappingJavaType,
+        jdbcType = jdbcType,
+        typeHandler = typeHandler,
+        parameterMode = parameterMode,
+        numericScale = numericScale,
+    )
+
     private fun binding(
         index: Int,
         value: InputValue,
         origin: PreparedBindingOrigin = callerOrigin(index),
+        declaredJavaType: String = "java.lang.Long",
         mappingJavaType: String? = "java.lang.Long",
         jdbcType: String? = null,
         typeHandler: String = "org.apache.ibatis.type.LongTypeHandler",
@@ -685,7 +840,7 @@ class MaterializationTest {
         value = value,
         origin = origin,
         metadata = PreparedBindingMetadata(
-            declaredJavaTypeIdentity = JavaTypeIdentity("java.lang.Long"),
+            declaredJavaTypeIdentity = JavaTypeIdentity(declaredJavaType),
             mappingJavaTypeIdentity = mappingJavaType,
             jdbcTypeIdentity = jdbcType,
             typeHandlerIdentity = typeHandler,
