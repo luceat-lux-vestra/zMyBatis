@@ -266,7 +266,7 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
                 MaterializationFailureKind.BINDING_VALUE_UNSUPPORTED,
                 POSTGRESQL_BIGINT_VALUE_REQUIRED,
             )
-        if (value.value < LONG_MIN || value.value > LONG_MAX) {
+        if (value.value !in LONG_MIN..LONG_MAX) {
             return renderFailure(
                 MaterializationFailureKind.BINDING_VALUE_OUT_OF_RANGE,
                 POSTGRESQL_BIGINT_VALUE_OUT_OF_RANGE,
