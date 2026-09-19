@@ -232,33 +232,26 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
     }
 
     private fun preparationMetadataFailureCode(bindings: List<PreparedBinding>): String {
-        val families = bindings.mapNotNullTo(linkedSetOf()) { binding ->
-            when {
-                binding.metadata.mappingJavaTypeIdentity == LONG_JAVA_TYPE -> BindingFamily.BIGINT
-                binding.metadata.mappingJavaTypeIdentity == BOOLEAN_JAVA_TYPE -> BindingFamily.BOOLEAN
-                binding.metadata.typeHandlerIdentity == LONG_TYPE_HANDLER -> BindingFamily.BIGINT
-                binding.metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER -> BindingFamily.BOOLEAN
-                else -> null
-            }
+        val booleanBindings = bindings.count { binding ->
+            binding.metadata.mappingJavaTypeIdentity == BOOLEAN_JAVA_TYPE &&
+                binding.metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER
         }
-        return when (families.singleOrNull()) {
-            BindingFamily.BIGINT -> POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED
-            BindingFamily.BOOLEAN -> POSTGRESQL_BOOLEAN_PREPARATION_METADATA_REQUIRED
-            null -> POSTGRESQL_PREPARATION_METADATA_REQUIRED
+        return when {
+            booleanBindings == 0 -> POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED
+            booleanBindings == bindings.size -> POSTGRESQL_BOOLEAN_PREPARATION_METADATA_REQUIRED
+            else -> POSTGRESQL_PREPARATION_METADATA_REQUIRED
         }
     }
 
     private fun renderPostgresqlBinding(binding: PreparedBinding): BindingRender {
         val metadata = binding.metadata
-        return when {
-            metadata.mappingJavaTypeIdentity == LONG_JAVA_TYPE -> renderPostgresqlBigint(binding)
-            metadata.mappingJavaTypeIdentity == BOOLEAN_JAVA_TYPE -> renderPostgresqlBoolean(binding)
-            metadata.typeHandlerIdentity == LONG_TYPE_HANDLER -> renderPostgresqlBigint(binding)
-            metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER -> renderPostgresqlBoolean(binding)
-            else -> renderFailure(
-                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
-                POSTGRESQL_TYPE_HANDLER_REQUIRED,
-            )
+        return if (
+            metadata.mappingJavaTypeIdentity == BOOLEAN_JAVA_TYPE ||
+            metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER
+        ) {
+            renderPostgresqlBoolean(binding)
+        } else {
+            renderPostgresqlBigint(binding)
         }
     }
 
@@ -377,11 +370,6 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
     private fun renderFailure(kind: MaterializationFailureKind, code: String): BindingRender.Failed =
         BindingRender.Failed(MaterializationFailure(kind, code))
 
-    private enum class BindingFamily {
-        BIGINT,
-        BOOLEAN,
-    }
-
     private sealed interface BindingRender {
         data class Ready(val sql: String) : BindingRender
 
@@ -399,8 +387,6 @@ private const val POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED =
 private const val POSTGRESQL_BOOLEAN_PREPARATION_METADATA_REQUIRED =
     "materialization-postgresql-boolean-preparation-metadata-unsupported"
 private const val PLACEHOLDER_TOPOLOGY_REQUIRED = "materialization-placeholder-topology-unproven"
-private const val POSTGRESQL_TYPE_HANDLER_REQUIRED =
-    "materialization-postgresql-type-handler-unsupported"
 private const val POSTGRESQL_LONG_MAPPING_JAVA_TYPE_REQUIRED =
     "materialization-postgresql-bigint-mapping-java-type-unsupported"
 private const val POSTGRESQL_LONG_TYPE_HANDLER_REQUIRED =

@@ -417,6 +417,57 @@ class MaterializationTest {
     }
 
     @Test
+    fun legacyUnsupportedBindingFailureCodeRemainsBackwardCompatible() {
+        val result = MaintainedExecutionMaterializer.materialize(
+            prepared(
+                sql = "select ?",
+                bindings = listOf(
+                    binding(
+                        index = 0,
+                        value = InputValue.Text("legacy-unsupported"),
+                        declaredJavaType = "java.lang.String",
+                        mappingJavaType = "java.lang.String",
+                        typeHandler = "org.apache.ibatis.type.StringTypeHandler",
+                    ),
+                ),
+            ),
+            TargetDialectIdentity("postgresql"),
+        )
+
+        assertFailure(
+            result,
+            MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+            "materialization-postgresql-bigint-mapping-java-type-unsupported",
+        )
+    }
+
+    @Test
+    fun legacyUnsupportedBindingPreparationAuthorityCodeRemainsBackwardCompatible() {
+        val result = MaintainedExecutionMaterializer.materialize(
+            prepared(
+                sql = "select ?",
+                bindings = listOf(
+                    binding(
+                        index = 0,
+                        value = InputValue.Text("legacy-unsupported"),
+                        declaredJavaType = "java.lang.String",
+                        mappingJavaType = "java.lang.String",
+                        typeHandler = "org.apache.ibatis.type.StringTypeHandler",
+                    ),
+                ),
+                engineVersion = "3.5.20",
+            ),
+            TargetDialectIdentity("postgresql"),
+        )
+
+        assertFailure(
+            result,
+            MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
+            "materialization-postgresql-bigint-preparation-metadata-unsupported",
+        )
+    }
+
+    @Test
     fun unsupportedBooleanMetadataFailsClosedByExactReason() {
         val cases = listOf(
             booleanBinding(0, true, mappingJavaType = "java.lang.String") to
