@@ -6,6 +6,8 @@ import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
 import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailureKind
 import com.algorist.zMyBatis.core.materialization.TargetDialectIdentity
+import com.intellij.database.Dbms
+import com.intellij.openapi.progress.ProcessCanceledException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -41,6 +43,39 @@ class DatabaseToolsTargetResolverTest {
             TargetDialectIdentity("postgresql-maintained"),
             result.resolvedTarget.dialectIdentity,
         )
+    }
+
+    @Test
+    fun maintainedDatabaseToolsDbmsClassifierAdmitsExactPostgresOnly() {
+        assertEquals(
+            TargetDialectIdentity("postgresql"),
+            classifyDatabaseToolsDbms(Dbms.POSTGRES),
+        )
+        assertEquals(null, classifyDatabaseToolsDbms(Dbms.GREENPLUM))
+        assertEquals(null, classifyDatabaseToolsDbms(Dbms.MYSQL))
+        assertEquals(null, classifyDatabaseToolsDbms(Dbms.UNKNOWN))
+        assertEquals(null, classifyDatabaseToolsDbms(null))
+    }
+
+    @Test
+    fun databaseToolsDbmsLookupPreservesProcessCancellation() {
+        val cancellation = ProcessCanceledException()
+
+        try {
+            resolveDatabaseToolsDialectIdentity { throw cancellation }
+            throw AssertionError("ProcessCanceledException must escape DBMS classification")
+        } catch (ex: ProcessCanceledException) {
+            assertSame(cancellation, ex)
+        }
+    }
+
+    @Test
+    fun ordinaryDatabaseToolsDbmsLookupFailureFailsClosed() {
+        val result = resolveDatabaseToolsDialectIdentity {
+            throw IllegalStateException("unavailable")
+        }
+
+        assertEquals(null, result)
     }
 
     @Test
