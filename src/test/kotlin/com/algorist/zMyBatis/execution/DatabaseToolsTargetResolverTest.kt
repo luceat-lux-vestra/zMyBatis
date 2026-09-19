@@ -56,7 +56,7 @@ class DatabaseToolsTargetResolverTest {
             ),
             schemas = {
                 schemaCalls++
-                emptyList()
+                emptyList<SchemaCandidate<Resource>>()
             },
             dialectIdentity = {
                 dialectCalls++
@@ -190,7 +190,7 @@ class DatabaseToolsTargetResolverTest {
         val result = ExactTargetSelectionPolicy.resolve(
             descriptor = descriptor("missing", "public"),
             dataSources = listOf(DataSourceCandidate("other", secretResource)),
-            schemas = { emptyList() },
+            schemas = { emptyList<SchemaCandidate<Resource>>() },
             dialectIdentity = { null },
         )
 

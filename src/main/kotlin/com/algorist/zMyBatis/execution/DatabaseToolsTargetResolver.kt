@@ -10,6 +10,7 @@ import com.intellij.database.psi.DbDataSource
 import com.intellij.database.psi.DbPsiFacade
 import com.intellij.database.util.DasUtil
 import com.intellij.database.util.DbImplUtil
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 
 internal data class DataSourceCandidate<D>(
@@ -120,6 +121,7 @@ internal sealed interface DatabaseToolsTargetResolution {
  * invocation. Dialect identity must be supplied by an explicit provider; the default provider
  * deliberately fails closed until a maintained public-API classifier is proven.
  */
+@Suppress("unused") // #167 establishes the adapter; orchestration wiring is a later #65 slice.
 internal class DatabaseToolsTargetResolver(
     private val project: Project,
     private val dialectIdentityProvider: DatabaseToolsDialectIdentityProvider =
@@ -157,10 +159,11 @@ internal class DatabaseToolsTargetResolver(
     private fun stableDataSourceId(dataSource: DbDataSource): String? = try {
         DbImplUtil.getMaybeLocalDataSource(dataSource)
             ?.uniqueId
-            ?.toString()
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
-    } catch (_: Throwable) {
+    } catch (ex: ProcessCanceledException) {
+        throw ex
+    } catch (_: Exception) {
         null
     }
 }
