@@ -44,6 +44,7 @@ enum class MaterializationFailureKind {
     DIALECT_LITERALIZATION_REQUIRED,
     RAW_INTERPOLATION_REQUIRES_POLICY,
     DIALECT_UNSUPPORTED,
+    PREPARATION_METADATA_UNSUPPORTED,
     BINDING_METADATA_UNSUPPORTED,
     BINDING_VALUE_UNSUPPORTED,
     BINDING_VALUE_OUT_OF_RANGE,
@@ -168,6 +169,9 @@ object ZeroBindingExecutionMaterializer : ExecutionMaterializer {
  */
 object MaintainedExecutionMaterializer : ExecutionMaterializer {
     private const val POSTGRESQL = "postgresql"
+    private const val MYBATIS_ENGINE_ID = "org.mybatis:mybatis"
+    private const val MYBATIS_ENGINE_VERSION = "3.5.19"
+    private const val XML_LANGUAGE_DRIVER = "org.apache.ibatis.scripting.xmltags.XMLLanguageDriver"
     private const val LONG_JAVA_TYPE = "java.lang.Long"
     private const val LONG_TYPE_HANDLER = "org.apache.ibatis.type.LongTypeHandler"
     private const val BIGINT_JDBC_TYPE = "BIGINT"
@@ -190,6 +194,16 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
             return failed(
                 MaterializationFailureKind.DIALECT_UNSUPPORTED,
                 POSTGRESQL_DIALECT_REQUIRED,
+            )
+        }
+        if (
+            prepared.preparationMetadata.engineIdentity != MYBATIS_ENGINE_ID ||
+            prepared.preparationMetadata.engineVersion != MYBATIS_ENGINE_VERSION ||
+            prepared.preparationMetadata.languageDriverIdentity != XML_LANGUAGE_DRIVER
+        ) {
+            return failed(
+                MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
+                POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED,
             )
         }
         if (!hasProvenSimpleQuestionMarkTopology(prepared.sqlWithPlaceholders, prepared.orderedBindings.size)) {
@@ -297,6 +311,8 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
 private const val BINDING_LITERALIZATION_REQUIRED = "materialization-dialect-literalization-required"
 private const val RAW_INTERPOLATION_POLICY_REQUIRED = "materialization-raw-interpolation-policy-required"
 private const val POSTGRESQL_DIALECT_REQUIRED = "materialization-postgresql-dialect-required"
+private const val POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED =
+    "materialization-postgresql-bigint-preparation-metadata-unsupported"
 private const val PLACEHOLDER_TOPOLOGY_REQUIRED = "materialization-placeholder-topology-unproven"
 private const val POSTGRESQL_LONG_MAPPING_JAVA_TYPE_REQUIRED =
     "materialization-postgresql-bigint-mapping-java-type-unsupported"

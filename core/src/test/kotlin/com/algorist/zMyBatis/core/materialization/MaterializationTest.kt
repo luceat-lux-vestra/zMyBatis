@@ -61,7 +61,12 @@ class MaterializationTest {
         val sql = "select '?' as literal_marker, payload ? 'key' as dialect_operator"
         val execution = success(
             MaintainedExecutionMaterializer.materialize(
-                prepared(sql = sql),
+                prepared(
+                    sql = sql,
+                    engineIdentity = "unverified-engine",
+                    engineVersion = "0.0.0",
+                    languageDriverIdentity = "unverified.LanguageDriver",
+                ),
                 TargetDialectIdentity("postgresql"),
             ),
         )
@@ -209,6 +214,40 @@ class MaterializationTest {
             MaterializationFailureKind.DIALECT_UNSUPPORTED,
             "materialization-postgresql-dialect-required",
         )
+    }
+
+    @Test
+    fun nonZeroBindingRequiresExactProvenPreparationAuthority() {
+        val cases = listOf(
+            prepared(
+                sql = "select ?",
+                bindings = listOf(longBinding(0, BigInteger.ONE)),
+                engineIdentity = "com.example:mybatis-compatible",
+            ),
+            prepared(
+                sql = "select ?",
+                bindings = listOf(longBinding(0, BigInteger.ONE)),
+                engineVersion = "3.5.20",
+            ),
+            prepared(
+                sql = "select ?",
+                bindings = listOf(longBinding(0, BigInteger.ONE)),
+                languageDriverIdentity = "com.example.CustomLanguageDriver",
+            ),
+        )
+
+        cases.forEach { prepared ->
+            val result = MaintainedExecutionMaterializer.materialize(
+                prepared,
+                TargetDialectIdentity("postgresql"),
+            )
+
+            assertFailure(
+                result,
+                MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
+                "materialization-postgresql-bigint-preparation-metadata-unsupported",
+            )
+        }
     }
 
     @Test
@@ -574,7 +613,9 @@ class MaterializationTest {
         kind: StatementKind = StatementKind.SELECT,
         sql: String = "select 1",
         revision: String = "r1",
+        engineIdentity: String = "org.mybatis:mybatis",
         engineVersion: String = "3.5.19",
+        languageDriverIdentity: String = "org.apache.ibatis.scripting.xmltags.XMLLanguageDriver",
         namespace: String = "fixture.Mapper",
         bindings: List<PreparedBinding> = emptyList(),
         rawInterpolations: List<PreparedRawInterpolation> = emptyList(),
@@ -591,14 +632,22 @@ class MaterializationTest {
             sqlWithPlaceholders = sql,
             orderedBindings = bindings,
             rawInterpolations = rawInterpolations,
-            preparationMetadata = metadata(engineVersion),
+            preparationMetadata = metadata(
+                engineIdentity = engineIdentity,
+                engineVersion = engineVersion,
+                languageDriverIdentity = languageDriverIdentity,
+            ),
         )
     }
 
-    private fun metadata(engineVersion: String = "3.5.19") = PreparationMetadata(
-        engineIdentity = "org.mybatis:mybatis",
+    private fun metadata(
+        engineIdentity: String = "org.mybatis:mybatis",
+        engineVersion: String = "3.5.19",
+        languageDriverIdentity: String = "org.apache.ibatis.scripting.xmltags.XMLLanguageDriver",
+    ) = PreparationMetadata(
+        engineIdentity = engineIdentity,
         engineVersion = engineVersion,
-        languageDriverIdentity = "org.apache.ibatis.scripting.xmltags.XMLLanguageDriver",
+        languageDriverIdentity = languageDriverIdentity,
     )
 
     private fun longBinding(
