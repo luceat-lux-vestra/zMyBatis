@@ -86,8 +86,8 @@ dependencies {
     // Starter is JUnit 5-only. Pin the small integration-test stack independently from the
     // existing JUnit 4 fixture suite until the process harness is characterized and promoted.
     integrationTestImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
-    integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.20.2")
-    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.1")
+    integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.33.0")
+    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
     integrationTestRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.3")
     integrationTestRuntimeOnly("org.jetbrains.teamcity:serviceMessages:2024.12")
     // The plugin build deliberately opts out of bundling Kotlin stdlib. Starter/JUnit5 runs in a
