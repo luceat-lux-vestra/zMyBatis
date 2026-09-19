@@ -349,7 +349,7 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
                 POSTGRESQL_BOOLEAN_VALUE_REQUIRED,
             )
         val literal = if (value.value) "TRUE" else "FALSE"
-        return BindingRender.Ready("CAST(" + literal + " AS BOOLEAN)")
+        return BindingRender.Ready("CAST($literal AS BOOLEAN)")
     }
 
     private fun hasProvenSimpleQuestionMarkTopology(sql: String, bindingCount: Int): Boolean {
