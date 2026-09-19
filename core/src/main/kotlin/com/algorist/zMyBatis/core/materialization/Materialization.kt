@@ -206,7 +206,7 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
         ) {
             return failed(
                 MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
-                POSTGRESQL_PREPARATION_METADATA_REQUIRED,
+                preparationMetadataFailureCode(prepared.orderedBindings),
             )
         }
         if (!hasProvenSimpleQuestionMarkTopology(prepared.sqlWithPlaceholders, prepared.orderedBindings.size)) {
@@ -229,6 +229,23 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
             targetDialectIdentity = targetDialectIdentity,
             executionSql = replaceProvenQuestionMarks(prepared.sqlWithPlaceholders, replacements),
         )
+    }
+
+    private fun preparationMetadataFailureCode(bindings: List<PreparedBinding>): String {
+        val families = bindings.mapNotNullTo(linkedSetOf()) { binding ->
+            when {
+                binding.metadata.mappingJavaTypeIdentity == LONG_JAVA_TYPE -> BindingFamily.BIGINT
+                binding.metadata.mappingJavaTypeIdentity == BOOLEAN_JAVA_TYPE -> BindingFamily.BOOLEAN
+                binding.metadata.typeHandlerIdentity == LONG_TYPE_HANDLER -> BindingFamily.BIGINT
+                binding.metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER -> BindingFamily.BOOLEAN
+                else -> null
+            }
+        }
+        return when (families.singleOrNull()) {
+            BindingFamily.BIGINT -> POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED
+            BindingFamily.BOOLEAN -> POSTGRESQL_BOOLEAN_PREPARATION_METADATA_REQUIRED
+            null -> POSTGRESQL_PREPARATION_METADATA_REQUIRED
+        }
     }
 
     private fun renderPostgresqlBinding(binding: PreparedBinding): BindingRender {
@@ -360,6 +377,11 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
     private fun renderFailure(kind: MaterializationFailureKind, code: String): BindingRender.Failed =
         BindingRender.Failed(MaterializationFailure(kind, code))
 
+    private enum class BindingFamily {
+        BIGINT,
+        BOOLEAN,
+    }
+
     private sealed interface BindingRender {
         data class Ready(val sql: String) : BindingRender
 
@@ -372,6 +394,10 @@ private const val RAW_INTERPOLATION_POLICY_REQUIRED = "materialization-raw-inter
 private const val POSTGRESQL_DIALECT_REQUIRED = "materialization-postgresql-dialect-required"
 private const val POSTGRESQL_PREPARATION_METADATA_REQUIRED =
     "materialization-postgresql-preparation-metadata-unsupported"
+private const val POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED =
+    "materialization-postgresql-bigint-preparation-metadata-unsupported"
+private const val POSTGRESQL_BOOLEAN_PREPARATION_METADATA_REQUIRED =
+    "materialization-postgresql-boolean-preparation-metadata-unsupported"
 private const val PLACEHOLDER_TOPOLOGY_REQUIRED = "materialization-placeholder-topology-unproven"
 private const val POSTGRESQL_TYPE_HANDLER_REQUIRED =
     "materialization-postgresql-type-handler-unsupported"

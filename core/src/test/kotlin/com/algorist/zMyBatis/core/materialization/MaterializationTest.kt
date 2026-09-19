@@ -293,7 +293,7 @@ class MaterializationTest {
     }
 
     @Test
-    fun nonZeroBindingRequiresExactProvenPreparationAuthority() {
+    fun bigintPreparationAuthorityFailureCodeRemainsBackwardCompatible() {
         val cases = listOf(
             prepared(
                 sql = "select ?",
@@ -321,9 +321,48 @@ class MaterializationTest {
             assertFailure(
                 result,
                 MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
-                "materialization-postgresql-preparation-metadata-unsupported",
+                "materialization-postgresql-bigint-preparation-metadata-unsupported",
             )
         }
+    }
+
+    @Test
+    fun booleanPreparationAuthorityFailsWithBooleanSpecificCode() {
+        val result = MaintainedExecutionMaterializer.materialize(
+            prepared(
+                sql = "select ?",
+                bindings = listOf(booleanBinding(0, true)),
+                engineVersion = "3.5.20",
+            ),
+            TargetDialectIdentity("postgresql"),
+        )
+
+        assertFailure(
+            result,
+            MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
+            "materialization-postgresql-boolean-preparation-metadata-unsupported",
+        )
+    }
+
+    @Test
+    fun mixedPreparationAuthorityFailsWithMixedFamilyCode() {
+        val result = MaintainedExecutionMaterializer.materialize(
+            prepared(
+                sql = "select ?, ?",
+                bindings = listOf(
+                    longBinding(0, BigInteger.ONE),
+                    booleanBinding(1, true),
+                ),
+                engineVersion = "3.5.20",
+            ),
+            TargetDialectIdentity("postgresql"),
+        )
+
+        assertFailure(
+            result,
+            MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
+            "materialization-postgresql-preparation-metadata-unsupported",
+        )
     }
 
     @Test
