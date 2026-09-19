@@ -236,9 +236,9 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
             binding.metadata.mappingJavaTypeIdentity == BOOLEAN_JAVA_TYPE &&
                 binding.metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER
         }
-        return when {
-            booleanBindings == 0 -> POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED
-            booleanBindings == bindings.size -> POSTGRESQL_BOOLEAN_PREPARATION_METADATA_REQUIRED
+        return when (booleanBindings) {
+            0 -> POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED
+            bindings.size -> POSTGRESQL_BOOLEAN_PREPARATION_METADATA_REQUIRED
             else -> POSTGRESQL_PREPARATION_METADATA_REQUIRED
         }
     }
