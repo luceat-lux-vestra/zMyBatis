@@ -1,5 +1,6 @@
 package com.algorist.zMyBatis.execution
 
+import com.intellij.database.Dbms
 import com.intellij.database.dataSource.LocalDataSource
 import com.intellij.database.model.DasDataSource
 import com.intellij.database.psi.DbDataSource
@@ -21,6 +22,7 @@ class DatabaseToolsDbmsApiProbeTest {
             DasDataSource::class.java,
             LocalDataSource::class.java,
             DbImplUtil::class.java,
+            Dbms::class.java,
         )
         val keywords = listOf("dbms", "database", "driver", "dialect", "system", "connection", "config")
 
@@ -35,6 +37,23 @@ class DatabaseToolsDbmsApiProbeTest {
             "${type.name}\n${methods.ifBlank { "<no relevant public methods>" }}"
         }
 
-        throw AssertionError("DBMS_API_PROBE_BEGIN\n$report\nDBMS_API_PROBE_END")
+        val dbmsFields = Dbms::class.java.fields
+            .filter { Modifier.isPublic(it.modifiers) && Modifier.isStatic(it.modifiers) }
+            .sortedBy { it.name }
+            .joinToString(separator = "\n") { field ->
+                "${field.name}: ${field.type.name} = ${runCatching { field.get(null) }.getOrNull()}"
+            }
+        val annotationReport = listOf(
+            DasDataSource::class.java.getMethod("getDbms"),
+            DbDataSource::class.java.getMethod("getDatabaseDialect"),
+        ).joinToString(separator = "\n") { method ->
+            "${method.toGenericString()} annotations=" +
+                method.annotations.joinToString(prefix = "[", postfix = "]") { it.annotationClass.java.name }
+        }
+
+        throw AssertionError(
+            "DBMS_API_PROBE_BEGIN\n$report\n\nDBMS_FIELDS\n$dbmsFields" +
+                "\n\nMETHOD_ANNOTATIONS\n$annotationReport\nDBMS_API_PROBE_END",
+        )
     }
 }
