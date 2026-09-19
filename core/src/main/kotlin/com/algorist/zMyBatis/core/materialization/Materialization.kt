@@ -231,15 +231,18 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
         )
     }
 
-    private fun renderPostgresqlBinding(binding: PreparedBinding): BindingRender = when (
-        binding.metadata.typeHandlerIdentity
-    ) {
-        LONG_TYPE_HANDLER -> renderPostgresqlBigint(binding)
-        BOOLEAN_TYPE_HANDLER -> renderPostgresqlBoolean(binding)
-        else -> renderFailure(
-            MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
-            POSTGRESQL_TYPE_HANDLER_REQUIRED,
-        )
+    private fun renderPostgresqlBinding(binding: PreparedBinding): BindingRender {
+        val metadata = binding.metadata
+        return when {
+            metadata.mappingJavaTypeIdentity == LONG_JAVA_TYPE -> renderPostgresqlBigint(binding)
+            metadata.mappingJavaTypeIdentity == BOOLEAN_JAVA_TYPE -> renderPostgresqlBoolean(binding)
+            metadata.typeHandlerIdentity == LONG_TYPE_HANDLER -> renderPostgresqlBigint(binding)
+            metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER -> renderPostgresqlBoolean(binding)
+            else -> renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_TYPE_HANDLER_REQUIRED,
+            )
+        }
     }
 
     private fun renderPostgresqlBigint(binding: PreparedBinding): BindingRender {

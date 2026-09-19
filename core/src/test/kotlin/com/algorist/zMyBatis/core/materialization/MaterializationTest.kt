@@ -354,12 +354,12 @@ class MaterializationTest {
                 0,
                 BigInteger.ONE,
                 typeHandler = "org.apache.ibatis.type.IntegerTypeHandler",
-            ) to "materialization-postgresql-type-handler-unsupported",
+            ) to "materialization-postgresql-bigint-type-handler-unsupported",
             longBinding(
                 0,
                 BigInteger.ONE,
                 typeHandler = "com.example.CustomLongTypeHandler",
-            ) to "materialization-postgresql-type-handler-unsupported",
+            ) to "materialization-postgresql-bigint-type-handler-unsupported",
             longBinding(0, BigInteger.ONE, jdbcType = "INTEGER") to
                 "materialization-postgresql-bigint-jdbc-type-unsupported",
             longBinding(0, BigInteger.ONE, parameterMode = "OUT") to
@@ -386,12 +386,12 @@ class MaterializationTest {
                 0,
                 true,
                 typeHandler = "org.apache.ibatis.type.IntegerTypeHandler",
-            ) to "materialization-postgresql-type-handler-unsupported",
+            ) to "materialization-postgresql-boolean-type-handler-unsupported",
             booleanBinding(
                 0,
                 true,
                 typeHandler = "com.example.CustomBooleanTypeHandler",
-            ) to "materialization-postgresql-type-handler-unsupported",
+            ) to "materialization-postgresql-boolean-type-handler-unsupported",
             booleanBinding(0, true, jdbcType = "BIT") to
                 "materialization-postgresql-boolean-jdbc-type-unsupported",
             booleanBinding(0, true, parameterMode = "OUT") to
