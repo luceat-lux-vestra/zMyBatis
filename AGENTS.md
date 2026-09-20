@@ -112,6 +112,56 @@ Leap evidence must be indexed by the new contract/domain boundary where possible
 
 Do not delete, ignore, soften, or bypass assertions/checks to obtain green CI. UNKNOWN/UNVERIFIED evidence is not a PASS.
 
+## 7.1 Failure classification before remediation
+
+A failing plugin test, IntelliJ/Database Tools observation, Plugin Verifier
+result, evidence gate, workflow check, or other red signal is an
+**observation**, not a remediation instruction. Before a non-trivial
+remediation, classify the observed failure as exactly one of:
+
+- `implementation defect` — zMyBatis plugin/core/MyBatis-engine/platform
+  integration violates the accepted product or compatibility contract;
+- `test defect` — a unit/integration fixture, harness, oracle, assertion, or
+  Plugin Verifier test configuration is wrong for the intended contract;
+- `evidence defect` — IntelliJ/Database Tools API/runtime evidence capture,
+  provenance, attribution, freshness, parsing, or proof construction is wrong
+  or insufficient;
+- `workflow-policy drift` — CI, Plugin Verifier/Qodana wiring, checked-in
+  merge/hardening policy, or live repository settings have diverged;
+- `environment failure` — JetBrains distribution/service, runner, Gradle/JDK,
+  network, database service, or other execution environment caused the
+  failure;
+- `UNKNOWN` — available evidence does not justify any of the five classes.
+
+`UNKNOWN`, `UNVERIFIED`, and `INSUFFICIENT EVIDENCE` remain fail-closed.
+Classification is itself a proof obligation. Preserve at least:
+
+```text
+Observed:
+Classification:
+Basis:
+Root cause:
+Remediation:
+Proof:
+```
+
+The `Basis` must justify the selected responsibility layer and identify
+plausible alternatives that were rejected or remain unresolved. A Database
+Tools/API observation or Plugin Verifier finding is not automatically a plugin
+implementation defect: first separate product code, fixture/harness,
+platform/API evidence, workflow-policy, and toolchain/platform environment.
+
+A deterministic/reproducible failure does not become an
+`environment failure` merely because a rerun later passes. Never delete,
+ignore, soften, bypass, or reconfigure a valid test, verifier, evidence
+obligation, negative control, or merge/hardening policy merely to obtain green.
+
+If remediation changes plugin implementation, test/harness/oracle, platform/API
+evidence premise, Plugin Verifier/toolchain configuration, workflow/policy, or
+another premise of the exact-HEAD proof, invalidate the affected evidence.
+Re-run the relevant targeted validation and required CI on the new exact final
+PR HEAD before merge.
+
 ## 8. CI / GitHub Actions — hardened baseline
 
 The canonical merge policy is [`.github/merge-gate-policy.yml`](.github/merge-gate-policy.yml).
