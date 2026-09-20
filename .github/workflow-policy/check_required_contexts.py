@@ -153,7 +153,10 @@ def check_entry(entry: dict[str, str], repo_root: Path) -> list[str]:
     has_trigger = (
         workflow_has_pull_request_trigger(all_lines)
         if trigger == "pull_request"
-        else any(line.strip() == "pull_request_target:" for line in all_lines)
+        else any(
+            re.match(r"^\s*pull_request_target:\s*(?:#.*)?$", line)
+            for line in all_lines
+        )
     )
     if not has_trigger:
         failures.append(
