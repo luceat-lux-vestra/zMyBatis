@@ -30,6 +30,19 @@ Qodana Inspect code, Build, Test, Plugin Verifier, Lint workflows, and failure-t
 
 Workflow Lint continues to own immutable action pins, explicit permissions, checkout credential boundaries, actionlint/zizmor, required-context producer validation, live-settings ownership, and release provenance. New workflows are covered by those controls rather than creating a second framework.
 
+## MACHINE-READABLE MANUAL ASSERTIONS — live security features
+
+The reassessment does not treat prose or a green repository-owned workflow as proof of GitHub-hosted security settings. The checked-in policy now declares the exact privileged live assertions that must hold:
+
+- Dependency Graph: enabled;
+- Dependabot vulnerability alerts: enabled;
+- Dependabot security updates: enabled;
+- secret scanning: enabled;
+- secret scanning push protection: enabled;
+- private vulnerability reporting: enabled.
+
+These assertions are schema-tested fail-closed. They are intentionally not inferred by a low-privilege scheduled audit when GitHub withholds admin-only fields. Final reassessment evidence requires an administrator-authorized readback of the actual repository settings/endpoints; missing or unavailable evidence remains UNVERIFIED.
+
 ## Issue metadata boundary
 
 Managed type labels are type:bug, type:feature, type:security, type:docs, type:research, and type:task. The reconciler runs on issue events or explicit backfill, executes trusted default-branch policy, owns only issues:write, disables persisted checkout credentials, and only replaces conflicting managed type labels when an explicit repository title prefix determines the canonical type.
