@@ -27,14 +27,24 @@ Proof:
 <!-- What will prove the cause is resolved without weakening tests/evidence/policy? -->
 <!-- failure-triage:v1:end -->
 
-## Summary
+## Scope
 
-<!-- What changes and why? -->
+Describe the one coherent change and owning issue/Track.
 
-## Related issue / decision
+## Proof obligations
 
-<!-- Link the owning issue and governing decision if any. -->
+- [ ] exact candidate HEAD identified
+- [ ] required Build / Test / Inspect code / Verify plugin / Lint workflows / failure-triage checks pass
+- [ ] dependency changes clear Dependency Review when applicable
+- [ ] failure and recovery paths reviewed
+- [ ] regression and compatibility impact reviewed
+- [ ] adversarial/edge evidence added where the change can fail plausibly
+- [ ] docs/contracts match shipped behavior
 
-## Validation
+## Safety
 
-<!-- Commands, checks, evidence, exact revisions, and skipped checks with reasons. -->
+State whether this change affects SQL rendering, parameter binding, datasource/schema/session identity, execution authority, workflow trust boundaries, or release provenance.
+
+## Known gaps
+
+List all remaining UNKNOWN / UNVERIFIED / INSUFFICIENT EVIDENCE. These are merge blockers during strict merge judgment.

@@ -13,7 +13,11 @@ R1 - no privileged execution of PR-controlled source:
     In a workflow that runs on `pull_request`, a job that checks out source must
     not hold any effective `*: write` permission unless the job is provably
     excluded from pull-request execution by one exact, audited event-name
-    condition. The default synthetic merge ref still contains PR-controlled
+    condition. One repository-specific exception exists for GitHub CodeQL:
+    `.github/workflows/codeql.yml` job `analyze` may hold exactly
+    `security-events: write`, which GitHub documents as the narrow upload
+    authority for pull-request code scanning. No repository-content write is
+    permitted. The default synthetic merge ref still contains PR-controlled
     changes, so this rule is about code provenance rather than one ref spelling.
 
 R2 - explicit checkout credential hygiene:
@@ -64,6 +68,10 @@ SAFE_PR_EXCLUSIONS = {
     'github.event_name != "pull_request"',
     "github.event_name == 'push'",
     'github.event_name == "push"',
+}
+
+SAFE_PR_WRITE_EXCEPTIONS = {
+    ("codeql.yml", "analyze"): frozenset({"security-events"}),
 }
 
 
@@ -263,6 +271,11 @@ def job_excluded_from_pull_request(job: Job) -> bool:
     return len(expressions) == 1 and expressions[0] in SAFE_PR_EXCLUSIONS
 
 
+def pr_write_exception_applies(path: Path, job: Job, write_grants: set[str]) -> bool:
+    expected = SAFE_PR_WRITE_EXCEPTIONS.get((path.name, job.name))
+    return expected is not None and frozenset(write_grants) == expected
+
+
 def checkout_steps_missing_persist_credentials_false(job: Job) -> list[int]:
     offending: list[int] = []
     lines = job.lines
@@ -341,6 +354,7 @@ def check_file(path: Path) -> list[str]:
             and is_pr_workflow
             and not job_excluded_from_pull_request(job)
             and has_checkout
+            and not pr_write_exception_applies(path, job, write_grants)
         ):
             failures.append(
                 f"{path}: job '{job.name}' holds write permission(s) "

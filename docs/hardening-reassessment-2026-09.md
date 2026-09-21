@@ -1,0 +1,46 @@
+# Hardening Reassessment — 2026-09-20
+
+Owning issue: #178
+
+This pass re-evaluates the completed repository hardening against current external GitHub/OpenSSF guidance and the repository's present API/agent-heavy operating model. It does not discard the existing hardened merge, workflow-security, Qodana, Plugin Verifier, failure-triage, live-drift, or release-provenance controls.
+
+## Findings
+
+### GAP — API/direct issue metadata
+
+The existing policy explicitly documented that only Dependabot labels were automated. Recent API/direct-created work therefore had no type metadata.
+
+The repository now declares one small type taxonomy and reconciles only explicit title protocol. Unknown titles are diagnostic-only and are not guessed from body text.
+
+### STAGED — Dependency Review
+
+Dependabot proposes dependency movement; Dependency Review is a distinct PR admission control over the dependency diff.
+
+It is not yet claimed as a live required context. Promotion requires successful ordinary-PR evidence, live Dependency Graph support, an atomic checked-in + live-ruleset update, and fresh authoritative readback.
+
+### ADVISORY — CodeQL Actions; Kotlin upstream-blocked
+
+GitHub Actions CodeQL analysis runs on exact pull-request heads, main, and schedule.
+
+The first Java/Kotlin leg established a tooling boundary instead of a green badge: the stable extractor rejected Kotlin 2.4.20 while GitHub's published support documentation lists it. #181 owns re-enablement when the normal stable bundle accepts the real build. The repository will not downgrade Kotlin or use a nightly bundle only to satisfy an advisory scanner.
+
+Qodana Inspect code, Build, Test, Plugin Verifier, Lint workflows, and failure-triage remain authoritative.
+
+### PASS — existing workflow/release hardening remains authoritative
+
+Workflow Lint continues to own immutable action pins, explicit permissions, checkout credential boundaries, actionlint/zizmor, required-context producer validation, live-settings ownership, and release provenance. New workflows are covered by those controls rather than creating a second framework.
+
+## Issue metadata boundary
+
+Managed type labels are type:bug, type:feature, type:security, type:docs, type:research, and type:task. The reconciler runs on issue events or explicit backfill, executes trusted default-branch policy, owns only issues:write, disables persisted checkout credentials, and only replaces conflicting managed type labels when an explicit repository title prefix determines the canonical type.
+
+## Exit criteria
+
+- exact final PR HEAD passes all currently required contexts, including failure-triage and Workflow Lint;
+- Dependency Review and CodeQL behavior is observed and classified rather than assumed;
+- live Dependency Graph/security settings are read back;
+- any Dependency Review promotion is atomic with the live ruleset;
+- backfill is dry-run reviewed before mutation;
+- merged-main validation is read back on the exact merge SHA.
+
+UNKNOWN, UNVERIFIED, and INSUFFICIENT EVIDENCE remain FAIL for any claimed control.

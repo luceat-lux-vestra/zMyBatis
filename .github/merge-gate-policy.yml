@@ -4,13 +4,10 @@
 # Scope: repository/CI trust-boundary policy owned by issue #59. JetBrains
 # Marketplace publication/version provenance remains owned by issue #56.
 #
-# Live authority (read back 2026-09-05): repository ruleset `main protection`
-# (ID `22024054`) is active on the default branch. It enforces deletion and
-# non-fast-forward protection, required linear history, squash-only PR merges,
-# strict required status checks, required thread resolution, and no bypass
-# actors. Its required contexts are exactly the five entries below.
-#
-# Keep this checked-in policy aligned with the live rulesets.
+# Live authority: repository ruleset `main protection` (ID `22024054`) is
+# active on the default branch. It enforces deletion/non-fast-forward protection,
+# linear history, squash-only PR merges, strict required checks, review-thread
+# resolution, and no bypass actors. Keep this file aligned with live readback.
 
 version: 1
 
@@ -20,10 +17,8 @@ mergeStrategy:
   requireLinearHistory: true
 
 # Every required context must be produced unconditionally for every PR targeting
-# main. Ordinary producers use `pull_request`; the audited metadata-only failure-
-# triage producer explicitly uses `pull_request_target`. `check_required_contexts.py` verifies workflow/job
-# existence, pull_request trigger presence, job name, absence of job-level if,
-# and absence of paths/paths-ignore filters on required producers.
+# main. Ordinary producers use pull_request; the audited metadata-only
+# failure-triage producer explicitly uses pull_request_target.
 requiredStatusChecks:
   - context: Build
     producedBy: .github/workflows/build.yml
@@ -51,31 +46,53 @@ excludedFromRequiredChecks:
       Runs only on a published GitHub Release event. Publication trust-boundary
       policy belongs to the separate release-provenance track (#56).
 
-# Enforced by `.github/workflow-policy/check_trust_boundary.py`.
+stagedRequiredChecks:
+  - context: Dependency Review
+    producedBy: .github/workflows/dependency-review.yml
+    job: review
+    promotion: >-
+      Promote to requiredStatusChecks only after ordinary-PR reliability is
+      proven and Dependency Graph support is live. Dependency Review is a
+      PR-diff-scoped check with no merged-main producer; after promotion,
+      fresh-read the checked-in required-status list and live main ruleset
+      atomically instead of requiring a nonexistent main run.
+
+advisoryChecks:
+  - contexts: [ "CodeQL (actions)" ]
+    producedBy: .github/workflows/codeql.yml
+    disposition: advisory
+    reason: >-
+      Stable CodeQL Actions analysis complements but does not replace the
+      required Qodana Inspect code authority. Java/Kotlin analysis is tracked
+      separately in #181 because the stable extractor rejects Kotlin 2.4.20
+      despite GitHub's published support table. Do not substitute a nightly
+      scanner or downgrade Kotlin solely to make an advisory check green.
+
+# Enforced by .github/workflow-policy/check_trust_boundary.py.
 trustBoundary:
   rules:
     - id: R0
       statement: >-
-        Every scanned job must have an explicit effective `permissions`
+        Every scanned job must have an explicit effective permissions
         declaration, inherited from an explicit workflow-level declaration or
         provided as a job-level override. Missing declarations must never fall
         back to mutable repository/organization GITHUB_TOKEN defaults.
     - id: R1
       statement: >-
-        A job in a pull_request workflow must never hold any effective
-        `*:write` permission while checking out source, unless the job is
-        provably excluded from pull_request execution by one exact audited
-        event-name condition. The default synthetic merge ref contains
-        PR-controlled code, so the invariant is about code provenance rather
-        than one checkout ref spelling.
+        A job in a pull_request workflow must never hold any effective *:write
+        permission while checking out source, unless the job is provably
+        excluded from pull_request execution by one exact audited event-name
+        condition. The sole audited exception is .github/workflows/codeql.yml
+        job analyze with exactly security-events:write for code-scanning result
+        upload; no repository-content write scope is permitted.
     - id: R2
       statement: >-
         A job with no effective write permission must set
-        `persist-credentials:false` on every actions/checkout step.
+        persist-credentials:false on every actions/checkout step.
     - id: pins
       statement: >-
-        Every `uses:` reference must be pinned to a full 40-hex-character
-        commit SHA, never a floating tag or branch.
+        Every uses reference must be pinned to a full 40-hex-character commit
+        SHA, never a floating tag or branch.
   workflowDefault: contents:read
   explicitPermissionsRequired: true
   privilegedJobs:
@@ -93,14 +110,24 @@ labels:
       description: Automated dependency update (Dependabot).
     - name: github_actions
       description: Dependabot update to a GitHub Actions workflow dependency.
+    - name: type:bug
+      description: Incorrect, unsafe, or regressed behavior.
+    - name: type:feature
+      description: New supported product capability.
+    - name: type:security
+      description: Security hardening or vulnerability work.
+    - name: type:docs
+      description: Documentation-only work.
+    - name: type:research
+      description: Research, design, ADR, or bounded spike.
+    - name: type:task
+      description: Implementation, maintenance, test, CI, release, track, or epic work.
   automation: >-
-    Applied by `.github/dependabot.yml` to Dependabot PRs. No other
-    label-creation automation exists in this repository.
+    Dependabot labels are applied by .github/dependabot.yml. Issue type labels
+    are reconciled by .github/workflows/issue-metadata.yml from explicit
+    repository-owned title prefixes only; arbitrary issue body/text is never
+    classified heuristically.
 
-# Recurring ownership for live repository/ruleset drift. `Lint workflows`
-# statically proves this workflow still exists, runs on main+schedule, and
-# invokes the fail-closed checker. The live checker performs GET-only API reads
-# and validates both main governance and immutable publication-tag governance.
 liveSettingsAudit:
   workflow: .github/workflows/repository-settings-drift.yml
   scheduleCron: "23 2 * * *"
