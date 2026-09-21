@@ -105,7 +105,10 @@ jobs:
               }
             }
 
-            if (!dryRun) await ensureLabels();
+            const shouldEnsureLabels =
+              context.eventName === "issues" ||
+              (context.eventName === "workflow_dispatch" && backfill && !dryRun);
+            if (shouldEnsureLabels) await ensureLabels();
 
             if (context.eventName === "issues") {
               await reconcile(context.payload.issue);
