@@ -48,9 +48,15 @@ def main():
         "Mutating backfill must run from",
         "persist-credentials: false",
         "ref: ${{ github.event.repository.default_branch }}",
+        "const shouldEnsureLabels =",
+        'context.eventName === "issues" ||',
+        '(context.eventName === "workflow_dispatch" && backfill && !dryRun)',
     ):
         if fragment not in workflow:
             failures.append(f"issue metadata mutation boundary missing: {fragment}")
+    if "if (!dryRun) await ensureLabels();" in workflow:
+        failures.append("empty workflow_dispatch must not mutate canonical labels")
+
     for title, expected in cases.items():
         actual = classify(title, rules)
         if actual != expected:
