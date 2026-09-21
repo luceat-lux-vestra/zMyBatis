@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 PERMISSION_ENTRY = re.compile(
-    r"^(?P<scope>[A-Za-z0-9_-]+):\s*(?P<level>read|write|none)\s*$"
+    r"^(?P<scope>[A-Za-z0-9_-]+):\s*(?P<level>read|write|none)(?:\s+#.*)?\s*$"
 )
 WRITE_ALL = re.compile(r"^permissions:\s*write-all\s*$")
 READ_ALL = re.compile(r"^permissions:\s*read-all\s*$")
