@@ -19,8 +19,9 @@ mergeStrategy:
   requireBranchUpToDate: true
   requireLinearHistory: true
 
-# Every required context must be produced unconditionally for every ordinary
-# pull_request targeting main. `check_required_contexts.py` verifies workflow/job
+# Every required context must be produced unconditionally for every PR targeting
+# main. Ordinary producers use `pull_request`; the audited metadata-only failure-
+# triage producer explicitly uses `pull_request_target`. `check_required_contexts.py` verifies workflow/job
 # existence, pull_request trigger presence, job name, absence of job-level if,
 # and absence of paths/paths-ignore filters on required producers.
 requiredStatusChecks:
@@ -39,6 +40,10 @@ requiredStatusChecks:
   - context: Lint workflows
     producedBy: .github/workflows/workflow-lint.yml
     job: lint
+  - context: failure-triage
+    producedBy: .github/workflows/failure-triage.yml
+    job: failure-triage
+    trigger: pull_request_target
 
 excludedFromRequiredChecks:
   - workflow: release.yml

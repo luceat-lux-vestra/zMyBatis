@@ -15,9 +15,10 @@ trustworthy if every entry:
    `paths`/`paths-ignore` filter (a required check that some PRs never
    trigger is the same footgun as (2), just triggered by the diff instead
    of a condition); and
-4. comes from a workflow that actually declares a `pull_request` trigger.
-   A missing trigger otherwise fails open: the required context simply stops
-   being produced on PRs while the drift checker still passes.
+4. comes from the PR trigger declared by policy. Existing producers default to
+   `pull_request`; the dedicated metadata-only failure-triage producer may
+   explicitly declare `pull_request_target`. Any other target-triggered required
+   producer fails closed. A missing trigger otherwise leaves PRs blocked.
 
 This does not use a YAML parser, matching the rest of `.github/workflow-
 policy/` - see check_trust_boundary.py's module docstring for why.
@@ -42,7 +43,8 @@ from check_trust_boundary import (  # noqa: E402
 ENTRY_PATTERN = re.compile(
     r"^\s*-\s*context:\s*(?P<context>.+?)\s*\n"
     r"\s*producedBy:\s*(?P<produced_by>\S+)\s*\n"
-    r"\s*job:\s*(?P<job>\S+)\s*$",
+    r"\s*job:\s*(?P<job>\S+)\s*"
+    r"(?:\n\s*trigger:\s*(?P<trigger>\S+)\s*)?$",
     re.MULTILINE,
 )
 
@@ -96,11 +98,11 @@ def job_has_if(job: Job) -> bool:
     )
 
 
-def pull_request_trigger_has_path_filter(all_lines: list[str]) -> bool:
+def pr_trigger_has_path_filter(all_lines: list[str], trigger: str) -> bool:
     try:
-        pr_index = next(i for i, line in enumerate(all_lines) if line.strip() == "pull_request:")
+        pr_index = next(i for i, line in enumerate(all_lines) if line.strip() == f"{trigger}:")
     except StopIteration:
-        return False  # No pull_request trigger at all is a separate, caller-checked problem.
+        return False  # Missing trigger is a separate, caller-checked problem.
     pr_indent = indent_of(all_lines[pr_index])
     for line in all_lines[pr_index + 1:]:
         if not line.strip():
@@ -138,14 +140,32 @@ def check_entry(entry: dict[str, str], repo_root: Path) -> list[str]:
             "context must run unconditionally on every pull request"
         )
 
-    if not workflow_has_pull_request_trigger(all_lines):
+    trigger = entry.get("trigger") or "pull_request"
+    if trigger not in {"pull_request", "pull_request_target"}:
+        failures.append(f"'{context}': unsupported required-context trigger '{trigger}'")
+        return failures
+    if trigger == "pull_request_target" and produced_by != ".github/workflows/failure-triage.yml":
         failures.append(
-            f"'{context}': {produced_by} has no pull_request trigger - a required context "
+            f"'{context}': pull_request_target is allowed only for the audited failure-triage producer"
+        )
+        return failures
+
+    has_trigger = (
+        workflow_has_pull_request_trigger(all_lines)
+        if trigger == "pull_request"
+        else any(
+            re.match(r"^\s*pull_request_target:\s*(?:#.*)?$", line)
+            for line in all_lines
+        )
+    )
+    if not has_trigger:
+        failures.append(
+            f"'{context}': {produced_by} has no {trigger} trigger - a required context "
             "must be produced for every pull request"
         )
-    elif pull_request_trigger_has_path_filter(all_lines):
+    elif pr_trigger_has_path_filter(all_lines, trigger):
         failures.append(
-            f"'{context}': {produced_by}'s pull_request trigger has a paths/paths-ignore "
+            f"'{context}': {produced_by}'s {trigger} trigger has a paths/paths-ignore "
             "filter - a required context must not be skippable by diff shape"
         )
 
