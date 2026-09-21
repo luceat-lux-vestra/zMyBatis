@@ -37,6 +37,20 @@ def main():
         "Investigate mapper behavior": None,
     }
     failures = []
+    workflow = (ROOT / ".github" / "workflows" / "issue-metadata.yml").read_text()
+    if not re.search(r"(?ms)^      dry_run:\n.*?^        default: true\s*$", workflow):
+        failures.append("manual issue reconciliation must default dry_run=true")
+    if not re.search(r"(?ms)^      backfill:\n.*?^        default: false\s*$", workflow):
+        failures.append("manual issue reconciliation must default backfill=false")
+    for fragment in (
+        "const defaultBranchRef = `refs/heads/${context.payload.repository.default_branch}`;",
+        'context.eventName === "workflow_dispatch" && backfill && !dryRun && context.ref !== defaultBranchRef',
+        "Mutating backfill must run from",
+        "persist-credentials: false",
+        "ref: ${{ github.event.repository.default_branch }}",
+    ):
+        if fragment not in workflow:
+            failures.append(f"issue metadata mutation boundary missing: {fragment}")
     for title, expected in cases.items():
         actual = classify(title, rules)
         if actual != expected:
