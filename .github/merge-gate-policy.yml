@@ -39,6 +39,9 @@ requiredStatusChecks:
     producedBy: .github/workflows/failure-triage.yml
     job: failure-triage
     trigger: pull_request_target
+  - context: Dependency Review
+    producedBy: .github/workflows/dependency-review.yml
+    job: review
 
 excludedFromRequiredChecks:
   - workflow: release.yml
@@ -46,16 +49,10 @@ excludedFromRequiredChecks:
       Runs only on a published GitHub Release event. Publication trust-boundary
       policy belongs to the separate release-provenance track (#56).
 
-stagedRequiredChecks:
-  - context: Dependency Review
-    producedBy: .github/workflows/dependency-review.yml
-    job: review
-    promotion: >-
-      Promote to requiredStatusChecks only after ordinary-PR reliability is
-      proven and Dependency Graph support is live. Dependency Review is a
-      PR-diff-scoped check with no merged-main producer; after promotion,
-      fresh-read the checked-in required-status list and live main ruleset
-      atomically instead of requiring a nonexistent main run.
+# Dependency Review promotion evidence:
+# PR #179 exact HEAD 92566edbcba5f52c7dac54d24cb090ab1d69fae8 passed after live
+# Dependency Graph enablement. Final promotion remains atomic with live main-ruleset
+# mutation/readback.
 
 advisoryChecks:
   - contexts: [ "CodeQL (actions)" ]
