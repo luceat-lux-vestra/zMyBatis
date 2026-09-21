@@ -12,11 +12,11 @@ The existing policy explicitly documented that only Dependabot labels were autom
 
 The repository now declares one small type taxonomy and reconciles only explicit title protocol. Unknown titles are diagnostic-only and are not guessed from body text.
 
-### STAGED — Dependency Review
+### PASS — Dependency Review required
 
 Dependabot proposes dependency movement; Dependency Review is a distinct PR admission control over the dependency diff.
 
-It is not yet claimed as a live required context. Promotion requires successful ordinary-PR evidence, live Dependency Graph support, an atomic checked-in + live-ruleset update, and fresh authoritative readback.
+PR #179 proved the producer after live Dependency Graph enablement. PR #189 promoted the checked-in merge-gate contract, and authoritative 2026-09-22 readback confirmed live `main protection` ruleset `22024054` requires `Dependency Review` with GitHub Actions integration id `15368` and no bypass actors. The staged promotion is complete; future changes to this context still require atomic checked-in/live reconciliation.
 
 ### ADVISORY — CodeQL Actions; Kotlin upstream-blocked
 
@@ -52,7 +52,7 @@ Managed type labels are type:bug, type:feature, type:security, type:docs, type:r
 - exact final PR HEAD passes all currently required contexts, including failure-triage and Workflow Lint;
 - Dependency Review and CodeQL behavior is observed and classified rather than assumed;
 - live Dependency Graph/security settings are read back;
-- any Dependency Review promotion is atomic with the live ruleset;
+- the completed Dependency Review promotion remains synchronized with the live ruleset, and any future required-context change is atomic with live state;
 - backfill is dry-run reviewed before mutation;
 - merged-main validation is read back on the exact merge SHA.
 

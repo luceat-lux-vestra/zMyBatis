@@ -50,9 +50,10 @@ excludedFromRequiredChecks:
       policy belongs to the separate release-provenance track (#56).
 
 # Dependency Review promotion evidence:
-# PR #179 exact HEAD 92566edbcba5f52c7dac54d24cb090ab1d69fae8 passed after live
-# Dependency Graph enablement. Final promotion remains atomic with live main-ruleset
-# mutation/readback.
+# PR #179 exact HEAD 92566edbcba5f52c7dac54d24cb090ab1d69fae8 passed after
+# live Dependency Graph enablement. PR #189 then promoted the checked-in gate;
+# authoritative 2026-09-22 readback confirmed ruleset 22024054 requires
+# Dependency Review with GitHub Actions integration id 15368 and no bypass actors.
 
 advisoryChecks:
   - contexts: [ "CodeQL (actions)" ]
