@@ -76,6 +76,23 @@ def mapping(parent: dict[str, Any], key: str) -> dict[str, Any]:
     return value
 
 
+def manual_security_assertions(policy: dict[str, Any]) -> dict[str, Any]:
+    declaration = mapping(policy, "manualSecurityAssertions")
+    expected = {
+        "dependency_graph": True,
+        "dependabot_alerts": True,
+        "dependabot_security_updates": "enabled",
+        "secret_scanning": "enabled",
+        "secret_scanning_push_protection": "enabled",
+        "private_vulnerability_reporting": True,
+    }
+    if declaration != expected:
+        raise ValueError(
+            f"{SECTION}.manualSecurityAssertions must equal {expected!r}; got {declaration!r}"
+        )
+    return declaration
+
+
 def compare_fields(
     failures: list[str],
     prefix: str,
@@ -364,6 +381,7 @@ def main(argv: list[str]) -> int:
         if not isinstance(workflow_rel, str):
             raise ValueError("liveSettingsAudit.workflow must be a string")
         publication_expected = mapping(policy, "publicationTagRuleset")
+        manual_security_assertions(policy)
     except (KeyError, ValueError) as exc:
         print(f"live-settings policy error: {exc}", file=sys.stderr)
         return 2
