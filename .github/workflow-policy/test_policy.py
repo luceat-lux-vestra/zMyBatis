@@ -107,6 +107,40 @@ def check_local_policy(failures: list[str]) -> None:
             failures,
         )
 
+    # YAML permits trailing comments on scalar permission values. A valid
+    # least-privilege declaration must not become UNKNOWN merely because it
+    # documents why a write grant exists.
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp) / "commented-permissions.yml"
+        fixture.write_text(
+            """name: Commented permissions
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read # workflow default
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # narrowly scoped metadata mutation
+    steps:
+      - run: echo metadata-only
+""",
+            encoding="utf-8",
+        )
+        commented_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_trust_boundary.py"),
+            str(fixture),
+        ])
+        expect(
+            "check_trust_boundary.py accepts valid trailing permission comments",
+            commented_rc == 0,
+            failures,
+        )
+
     pins_rc = run(
         [
             "python3",
