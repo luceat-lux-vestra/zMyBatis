@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "labels": [
+    {"name": "type:bug", "color": "B60205", "description": "Incorrect, unsafe, or regressed behavior"},
+    {"name": "type:feature", "color": "1F6FEB", "description": "New supported product capability"},
+    {"name": "type:security", "color": "B60205", "description": "Security hardening or vulnerability work"},
+    {"name": "type:docs", "color": "D4F4DD", "description": "Documentation-only work"},
+    {"name": "type:research", "color": "BFDADC", "description": "Research, design, ADR, or bounded spike"},
+    {"name": "type:task", "color": "0E8A16", "description": "Implementation, maintenance, test, CI, release, track, or epic work"}
+  ],
+  "rules": [
+    {"pattern": "^(fix|bug)(\\([^)]*\\))?:", "label": "type:bug"},
+    {"pattern": "^(feat|feature)(\\([^)]*\\))?:", "label": "type:feature"},
+    {"pattern": "^security(\\([^)]*\\))?:", "label": "type:security"},
+    {"pattern": "^docs(\\([^)]*\\))?:", "label": "type:docs"},
+    {"pattern": "^(research|rfc|adr|audit|design|spike|architecture)(\\([^)]*\\))?:", "label": "type:research"},
+    {"pattern": "^(task|track|epic|build|ci|test|refactor|chore|perf|release|hardening|governance)(\\([^)]*\\))?:", "label": "type:task"}
+  ],
+  "body_inference": false
+}

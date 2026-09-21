@@ -93,6 +93,31 @@ GOOD_PUBLICATION_RULESET = {
 
 
 class LiveSettingsPolicyTest(unittest.TestCase):
+    def test_manual_security_assertions_are_complete(self):
+        self.assertEqual(
+            {
+                "dependency_graph": True,
+                "dependabot_alerts": True,
+                "dependabot_security_updates": "enabled",
+                "secret_scanning": "enabled",
+                "secret_scanning_push_protection": "enabled",
+                "private_vulnerability_reporting": True,
+            },
+            live.manual_security_assertions(POLICY),
+        )
+
+    def test_weakened_manual_security_assertion_is_rejected(self):
+        policy = copy.deepcopy(POLICY)
+        policy["manualSecurityAssertions"]["secret_scanning"] = "disabled"
+        with self.assertRaises(ValueError):
+            live.manual_security_assertions(policy)
+
+    def test_missing_manual_security_assertion_is_rejected(self):
+        policy = copy.deepcopy(POLICY)
+        del policy["manualSecurityAssertions"]["private_vulnerability_reporting"]
+        with self.assertRaises(ValueError):
+            live.manual_security_assertions(policy)
+
     def failures(self, repo=None, ruleset=None, publication=None):
         return live.compare_live(
             POLICY,

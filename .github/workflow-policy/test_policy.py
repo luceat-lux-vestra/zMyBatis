@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
 import sys
 from pathlib import Path
 
@@ -106,6 +107,40 @@ def check_local_policy(failures: list[str]) -> None:
             failures,
         )
 
+    # YAML permits trailing comments on scalar permission values. A valid
+    # least-privilege declaration must not become UNKNOWN merely because it
+    # documents why a write grant exists.
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp) / "commented-permissions.yml"
+        fixture.write_text(
+            """name: Commented permissions
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read # workflow default
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # narrowly scoped metadata mutation
+    steps:
+      - run: echo metadata-only
+""",
+            encoding="utf-8",
+        )
+        commented_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_trust_boundary.py"),
+            str(fixture),
+        ])
+        expect(
+            "check_trust_boundary.py accepts valid trailing permission comments",
+            commented_rc == 0,
+            failures,
+        )
+
     pins_rc = run(
         [
             "python3",
@@ -127,6 +162,58 @@ def check_local_policy(failures: list[str]) -> None:
         boundary_rc == 0,
         failures,
     )
+
+    # CodeQL pull-request analysis is the only audited PR write exception.
+    # It may upload code-scanning results with exactly security-events:write;
+    # renaming the workflow or adding any second write scope must fail closed.
+    codeql_source = (WORKFLOWS_DIR / "codeql.yml").read_text(encoding="utf-8")
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        exact = tmp_path / "codeql.yml"
+        exact.write_text(codeql_source, encoding="utf-8")
+        exact_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_trust_boundary.py"),
+            str(exact),
+        ])
+        expect(
+            "CodeQL exact PR security-events exception is accepted",
+            exact_rc == 0,
+            failures,
+        )
+
+        renamed = tmp_path / "renamed-codeql.yml"
+        renamed.write_text(codeql_source, encoding="utf-8")
+        renamed_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_trust_boundary.py"),
+            str(renamed),
+        ])
+        expect(
+            "CodeQL exception is path-scoped and rejects a renamed workflow",
+            renamed_rc != 0,
+            failures,
+        )
+
+        broadened = tmp_path / "codeql.yml"
+        broadened.write_text(
+            codeql_source.replace(
+                "security-events: write",
+                "security-events: write\n      contents: write",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        broadened_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_trust_boundary.py"),
+            str(broadened),
+        ])
+        expect(
+            "CodeQL exception rejects any additional write scope",
+            broadened_rc != 0,
+            failures,
+        )
 
     required_rc = run(
         [
@@ -156,6 +243,29 @@ def check_local_policy(failures: list[str]) -> None:
         required_bad_rc != 0,
         failures,
     )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        staged_root = Path(tmp) / "repo"
+        shutil.copytree(REPO_ROOT, staged_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
+        staged_policy = staged_root / ".github" / "merge-gate-policy.yml"
+        text = staged_policy.read_text(encoding="utf-8")
+        text = text.replace(
+            "producedBy: .github/workflows/dependency-review.yml\n    job: review",
+            "producedBy: .github/workflows/dependency-review.yml\n    job: missing-staged-job",
+            1,
+        )
+        staged_policy.write_text(text, encoding="utf-8")
+        staged_bad_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_required_contexts.py"),
+            str(staged_policy),
+            str(staged_root),
+        ])
+        expect(
+            "check_required_contexts.py rejects a missing staged-required producer",
+            staged_bad_rc != 0,
+            failures,
+        )
 
     build = (REPO_ROOT / "build.gradle.kts").read_text(encoding="utf-8")
     expect(

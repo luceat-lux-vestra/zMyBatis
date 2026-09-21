@@ -49,6 +49,11 @@ jobs:
       - name: Require authoritative governance contract
         run: python3 .github/workflow-policy/check_governance_contract.py .
 
+      - name: Verify issue metadata policy
+        run: |
+          python3 .github/workflow-policy/test_issue_metadata.py
+          node --test .github/workflow-policy/issue-metadata.test.cjs
+
       - name: Install actionlint
         run: |
           set -euo pipefail

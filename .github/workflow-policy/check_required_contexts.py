@@ -1,31 +1,6 @@
 #!/usr/bin/env python3
-"""Required-context drift check for merge-gate-policy.yml.
+"""Required/staged-context drift check for merge-gate-policy.yml."""
 
-`merge-gate-policy.yml` names GitHub status-check contexts that are meant to
-be configured as required in branch protection. That list is only
-trustworthy if every entry:
-
-1. names a job that actually exists in the workflow it claims to come from,
-   whose `name:` is exactly the declared context (a rename of either side
-   silently breaks required-check matching in GitHub's branch protection -
-   the check simply never appears, and the PR sits blocked forever);
-2. is not gated behind a job-level `if:` (a required check that can
-   legitimately be skipped leaves an indefinitely pending PR); and
-3. comes from a workflow whose `pull_request:` trigger has no
-   `paths`/`paths-ignore` filter (a required check that some PRs never
-   trigger is the same footgun as (2), just triggered by the diff instead
-   of a condition); and
-4. comes from the PR trigger declared by policy. Existing producers default to
-   `pull_request`; the dedicated metadata-only failure-triage producer may
-   explicitly declare `pull_request_target`. Any other target-triggered required
-   producer fails closed. A missing trigger otherwise leaves PRs blocked.
-
-This does not use a YAML parser, matching the rest of `.github/workflow-
-policy/` - see check_trust_boundary.py's module docstring for why.
-
-Usage:
-    check_required_contexts.py <merge-gate-policy.yml> <repo-root>
-"""
 from __future__ import annotations
 
 import re
@@ -33,12 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check_trust_boundary import (  # noqa: E402
-    Job,
-    indent_of,
-    workflow_has_pull_request_trigger,
-    split_jobs,
-)
+from check_trust_boundary import Job, indent_of, workflow_has_pull_request_trigger, split_jobs  # noqa: E402
 
 ENTRY_PATTERN = re.compile(
     r"^\s*-\s*context:\s*(?P<context>.+?)\s*\n"
@@ -49,14 +19,25 @@ ENTRY_PATTERN = re.compile(
 )
 
 
-def required_entries(policy_text: str) -> list[dict[str, str]]:
+def section_entries(policy_text: str, section_name: str) -> list[dict[str, str]]:
+    marker = f"{section_name}:"
     try:
-        start = policy_text.index("requiredStatusChecks:")
+        start = policy_text.index(marker)
     except ValueError:
         return []
-    end = policy_text.find("\nexcludedFromRequiredChecks:", start)
-    section = policy_text[start:end if end != -1 else None]
+    rest = policy_text[start + len(marker):]
+    end_match = re.search(r"^\S[^\n]*:\s*$", rest, re.MULTILINE)
+    section = rest[:end_match.start()] if end_match else rest
     return [m.groupdict() for m in ENTRY_PATTERN.finditer(section)]
+
+
+def required_entries(policy_text: str) -> list[dict[str, str]]:
+    """Public helper retained for live-settings policy reconciliation."""
+    return section_entries(policy_text, "requiredStatusChecks")
+
+
+def staged_required_entries(policy_text: str) -> list[dict[str, str]]:
+    return section_entries(policy_text, "stagedRequiredChecks")
 
 
 def find_job(all_lines: list[str], job_id: str) -> Job | None:
@@ -82,12 +63,6 @@ def job_name_field(job: Job) -> str | None:
 
 
 def job_has_if(job: Job) -> bool:
-    """True if the job itself (not one of its steps) has an `if:` condition.
-
-    A step-level `if:` (e.g. `if: ${{ failure() }}` on a cleanup step) is
-    indented deeper than the job's own top-level keys (`name:`, `runs-on:`,
-    `steps:`, ...) and must not trigger this check.
-    """
     baseline = next((indent_of(line) for line in job.lines if line.strip()), None)
     if baseline is None:
         return False
@@ -98,76 +73,65 @@ def job_has_if(job: Job) -> bool:
     )
 
 
-def pr_trigger_has_path_filter(all_lines: list[str], trigger: str) -> bool:
+def trigger_has_path_filter(all_lines: list[str], trigger: str) -> bool:
     try:
-        pr_index = next(i for i, line in enumerate(all_lines) if line.strip() == f"{trigger}:")
+        index = next(i for i, line in enumerate(all_lines) if line.strip() == f"{trigger}:")
     except StopIteration:
-        return False  # Missing trigger is a separate, caller-checked problem.
-    pr_indent = indent_of(all_lines[pr_index])
-    for line in all_lines[pr_index + 1:]:
+        return False
+    trigger_indent = indent_of(all_lines[index])
+    for line in all_lines[index + 1:]:
         if not line.strip():
             continue
-        if indent_of(line) <= pr_indent:
+        if indent_of(line) <= trigger_indent:
             break
         if re.match(r"^\s*paths(-ignore)?:", line):
             return True
     return False
 
 
-def check_entry(entry: dict[str, str], repo_root: Path) -> list[str]:
-    failures = []
+def has_target_trigger(all_lines: list[str]) -> bool:
+    return any(re.match(r"^\s*pull_request_target:\s*(?:#.*)?$", line) for line in all_lines)
+
+
+def check_entry(entry: dict[str, str], repo_root: Path, classification: str) -> list[str]:
+    failures: list[str] = []
     context, produced_by, job_id = entry["context"], entry["produced_by"], entry["job"]
     workflow_path = repo_root / produced_by
     if not workflow_path.is_file():
-        return [f"'{context}': producedBy workflow {produced_by} does not exist"]
+        return [f"{classification} '{context}': producedBy workflow {produced_by} does not exist"]
 
     all_lines = workflow_path.read_text(encoding="utf-8").splitlines()
-
     job = find_job(all_lines, job_id)
     if job is None:
-        failures.append(f"'{context}': no job '{job_id}' found in {produced_by}")
-        return failures
+        return [f"{classification} '{context}': no job '{job_id}' found in {produced_by}"]
 
     name = job_name_field(job)
     if name != context:
-        failures.append(
-            f"'{context}': job '{job_id}' in {produced_by} has name '{name}', expected '{context}'"
-        )
+        failures.append(f"'{context}': job '{job_id}' in {produced_by} has name '{name}', expected '{context}'")
 
     if job_has_if(job):
-        failures.append(
-            f"'{context}': job '{job_id}' in {produced_by} has an 'if:' condition - a required "
-            "context must run unconditionally on every pull request"
-        )
+        failures.append(f"'{context}': job '{job_id}' in {produced_by} has an 'if:' condition")
 
     trigger = entry.get("trigger") or "pull_request"
     if trigger not in {"pull_request", "pull_request_target"}:
         failures.append(f"'{context}': unsupported required-context trigger '{trigger}'")
         return failures
-    if trigger == "pull_request_target" and produced_by != ".github/workflows/failure-triage.yml":
-        failures.append(
-            f"'{context}': pull_request_target is allowed only for the audited failure-triage producer"
+    if trigger == "pull_request_target":
+        trusted = (
+            classification == "required"
+            and context == "failure-triage"
+            and produced_by == ".github/workflows/failure-triage.yml"
+            and job_id == "failure-triage"
         )
-        return failures
+        if not trusted:
+            failures.append(f"'{context}': pull_request_target is allowed only for the audited failure-triage producer")
+            return failures
 
-    has_trigger = (
-        workflow_has_pull_request_trigger(all_lines)
-        if trigger == "pull_request"
-        else any(
-            re.match(r"^\s*pull_request_target:\s*(?:#.*)?$", line)
-            for line in all_lines
-        )
-    )
+    has_trigger = workflow_has_pull_request_trigger(all_lines) if trigger == "pull_request" else has_target_trigger(all_lines)
     if not has_trigger:
-        failures.append(
-            f"'{context}': {produced_by} has no {trigger} trigger - a required context "
-            "must be produced for every pull request"
-        )
-    elif pr_trigger_has_path_filter(all_lines, trigger):
-        failures.append(
-            f"'{context}': {produced_by}'s {trigger} trigger has a paths/paths-ignore "
-            "filter - a required context must not be skippable by diff shape"
-        )
+        failures.append(f"'{context}': {produced_by} has no {trigger} trigger")
+    elif trigger_has_path_filter(all_lines, trigger):
+        failures.append(f"'{context}': {produced_by}'s {trigger} trigger has a paths/paths-ignore filter")
 
     return failures
 
@@ -179,14 +143,18 @@ def main(argv: list[str]) -> int:
 
     policy_path = Path(argv[0])
     repo_root = Path(argv[1])
-    entries = required_entries(policy_path.read_text(encoding="utf-8"))
-    if not entries:
+    policy_text = policy_path.read_text(encoding="utf-8")
+    required = required_entries(policy_text)
+    staged = staged_required_entries(policy_text)
+    if not required:
         print(f"no requiredStatusChecks entries found in {policy_path}", file=sys.stderr)
         return 2
 
     failures: list[str] = []
-    for entry in entries:
-        failures.extend(check_entry(entry, repo_root))
+    for entry in required:
+        failures.extend(check_entry(entry, repo_root, "required"))
+    for entry in staged:
+        failures.extend(check_entry(entry, repo_root, "staged"))
 
     if failures:
         print("merge-gate-policy.yml required-context drift:")
@@ -194,7 +162,7 @@ def main(argv: list[str]) -> int:
             print(f"  {failure}")
         return 1
 
-    print(f"OK: all {len(entries)} requiredStatusChecks entries match their producing workflows.")
+    print(f"OK: {len(required)} required and {len(staged)} staged-required contexts match their producing workflows.")
     return 0
 
 
