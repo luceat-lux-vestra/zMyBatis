@@ -90,6 +90,7 @@ jobs:
 
               if (!expected) {
                 if (existing.length === 0) core.warning(`#${issue.number}: title is outside canonical protocol; no heuristic type assigned`);
+                if (existing.length > 1) core.warning(`#${issue.number}: multiple managed type labels are present; no title authority exists to choose one, so metadata is preserved for manual triage`);
                 return;
               }
 
