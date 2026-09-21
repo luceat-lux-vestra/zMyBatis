@@ -31,6 +31,15 @@ def section_entries(policy_text: str, section_name: str) -> list[dict[str, str]]
     return [m.groupdict() for m in ENTRY_PATTERN.finditer(section)]
 
 
+def required_entries(policy_text: str) -> list[dict[str, str]]:
+    """Public helper retained for live-settings policy reconciliation."""
+    return section_entries(policy_text, "requiredStatusChecks")
+
+
+def staged_required_entries(policy_text: str) -> list[dict[str, str]]:
+    return section_entries(policy_text, "stagedRequiredChecks")
+
+
 def find_job(all_lines: list[str], job_id: str) -> Job | None:
     jobs_index = next((i for i, line in enumerate(all_lines) if line.rstrip() == "jobs:"), None)
     if jobs_index is None:
@@ -135,8 +144,8 @@ def main(argv: list[str]) -> int:
     policy_path = Path(argv[0])
     repo_root = Path(argv[1])
     policy_text = policy_path.read_text(encoding="utf-8")
-    required = section_entries(policy_text, "requiredStatusChecks")
-    staged = section_entries(policy_text, "stagedRequiredChecks")
+    required = required_entries(policy_text)
+    staged = staged_required_entries(policy_text)
     if not required:
         print(f"no requiredStatusChecks entries found in {policy_path}", file=sys.stderr)
         return 2
