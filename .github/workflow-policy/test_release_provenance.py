@@ -133,6 +133,23 @@ def main() -> int:
             failures,
         )
 
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = make_static_fixture(Path(tmp))
+        release_path = fixture / ".github/workflows/release.yml"
+        release_text = release_path.read_text(encoding="utf-8")
+        release_path.write_text(
+            release_text.replace(
+                "      attestations: write\n",
+                "      attestations: write\n      artifact-metadata: write\n",
+            ),
+            encoding="utf-8",
+        )
+        expect(
+            "unnecessary artifact-metadata write permission rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
     if failures:
         print(f"\n{len(failures)} release provenance expectation(s) failed")
         return 1
