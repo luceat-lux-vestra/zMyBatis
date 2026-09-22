@@ -117,24 +117,55 @@ def verify_static(repo: Path) -> list[str]:
         './gradlew clean buildPlugin verifyPlugin -PpluginVersion="$PLUGIN_VERSION"',
         'python3 .github/workflow-policy/check_release_provenance.py artifact "$RELEASE_TAG" build/distributions',
         './gradlew signPlugin -PpluginVersion="$PLUGIN_VERSION"',
+        './gradlew verifyPluginSignature -PpluginVersion="$PLUGIN_VERSION"',
+        'uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6',
+        'subject-path: ${{ steps.signed_artifact.outputs.path }}',
         './gradlew publishPlugin -PpluginVersion="$PLUGIN_VERSION"',
+        'RELEASE_ASSET: ${{ steps.signed_artifact.outputs.path }}',
     ]
     for fragment in required_release_fragments:
         if fragment not in release:
             failures.append(f"release.yml missing provenance gate: {fragment}")
-    if release.count('PLUGIN_VERSION="${RELEASE_TAG#v}"') < 3:
-        failures.append("release.yml must derive the effective SemVer from the v-prefixed tag for build/sign/publish")
+    if release.count('PLUGIN_VERSION="${RELEASE_TAG#v}"') < 4:
+        failures.append("release.yml must derive the effective SemVer from the v-prefixed tag for build/sign/verify/publish")
     if '-PpluginVersion="$RELEASE_TAG"' in release:
         failures.append("release.yml must not pass the v-prefixed Git tag as the plugin version")
     if "continue-on-error" in release:
         failures.append("release.yml must not use continue-on-error")
     if "pull_request:" in release or "workflow_dispatch:" in release:
         failures.append("release.yml must not publish from PR/manual-dispatch triggers")
-    publish_pos = release.find("./gradlew publishPlugin")
     artifact_pos = release.find("check_release_provenance.py artifact")
     sign_pos = release.find("./gradlew signPlugin")
-    if min(publish_pos, artifact_pos, sign_pos) < 0 or not (artifact_pos < sign_pos < publish_pos):
-        failures.append("artifact verification and signing must precede publication")
+    signature_verify_pos = release.find("./gradlew verifyPluginSignature")
+    signed_capture_pos = release.find("id: signed_artifact")
+    attest_pos = release.find("uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6")
+    publish_pos = release.find("./gradlew publishPlugin")
+    upload_pos = release.find('gh release upload "$RELEASE_TAG" "$RELEASE_ASSET"')
+    ordered = [
+        artifact_pos,
+        sign_pos,
+        signature_verify_pos,
+        signed_capture_pos,
+        attest_pos,
+        publish_pos,
+        upload_pos,
+    ]
+    if min(ordered) < 0 or ordered != sorted(ordered):
+        failures.append(
+            "release order must be artifact verification -> sign -> signature verify -> "
+            "signed capture -> attestation -> Marketplace publish -> GitHub Release upload"
+        )
+    if "permissions: {}" not in release:
+        failures.append("release workflow must default to no top-level permissions")
+    for permission in ("contents: write", "id-token: write", "attestations: write"):
+        if permission not in release:
+            failures.append(f"release job missing least-privilege publication permission: {permission}")
+    if "pull-requests: write" in release:
+        failures.append("release job must not receive pull-request write authority")
+    if "steps.artifact.outputs.path" in release:
+        failures.append("release workflow must not upload the unsigned buildPlugin artifact")
+    if "-signed.zip" not in release:
+        failures.append("release workflow must identify the signed ZIP explicitly")
 
     forbidden_draft_fragments = [
         "releaseDraft:",
