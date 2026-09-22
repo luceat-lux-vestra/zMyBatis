@@ -11,8 +11,8 @@ from pathlib import Path
 from check_release_provenance import effective_version, validate_tag, verify_artifact, verify_static
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-GOOD_TAG = "v27.0.0"
-GOOD_VERSION = "27.0.0"
+GOOD_TAG = "v1.0.0"
+GOOD_VERSION = "1.0.0"
 
 
 def make_plugin_zip(directory: Path, filename_version: str, embedded_version: str) -> None:
@@ -45,16 +45,16 @@ def make_static_fixture(directory: Path, release_text: str) -> None:
 
 def main() -> int:
     failures: list[str] = []
-    expect("migration epoch publication tag accepted", not validate_tag(GOOD_TAG), failures)
-    expect("later stable SemVer publication tag accepted", not validate_tag("v27.1.2"), failures)
-    expect("SemVer prerelease publication tag accepted", not validate_tag("v27.1.0-beta.1"), failures)
+    expect("first stable publication tag accepted", not validate_tag(GOOD_TAG), failures)
+    expect("later stable SemVer publication tag accepted", not validate_tag("v1.1.2"), failures)
+    expect("SemVer prerelease publication tag accepted", not validate_tag("v1.1.0-beta.1"), failures)
     expect("effective plugin version strips one v prefix", effective_version(GOOD_TAG) == GOOD_VERSION, failures)
-    expect("missing v prefix rejected", bool(validate_tag("27.0.0")), failures)
+    expect("missing v prefix rejected", bool(validate_tag("1.0.0")), failures)
     expect("timestamp release identity rejected", bool(validate_tag("26.09.05.123456")), failures)
-    expect("pre-migration SemVer rejected", bool(validate_tag("v26.99.99")), failures)
-    expect("leading-zero major rejected", bool(validate_tag("v027.0.0")), failures)
-    expect("leading-zero numeric prerelease rejected", bool(validate_tag("v27.0.0-01")), failures)
-    expect("build metadata excluded from publication tag", bool(validate_tag("v27.0.0+build.7")), failures)
+    expect("pre-1.0 publication tag rejected", bool(validate_tag("v0.99.99")), failures)
+    expect("leading-zero major rejected", bool(validate_tag("v01.0.0")), failures)
+    expect("leading-zero numeric prerelease rejected", bool(validate_tag("v1.0.0-01")), failures)
+    expect("build metadata excluded from publication tag", bool(validate_tag("v1.0.0+build.7")), failures)
     expect("arbitrary tag rejected", bool(validate_tag("latest")), failures)
     expect("checked-in release contract passes static proof", not verify_static(REPO_ROOT), failures)
 
@@ -179,20 +179,20 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         directory = Path(tmp)
-        make_plugin_zip(directory, GOOD_VERSION, "27.0.1")
+        make_plugin_zip(directory, GOOD_VERSION, "1.0.1")
         expect("plugin.xml version mismatch rejected", bool(verify_artifact(GOOD_TAG, directory)), failures)
 
     with tempfile.TemporaryDirectory() as tmp:
         directory = Path(tmp)
-        make_plugin_zip(directory, "27.0.1", GOOD_VERSION)
+        make_plugin_zip(directory, "1.0.1", GOOD_VERSION)
         expect("distribution filename mismatch rejected", bool(verify_artifact(GOOD_TAG, directory)), failures)
 
     with tempfile.TemporaryDirectory() as tmp:
         directory = Path(tmp)
-        make_plugin_zip(directory, "27.1.0-beta.1", "27.1.0-beta.1")
+        make_plugin_zip(directory, "1.1.0-beta.1", "1.1.0-beta.1")
         expect(
             "matching prerelease artifact accepted",
-            not verify_artifact("v27.1.0-beta.1", directory),
+            not verify_artifact("v1.1.0-beta.1", directory),
             failures,
         )
 
