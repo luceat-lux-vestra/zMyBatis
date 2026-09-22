@@ -90,6 +90,22 @@ def main() -> int:
         )
 
     with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "permissions:\n  contents: read",
+                "permissions:\n  contents: write\n  id-token: write\n  attestations: write",
+                1,
+            ),
+        )
+        expect(
+            "workflow-level release/attestation write authority regression rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
         directory = Path(tmp)
         make_plugin_zip(directory, GOOD_VERSION, GOOD_VERSION)
         expect("matching artifact accepted", not verify_artifact(GOOD_TAG, directory), failures)
