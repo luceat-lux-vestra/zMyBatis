@@ -37,6 +37,11 @@ val integrationTestRuntimeOnly by configurations.getting {
     extendsFrom(configurations.testRuntimeOnly.get())
 }
 
+// Keep the production/compile baseline at 2026.2 while independently tracking a current
+// 2026.2 Starter build for process-level integration tooling. This isolates test-tooling
+// security updates from the plugin's minimum supported IDE contract.
+val starterBuild = "262.10968.63"
+
 // Configure project's dependencies
 repositories {
     gradlePluginPortal()
@@ -78,7 +83,11 @@ dependencies {
 
         testFramework(TestFrameworkType.Platform)
         testFramework(TestFrameworkType.Plugin.Java)
-        testFramework(TestFrameworkType.Starter, configurationName = "integrationTestImplementation")
+        testFramework(
+            TestFrameworkType.Starter,
+            starterBuild,
+            configurationName = "integrationTestImplementation",
+        )
 
         implementation("org.mybatis:mybatis:3.5.19")
     }
