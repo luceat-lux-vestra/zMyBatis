@@ -119,7 +119,6 @@ def verify_static(repo: Path) -> list[str]:
         './gradlew signPlugin -PpluginVersion="$PLUGIN_VERSION"',
         './gradlew verifyPluginSignature -PpluginVersion="$PLUGIN_VERSION"',
         'uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6',
-        'artifact-metadata: write',
         'subject-path: ${{ steps.signed_artifact.outputs.path }}',
         './gradlew publishPlugin -x signPlugin -PpluginVersion="$PLUGIN_VERSION"',
         'EXPECTED_SHA256: ${{ steps.signed_artifact.outputs.sha256 }}',
@@ -161,11 +160,13 @@ def verify_static(repo: Path) -> list[str]:
         )
     if "permissions: {}" not in release:
         failures.append("release workflow must default to no top-level permissions")
-    for permission in ("contents: write", "id-token: write", "attestations: write", "artifact-metadata: write"):
+    for permission in ("contents: write", "id-token: write", "attestations: write"):
         if permission not in release:
             failures.append(f"release job missing least-privilege publication permission: {permission}")
     if "pull-requests: write" in release:
         failures.append("release job must not receive pull-request write authority")
+    if "artifact-metadata: write" in release:
+        failures.append("release job must not request unnecessary artifact-metadata write authority")
     if "steps.artifact.outputs.path" in release:
         failures.append("release workflow must not upload the unsigned buildPlugin artifact")
     if "-signed.zip" not in release:
