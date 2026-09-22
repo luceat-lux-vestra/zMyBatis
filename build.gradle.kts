@@ -65,8 +65,8 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)
-    testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.5"))
-    testImplementation(platform("tools.jackson:jackson-bom:3.1.5"))
+    testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.6"))
+    testImplementation(platform("tools.jackson:jackson-bom:3.1.6"))
     testImplementation(platform("io.opentelemetry:opentelemetry-bom:1.62.0"))
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
@@ -96,8 +96,8 @@ dependencies {
     // runtime dependencies; remove the constraints when JetBrains' Starter graph carries
     // equivalent-or-newer fixed versions natively.
     integrationTestImplementation(platform("io.netty:netty-bom:4.2.18.Final"))
-    integrationTestImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.5"))
-    integrationTestImplementation(platform("tools.jackson:jackson-bom:3.1.5"))
+    integrationTestImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.6"))
+    integrationTestImplementation(platform("tools.jackson:jackson-bom:3.1.6"))
     integrationTestImplementation(platform("io.opentelemetry:opentelemetry-bom:1.62.0"))
     constraints {
         add("integrationTestImplementation", "org.bouncycastle:bcprov-jdk18on:1.86") {
@@ -124,6 +124,49 @@ dependencies {
     // runtime using the Kotlin plugin's exact version.
     integrationTestRuntimeOnly(kotlin("stdlib"))
     integrationTestRuntimeOnly(kotlin("reflect"))
+}
+
+val verifyStarterSecurityGraph = tasks.register("verifyStarterSecurityGraph") {
+    group = "verification"
+    description = "Fail if the executable Starter/E2E runtime resolves security-stale tooling dependencies."
+    // This proof intentionally resolves a live Gradle configuration during task execution.
+    // Gradle recommends explicitly opting such tasks out of configuration-cache storage
+    // rather than hiding serialization problems with configuration-cache warning mode.
+    notCompatibleWithConfigurationCache(
+        "Resolves integrationTestRuntimeClasspath at execution time for security evidence",
+    )
+
+    doLast {
+        val expected = mapOf(
+            "org.jsoup:jsoup" to "1.23.2",
+            "com.fasterxml.jackson.core:jackson-core" to "2.21.6",
+            "com.fasterxml.jackson.core:jackson-databind" to "2.21.6",
+            "tools.jackson.core:jackson-core" to "3.1.6",
+            "tools.jackson.core:jackson-databind" to "3.1.6",
+            "io.netty:netty-handler" to "4.2.18.Final",
+            "io.netty:netty-codec-compression" to "4.2.18.Final",
+            "org.bouncycastle:bcprov-jdk18on" to "1.86",
+            "org.bouncycastle:bcpkix-jdk18on" to "1.86",
+            "org.bouncycastle:bcutil-jdk18on" to "1.86",
+            "at.yawk.lz4:lz4-java" to "1.11.3",
+        )
+        val resolved = configurations.getByName("integrationTestRuntimeClasspath")
+            .incoming.resolutionResult.allComponents
+            .mapNotNull { component ->
+                component.moduleVersion?.let { id -> "${id.group}:${id.name}" to id.version }
+            }
+            .toMap()
+
+        expected.forEach { (module, version) ->
+            val actual = resolved[module]
+                ?: throw GradleException("Starter security graph is missing expected module $module")
+            if (actual != version) {
+                throw GradleException(
+                    "Starter security graph drift for $module: expected $version, resolved $actual",
+                )
+            }
+        }
+    }
 }
 
 // Configure IntelliJ Platform Gradle Plugin.
@@ -229,6 +272,7 @@ val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundar
 // separate from `check`: #130 requires process-level evidence to remain independently visible.
 val integrationTest by intellijPlatformTesting.testIdeUi.register("integrationTest") {
     task {
+        dependsOn(verifyStarterSecurityGraph)
         val integrationTestSourceSet = sourceSets.getByName("integrationTest")
         testClassesDirs = integrationTestSourceSet.output.classesDirs
         classpath = integrationTestSourceSet.runtimeClasspath
@@ -296,7 +340,7 @@ tasks {
     }
 
     check {
-        dependsOn(javaParserIndexTest, kotlinBoundaryTest)
+        dependsOn(javaParserIndexTest, kotlinBoundaryTest, verifyStarterSecurityGraph)
     }
 
     wrapper {
