@@ -106,6 +106,54 @@ def main() -> int:
         )
 
     with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "environment: jetbrains-marketplace",
+                "environment: unrestricted-release",
+                1,
+            ),
+        )
+        expect(
+            "release environment regression rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "Lock publication identity before Marketplace mutation",
+                "Publication mutation without durable lock",
+                1,
+            ),
+        )
+        expect(
+            "missing publication lock regression rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "concurrency:\n  group: release-${{ github.event.release.tag_name }}\n  cancel-in-progress: false\n\n",
+                "",
+                1,
+            ),
+        )
+        expect(
+            "missing per-tag release concurrency rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
         directory = Path(tmp)
         make_plugin_zip(directory, GOOD_VERSION, GOOD_VERSION)
         expect("matching artifact accepted", not verify_artifact(GOOD_TAG, directory), failures)
