@@ -87,7 +87,10 @@ dependencies {
 
     // Starter is JUnit 5-only. Pin the small integration-test stack independently from the
     // existing JUnit 4 fixture suite until the process harness is characterized and promoted.
-    integrationTestImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
+    // Keep Jupiter and Platform artifacts on one tested release line. A BOM avoids
+    // independent Dependabot PRs that can temporarily skew the Starter test stack.
+    integrationTestImplementation(platform("org.junit:junit-bom:6.1.3"))
+    integrationTestImplementation("org.junit.jupiter:junit-jupiter")
     integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.33.0")
     integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
 
@@ -116,7 +119,7 @@ dependencies {
         }
     }
 
-    integrationTestRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.3")
+    integrationTestRuntimeOnly("org.junit.platform:junit-platform-launcher")
     integrationTestRuntimeOnly("org.jetbrains.teamcity:serviceMessages:2024.12")
     // The plugin build deliberately opts out of bundling Kotlin stdlib. Starter/JUnit5 runs in a
     // separate test JVM and requires a matched stdlib/reflect pair there, so add both only to that
