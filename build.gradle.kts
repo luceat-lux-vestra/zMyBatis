@@ -64,7 +64,6 @@ dependencies {
     }
 
     testImplementation(libs.junit)
-    testImplementation(libs.opentest4j)
     testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.6"))
     testImplementation(platform("tools.jackson:jackson-bom:3.1.6"))
     testImplementation(platform("io.opentelemetry:opentelemetry-bom:1.62.0"))
