@@ -85,14 +85,13 @@ dependencies {
         implementation("org.mybatis:mybatis:3.5.19")
     }
 
-    // Starter is JUnit 5-only. Pin the small integration-test stack independently from the
+    // Keep the process-level Starter test stack isolated from the existing JUnit 4 fixture suite.
     // existing JUnit 4 fixture suite until the process harness is characterized and promoted.
     // Keep Jupiter and Platform artifacts on one tested release line. A BOM avoids
     // independent Dependabot PRs that can temporarily skew the Starter test stack.
     integrationTestImplementation(platform("org.junit:junit-bom:6.1.3"))
     integrationTestImplementation("org.junit.jupiter:junit-jupiter")
     integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.33.0")
-    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
 
     // Security-align only the process-level Starter/E2E tooling graph. These are not plugin
     // runtime dependencies; remove the constraints when JetBrains' Starter graph carries
