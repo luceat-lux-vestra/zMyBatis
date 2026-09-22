@@ -85,13 +85,17 @@ dependencies {
         implementation("org.mybatis:mybatis:3.5.19")
     }
 
-    // Starter is JUnit 5-only. Pin the small integration-test stack independently from the
-    // existing JUnit 4 fixture suite until the process harness is characterized and promoted.
+    // Keep the process-level Starter/JUnit 6 stack isolated from the existing JUnit 4 fixture
+    // suite until the process harness is characterized and promoted.
     // Keep Jupiter and Platform artifacts on one tested release line. A BOM avoids
     // independent Dependabot PRs that can temporarily skew the Starter test stack.
     integrationTestImplementation(platform("org.junit:junit-bom:6.1.3"))
     integrationTestImplementation("org.junit.jupiter:junit-jupiter")
+    integrationTestImplementation(kotlin("stdlib"))
     integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.33.0")
+    // JetBrains Starter's CommonScope loads kotlinx.coroutines.SupervisorKt at runtime, but
+    // the Starter test framework does not supply coroutines transitively on this configuration.
+    // Keep this explicit runtime prerequisite; removing it fails Starter / Driver E2E.
     integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
 
     // Security-align only the process-level Starter/E2E tooling graph. These are not plugin
@@ -121,10 +125,8 @@ dependencies {
 
     integrationTestRuntimeOnly("org.junit.platform:junit-platform-launcher")
     integrationTestRuntimeOnly("org.jetbrains.teamcity:serviceMessages:2024.12")
-    // The plugin build deliberately opts out of bundling Kotlin stdlib. Starter/JUnit5 runs in a
-    // separate test JVM and requires a matched stdlib/reflect pair there, so add both only to that
-    // runtime using the Kotlin plugin's exact version.
-    integrationTestRuntimeOnly(kotlin("stdlib"))
+    // The plugin build deliberately opts out of bundling Kotlin stdlib. Integration-test source
+    // compiles against the matched stdlib above; reflection is needed only at runtime.
     integrationTestRuntimeOnly(kotlin("reflect"))
 }
 
