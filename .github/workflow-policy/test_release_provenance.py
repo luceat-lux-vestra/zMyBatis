@@ -37,6 +37,9 @@ def make_static_fixture(directory: Path, release_text: str) -> None:
     workflows.mkdir(parents=True)
     shutil.copy2(REPO_ROOT / "build.gradle.kts", directory / "build.gradle.kts")
     shutil.copy2(REPO_ROOT / ".github/workflows/build.yml", workflows / "build.yml")
+    docs = directory / "docs"
+    docs.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "docs/release-recovery.md", docs / "release-recovery.md")
     (workflows / "release.yml").write_text(release_text, encoding="utf-8")
 
 
