@@ -93,9 +93,11 @@ jobs:
           mapfile -t ARCHIVES < <(find build/distributions -maxdepth 1 -type f -name '*-signed.zip' -print)
           test "${#ARCHIVES[@]}" -eq 1
           sha256="$(sha256sum "${ARCHIVES[0]}" | awk '{print $1}')"
-          echo "path=${ARCHIVES[0]}" >> "$GITHUB_OUTPUT"
-          echo "name=$(basename "${ARCHIVES[0]}")" >> "$GITHUB_OUTPUT"
-          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          {
+            echo "path=${ARCHIVES[0]}"
+            echo "name=$(basename "${ARCHIVES[0]}")"
+            echo "sha256=$sha256"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Attest verified signed release asset
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
