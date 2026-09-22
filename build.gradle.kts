@@ -92,6 +92,10 @@ dependencies {
     integrationTestImplementation(platform("org.junit:junit-bom:6.1.3"))
     integrationTestImplementation("org.junit.jupiter:junit-jupiter")
     integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.33.0")
+    // JetBrains Starter's CommonScope loads kotlinx.coroutines.SupervisorKt at runtime, but
+    // the Starter test framework does not supply coroutines transitively on this configuration.
+    // Keep this explicit runtime prerequisite; removing it fails Starter / Driver E2E.
+    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
 
     // Security-align only the process-level Starter/E2E tooling graph. These are not plugin
     // runtime dependencies; remove the constraints when JetBrains' Starter graph carries
