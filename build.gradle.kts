@@ -65,6 +65,8 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)
+    testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.5"))
+    testImplementation(platform("tools.jackson:jackson-bom:3.1.5"))
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
     intellijPlatform {
