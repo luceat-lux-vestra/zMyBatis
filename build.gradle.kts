@@ -65,6 +65,8 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)
+    testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.5"))
+    testImplementation(platform("tools.jackson:jackson-bom:3.1.5"))
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
     intellijPlatform {
@@ -93,6 +95,8 @@ dependencies {
     // runtime dependencies; remove the constraints when JetBrains' Starter graph carries
     // equivalent-or-newer fixed versions natively.
     integrationTestImplementation(platform("io.netty:netty-bom:4.2.18.Final"))
+    integrationTestImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.5"))
+    integrationTestImplementation(platform("tools.jackson:jackson-bom:3.1.5"))
     constraints {
         add("integrationTestImplementation", "org.bouncycastle:bcprov-jdk18on:1.86") {
             because("Starter tooling currently resolves a security-affected 1.84")
@@ -104,7 +108,10 @@ dependencies {
             because("keep Bouncy Castle Starter tooling modules version-aligned")
         }
         add("integrationTestImplementation", "at.yawk.lz4:lz4-java:1.11.3") {
-            because("1.11.1 fixes the native XXHash range-validation vulnerability")
+            because("1.11.3 includes the security fixes released in 1.11.2")
+        }
+        add("integrationTestImplementation", "org.jsoup:jsoup:1.23.2") {
+            because("1.23.2 contains the XmlTreeBuilder resource-consumption fix commit 862ba2f")
         }
     }
 
