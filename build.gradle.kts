@@ -87,7 +87,7 @@ dependencies {
 
     // Starter is JUnit 5-only. Pin the small integration-test stack independently from the
     // existing JUnit 4 fixture suite until the process harness is characterized and promoted.
-    integrationTestImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
+    integrationTestImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
     integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.33.0")
     integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
 
