@@ -208,7 +208,7 @@ def verify_static(repo: Path) -> list[str]:
                 f"build.yml ordinary main/PR CI must not synthesize release identity: {fragment}"
             )
     required_recovery_fragments = [
-        "Unknown fails closed",
+        "`Unknown` fails closed",
         "do not call `publishPlugin` again",
         "explicit maintainer authorization",
         "zmybatis-release-published.json",
