@@ -94,6 +94,7 @@ def verify_static(repo: Path) -> list[str]:
     build = (repo / "build.gradle.kts").read_text(encoding="utf-8")
     release = (repo / ".github/workflows/release.yml").read_text(encoding="utf-8")
     build_workflow = (repo / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    recovery = (repo / "docs/release-recovery.md").read_text(encoding="utf-8")
 
     required_build_fragments = [
         'providers.gradleProperty("pluginVersion").orElse("0.0.0-dev")',
@@ -206,6 +207,17 @@ def verify_static(repo: Path) -> list[str]:
             failures.append(
                 f"build.yml ordinary main/PR CI must not synthesize release identity: {fragment}"
             )
+    required_recovery_fragments = [
+        "Unknown fails closed",
+        "do not call `publishPlugin` again",
+        "explicit maintainer authorization",
+        "zmybatis-release-published.json",
+        "version reuse",
+    ]
+    for fragment in required_recovery_fragments:
+        if fragment not in recovery:
+            failures.append(f"release recovery runbook missing invariant: {fragment}")
+
     return failures
 
 
