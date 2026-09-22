@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -69,7 +71,7 @@ jobs:
           test "${#ARCHIVES[@]}" -eq 1
           echo "path=${ARCHIVES[0]}" >> "$GITHUB_OUTPUT"
 
-      - name: Sign exact release version
+      - name: Sign and verify exact release version
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
@@ -78,7 +80,27 @@ jobs:
         run: |
           set -euo pipefail
           PLUGIN_VERSION="${RELEASE_TAG#v}"
-          ./gradlew signPlugin -PpluginVersion="$PLUGIN_VERSION"
+          ./gradlew signPlugin verifyPluginSignature -PpluginVersion="$PLUGIN_VERSION"
+
+      - name: Capture verified signed release asset
+        id: signed_artifact
+        env:
+          UNSIGNED_ARTIFACT: ${{ steps.artifact.outputs.path }}
+        run: |
+          set -euo pipefail
+          expected_signed="${UNSIGNED_ARTIFACT%.zip}-signed.zip"
+          test -f "$expected_signed"
+          mapfile -t SIGNED_ARCHIVES < <(find build/distributions -maxdepth 1 -type f -name '*-signed.zip' -print)
+          test "${#SIGNED_ARCHIVES[@]}" -eq 1
+          test "${SIGNED_ARCHIVES[0]}" = "$expected_signed"
+          digest="$(sha256sum "$expected_signed" | awk '{print $1}')"
+          printf 'path=%s\nsha256=%s\n' "$expected_signed" "$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Attest verified signed release asset
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: ${{ steps.signed_artifact.outputs.path }}
+          create-storage-record: false
 
       - name: Publish exact release version
         env:
@@ -90,11 +112,20 @@ jobs:
         run: |
           set -euo pipefail
           PLUGIN_VERSION="${RELEASE_TAG#v}"
-          ./gradlew publishPlugin -PpluginVersion="$PLUGIN_VERSION"
+          ./gradlew publishPlugin -x signPlugin -PpluginVersion="$PLUGIN_VERSION"
 
-      - name: Upload validated release asset
+      - name: Recheck signed artifact identity after Marketplace publication
+        env:
+          RELEASE_ASSET: ${{ steps.signed_artifact.outputs.path }}
+          EXPECTED_SHA256: ${{ steps.signed_artifact.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          actual="$(sha256sum "$RELEASE_ASSET" | awk '{print $1}')"
+          test "$actual" = "$EXPECTED_SHA256"
+
+      - name: Upload verified signed release asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-          RELEASE_ASSET: ${{ steps.artifact.outputs.path }}
+          RELEASE_ASSET: ${{ steps.signed_artifact.outputs.path }}
         run: gh release upload "$RELEASE_TAG" "$RELEASE_ASSET"
