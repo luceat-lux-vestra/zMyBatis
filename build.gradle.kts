@@ -220,6 +220,18 @@ val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundar
     }
 }
 
+// Keep Jackson security alignment on IJPGP-generated custom test configurations too.
+// These configurations are created by the custom testIde registrations above and are
+// separate from the default intellijPlatformTestDependencies bucket.
+listOf(
+    "intellijPlatformTestDependencies_javaParserIndexTest",
+    "intellijPlatformTestDependencies_kotlinBoundaryTest",
+).forEach { configurationName ->
+    configurations.named(configurationName) {
+        dependencies.add(project.dependencies.platform("com.fasterxml.jackson:jackson-bom:2.21.5"))
+        dependencies.add(project.dependencies.platform("tools.jackson:jackson-bom:3.1.5"))
+    }
+}
 // Launch an actual IDE process with the exact buildPlugin archive installed. Keep this task
 // separate from `check`: #130 requires process-level evidence to remain independently visible.
 val integrationTest by intellijPlatformTesting.testIdeUi.register("integrationTest") {
