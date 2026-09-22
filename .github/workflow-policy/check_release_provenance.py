@@ -119,8 +119,10 @@ def verify_static(repo: Path) -> list[str]:
         './gradlew signPlugin -PpluginVersion="$PLUGIN_VERSION"',
         './gradlew verifyPluginSignature -PpluginVersion="$PLUGIN_VERSION"',
         'uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6',
+        'artifact-metadata: write',
         'subject-path: ${{ steps.signed_artifact.outputs.path }}',
-        './gradlew publishPlugin -PpluginVersion="$PLUGIN_VERSION"',
+        './gradlew publishPlugin -x signPlugin -PpluginVersion="$PLUGIN_VERSION"',
+        'EXPECTED_SHA256: ${{ steps.signed_artifact.outputs.sha256 }}',
         'RELEASE_ASSET: ${{ steps.signed_artifact.outputs.path }}',
     ]
     for fragment in required_release_fragments:
@@ -139,7 +141,8 @@ def verify_static(repo: Path) -> list[str]:
     signature_verify_pos = release.find("./gradlew verifyPluginSignature")
     signed_capture_pos = release.find("id: signed_artifact")
     attest_pos = release.find("uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6")
-    publish_pos = release.find("./gradlew publishPlugin")
+    publish_pos = release.find("./gradlew publishPlugin -x signPlugin")
+    recheck_pos = release.find("Recheck signed artifact identity after Marketplace publication")
     upload_pos = release.find('gh release upload "$RELEASE_TAG" "$RELEASE_ASSET"')
     ordered = [
         artifact_pos,
@@ -148,16 +151,17 @@ def verify_static(repo: Path) -> list[str]:
         signed_capture_pos,
         attest_pos,
         publish_pos,
+        recheck_pos,
         upload_pos,
     ]
     if min(ordered) < 0 or ordered != sorted(ordered):
         failures.append(
             "release order must be artifact verification -> sign -> signature verify -> "
-            "signed capture -> attestation -> Marketplace publish -> GitHub Release upload"
+            "signed capture -> attestation -> Marketplace publish -> digest recheck -> GitHub Release upload"
         )
     if "permissions: {}" not in release:
         failures.append("release workflow must default to no top-level permissions")
-    for permission in ("contents: write", "id-token: write", "attestations: write"):
+    for permission in ("contents: write", "id-token: write", "attestations: write", "artifact-metadata: write"):
         if permission not in release:
             failures.append(f"release job missing least-privilege publication permission: {permission}")
     if "pull-requests: write" in release:
