@@ -26,7 +26,7 @@ Download GitHub-side identity without modifying it:
 
 ```bash
 repo="luceat-lux-vestra/zMyBatis"
-tag="v27.0.0"
+tag="v1.0.0"
 
 gh api "repos/$repo/releases/tags/$tag" > /tmp/zmybatis-release.json
 
