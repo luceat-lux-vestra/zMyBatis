@@ -157,6 +157,22 @@ def main() -> int:
         )
 
     with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "Pending and published release identities conflict.",
+                "Conflicting identities ignored.",
+                1,
+            ),
+        )
+        expect(
+            "completed identity lineage regression rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
         directory = Path(tmp)
         make_plugin_zip(directory, GOOD_VERSION, GOOD_VERSION)
         expect("matching artifact accepted", not verify_artifact(GOOD_TAG, directory), failures)
