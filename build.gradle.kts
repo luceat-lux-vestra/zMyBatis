@@ -93,8 +93,8 @@ dependencies {
     // runtime dependencies; remove the constraints when JetBrains' Starter graph carries
     // equivalent-or-newer fixed versions natively.
     integrationTestImplementation(platform("io.netty:netty-bom:4.2.18.Final"))
-    testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.5"))
-    testImplementation(platform("tools.jackson:jackson-bom:3.1.5"))
+    add("intellijPlatformTestDependencies", platform("com.fasterxml.jackson:jackson-bom:2.21.5"))
+    add("intellijPlatformTestDependencies", platform("tools.jackson:jackson-bom:3.1.5"))
     integrationTestImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.5"))
     integrationTestImplementation(platform("tools.jackson:jackson-bom:3.1.5"))
     constraints {
