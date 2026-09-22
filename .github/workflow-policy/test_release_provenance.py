@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -22,6 +23,15 @@ def make_plugin_zip(directory: Path, filename_version: str, embedded_version: st
         )
     with zipfile.ZipFile(directory / f"zMyBatis-{filename_version}.zip", "w") as outer:
         outer.writestr(f"zMyBatis/lib/zMyBatis-{filename_version}.jar", jar_bytes.getvalue())
+
+
+def make_static_fixture(directory: Path) -> Path:
+    repo = directory / "repo"
+    (repo / ".github/workflows").mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "build.gradle.kts", repo / "build.gradle.kts")
+    shutil.copy2(REPO_ROOT / ".github/workflows/build.yml", repo / ".github/workflows/build.yml")
+    shutil.copy2(REPO_ROOT / ".github/workflows/release.yml", repo / ".github/workflows/release.yml")
+    return repo
 
 
 def expect(label: str, condition: bool, failures: list[str]) -> None:
@@ -71,6 +81,57 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         expect("missing artifact rejected", bool(verify_artifact(GOOD_TAG, Path(tmp))), failures)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = make_static_fixture(Path(tmp))
+        release_path = fixture / ".github/workflows/release.yml"
+        release_text = release_path.read_text(encoding="utf-8")
+        release_path.write_text(
+            release_text.replace(
+                './gradlew verifyPluginSignature -PpluginVersion="$PLUGIN_VERSION"',
+                'echo "signature verification skipped"',
+            ),
+            encoding="utf-8",
+        )
+        expect(
+            "missing signature verification rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = make_static_fixture(Path(tmp))
+        release_path = fixture / ".github/workflows/release.yml"
+        release_text = release_path.read_text(encoding="utf-8")
+        release_path.write_text(
+            release_text.replace(
+                "RELEASE_ASSET: ${{ steps.signed_artifact.outputs.path }}",
+                "RELEASE_ASSET: build/distributions/unsigned.zip",
+            ),
+            encoding="utf-8",
+        )
+        expect(
+            "unsigned GitHub Release upload rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = make_static_fixture(Path(tmp))
+        release_path = fixture / ".github/workflows/release.yml"
+        release_text = release_path.read_text(encoding="utf-8")
+        release_path.write_text(
+            release_text.replace(
+                "uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
+                "uses: actions/attest@v4",
+            ),
+            encoding="utf-8",
+        )
+        expect(
+            "mutable attestation action reference rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
 
     if failures:
         print(f"\n{len(failures)} release provenance expectation(s) failed")
