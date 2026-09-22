@@ -43,6 +43,9 @@ The active release policy is documented in AGENTS.md section 9 and enforced by `
 - Publication tags follow protected `vMAJOR.MINOR.PATCH[-PRERELEASE]` identity with migration floor `v27.0.0`.
 - The plugin version is the validated tag with one leading `v` removed.
 - Release tag ancestry, artifact version, signing, and Marketplace publication must stay bound to that one effective version.
+- Production publication runs through the `jetbrains-marketplace` GitHub Environment and records a pending digest-bound identity before the irreversible Marketplace call; an ambiguous pending identity is a hard stop, not permission to republish.
+- A completed identity is replay-safe only when the immutable tag/source and signed GitHub Release asset digest still match.
+- Follow `docs/release-recovery.md` for any pending/ambiguous partial publication; do not infer Marketplace absence from a failed workflow.
 - Do not reintroduce timestamp/CalVer publication identity or ordinary-main draft-release synthesis.
 
 ## Dependabot PRs

@@ -200,6 +200,9 @@ The active publication contract established by #56 is:
 - release provenance proves the tag commit is reachable from reviewed `main`;
 - build/Plugin Verifier and artifact-version validation happen before signing and Marketplace publication;
 - signing and publishing use that same effective version;
+- production signing/Marketplace credentials are reachable only through the `jetbrains-marketplace` GitHub Environment;
+- a digest-bound pending publication identity is written before Marketplace mutation; ambiguous pending state fails closed, while a completed identity must match the immutable tag/source/signed GitHub Release asset before a rerun becomes a no-op;
+- `docs/release-recovery.md` is the authoritative manual recovery procedure for pending/ambiguous Marketplace state; `Unknown` never authorizes a retry;
 - ordinary `build.yml` does not create release identity or draft releases;
 - live `publication tags` governance protects `refs/tags/v*` from update/deletion with no routine bypass while allowing new tag creation;
 - `.github/workflow-policy/check_release_provenance.py` and its negative controls fail closed on release-contract drift.

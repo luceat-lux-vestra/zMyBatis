@@ -37,6 +37,9 @@ def make_static_fixture(directory: Path, release_text: str) -> None:
     workflows.mkdir(parents=True)
     shutil.copy2(REPO_ROOT / "build.gradle.kts", directory / "build.gradle.kts")
     shutil.copy2(REPO_ROOT / ".github/workflows/build.yml", workflows / "build.yml")
+    docs = directory / "docs"
+    docs.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "docs/release-recovery.md", docs / "release-recovery.md")
     (workflows / "release.yml").write_text(release_text, encoding="utf-8")
 
 
@@ -101,6 +104,70 @@ def main() -> int:
         )
         expect(
             "workflow-level release/attestation write authority regression rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "environment: jetbrains-marketplace",
+                "environment: unrestricted-release",
+                1,
+            ),
+        )
+        expect(
+            "release environment regression rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "Lock publication identity before Marketplace mutation",
+                "Publication mutation without durable lock",
+                1,
+            ),
+        )
+        expect(
+            "missing publication lock regression rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "concurrency:\n  group: release-${{ github.event.release.tag_name }}\n  cancel-in-progress: false\n\n",
+                "",
+                1,
+            ),
+        )
+        expect(
+            "missing per-tag release concurrency rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "Pending and published release identities conflict.",
+                "Conflicting identities ignored.",
+                1,
+            ),
+        )
+        expect(
+            "completed identity lineage regression rejected",
             bool(verify_static(fixture)),
             failures,
         )

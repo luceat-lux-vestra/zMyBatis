@@ -94,6 +94,7 @@ def verify_static(repo: Path) -> list[str]:
     build = (repo / "build.gradle.kts").read_text(encoding="utf-8")
     release = (repo / ".github/workflows/release.yml").read_text(encoding="utf-8")
     build_workflow = (repo / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    recovery = (repo / "docs/release-recovery.md").read_text(encoding="utf-8")
 
     required_build_fragments = [
         'providers.gradleProperty("pluginVersion").orElse("0.0.0-dev")',
@@ -112,6 +113,9 @@ def verify_static(repo: Path) -> list[str]:
     required_release_fragments = [
         "fetch-depth: 0",
         "persist-credentials: false",
+        "environment: jetbrains-marketplace",
+        "concurrency:",
+        "cancel-in-progress: false",
         "id-token: write",
         "attestations: write",
         'git merge-base --is-ancestor "$TAG_COMMIT" origin/main',
@@ -123,6 +127,15 @@ def verify_static(repo: Path) -> list[str]:
         "create-storage-record: false",
         './gradlew publishPlugin -x signPlugin -PpluginVersion="$PLUGIN_VERSION"',
         'RELEASE_ASSET: ${{ steps.signed_artifact.outputs.path }}',
+        "Pending Marketplace publication identity exists; manual recovery is required.",
+        "Published signed asset digest does not match release identity.",
+        "Signed GitHub Release asset exists without a completed publication identity.",
+        "Published identity requires its original pending identity.",
+        "Pending and published release identities conflict.",
+        ".marketplace_channel == $channel",
+        "zmybatis-release-identity.json",
+        "zmybatis-release-published.json",
+        'publication_state: "pending"',
     ]
     for fragment in required_release_fragments:
         if fragment not in release:
@@ -157,15 +170,33 @@ def verify_static(repo: Path) -> list[str]:
     sign_pos = release.find("./gradlew signPlugin verifyPluginSignature")
     capture_pos = release.find("Capture verified signed release asset")
     attest_pos = release.find("Attest verified signed release asset")
+    lock_pos = release.find("Lock publication identity before Marketplace mutation")
     publish_pos = release.find("./gradlew publishPlugin -x signPlugin")
     recheck_pos = release.find("Recheck signed artifact identity after Marketplace publication")
     upload_pos = release.find("Upload verified signed release asset")
-    positions = [artifact_pos, sign_pos, capture_pos, attest_pos, publish_pos, recheck_pos, upload_pos]
+    complete_pos = release.find("Mark publication complete")
+    positions = [
+        artifact_pos,
+        sign_pos,
+        capture_pos,
+        attest_pos,
+        lock_pos,
+        publish_pos,
+        recheck_pos,
+        upload_pos,
+        complete_pos,
+    ]
     if min(positions) < 0 or positions != sorted(positions):
         failures.append(
             "release order must be artifact proof -> sign/verify -> signed capture -> "
-            "attestation -> Marketplace publish -> digest recheck -> signed GitHub Release upload"
+            "attestation -> publication lock -> Marketplace publish -> digest recheck -> "
+            "signed GitHub Release upload -> completed marker"
         )
+
+    if "group: release-${{ github.event.release.tag_name }}" not in release:
+        failures.append("release concurrency must be scoped to the immutable release tag")
+    if "environment: jetbrains-marketplace" not in release_job:
+        failures.append("release job must be gated by jetbrains-marketplace environment")
 
     forbidden_draft_fragments = [
         "releaseDraft:",
@@ -179,6 +210,17 @@ def verify_static(repo: Path) -> list[str]:
             failures.append(
                 f"build.yml ordinary main/PR CI must not synthesize release identity: {fragment}"
             )
+    required_recovery_fragments = [
+        "`Unknown` fails closed",
+        "do not call `publishPlugin` again",
+        "explicit maintainer authorization",
+        "zmybatis-release-published.json",
+        "version reuse",
+    ]
+    for fragment in required_recovery_fragments:
+        if fragment not in recovery:
+            failures.append(f"release recovery runbook missing invariant: {fragment}")
+
     return failures
 
 

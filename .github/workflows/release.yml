@@ -11,11 +11,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Publish Plugin
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    environment: jetbrains-marketplace
     permissions:
       contents: write
       id-token: write
@@ -35,27 +40,133 @@ jobs:
           persist-credentials: false
 
       - name: Prove release tag provenance
+        id: source
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
           python3 .github/workflow-policy/check_release_provenance.py tag "$RELEASE_TAG"
           TAG_COMMIT="$(git rev-parse HEAD)"
+          PLUGIN_VERSION="${RELEASE_TAG#v}"
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$TAG_COMMIT" origin/main
+          printf 'commit=%s\nversion=%s\n' "$TAG_COMMIT" "$PLUGIN_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve publication recovery state
+        id: state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_COMMIT: ${{ steps.source.outputs.commit }}
+          PLUGIN_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          set -euo pipefail
+          release_json="$RUNNER_TEMP/release.json"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > "$release_json"
+          jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and .id != null' "$release_json" >/dev/null
+
+          pending_ids="$(jq -r '.assets[]? | select(.name == "zmybatis-release-identity.json") | .id' "$release_json")"
+          published_ids="$(jq -r '.assets[]? | select(.name == "zmybatis-release-published.json") | .id' "$release_json")"
+          [ "$(printf '%s\n' "$pending_ids" | sed '/^$/d' | wc -l | tr -d ' ')" -le 1 ]
+          [ "$(printf '%s\n' "$published_ids" | sed '/^$/d' | wc -l | tr -d ' ')" -le 1 ]
+
+          published_id="$(printf '%s\n' "$published_ids" | sed -n '1p')"
+          pending_id="$(printf '%s\n' "$pending_ids" | sed -n '1p')"
+
+          if [ -n "$published_id" ]; then
+            [ -n "$pending_id" ] || {
+              echo "::error::Published identity requires its original pending identity."
+              exit 1
+            }
+
+            pending_identity="$RUNNER_TEMP/existing-pending.json"
+            identity="$RUNNER_TEMP/existing-published.json"
+            gh api -H 'Accept: application/octet-stream'               "repos/${GITHUB_REPOSITORY}/releases/assets/${pending_id}" > "$pending_identity"
+            gh api -H 'Accept: application/octet-stream'               "repos/${GITHUB_REPOSITORY}/releases/assets/${published_id}" > "$identity"
+
+            if [[ "$PLUGIN_VERSION" == *-* ]]; then
+              expected_channel="${PLUGIN_VERSION#*-}"
+              expected_channel="${expected_channel%%.*}"
+            else
+              expected_channel="default"
+            fi
+
+            jq -e               --arg tag "$RELEASE_TAG"               --arg version "$PLUGIN_VERSION"               --arg commit "$RELEASE_COMMIT"               --arg channel "$expected_channel" '
+                .schema == 1 and
+                .publication_state == "pending" and
+                .tag == $tag and
+                .version == $version and
+                .commit == $commit and
+                .marketplace_channel == $channel and
+                .author_signed == true and
+                (.artifact | endswith("-" + $version + "-signed.zip")) and
+                (.artifact_sha256 | test("^[0-9a-f]{64}$"))
+              ' "$pending_identity" >/dev/null
+
+            jq -e               --arg tag "$RELEASE_TAG"               --arg version "$PLUGIN_VERSION"               --arg commit "$RELEASE_COMMIT"               --arg channel "$expected_channel" '
+                .schema == 1 and
+                .publication_state == "published" and
+                .tag == $tag and
+                .version == $version and
+                .commit == $commit and
+                .marketplace_channel == $channel and
+                .author_signed == true and
+                (.artifact | endswith("-" + $version + "-signed.zip")) and
+                (.artifact_sha256 | test("^[0-9a-f]{64}$"))
+              ' "$identity" >/dev/null
+
+            pending_canonical="$(jq -S 'del(.publication_state)' "$pending_identity")"
+            published_canonical="$(jq -S 'del(.publication_state)' "$identity")"
+            [ "$pending_canonical" = "$published_canonical" ] || {
+              echo "::error::Pending and published release identities conflict."
+              exit 1
+            }
+
+            artifact_name="$(jq -r '.artifact' "$identity")"
+            expected_sha="$(jq -r '.artifact_sha256' "$identity")"
+            asset_ids="$(jq -r --arg name "$artifact_name" '.assets[]? | select(.name == $name) | .id' "$release_json")"
+            [ "$(printf '%s\n' "$asset_ids" | sed '/^$/d' | wc -l | tr -d ' ')" -eq 1 ] || {
+              echo "::error::Published identity must map to exactly one signed GitHub Release asset."
+              exit 1
+            }
+            asset_id="$(printf '%s\n' "$asset_ids" | sed -n '1p')"
+            gh api -H 'Accept: application/octet-stream'               "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" > "$RUNNER_TEMP/existing-signed.zip"
+            actual_sha="$(sha256sum "$RUNNER_TEMP/existing-signed.zip" | awk '{print $1}')"
+            [ "$actual_sha" = "$expected_sha" ] || {
+              echo "::error::Published signed asset digest does not match release identity."
+              exit 1
+            }
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "$pending_id" ]; then
+            echo "::error::Pending Marketplace publication identity exists; manual recovery is required."
+            exit 1
+          fi
+
+          orphan_count="$(jq -r --arg suffix "-${PLUGIN_VERSION}-signed.zip"             '[.assets[]? | select(.name | endswith($suffix))] | length' "$release_json")"
+          [ "$orphan_count" -eq 0 ] || {
+            echo "::error::Signed GitHub Release asset exists without a completed publication identity."
+            exit 1
+          }
+          echo "publish=true" >> "$GITHUB_OUTPUT"
 
       - name: Setup Java
+        if: ${{ steps.state.outputs.publish == 'true' }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: zulu
           java-version: 25
 
       - name: Setup Gradle
+        if: ${{ steps.state.outputs.publish == 'true' }}
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-disabled: true
 
       - name: Build and verify exact release version
+        if: ${{ steps.state.outputs.publish == 'true' }}
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
@@ -65,6 +176,7 @@ jobs:
           python3 .github/workflow-policy/check_release_provenance.py artifact "$RELEASE_TAG" build/distributions
 
       - name: Capture validated release asset
+        if: ${{ steps.state.outputs.publish == 'true' }}
         id: artifact
         shell: bash
         run: |
@@ -73,7 +185,27 @@ jobs:
           test "${#ARCHIVES[@]}" -eq 1
           echo "path=${ARCHIVES[0]}" >> "$GITHUB_OUTPUT"
 
+      - name: Verify publication credentials
+        if: ${{ steps.state.outputs.publish == 'true' }}
+        env:
+          PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "${PUBLISH_TOKEN:-}" ] || missing+=(PUBLISH_TOKEN)
+          [ -n "${CERTIFICATE_CHAIN:-}" ] || missing+=(CERTIFICATE_CHAIN)
+          [ -n "${PRIVATE_KEY:-}" ] || missing+=(PRIVATE_KEY)
+          [ -n "${PRIVATE_KEY_PASSWORD:-}" ] || missing+=(PRIVATE_KEY_PASSWORD)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Publication aborted before signing/Marketplace mutation; missing: ${missing[*]}"
+            exit 1
+          fi
+
       - name: Sign and verify exact release version
+        if: ${{ steps.state.outputs.publish == 'true' }}
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
@@ -85,6 +217,7 @@ jobs:
           ./gradlew signPlugin verifyPluginSignature -PpluginVersion="$PLUGIN_VERSION"
 
       - name: Capture verified signed release asset
+        if: ${{ steps.state.outputs.publish == 'true' }}
         id: signed_artifact
         env:
           UNSIGNED_ARTIFACT: ${{ steps.artifact.outputs.path }}
@@ -96,15 +229,49 @@ jobs:
           test "${#SIGNED_ARCHIVES[@]}" -eq 1
           test "${SIGNED_ARCHIVES[0]}" = "$expected_signed"
           digest="$(sha256sum "$expected_signed" | awk '{print $1}')"
-          printf 'path=%s\nsha256=%s\n' "$expected_signed" "$digest" >> "$GITHUB_OUTPUT"
+          printf 'path=%s\nname=%s\nsha256=%s\n' "$expected_signed" "$(basename "$expected_signed")" "$digest" >> "$GITHUB_OUTPUT"
 
       - name: Attest verified signed release asset
+        if: ${{ steps.state.outputs.publish == 'true' }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: ${{ steps.signed_artifact.outputs.path }}
           create-storage-record: false
 
+      - name: Lock publication identity before Marketplace mutation
+        if: ${{ steps.state.outputs.publish == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_COMMIT: ${{ steps.source.outputs.commit }}
+          PLUGIN_VERSION: ${{ steps.source.outputs.version }}
+          RELEASE_ARTIFACT: ${{ steps.signed_artifact.outputs.name }}
+          RELEASE_SHA256: ${{ steps.signed_artifact.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          if [[ "$PLUGIN_VERSION" == *-* ]]; then
+            MARKETPLACE_CHANNEL="${PLUGIN_VERSION#*-}"
+            MARKETPLACE_CHANNEL="${MARKETPLACE_CHANNEL%%.*}"
+          else
+            MARKETPLACE_CHANNEL="default"
+          fi
+          jq -n             --arg tag "$RELEASE_TAG"             --arg version "$PLUGIN_VERSION"             --arg commit "$RELEASE_COMMIT"             --arg artifact "$RELEASE_ARTIFACT"             --arg sha "$RELEASE_SHA256"             --arg channel "$MARKETPLACE_CHANNEL" '
+              {
+                schema: 1,
+                publication_state: "pending",
+                tag: $tag,
+                version: $version,
+                commit: $commit,
+                artifact: $artifact,
+                artifact_sha256: $sha,
+                marketplace_channel: $channel,
+                author_signed: true
+              }
+            ' > "$RUNNER_TEMP/zmybatis-release-identity.json"
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/zmybatis-release-identity.json"
+
       - name: Publish exact release version
+        if: ${{ steps.state.outputs.publish == 'true' }}
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
@@ -117,6 +284,7 @@ jobs:
           ./gradlew publishPlugin -x signPlugin -PpluginVersion="$PLUGIN_VERSION"
 
       - name: Recheck signed artifact identity after Marketplace publication
+        if: ${{ steps.state.outputs.publish == 'true' }}
         env:
           RELEASE_ASSET: ${{ steps.signed_artifact.outputs.path }}
           EXPECTED_SHA256: ${{ steps.signed_artifact.outputs.sha256 }}
@@ -126,8 +294,20 @@ jobs:
           test "$actual" = "$EXPECTED_SHA256"
 
       - name: Upload verified signed release asset
+        if: ${{ steps.state.outputs.publish == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           RELEASE_ASSET: ${{ steps.signed_artifact.outputs.path }}
         run: gh release upload "$RELEASE_TAG" "$RELEASE_ASSET"
+
+      
+      - name: Mark publication complete
+        if: ${{ steps.state.outputs.publish == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          jq '.publication_state = "published"'             "$RUNNER_TEMP/zmybatis-release-identity.json" > "$RUNNER_TEMP/zmybatis-release-published.json"
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/zmybatis-release-published.json"
