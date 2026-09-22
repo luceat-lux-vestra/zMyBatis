@@ -96,11 +96,12 @@ trustBoundary:
   privilegedJobs:
     - workflow: .github/workflows/release.yml
       job: release
-      permissions: [ contents:write ]
+      permissions: [ contents:write, id-token:write, attestations:write ]
       justification: >-
-        Publishes the validated release artifact to JetBrains Marketplace and
-        uploads that artifact to the already-published GitHub Release. This
-        release-event-only workflow is governed by release-provenance issue #56.
+        Publishes the validated release artifact to JetBrains Marketplace,
+        persists GitHub build-provenance attestation for the verified signed
+        archive, and uploads that same archive to the already-published GitHub
+        Release. This release-event-only workflow is governed by release-provenance issue #56.
 
 labels:
   taxonomy:
