@@ -86,8 +86,8 @@ dependencies {
     // Starter is JUnit 5-only. Pin the small integration-test stack independently from the
     // existing JUnit 4 fixture suite until the process harness is characterized and promoted.
     integrationTestImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
-    integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.20.2")
-    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.1")
+    integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.33.0")
+    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
 
     // Security-align only the process-level Starter/E2E tooling graph. These are not plugin
     // runtime dependencies; remove the constraints when JetBrains' Starter graph carries
@@ -103,7 +103,7 @@ dependencies {
         add("integrationTestImplementation", "org.bouncycastle:bcutil-jdk18on:1.86") {
             because("keep Bouncy Castle Starter tooling modules version-aligned")
         }
-        add("integrationTestImplementation", "at.yawk.lz4:lz4-java:1.11.1") {
+        add("integrationTestImplementation", "at.yawk.lz4:lz4-java:1.11.3") {
             because("1.11.1 fixes the native XXHash range-validation vulnerability")
         }
     }
