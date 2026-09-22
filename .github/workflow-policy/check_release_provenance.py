@@ -10,15 +10,14 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 # Publication tags are SemVer with a lowercase v prefix. Build metadata is intentionally
-# excluded from publication identity; prerelease identifiers are supported. The legacy
-# Marketplace line uses 26.x timestamp-like versions, so 27 is the migration floor that
-# keeps new publications monotonically newer for existing installations.
+# excluded from publication identity; prerelease identifiers are supported. The maintained
+# release line starts at v1.0.0; v0.x publication tags are rejected.
 TAG_RE = re.compile(
     r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
     r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
 )
 TAG_FORMAT = "vMAJOR.MINOR.PATCH[-PRERELEASE]"
-MIN_PUBLICATION_MAJOR = 27
+MIN_PUBLICATION_MAJOR = 1
 
 
 def validate_tag(tag: str) -> list[str]:
@@ -28,7 +27,7 @@ def validate_tag(tag: str) -> list[str]:
     major = int(match.group(1))
     if major < MIN_PUBLICATION_MAJOR:
         return [
-            f"release tag {tag!r} is below the SemVer migration floor v{MIN_PUBLICATION_MAJOR}.0.0"
+            f"release tag {tag!r} is below the supported publication floor v{MIN_PUBLICATION_MAJOR}.0.0"
         ]
     prerelease = match.group(4)
     if prerelease:
