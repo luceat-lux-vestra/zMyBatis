@@ -194,7 +194,7 @@ A manual UI-test workflow is not part of the current evidence architecture unles
 The active publication contract established by #56 is:
 
 - ordinary PR/main validation is deterministic and non-publishing, using `0.0.0-dev` unless an explicit release version is supplied;
-- publication identity is a protected Git tag matching `vMAJOR.MINOR.PATCH[-PRERELEASE]` with migration floor `v27.0.0`;
+- publication identity is a protected Git tag matching `vMAJOR.MINOR.PATCH[-PRERELEASE]`; the supported publication line starts at `v1.0.0` and rejects `v0.x` tags;
 - the effective JetBrains plugin version is exactly the validated tag with one leading `v` removed;
 - `release.yml` runs only from GitHub Release events and checks out the release tag;
 - release provenance proves the tag commit is reachable from reviewed `main`;
