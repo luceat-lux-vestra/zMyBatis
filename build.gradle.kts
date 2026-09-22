@@ -129,6 +129,12 @@ dependencies {
 val verifyStarterSecurityGraph = tasks.register("verifyStarterSecurityGraph") {
     group = "verification"
     description = "Fail if the executable Starter/E2E runtime resolves security-stale tooling dependencies."
+    // This proof intentionally resolves a live Gradle configuration during task execution.
+    // Gradle recommends explicitly opting such tasks out of configuration-cache storage
+    // rather than hiding serialization problems with configuration-cache warning mode.
+    notCompatibleWithConfigurationCache(
+        "Resolves integrationTestRuntimeClasspath at execution time for security evidence",
+    )
 
     doLast {
         val expected = mapOf(
