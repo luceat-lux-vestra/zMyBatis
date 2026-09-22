@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import io
+import re
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -30,6 +32,14 @@ def expect(label: str, condition: bool, failures: list[str]) -> None:
         failures.append(label)
 
 
+def make_static_fixture(directory: Path, release_text: str) -> None:
+    workflows = directory / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "build.gradle.kts", directory / "build.gradle.kts")
+    shutil.copy2(REPO_ROOT / ".github/workflows/build.yml", workflows / "build.yml")
+    (workflows / "release.yml").write_text(release_text, encoding="utf-8")
+
+
 def main() -> int:
     failures: list[str] = []
     expect("migration epoch publication tag accepted", not validate_tag(GOOD_TAG), failures)
@@ -44,6 +54,56 @@ def main() -> int:
     expect("build metadata excluded from publication tag", bool(validate_tag("v27.0.0+build.7")), failures)
     expect("arbitrary tag rejected", bool(validate_tag("latest")), failures)
     expect("checked-in release contract passes static proof", not verify_static(REPO_ROOT), failures)
+
+    release_text = (REPO_ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "RELEASE_ASSET: ${{ steps.signed_artifact.outputs.path }}",
+                "RELEASE_ASSET: ${{ steps.artifact.outputs.path }}",
+                1,
+            ),
+        )
+        expect(
+            "unsigned GitHub Release artifact regression rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            re.sub(
+                r"actions/attest@[0-9a-f]{40}",
+                "actions/attest@v4",
+                release_text,
+                count=1,
+            ),
+        )
+        expect(
+            "mutable attestation action regression rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "permissions:\n  contents: read",
+                "permissions:\n  contents: write\n  id-token: write\n  attestations: write",
+                1,
+            ),
+        )
+        expect(
+            "workflow-level release/attestation write authority regression rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
 
     with tempfile.TemporaryDirectory() as tmp:
         directory = Path(tmp)
