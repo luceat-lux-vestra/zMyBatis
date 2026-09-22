@@ -91,6 +91,7 @@ dependencies {
     // independent Dependabot PRs that can temporarily skew the Starter test stack.
     integrationTestImplementation(platform("org.junit:junit-bom:6.1.3"))
     integrationTestImplementation("org.junit.jupiter:junit-jupiter")
+    integrationTestImplementation(kotlin("stdlib"))
     integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.33.0")
     // JetBrains Starter's CommonScope loads kotlinx.coroutines.SupervisorKt at runtime, but
     // the Starter test framework does not supply coroutines transitively on this configuration.
@@ -127,7 +128,6 @@ dependencies {
     // The plugin build deliberately opts out of bundling Kotlin stdlib. Starter/JUnit5 runs in a
     // separate test JVM and requires a matched stdlib/reflect pair there, so add both only to that
     // runtime using the Kotlin plugin's exact version.
-    integrationTestRuntimeOnly(kotlin("stdlib"))
     integrationTestRuntimeOnly(kotlin("reflect"))
 }
 
