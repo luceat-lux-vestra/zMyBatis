@@ -135,6 +135,19 @@ def verify_static(repo: Path) -> list[str]:
         failures.append("release.yml must not use continue-on-error")
     if "pull_request:" in release or "workflow_dispatch:" in release:
         failures.append("release.yml must not publish from PR/manual-dispatch triggers")
+
+    workflow_header = release.split("\njobs:", 1)[0]
+    if "permissions:\n  contents: read" not in workflow_header:
+        failures.append("release.yml workflow-level authority must remain contents:read")
+    for permission in ("contents: write", "id-token: write", "attestations: write"):
+        if permission in workflow_header:
+            failures.append(
+                f"release.yml must scope {permission} to the release job, not the workflow"
+            )
+    release_job = release.split("\n  release:", 1)[1] if "\n  release:" in release else ""
+    for permission in ("contents: write", "id-token: write", "attestations: write"):
+        if permission not in release_job:
+            failures.append(f"release job missing explicit authority: {permission}")
     if not re.search(r"uses:\\s+actions/attest@[0-9a-f]{40}(?:\\s+#.*)?$", release, re.MULTILINE):
         failures.append("actions/attest must be pinned to an immutable full commit SHA")
     if 'RELEASE_ASSET: ${{ steps.artifact.outputs.path }}' in release:
