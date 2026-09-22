@@ -112,12 +112,17 @@ def verify_static(repo: Path) -> list[str]:
     required_release_fragments = [
         "fetch-depth: 0",
         "persist-credentials: false",
+        "id-token: write",
+        "attestations: write",
         'git merge-base --is-ancestor "$TAG_COMMIT" origin/main',
         'python3 .github/workflow-policy/check_release_provenance.py tag "$RELEASE_TAG"',
         './gradlew clean buildPlugin verifyPlugin -PpluginVersion="$PLUGIN_VERSION"',
         'python3 .github/workflow-policy/check_release_provenance.py artifact "$RELEASE_TAG" build/distributions',
-        './gradlew signPlugin -PpluginVersion="$PLUGIN_VERSION"',
-        './gradlew publishPlugin -PpluginVersion="$PLUGIN_VERSION"',
+        './gradlew signPlugin verifyPluginSignature -PpluginVersion="$PLUGIN_VERSION"',
+        'subject-path: ${{ steps.signed_artifact.outputs.path }}',
+        "create-storage-record: false",
+        './gradlew publishPlugin -x signPlugin -PpluginVersion="$PLUGIN_VERSION"',
+        'RELEASE_ASSET: ${{ steps.signed_artifact.outputs.path }}',
     ]
     for fragment in required_release_fragments:
         if fragment not in release:
@@ -130,11 +135,24 @@ def verify_static(repo: Path) -> list[str]:
         failures.append("release.yml must not use continue-on-error")
     if "pull_request:" in release or "workflow_dispatch:" in release:
         failures.append("release.yml must not publish from PR/manual-dispatch triggers")
-    publish_pos = release.find("./gradlew publishPlugin")
+    if not re.search(r"uses:\\s+actions/attest@[0-9a-f]{40}(?:\\s+#.*)?$", release, re.MULTILINE):
+        failures.append("actions/attest must be pinned to an immutable full commit SHA")
+    if 'RELEASE_ASSET: ${{ steps.artifact.outputs.path }}' in release:
+        failures.append("GitHub Release must not upload the unsigned buildPlugin archive")
+
     artifact_pos = release.find("check_release_provenance.py artifact")
-    sign_pos = release.find("./gradlew signPlugin")
-    if min(publish_pos, artifact_pos, sign_pos) < 0 or not (artifact_pos < sign_pos < publish_pos):
-        failures.append("artifact verification and signing must precede publication")
+    sign_pos = release.find("./gradlew signPlugin verifyPluginSignature")
+    capture_pos = release.find("Capture verified signed release asset")
+    attest_pos = release.find("Attest verified signed release asset")
+    publish_pos = release.find("./gradlew publishPlugin -x signPlugin")
+    recheck_pos = release.find("Recheck signed artifact identity after Marketplace publication")
+    upload_pos = release.find("Upload verified signed release asset")
+    positions = [artifact_pos, sign_pos, capture_pos, attest_pos, publish_pos, recheck_pos, upload_pos]
+    if min(positions) < 0 or positions != sorted(positions):
+        failures.append(
+            "release order must be artifact proof -> sign/verify -> signed capture -> "
+            "attestation -> Marketplace publish -> digest recheck -> signed GitHub Release upload"
+        )
 
     forbidden_draft_fragments = [
         "releaseDraft:",
