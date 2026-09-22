@@ -334,7 +334,7 @@ tasks {
     }
 
     check {
-        dependsOn(javaParserIndexTest, kotlinBoundaryTest)
+        dependsOn(javaParserIndexTest, kotlinBoundaryTest, verifyStarterSecurityGraph)
     }
 
     wrapper {
