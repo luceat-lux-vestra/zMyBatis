@@ -148,7 +148,7 @@ def verify_static(repo: Path) -> list[str]:
     for permission in ("contents: write", "id-token: write", "attestations: write"):
         if permission not in release_job:
             failures.append(f"release job missing explicit authority: {permission}")
-    if not re.search(r"uses:\\s+actions/attest@[0-9a-f]{40}(?:\\s+#.*)?$", release, re.MULTILINE):
+    if not re.search(r"uses:\s+actions/attest@[0-9a-f]{40}(?:\s+#.*)?$", release, re.MULTILINE):
         failures.append("actions/attest must be pinned to an immutable full commit SHA")
     if 'RELEASE_ASSET: ${{ steps.artifact.outputs.path }}' in release:
         failures.append("GitHub Release must not upload the unsigned buildPlugin archive")
