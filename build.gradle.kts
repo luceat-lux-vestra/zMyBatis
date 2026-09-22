@@ -88,6 +88,26 @@ dependencies {
     integrationTestImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
     integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.20.2")
     integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.1")
+
+    // Security-align only the process-level Starter/E2E tooling graph. These are not plugin
+    // runtime dependencies; remove the constraints when JetBrains' Starter graph carries
+    // equivalent-or-newer fixed versions natively.
+    integrationTestImplementation(platform("io.netty:netty-bom:4.2.18.Final"))
+    constraints {
+        add("integrationTestImplementation", "org.bouncycastle:bcprov-jdk18on:1.86") {
+            because("Starter tooling currently resolves a security-affected 1.84")
+        }
+        add("integrationTestImplementation", "org.bouncycastle:bcpkix-jdk18on:1.86") {
+            because("keep Bouncy Castle Starter tooling modules version-aligned")
+        }
+        add("integrationTestImplementation", "org.bouncycastle:bcutil-jdk18on:1.86") {
+            because("keep Bouncy Castle Starter tooling modules version-aligned")
+        }
+        add("integrationTestImplementation", "at.yawk.lz4:lz4-java:1.11.1") {
+            because("1.11.1 fixes the native XXHash range-validation vulnerability")
+        }
+    }
+
     integrationTestRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.3")
     integrationTestRuntimeOnly("org.jetbrains.teamcity:serviceMessages:2024.12")
     // The plugin build deliberately opts out of bundling Kotlin stdlib. Starter/JUnit5 runs in a
