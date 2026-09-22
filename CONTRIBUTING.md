@@ -40,7 +40,7 @@ CI green is necessary, not sufficient. UNKNOWN/UNVERIFIED evidence is not a PASS
 The active release policy is documented in AGENTS.md section 9 and enforced by `.github/workflow-policy/check_release_provenance.py`.
 
 - Ordinary PR/main CI uses the deterministic non-publishing development path.
-- Publication tags follow protected `vMAJOR.MINOR.PATCH[-PRERELEASE]` identity with migration floor `v27.0.0`.
+- Publication tags follow protected `vMAJOR.MINOR.PATCH[-PRERELEASE]` identity; the supported publication line starts at `v1.0.0` and rejects `v0.x` tags.
 - The plugin version is the validated tag with one leading `v` removed.
 - Release tag ancestry, artifact version, signing, and Marketplace publication must stay bound to that one effective version.
 - Production publication runs through the `jetbrains-marketplace` GitHub Environment and records a pending digest-bound identity before the irreversible Marketplace call; an ambiguous pending identity is a hard stop, not permission to republish.
