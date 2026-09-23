@@ -93,6 +93,10 @@ dependencies {
     integrationTestImplementation("org.junit.jupiter:junit-jupiter")
     integrationTestImplementation(kotlin("stdlib"))
     integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.33.0")
+    // JetBrains Starter uses CommonScope/EventsBus coroutines internally at test runtime.
+    // This dependency is intentional even though project source does not import coroutines:
+    // removing it fails Starter E2E with NoClassDefFoundError for kotlinx/coroutines/SupervisorKt.
+    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
     // JetBrains Starter's CommonScope loads kotlinx.coroutines.SupervisorKt at runtime, but
     // the Starter test framework does not supply coroutines transitively on this configuration.
     // Keep this explicit runtime prerequisite; removing it fails Starter / Driver E2E.
