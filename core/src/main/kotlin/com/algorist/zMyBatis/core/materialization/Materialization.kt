@@ -16,6 +16,8 @@ import java.security.MessageDigest
 import java.util.HexFormat
 
 private val SHA_256_HEX = Regex("[0-9a-f]{64}")
+private val SHORT_MIN = BigInteger.valueOf(Short.MIN_VALUE.toLong())
+private val SHORT_MAX = BigInteger.valueOf(Short.MAX_VALUE.toLong())
 private val INT_MIN = BigInteger.valueOf(Int.MIN_VALUE.toLong())
 private val INT_MAX = BigInteger.valueOf(Int.MAX_VALUE.toLong())
 private val LONG_MIN = BigInteger.valueOf(Long.MIN_VALUE)
@@ -178,6 +180,9 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
     private const val LONG_JAVA_TYPE = "java.lang.Long"
     private const val LONG_TYPE_HANDLER = "org.apache.ibatis.type.LongTypeHandler"
     private const val BIGINT_JDBC_TYPE = "BIGINT"
+    private const val SHORT_JAVA_TYPE = "java.lang.Short"
+    private const val SHORT_TYPE_HANDLER = "org.apache.ibatis.type.ShortTypeHandler"
+    private const val SMALLINT_JDBC_TYPE = "SMALLINT"
     private const val INTEGER_JAVA_TYPE = "java.lang.Integer"
     private const val INTEGER_TYPE_HANDLER = "org.apache.ibatis.type.IntegerTypeHandler"
     private const val INTEGER_JDBC_TYPE = "INTEGER"
@@ -238,6 +243,10 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
     }
 
     private fun preparationMetadataFailureCode(bindings: List<PreparedBinding>): String {
+        val smallintBindings = bindings.count { binding ->
+            binding.metadata.mappingJavaTypeIdentity == SHORT_JAVA_TYPE &&
+                binding.metadata.typeHandlerIdentity == SHORT_TYPE_HANDLER
+        }
         val integerBindings = bindings.count { binding ->
             binding.metadata.mappingJavaTypeIdentity == INTEGER_JAVA_TYPE &&
                 binding.metadata.typeHandlerIdentity == INTEGER_TYPE_HANDLER
@@ -247,6 +256,8 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
                 binding.metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER
         }
         return when {
+            smallintBindings == bindings.size -> POSTGRESQL_SMALLINT_PREPARATION_METADATA_REQUIRED
+            smallintBindings > 0 -> POSTGRESQL_PREPARATION_METADATA_REQUIRED
             integerBindings == bindings.size -> POSTGRESQL_INTEGER_PREPARATION_METADATA_REQUIRED
             integerBindings > 0 -> POSTGRESQL_PREPARATION_METADATA_REQUIRED
             booleanBindings == 0 -> POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED
@@ -261,6 +272,9 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
             metadata.mappingJavaTypeIdentity == BOOLEAN_JAVA_TYPE ||
                 metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER ->
                 renderPostgresqlBoolean(binding)
+            metadata.mappingJavaTypeIdentity == SHORT_JAVA_TYPE &&
+                metadata.typeHandlerIdentity == SHORT_TYPE_HANDLER ->
+                renderPostgresqlSmallint(binding)
             metadata.mappingJavaTypeIdentity == INTEGER_JAVA_TYPE &&
                 metadata.typeHandlerIdentity == INTEGER_TYPE_HANDLER ->
                 renderPostgresqlInteger(binding)
@@ -314,6 +328,42 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
         }
 
         return BindingRender.Ready("CAST(" + value.value + " AS BIGINT)")
+    }
+
+    private fun renderPostgresqlSmallint(binding: PreparedBinding): BindingRender {
+        val metadata = binding.metadata
+        if (metadata.jdbcTypeIdentity != null && metadata.jdbcTypeIdentity != SMALLINT_JDBC_TYPE) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_SMALLINT_JDBC_TYPE_REQUIRED,
+            )
+        }
+        if (metadata.parameterMode != INPUT_MODE) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_SMALLINT_INPUT_MODE_REQUIRED,
+            )
+        }
+        if (metadata.numericScale != null) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_SMALLINT_NUMERIC_SCALE_UNSUPPORTED,
+            )
+        }
+
+        val value = binding.value as? InputValue.IntegerValue
+            ?: return renderFailure(
+                MaterializationFailureKind.BINDING_VALUE_UNSUPPORTED,
+                POSTGRESQL_SMALLINT_VALUE_REQUIRED,
+            )
+        if (value.value !in SHORT_MIN..SHORT_MAX) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_VALUE_OUT_OF_RANGE,
+                POSTGRESQL_SMALLINT_VALUE_OUT_OF_RANGE,
+            )
+        }
+
+        return BindingRender.Ready("CAST(${value.value} AS SMALLINT)")
     }
 
     private fun renderPostgresqlInteger(binding: PreparedBinding): BindingRender {
@@ -433,6 +483,8 @@ private const val POSTGRESQL_PREPARATION_METADATA_REQUIRED =
     "materialization-postgresql-preparation-metadata-unsupported"
 private const val POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED =
     "materialization-postgresql-bigint-preparation-metadata-unsupported"
+private const val POSTGRESQL_SMALLINT_PREPARATION_METADATA_REQUIRED =
+    "materialization-postgresql-smallint-preparation-metadata-unsupported"
 private const val POSTGRESQL_INTEGER_PREPARATION_METADATA_REQUIRED =
     "materialization-postgresql-integer-preparation-metadata-unsupported"
 private const val POSTGRESQL_BOOLEAN_PREPARATION_METADATA_REQUIRED =
@@ -452,6 +504,16 @@ private const val POSTGRESQL_BIGINT_VALUE_REQUIRED =
     "materialization-postgresql-bigint-value-unsupported"
 private const val POSTGRESQL_BIGINT_VALUE_OUT_OF_RANGE =
     "materialization-postgresql-bigint-value-out-of-range"
+private const val POSTGRESQL_SMALLINT_JDBC_TYPE_REQUIRED =
+    "materialization-postgresql-smallint-jdbc-type-unsupported"
+private const val POSTGRESQL_SMALLINT_INPUT_MODE_REQUIRED =
+    "materialization-postgresql-smallint-parameter-mode-unsupported"
+private const val POSTGRESQL_SMALLINT_NUMERIC_SCALE_UNSUPPORTED =
+    "materialization-postgresql-smallint-numeric-scale-unsupported"
+private const val POSTGRESQL_SMALLINT_VALUE_REQUIRED =
+    "materialization-postgresql-smallint-value-unsupported"
+private const val POSTGRESQL_SMALLINT_VALUE_OUT_OF_RANGE =
+    "materialization-postgresql-smallint-value-out-of-range"
 private const val POSTGRESQL_INTEGER_JDBC_TYPE_REQUIRED =
     "materialization-postgresql-integer-jdbc-type-unsupported"
 private const val POSTGRESQL_INTEGER_INPUT_MODE_REQUIRED =
