@@ -59,27 +59,30 @@ Managed type labels are type:bug, type:feature, type:security, type:docs, type:r
 UNKNOWN, UNVERIFIED, and INSUFFICIENT EVIDENCE remain FAIL for any claimed control.
 
 
-## LIVE BLOCKER — GitHub pull_request_target event policy
+## RESOLVED — failure declaration trust boundary
 
-GitHub's public-repository default Actions event policy is currently evaluating
-`pull_request_target` and is scheduled for enforcement on 2026-11-02.
+The former `failure-triage.yml` trusted-base `pull_request_target` gate has
+been removed. The required declaration gate now runs as
+`.github/workflows/failure-declaration.yml` on unprivileged `pull_request`
+and delegates validation to the immutable central `failure-declaration` action.
 
-This repository still deliberately uses that trigger on the following audited
-trusted-base / metadata-only workflows:
+No repository PR workflow currently triggers on `pull_request_target`.
+Reintroducing that trigger for a required merge-gate producer is rejected by
+the checked-in workflow policy.
 
-- `.github/workflows/failure-triage.yml`
+## Failure-classification rollout proof
 
-The workflows must not be migrated to ordinary `pull_request` merely to avoid
-the platform policy: doing so would move governance/metadata execution authority
-onto PR-controlled workflow definitions. Instead, issue #187 owns one
-administrative live prerequisite:
+The trusted `Failure classification` reporter is loaded from the default branch
+through `workflow_run`. The PR that first introduces that reporter cannot prove
+the reporter against its own pull-request runs.
 
-- read the repository Actions policies;
-- add an active workflow-path-scoped event policy for only the audited paths;
-- allow only `pull_request_target` for those paths;
-- read the policy back and retain its id, path condition, enforcement, and event set;
-- exercise the workflow on a real PR after activation.
+Full rollout therefore requires a later PR, with the reporter already present on
+`main`, that proves on one exact final HEAD:
 
-A repository-wide `pull_request_target` allow rule is not accepted.
-Any future checkout or execution of PR-controlled code under these workflows
-invalidates the allow decision and requires a new security review.
+- all ordinary required contexts, including `failure-triage`, succeed;
+- exactly one sticky `CI Failure Classification` report is created or updated
+  for the same HEAD;
+- the report reaches `CLEAR` when no tracked workflow is pending or failed;
+- the trusted reporter executes no PR code and no downloaded artifact.
+
+`CANDIDATE` and `UNKNOWN` remain fail-closed and never authorize remediation.
