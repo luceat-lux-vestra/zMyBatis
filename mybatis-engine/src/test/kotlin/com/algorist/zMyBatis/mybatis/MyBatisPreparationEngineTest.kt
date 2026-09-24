@@ -6,6 +6,9 @@ import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.JavaAnnotationParameterContractFactory
 import com.algorist.zMyBatis.core.input.ProvidedInput
+import com.algorist.zMyBatis.core.materialization.MaintainedExecutionMaterializer
+import com.algorist.zMyBatis.core.materialization.MaterializationResult
+import com.algorist.zMyBatis.core.materialization.TargetDialectIdentity
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationResult
@@ -123,6 +126,34 @@ class MyBatisPreparationEngineTest {
         val execution = (result as PreparationResult.Success).execution
         assertEquals(values.map { it.value }, execution.orderedBindings.map { it.value })
         assertEquals(values.map { it.alias }, execution.orderedBindings.map { it.property })
+    }
+
+    @Test
+    fun booleanBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
+        val result = MyBatisPreparationEngine.prepare(
+            request(
+                "select #{flag}",
+                listOf(Parameter("java.lang.Boolean", "flag", InputValue.BooleanValue(true))),
+            ),
+        )
+
+        assertTrue(result is PreparationResult.Success)
+        val execution = (result as PreparationResult.Success).execution
+        val binding = execution.orderedBindings.single()
+        assertEquals(InputValue.BooleanValue(true), binding.value)
+        assertEquals("java.lang.Boolean", binding.metadata.mappingJavaTypeIdentity)
+        assertEquals("org.apache.ibatis.type.BooleanTypeHandler", binding.metadata.typeHandlerIdentity)
+        assertTrue(binding.metadata.jdbcTypeIdentity == null)
+        assertEquals("IN", binding.metadata.parameterMode)
+        assertTrue(binding.metadata.numericScale == null)
+
+        val materialized = MaintainedExecutionMaterializer.materialize(
+            execution,
+            TargetDialectIdentity("postgresql"),
+        )
+        assertTrue(materialized is MaterializationResult.Success)
+        materialized as MaterializationResult.Success
+        assertEquals("select CAST(TRUE AS BOOLEAN)", materialized.execution.executionSql)
     }
 
     @Test
