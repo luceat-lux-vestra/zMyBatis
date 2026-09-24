@@ -245,6 +245,29 @@ jobs:
     )
 
     with tempfile.TemporaryDirectory() as tmp:
+        target_root = Path(tmp) / "repo"
+        shutil.copytree(REPO_ROOT, target_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
+        target_policy = target_root / ".github" / "merge-gate-policy.yml"
+        text = target_policy.read_text(encoding="utf-8")
+        text = text.replace(
+            "producedBy: .github/workflows/failure-declaration.yml\n    job: failure-triage\n    trigger: pull_request",
+            "producedBy: .github/workflows/failure-declaration.yml\n    job: failure-triage\n    trigger: pull_request_target",
+            1,
+        )
+        target_policy.write_text(text, encoding="utf-8")
+        target_bad_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_required_contexts.py"),
+            str(target_policy),
+            str(target_root),
+        ])
+        expect(
+            "check_required_contexts.py rejects pull_request_target for a required gate",
+            target_bad_rc != 0,
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
         staged_root = Path(tmp) / "repo"
         shutil.copytree(REPO_ROOT, staged_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
         staged_policy = staged_root / ".github" / "merge-gate-policy.yml"

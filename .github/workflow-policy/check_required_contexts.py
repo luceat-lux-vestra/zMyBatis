@@ -117,15 +117,8 @@ def check_entry(entry: dict[str, str], repo_root: Path, classification: str) -> 
         failures.append(f"'{context}': unsupported required-context trigger '{trigger}'")
         return failures
     if trigger == "pull_request_target":
-        trusted = (
-            classification == "required"
-            and context == "failure-triage"
-            and produced_by == ".github/workflows/failure-triage.yml"
-            and job_id == "failure-triage"
-        )
-        if not trusted:
-            failures.append(f"'{context}': pull_request_target is allowed only for the audited failure-triage producer")
-            return failures
+        failures.append(f"'{context}': required and staged gates must use unprivileged pull_request")
+        return failures
 
     has_trigger = workflow_has_pull_request_trigger(all_lines) if trigger == "pull_request" else has_target_trigger(all_lines)
     if not has_trigger:

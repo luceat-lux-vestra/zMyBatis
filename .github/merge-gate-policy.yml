@@ -17,8 +17,7 @@ mergeStrategy:
   requireLinearHistory: true
 
 # Every required context must be produced unconditionally for every PR targeting
-# main. Ordinary producers use pull_request; the audited metadata-only
-# failure-triage producer explicitly uses pull_request_target.
+# main. Required merge-gate producers use unprivileged pull_request.
 requiredStatusChecks:
   - context: Build
     producedBy: .github/workflows/build.yml
@@ -36,9 +35,9 @@ requiredStatusChecks:
     producedBy: .github/workflows/workflow-lint.yml
     job: lint
   - context: failure-triage
-    producedBy: .github/workflows/failure-triage.yml
+    producedBy: .github/workflows/failure-declaration.yml
     job: failure-triage
-    trigger: pull_request_target
+    trigger: pull_request
   - context: Dependency Review
     producedBy: .github/workflows/dependency-review.yml
     job: review
