@@ -160,9 +160,9 @@ object ZeroBindingExecutionMaterializer : ExecutionMaterializer {
 /**
  * Maintained production materializer.
  *
- * Zero-binding behavior is deliberately inherited unchanged. The first non-zero binding island is
- * exact PostgreSQL + MyBatis LongTypeHandler. MyBatis 3.5.19's LongTypeHandler calls JDBC setLong,
- * and pgjdbc binds setLong as INT8, so the explicit SQL artifact uses CAST(<decimal> AS BIGINT).
+ * Zero-binding behavior is deliberately inherited unchanged. Maintained non-zero PostgreSQL
+ * bindings are admitted only through exact MyBatis handler semantics independently proven against
+ * pgjdbc. LongTypeHandler/setLong maps to INT8; BooleanTypeHandler/setBoolean maps to BOOL.
  *
  * Placeholder substitution is admitted only when the SQL topology is trivially provable. This
  * intentionally rejects quoted/comment/dollar syntax instead of attempting a partial SQL lexer.
@@ -175,6 +175,9 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
     private const val LONG_JAVA_TYPE = "java.lang.Long"
     private const val LONG_TYPE_HANDLER = "org.apache.ibatis.type.LongTypeHandler"
     private const val BIGINT_JDBC_TYPE = "BIGINT"
+    private const val BOOLEAN_JAVA_TYPE = "java.lang.Boolean"
+    private const val BOOLEAN_TYPE_HANDLER = "org.apache.ibatis.type.BooleanTypeHandler"
+    private const val BOOLEAN_JDBC_TYPE = "BOOLEAN"
     private const val INPUT_MODE = "IN"
 
     override fun materialize(
@@ -203,7 +206,7 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
         ) {
             return failed(
                 MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
-                POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED,
+                preparationMetadataFailureCode(prepared.orderedBindings),
             )
         }
         if (!hasProvenSimpleQuestionMarkTopology(prepared.sqlWithPlaceholders, prepared.orderedBindings.size)) {
@@ -215,7 +218,7 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
 
         val replacements = ArrayList<String>(prepared.orderedBindings.size)
         prepared.orderedBindings.forEach { binding ->
-            when (val rendered = renderPostgresqlBigint(binding)) {
+            when (val rendered = renderPostgresqlBinding(binding)) {
                 is BindingRender.Ready -> replacements += rendered.sql
                 is BindingRender.Failed -> return MaterializationResult.Failed(rendered.failure)
             }
@@ -226,6 +229,30 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
             targetDialectIdentity = targetDialectIdentity,
             executionSql = replaceProvenQuestionMarks(prepared.sqlWithPlaceholders, replacements),
         )
+    }
+
+    private fun preparationMetadataFailureCode(bindings: List<PreparedBinding>): String {
+        val booleanBindings = bindings.count { binding ->
+            binding.metadata.mappingJavaTypeIdentity == BOOLEAN_JAVA_TYPE &&
+                binding.metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER
+        }
+        return when (booleanBindings) {
+            0 -> POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED
+            bindings.size -> POSTGRESQL_BOOLEAN_PREPARATION_METADATA_REQUIRED
+            else -> POSTGRESQL_PREPARATION_METADATA_REQUIRED
+        }
+    }
+
+    private fun renderPostgresqlBinding(binding: PreparedBinding): BindingRender {
+        val metadata = binding.metadata
+        return if (
+            metadata.mappingJavaTypeIdentity == BOOLEAN_JAVA_TYPE ||
+            metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER
+        ) {
+            renderPostgresqlBoolean(binding)
+        } else {
+            renderPostgresqlBigint(binding)
+        }
     }
 
     private fun renderPostgresqlBigint(binding: PreparedBinding): BindingRender {
@@ -276,6 +303,48 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
         return BindingRender.Ready("CAST(" + value.value + " AS BIGINT)")
     }
 
+    private fun renderPostgresqlBoolean(binding: PreparedBinding): BindingRender {
+        val metadata = binding.metadata
+        if (metadata.mappingJavaTypeIdentity != BOOLEAN_JAVA_TYPE) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_BOOLEAN_MAPPING_JAVA_TYPE_REQUIRED,
+            )
+        }
+        if (metadata.typeHandlerIdentity != BOOLEAN_TYPE_HANDLER) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_BOOLEAN_TYPE_HANDLER_REQUIRED,
+            )
+        }
+        if (metadata.jdbcTypeIdentity != null && metadata.jdbcTypeIdentity != BOOLEAN_JDBC_TYPE) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_BOOLEAN_JDBC_TYPE_REQUIRED,
+            )
+        }
+        if (metadata.parameterMode != INPUT_MODE) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_BOOLEAN_INPUT_MODE_REQUIRED,
+            )
+        }
+        if (metadata.numericScale != null) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_BOOLEAN_NUMERIC_SCALE_UNSUPPORTED,
+            )
+        }
+
+        val value = binding.value as? InputValue.BooleanValue
+            ?: return renderFailure(
+                MaterializationFailureKind.BINDING_VALUE_UNSUPPORTED,
+                POSTGRESQL_BOOLEAN_VALUE_REQUIRED,
+            )
+        val literal = if (value.value) "TRUE" else "FALSE"
+        return BindingRender.Ready("CAST($literal AS BOOLEAN)")
+    }
+
     private fun hasProvenSimpleQuestionMarkTopology(sql: String, bindingCount: Int): Boolean {
         if (sql.indexOf('\'') >= 0 || sql.indexOf('"') >= 0 || sql.indexOf('$') >= 0) return false
         if ("--" in sql || "/*" in sql || "*/" in sql) return false
@@ -311,8 +380,12 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
 private const val BINDING_LITERALIZATION_REQUIRED = "materialization-dialect-literalization-required"
 private const val RAW_INTERPOLATION_POLICY_REQUIRED = "materialization-raw-interpolation-policy-required"
 private const val POSTGRESQL_DIALECT_REQUIRED = "materialization-postgresql-dialect-required"
+private const val POSTGRESQL_PREPARATION_METADATA_REQUIRED =
+    "materialization-postgresql-preparation-metadata-unsupported"
 private const val POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED =
     "materialization-postgresql-bigint-preparation-metadata-unsupported"
+private const val POSTGRESQL_BOOLEAN_PREPARATION_METADATA_REQUIRED =
+    "materialization-postgresql-boolean-preparation-metadata-unsupported"
 private const val PLACEHOLDER_TOPOLOGY_REQUIRED = "materialization-placeholder-topology-unproven"
 private const val POSTGRESQL_LONG_MAPPING_JAVA_TYPE_REQUIRED =
     "materialization-postgresql-bigint-mapping-java-type-unsupported"
@@ -328,6 +401,18 @@ private const val POSTGRESQL_BIGINT_VALUE_REQUIRED =
     "materialization-postgresql-bigint-value-unsupported"
 private const val POSTGRESQL_BIGINT_VALUE_OUT_OF_RANGE =
     "materialization-postgresql-bigint-value-out-of-range"
+private const val POSTGRESQL_BOOLEAN_MAPPING_JAVA_TYPE_REQUIRED =
+    "materialization-postgresql-boolean-mapping-java-type-unsupported"
+private const val POSTGRESQL_BOOLEAN_TYPE_HANDLER_REQUIRED =
+    "materialization-postgresql-boolean-type-handler-unsupported"
+private const val POSTGRESQL_BOOLEAN_JDBC_TYPE_REQUIRED =
+    "materialization-postgresql-boolean-jdbc-type-unsupported"
+private const val POSTGRESQL_BOOLEAN_INPUT_MODE_REQUIRED =
+    "materialization-postgresql-boolean-parameter-mode-unsupported"
+private const val POSTGRESQL_BOOLEAN_NUMERIC_SCALE_UNSUPPORTED =
+    "materialization-postgresql-boolean-numeric-scale-unsupported"
+private const val POSTGRESQL_BOOLEAN_VALUE_REQUIRED =
+    "materialization-postgresql-boolean-value-unsupported"
 private const val FINGERPRINT_VERSION = "zmybatis-materialized-execution-v1"
 
 private fun failed(kind: MaterializationFailureKind, code: String): MaterializationResult.Failed =
