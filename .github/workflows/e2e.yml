@@ -4,6 +4,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 concurrency:
@@ -15,6 +16,7 @@ permissions:
 
 jobs:
   starterDriver:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Starter / Driver E2E
     runs-on: ubuntu-latest
     timeout-minutes: 75

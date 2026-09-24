@@ -14,6 +14,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -139,12 +140,14 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Maximize Build Space
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           large-packages: false
 
       - name: Fetch Sources
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -152,12 +155,14 @@ jobs:
           persist-credentials: false
 
       - name: Setup Java
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: zulu
           java-version: 25
 
       - name: Qodana - Code Inspection
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
         uses: JetBrains/qodana-action@10be11607eb323a180e2b76b26c9c5cdceac3e77 # v2026.2.1
         with:
           args: --fail-threshold 0
@@ -175,32 +180,37 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Maximize Build Space
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           large-packages: false
 
       - name: Fetch Sources
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Setup Java
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: zulu
           java-version: 25
 
       - name: Setup Gradle
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-read-only: true
 
       - name: Run Plugin Verification tasks
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
         run: ./gradlew verifyPlugin
 
       - name: Collect Plugin Verifier Result
-        if: ${{ always() }}
+        if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (always()) }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: pluginVerifier-result
