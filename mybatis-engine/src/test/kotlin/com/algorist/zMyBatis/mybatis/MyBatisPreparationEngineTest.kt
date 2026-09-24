@@ -129,6 +129,40 @@ class MyBatisPreparationEngineTest {
     }
 
     @Test
+    fun integerBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
+        val result = MyBatisPreparationEngine.prepare(
+            request(
+                "select #{count}",
+                listOf(
+                    Parameter(
+                        "java.lang.Integer",
+                        "count",
+                        InputValue.IntegerValue(BigInteger.valueOf(42)),
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(result is PreparationResult.Success)
+        val execution = (result as PreparationResult.Success).execution
+        val binding = execution.orderedBindings.single()
+        assertEquals(InputValue.IntegerValue(BigInteger.valueOf(42)), binding.value)
+        assertEquals("java.lang.Integer", binding.metadata.mappingJavaTypeIdentity)
+        assertEquals("org.apache.ibatis.type.IntegerTypeHandler", binding.metadata.typeHandlerIdentity)
+        assertTrue(binding.metadata.jdbcTypeIdentity == null)
+        assertEquals("IN", binding.metadata.parameterMode)
+        assertTrue(binding.metadata.numericScale == null)
+
+        val materialized = MaintainedExecutionMaterializer.materialize(
+            execution,
+            TargetDialectIdentity("postgresql"),
+        )
+        assertTrue(materialized is MaterializationResult.Success)
+        materialized as MaterializationResult.Success
+        assertEquals("select CAST(42 AS INTEGER)", materialized.execution.executionSql)
+    }
+
+    @Test
     fun booleanBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
         val result = MyBatisPreparationEngine.prepare(
             request(
