@@ -148,6 +148,84 @@ class MaterializationTest {
     }
 
     @Test
+    fun postgresqlSmallintBindingsMaterializeAtSigned16BitBoundaries() {
+        val execution = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?, ?",
+                    bindings = listOf(
+                        smallintBinding(0, BigInteger.valueOf(Short.MIN_VALUE.toLong())),
+                        smallintBinding(1, BigInteger.valueOf(Short.MAX_VALUE.toLong())),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+
+        assertEquals(
+            "select CAST(-32768 AS SMALLINT), CAST(32767 AS SMALLINT)",
+            execution.executionSql,
+        )
+    }
+
+    @Test
+    fun explicitSmallintJdbcTypeIsAdmitted() {
+        val execution = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?",
+                    bindings = listOf(smallintBinding(0, BigInteger.valueOf(42), jdbcType = "SMALLINT")),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+
+        assertEquals("select CAST(42 AS SMALLINT)", execution.executionSql)
+    }
+
+    @Test
+    fun mixedBigintSmallintIntegerAndBooleanBindingsPreserveOrderAndFingerprintIdentity() {
+        val first = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?, ?, ?, ?",
+                    bindings = listOf(
+                        longBinding(0, BigInteger.valueOf(41)),
+                        smallintBinding(1, BigInteger.valueOf(42)),
+                        integerBinding(2, BigInteger.valueOf(43)),
+                        booleanBinding(3, true),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+        val second = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?, ?, ?, ?",
+                    bindings = listOf(
+                        longBinding(0, BigInteger.valueOf(41)),
+                        smallintBinding(1, BigInteger.valueOf(44)),
+                        integerBinding(2, BigInteger.valueOf(43)),
+                        booleanBinding(3, true),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+
+        assertEquals(
+            "select CAST(41 AS BIGINT), CAST(42 AS SMALLINT), CAST(43 AS INTEGER), CAST(TRUE AS BOOLEAN)",
+            first.executionSql,
+        )
+        assertEquals(
+            "select CAST(41 AS BIGINT), CAST(44 AS SMALLINT), CAST(43 AS INTEGER), CAST(TRUE AS BOOLEAN)",
+            second.executionSql,
+        )
+        assertNotEquals(first.fingerprint, second.fingerprint)
+    }
+
+    @Test
     fun postgresqlIntegerBindingsMaterializeAtSigned32BitBoundaries() {
         val execution = success(
             MaintainedExecutionMaterializer.materialize(
@@ -403,6 +481,45 @@ class MaterializationTest {
     }
 
     @Test
+    fun smallintPreparationAuthorityFailsWithSmallintSpecificCode() {
+        val result = MaintainedExecutionMaterializer.materialize(
+            prepared(
+                sql = "select ?",
+                bindings = listOf(smallintBinding(0, BigInteger.valueOf(42))),
+                engineVersion = "3.5.20",
+            ),
+            TargetDialectIdentity("postgresql"),
+        )
+
+        assertFailure(
+            result,
+            MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
+            "materialization-postgresql-smallint-preparation-metadata-unsupported",
+        )
+    }
+
+    @Test
+    fun mixedBigintAndSmallintPreparationAuthorityFailsWithMixedFamilyCode() {
+        val result = MaintainedExecutionMaterializer.materialize(
+            prepared(
+                sql = "select ?, ?",
+                bindings = listOf(
+                    longBinding(0, BigInteger.ONE),
+                    smallintBinding(1, BigInteger.valueOf(2)),
+                ),
+                engineVersion = "3.5.20",
+            ),
+            TargetDialectIdentity("postgresql"),
+        )
+
+        assertFailure(
+            result,
+            MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
+            "materialization-postgresql-preparation-metadata-unsupported",
+        )
+    }
+
+    @Test
     fun integerPreparationAuthorityFailsWithIntegerSpecificCode() {
         val result = MaintainedExecutionMaterializer.materialize(
             prepared(
@@ -579,6 +696,123 @@ class MaterializationTest {
             result,
             MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
             "materialization-postgresql-bigint-preparation-metadata-unsupported",
+        )
+    }
+
+    @Test
+    fun smallintCrossFamilyIdentityMismatchPreservesLegacyBigintFailureSemantics() {
+        val cases = listOf(
+            smallintBinding(0, BigInteger.ONE, mappingJavaType = "java.lang.Long") to
+                "materialization-postgresql-bigint-type-handler-unsupported",
+            smallintBinding(
+                0,
+                BigInteger.ONE,
+                typeHandler = "org.apache.ibatis.type.LongTypeHandler",
+            ) to "materialization-postgresql-bigint-mapping-java-type-unsupported",
+            smallintBinding(
+                0,
+                BigInteger.ONE,
+                typeHandler = "com.example.CustomShortTypeHandler",
+            ) to "materialization-postgresql-bigint-mapping-java-type-unsupported",
+        )
+
+        cases.forEach { (binding, code) ->
+            val result = MaintainedExecutionMaterializer.materialize(
+                prepared(sql = "select ?", bindings = listOf(binding)),
+                TargetDialectIdentity("postgresql"),
+            )
+            assertFailure(result, MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED, code)
+        }
+    }
+
+    @Test
+    fun unsupportedExactSmallintMetadataFailsClosedByExactReason() {
+        val cases = listOf(
+            smallintBinding(0, BigInteger.ONE, jdbcType = "INTEGER") to
+                "materialization-postgresql-smallint-jdbc-type-unsupported",
+            smallintBinding(0, BigInteger.ONE, parameterMode = "OUT") to
+                "materialization-postgresql-smallint-parameter-mode-unsupported",
+            smallintBinding(0, BigInteger.ONE, numericScale = 0) to
+                "materialization-postgresql-smallint-numeric-scale-unsupported",
+        )
+
+        cases.forEach { (binding, code) ->
+            val result = MaintainedExecutionMaterializer.materialize(
+                prepared(sql = "select ?", bindings = listOf(binding)),
+                TargetDialectIdentity("postgresql"),
+            )
+            assertFailure(result, MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED, code)
+        }
+    }
+
+    @Test
+    fun smallintMetadataRejectsNonIntegerCoreValue() {
+        val result = MaintainedExecutionMaterializer.materialize(
+            prepared(
+                sql = "select ?",
+                bindings = listOf(
+                    binding(
+                        index = 0,
+                        value = InputValue.BooleanValue(true),
+                        declaredJavaType = "java.lang.Short",
+                        mappingJavaType = "java.lang.Short",
+                        typeHandler = "org.apache.ibatis.type.ShortTypeHandler",
+                    ),
+                ),
+            ),
+            TargetDialectIdentity("postgresql"),
+        )
+
+        assertFailure(
+            result,
+            MaterializationFailureKind.BINDING_VALUE_UNSUPPORTED,
+            "materialization-postgresql-smallint-value-unsupported",
+        )
+    }
+
+    @Test
+    fun outOfRangePostgresqlSmallintFailsClosed() {
+        val values = listOf(
+            BigInteger.valueOf(Short.MIN_VALUE.toLong()).subtract(BigInteger.ONE),
+            BigInteger.valueOf(Short.MAX_VALUE.toLong()).add(BigInteger.ONE),
+        )
+
+        values.forEach { value ->
+            val result = MaintainedExecutionMaterializer.materialize(
+                prepared(sql = "select ?", bindings = listOf(smallintBinding(0, value))),
+                TargetDialectIdentity("postgresql"),
+            )
+            assertFailure(
+                result,
+                MaterializationFailureKind.BINDING_VALUE_OUT_OF_RANGE,
+                "materialization-postgresql-smallint-value-out-of-range",
+            )
+        }
+    }
+
+    @Test
+    fun nullSmallintRemainsOutsideTheMaintainedMatrix() {
+        val result = MaintainedExecutionMaterializer.materialize(
+            prepared(
+                sql = "select ?",
+                bindings = listOf(
+                    binding(
+                        index = 0,
+                        value = InputValue.NullValue,
+                        declaredJavaType = "java.lang.Short",
+                        mappingJavaType = "java.lang.Short",
+                        jdbcType = "SMALLINT",
+                        typeHandler = "org.apache.ibatis.type.ShortTypeHandler",
+                    ),
+                ),
+            ),
+            TargetDialectIdentity("postgresql"),
+        )
+
+        assertFailure(
+            result,
+            MaterializationFailureKind.BINDING_VALUE_UNSUPPORTED,
+            "materialization-postgresql-smallint-value-unsupported",
         )
     }
 
@@ -1118,6 +1352,27 @@ class MaterializationTest {
         index = index,
         value = InputValue.IntegerValue(value),
         origin = origin,
+        mappingJavaType = mappingJavaType,
+        jdbcType = jdbcType,
+        typeHandler = typeHandler,
+        parameterMode = parameterMode,
+        numericScale = numericScale,
+    )
+
+    private fun smallintBinding(
+        index: Int,
+        value: BigInteger,
+        mappingJavaType: String? = "java.lang.Short",
+        jdbcType: String? = null,
+        typeHandler: String = "org.apache.ibatis.type.ShortTypeHandler",
+        parameterMode: String = "IN",
+        numericScale: Int? = null,
+        origin: PreparedBindingOrigin = callerOrigin(index),
+    ): PreparedBinding = binding(
+        index = index,
+        value = InputValue.IntegerValue(value),
+        origin = origin,
+        declaredJavaType = "java.lang.Short",
         mappingJavaType = mappingJavaType,
         jdbcType = jdbcType,
         typeHandler = typeHandler,
