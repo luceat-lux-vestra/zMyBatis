@@ -381,6 +381,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         }
     }
 
+    @Suppress("UsePropertyAccessSyntax")
     private fun performExecution(
         console: JdbcConsole,
         project: com.intellij.openapi.project.Project,
@@ -396,7 +397,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
             consoleEditor.contentComponent.requestFocusInWindow()
 
             WriteCommandAction.runWriteCommandAction(project, "zMyBatis: inject SQL", null, {
-                consoleDoc.text = pureSql
+                consoleDoc.setText(pureSql)
                 consoleEditor.selectionModel.setSelection(0, pureSql.length)
                 consoleEditor.caretModel.moveToOffset(0)
                 PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
@@ -410,7 +411,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
             if (info == null) {
                 LOG.warn("zMyBatis: findScriptModelNoInject returned null (SQL length=${pureSql.length})")
                 WriteCommandAction.runWriteCommandAction(project) {
-                    consoleDoc.text = originalText
+                    consoleDoc.setText(originalText)
                     PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
                 }
                 Messages.showErrorDialog(project, "Failed to parse SQL for execution.", "zMyBatis Error")
@@ -421,13 +422,13 @@ open class MyBatisExecuteProxyAction : AnAction() {
             JdbcConsoleProvider.doRunQueryInConsole(console, info)
 
             if (ZMyBatisSettings.getInstance().copyToClipboard) {
-                CopyPasteManager.getInstance().contents = StringSelection(pureSql)
+                CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
             }
         } catch (ex: Throwable) {
             LOG.error("zMyBatis: execution failed", ex)
             try {
                 WriteCommandAction.runWriteCommandAction(project) {
-                    consoleDoc.text = originalText
+                    consoleDoc.setText(originalText)
                     PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
                 }
             } catch (restoreEx: Throwable) {
