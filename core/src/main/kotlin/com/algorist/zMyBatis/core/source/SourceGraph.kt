@@ -85,7 +85,7 @@ class StatementSourceGraph(
 
         sourceSnapshotSnapshot = capturedSnapshots.sortedBy { it.fileId.value }
         dependencySnapshot = capturedDependencies.sortedWith(
-            compareBy<SourceDependencyEdge>(
+            compareBy(
                 { it.dependentFileId.value },
                 { it.requiredFileId.value },
                 { it.referenceRange.startOffset },
