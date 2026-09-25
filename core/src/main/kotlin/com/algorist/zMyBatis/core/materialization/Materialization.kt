@@ -10,6 +10,7 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.StatementId
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.XmlStatementId
+import java.math.BigDecimal
 import java.math.BigInteger
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -182,6 +183,11 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
     private const val LONG_JAVA_TYPE = "java.lang.Long"
     private const val LONG_TYPE_HANDLER = "org.apache.ibatis.type.LongTypeHandler"
     private const val BIGINT_JDBC_TYPE = "BIGINT"
+    private const val BIG_DECIMAL_JAVA_TYPE = "java.math.BigDecimal"
+    private const val BIG_DECIMAL_TYPE_HANDLER = "org.apache.ibatis.type.BigDecimalTypeHandler"
+    private val NUMERIC_JDBC_TYPES = setOf("DECIMAL", "NUMERIC")
+    private const val POSTGRESQL_NUMERIC_MAX_INTEGER_DIGITS = 131_072L
+    private const val POSTGRESQL_NUMERIC_MAX_FRACTIONAL_DIGITS = 16_383L
     private const val BYTE_JAVA_TYPE = "java.lang.Byte"
     private const val BYTE_TYPE_HANDLER = "org.apache.ibatis.type.ByteTypeHandler"
     private const val TINYINT_JDBC_TYPE = "TINYINT"
@@ -264,7 +270,13 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
             binding.metadata.mappingJavaTypeIdentity == BOOLEAN_JAVA_TYPE &&
                 binding.metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER
         }
+        val decimalBindings = bindings.count { binding ->
+            binding.metadata.mappingJavaTypeIdentity == BIG_DECIMAL_JAVA_TYPE &&
+                binding.metadata.typeHandlerIdentity == BIG_DECIMAL_TYPE_HANDLER
+        }
         return when {
+            decimalBindings == bindings.size -> POSTGRESQL_NUMERIC_PREPARATION_METADATA_REQUIRED
+            decimalBindings > 0 -> POSTGRESQL_PREPARATION_METADATA_REQUIRED
             byteBindings == bindings.size -> POSTGRESQL_BYTE_PREPARATION_METADATA_REQUIRED
             byteBindings > 0 -> POSTGRESQL_PREPARATION_METADATA_REQUIRED
             smallintBindings == bindings.size -> POSTGRESQL_SMALLINT_PREPARATION_METADATA_REQUIRED
@@ -280,6 +292,9 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
     private fun renderPostgresqlBinding(binding: PreparedBinding): BindingRender {
         val metadata = binding.metadata
         return when {
+            metadata.mappingJavaTypeIdentity == BIG_DECIMAL_JAVA_TYPE ||
+                metadata.typeHandlerIdentity == BIG_DECIMAL_TYPE_HANDLER ->
+                renderPostgresqlNumeric(binding)
             metadata.mappingJavaTypeIdentity == BOOLEAN_JAVA_TYPE ||
                 metadata.typeHandlerIdentity == BOOLEAN_TYPE_HANDLER ->
                 renderPostgresqlBoolean(binding)
@@ -452,6 +467,61 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
         return BindingRender.Ready("CAST(${value.value} AS INTEGER)")
     }
 
+    private fun renderPostgresqlNumeric(binding: PreparedBinding): BindingRender {
+        val metadata = binding.metadata
+        if (metadata.mappingJavaTypeIdentity != BIG_DECIMAL_JAVA_TYPE) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_NUMERIC_MAPPING_JAVA_TYPE_REQUIRED,
+            )
+        }
+        if (metadata.typeHandlerIdentity != BIG_DECIMAL_TYPE_HANDLER) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_NUMERIC_TYPE_HANDLER_REQUIRED,
+            )
+        }
+        if (metadata.jdbcTypeIdentity != null && metadata.jdbcTypeIdentity !in NUMERIC_JDBC_TYPES) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_NUMERIC_JDBC_TYPE_REQUIRED,
+            )
+        }
+        if (metadata.parameterMode != INPUT_MODE) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_NUMERIC_INPUT_MODE_REQUIRED,
+            )
+        }
+        if (metadata.numericScale != null) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_NUMERIC_SCALE_METADATA_UNSUPPORTED,
+            )
+        }
+
+        val value = binding.value as? InputValue.DecimalValue
+            ?: return renderFailure(
+                MaterializationFailureKind.BINDING_VALUE_UNSUPPORTED,
+                POSTGRESQL_NUMERIC_VALUE_REQUIRED,
+            )
+        val precision = value.value.precision().toLong()
+        val scale = value.value.scale().toLong()
+        val integerDigits = maxOf(precision - scale, 0L)
+        val fractionalDigits = maxOf(scale, 0L)
+        if (
+            integerDigits > POSTGRESQL_NUMERIC_MAX_INTEGER_DIGITS ||
+            fractionalDigits > POSTGRESQL_NUMERIC_MAX_FRACTIONAL_DIGITS
+        ) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_VALUE_OUT_OF_RANGE,
+                POSTGRESQL_NUMERIC_VALUE_OUT_OF_RANGE,
+            )
+        }
+
+        return BindingRender.Ready("CAST(${value.value.toPlainString()} AS NUMERIC)")
+    }
+
     private fun renderPostgresqlBoolean(binding: PreparedBinding): BindingRender {
         val metadata = binding.metadata
         if (metadata.mappingJavaTypeIdentity != BOOLEAN_JAVA_TYPE) {
@@ -541,6 +611,8 @@ private const val POSTGRESQL_INTEGER_PREPARATION_METADATA_REQUIRED =
     "materialization-postgresql-integer-preparation-metadata-unsupported"
 private const val POSTGRESQL_BOOLEAN_PREPARATION_METADATA_REQUIRED =
     "materialization-postgresql-boolean-preparation-metadata-unsupported"
+private const val POSTGRESQL_NUMERIC_PREPARATION_METADATA_REQUIRED =
+    "materialization-postgresql-numeric-preparation-metadata-unsupported"
 private const val PLACEHOLDER_TOPOLOGY_REQUIRED = "materialization-placeholder-topology-unproven"
 private const val POSTGRESQL_LONG_MAPPING_JAVA_TYPE_REQUIRED =
     "materialization-postgresql-bigint-mapping-java-type-unsupported"
@@ -586,6 +658,20 @@ private const val POSTGRESQL_INTEGER_VALUE_REQUIRED =
     "materialization-postgresql-integer-value-unsupported"
 private const val POSTGRESQL_INTEGER_VALUE_OUT_OF_RANGE =
     "materialization-postgresql-integer-value-out-of-range"
+private const val POSTGRESQL_NUMERIC_MAPPING_JAVA_TYPE_REQUIRED =
+    "materialization-postgresql-numeric-mapping-java-type-unsupported"
+private const val POSTGRESQL_NUMERIC_TYPE_HANDLER_REQUIRED =
+    "materialization-postgresql-numeric-type-handler-unsupported"
+private const val POSTGRESQL_NUMERIC_JDBC_TYPE_REQUIRED =
+    "materialization-postgresql-numeric-jdbc-type-unsupported"
+private const val POSTGRESQL_NUMERIC_INPUT_MODE_REQUIRED =
+    "materialization-postgresql-numeric-parameter-mode-unsupported"
+private const val POSTGRESQL_NUMERIC_SCALE_METADATA_UNSUPPORTED =
+    "materialization-postgresql-numeric-scale-metadata-unsupported"
+private const val POSTGRESQL_NUMERIC_VALUE_REQUIRED =
+    "materialization-postgresql-numeric-value-unsupported"
+private const val POSTGRESQL_NUMERIC_VALUE_OUT_OF_RANGE =
+    "materialization-postgresql-numeric-value-out-of-range"
 private const val POSTGRESQL_BOOLEAN_MAPPING_JAVA_TYPE_REQUIRED =
     "materialization-postgresql-boolean-mapping-java-type-unsupported"
 private const val POSTGRESQL_BOOLEAN_TYPE_HANDLER_REQUIRED =
