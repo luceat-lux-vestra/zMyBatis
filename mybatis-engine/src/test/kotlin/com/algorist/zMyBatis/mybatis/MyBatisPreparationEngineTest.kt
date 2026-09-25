@@ -129,6 +129,40 @@ class MyBatisPreparationEngineTest {
     }
 
     @Test
+    fun bigDecimalBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
+        val result = MyBatisPreparationEngine.prepare(
+            request(
+                "select #{amount}",
+                listOf(
+                    Parameter(
+                        "java.math.BigDecimal",
+                        "amount",
+                        InputValue.DecimalValue(BigDecimal("123.4500")),
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(result is PreparationResult.Success)
+        val execution = (result as PreparationResult.Success).execution
+        val binding = execution.orderedBindings.single()
+        assertEquals(InputValue.DecimalValue(BigDecimal("123.4500")), binding.value)
+        assertEquals("java.math.BigDecimal", binding.metadata.mappingJavaTypeIdentity)
+        assertEquals("org.apache.ibatis.type.BigDecimalTypeHandler", binding.metadata.typeHandlerIdentity)
+        assertTrue(binding.metadata.jdbcTypeIdentity == null)
+        assertEquals("IN", binding.metadata.parameterMode)
+        assertTrue(binding.metadata.numericScale == null)
+
+        val materialized = MaintainedExecutionMaterializer.materialize(
+            execution,
+            TargetDialectIdentity("postgresql"),
+        )
+        assertTrue(materialized is MaterializationResult.Success)
+        materialized as MaterializationResult.Success
+        assertEquals("select CAST(123.4500 AS NUMERIC)", materialized.execution.executionSql)
+    }
+
+    @Test
     fun byteBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
         val result = MyBatisPreparationEngine.prepare(
             request(
