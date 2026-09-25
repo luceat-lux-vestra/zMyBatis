@@ -20,8 +20,7 @@ import javax.swing.JPanel
  *  - Click **Execute** (OK) → proceed to run the SQL on the console
  *  - Click **Cancel**       → abort execution
  */
-@Suppress("MagicNumber")
-@Suppress("DialogTitleCapitalization")
+@Suppress("MagicNumber", "DialogTitleCapitalization")
 class SqlPreviewDialog(
     project: Project,
     private val sql: String
