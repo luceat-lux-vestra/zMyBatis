@@ -18,8 +18,7 @@ internal object AnnotationSqlExtractor {
     fun extract(annotation: PsiAnnotation?): String? {
         if (annotation == null) return null
         val valueAttr = annotation.findAttributeValue("value") ?: return null
-        val resolved = resolveExpression(valueAttr)
-        return when (resolved) {
+        return when (val resolved = resolveExpression(valueAttr)) {
             is PsiArrayInitializerMemberValue -> extractFromArray(resolved)
             is PsiLiteralExpression -> resolved.value?.toString()
             else -> fallbackText(resolved)

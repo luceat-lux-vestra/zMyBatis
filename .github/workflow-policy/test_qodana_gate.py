@@ -37,40 +37,6 @@ exclude:
   - name: All
     paths:
       - .qodana
-  - name: DialogTitleCapitalization
-    paths:
-      - src/main/kotlin/com/algorist/zMyBatis/SqlPreviewDialog.kt
-      - src/main/kotlin/com/algorist/zMyBatis/settings/ZMyBatisConfigurable.kt
-  - name: DuplicateArgumentsInSetOfAndMapOfFunctions
-    paths:
-      - src/main/kotlin/com/algorist/zMyBatis/ParameterExtractor.kt
-  - name: KDocUnresolvedReference
-    paths:
-      - src/main/kotlin/com/algorist/zMyBatis/SqlFormatter.kt
-      - src/main/kotlin/com/algorist/zMyBatis/MyBatisEvaluator.kt
-  - name: MoveVariableDeclarationIntoWhen
-    paths:
-      - src/main/kotlin/com/algorist/zMyBatis/MyBatisEvaluator.kt
-      - src/main/kotlin/com/algorist/zMyBatis/AnnotationSqlExtractor.kt
-  - name: RedundantIf
-    paths:
-      - src/main/kotlin/com/algorist/zMyBatis/services/ConsoleCacheService.kt
-  - name: RegExpUnnecessaryNonCapturingGroup
-    paths:
-      - src/main/kotlin/com/algorist/zMyBatis/ParameterExtractor.kt
-  - name: RemoveExplicitTypeArguments
-    paths:
-      - core/src/main/kotlin/com/algorist/zMyBatis/core/source/SourceGraph.kt
-  - name: RemoveRedundantQualifierName
-    paths:
-      - build.gradle.kts
-  - name: UnusedSymbol
-    paths:
-      - core/src/main/kotlin/com/algorist/zMyBatis/core/source/SourceGraph.kt
-      - src/main/kotlin/com/algorist/zMyBatis/JsonParameterParser.kt
-  - name: UsePropertyAccessSyntax
-    paths:
-      - src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt
 """
 
 
@@ -130,7 +96,7 @@ def main() -> int:
         failures,
     )
     expect(
-        "rejects a broadened source exclusion",
+        "rejects a broadened generated-workspace exclusion",
         run_case(GOOD_WORKFLOW, GOOD_QODANA.replace("      - .qodana", "      - src")) != 0,
         failures,
     )
@@ -143,14 +109,10 @@ def main() -> int:
         failures,
     )
     expect(
-        "rejects a changed approved path",
+        "rejects an added repository-source path",
         run_case(
             GOOD_WORKFLOW,
-            GOOD_QODANA.replace(
-                "src/main/kotlin/com/algorist/zMyBatis/ParameterExtractor.kt",
-                "src/main/kotlin/com/algorist/zMyBatis/**",
-                1,
-            ),
+            GOOD_QODANA.replace("      - .qodana", "      - .qodana\n      - src/main"),
         ) != 0,
         failures,
     )

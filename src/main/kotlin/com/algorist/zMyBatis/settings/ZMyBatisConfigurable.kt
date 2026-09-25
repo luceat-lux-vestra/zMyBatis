@@ -10,6 +10,7 @@ import com.intellij.ui.dsl.builder.panel
  * Settings page shown at:
  *   Settings / Preferences → Tools → zMyBatis
  */
+@Suppress("DialogTitleCapitalization")
 class ZMyBatisConfigurable : BoundConfigurable("zMyBatis") {
 
     private val settings = ZMyBatisSettings.getInstance()

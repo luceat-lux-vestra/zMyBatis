@@ -381,6 +381,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         }
     }
 
+    @Suppress("UsePropertyAccessSyntax")
     private fun performExecution(
         console: JdbcConsole,
         project: com.intellij.openapi.project.Project,
