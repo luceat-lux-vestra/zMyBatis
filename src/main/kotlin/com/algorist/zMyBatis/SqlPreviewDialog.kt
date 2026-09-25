@@ -21,6 +21,7 @@ import javax.swing.JPanel
  *  - Click **Cancel**       → abort execution
  */
 @Suppress("MagicNumber")
+@Suppress("DialogTitleCapitalization")
 class SqlPreviewDialog(
     project: Project,
     private val sql: String
