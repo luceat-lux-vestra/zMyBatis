@@ -109,7 +109,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     }
 
     internal fun beginSelection(mapperKey: String): Boolean = synchronized(lifecycleLock) {
-        if (shuttingDown) false else activeSelections.add(mapperKey)
+        !shuttingDown && activeSelections.add(mapperKey)
     }
 
     internal fun endSelection(mapperKey: String) {
