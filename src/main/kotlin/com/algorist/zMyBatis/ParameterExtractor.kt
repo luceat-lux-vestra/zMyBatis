@@ -116,7 +116,7 @@ object ParameterExtractor {
         // Match identifier paths, including safe numeric list indexes, such as
         // "user.name", "items[0].id", "user.addresses[1].city", or "list.size()".
         val pathMatcher = Pattern.compile(
-            "\\b([a-zA-Z_][a-zA-Z0-9_]*)(?:(?:\\[\\d+])|(?:\\.[a-zA-Z_][a-zA-Z0-9_]*(?:\\(\\))?))*"
+            "\\b([a-zA-Z_][a-zA-Z0-9_]*)(?:\\[\\d+]|\\.[a-zA-Z_][a-zA-Z0-9_]*(?:\\(\\))?)*"
         ).matcher(noStatic)
 
         while (pathMatcher.find()) {
@@ -149,7 +149,7 @@ object ParameterExtractor {
     private val OGNL_KEYWORDS = setOf(
         // OGNL logical / comparison operators (text form)
         "and", "or", "not", "eq", "neq", "lt", "gt", "lte", "gte", "band", "bor", "xor", "shl", "shr", "ushr",
-        "in", "not",
+        "in",
         // Java / OGNL literals & keywords
         "true", "false", "null", "instanceof", "class", "new",
         // Java primitive types
