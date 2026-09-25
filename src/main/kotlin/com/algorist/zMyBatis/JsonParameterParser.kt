@@ -56,58 +56,7 @@ object JsonParameterParser {
         return convertElement(parseElement(trimmed))
     }
 
-    /**
-     * Parses a JSON value and flattens it into dot-notation entries for a given [rootKey].
-     *
-     * This is designed for MyBatis `DynamicContext` which stores params in a flat
-     * `ContextMap` (extends HashMap). OGNL expressions like `user.id == 1` or
-     * `#{cust.name}` resolve by looking up `"user.id"` or `"cust.name"` as **literal
-     * keys** in the bindings map — they do NOT navigate nested Map structures.
-     *
-     * Examples with `rootKey = "cust"`:
-     * ```
-     * {"name": "test", "id": 1}
-     *   → { "cust.name" = "test", "cust.id" = 1 }
-     *
-     * {"address": {"city": "Seoul"}}
-     *   → { "cust.address.city" = "Seoul" }
-     *
-     * [1, 2, 3]   (array)
-     *   → { "cust[0]" = 1, "cust[1]" = 2, "cust[2]" = 3 }
-     *
-     * "Alice"      (scalar)
-     *   → { "cust" = "Alice" }
-     * ```
-     */
-    fun flattenValue(rootKey: String, json: String): Map<String, Any?> {
-        val trimmed = json.trim()
-        if (trimmed.isEmpty()) return emptyMap()
-        val element = parseElement(trimmed)
-        val result = LinkedHashMap<String, Any?>()
-        flattenElement(rootKey, element, result)
-        return result
-    }
-
     // ── Internal ──────────────────────────────────────────────────────────────
-
-    private fun flattenElement(prefix: String, element: JsonElement, out: MutableMap<String, Any?>) {
-        when {
-            element.isJsonObject -> {
-                for ((key, value) in element.asJsonObject.entrySet()) {
-                    flattenElement("$prefix.$key", value, out)
-                }
-            }
-            element.isJsonArray -> {
-                element.asJsonArray.forEachIndexed { index, value ->
-                    flattenElement("$prefix[$index]", value, out)
-                }
-            }
-            else -> {
-                // Leaf: null, string, number, boolean
-                out[prefix] = convertElement(element)
-            }
-        }
-    }
 
     private fun parseElement(text: String): JsonElement = try {
         JsonParser.parseString(text)
