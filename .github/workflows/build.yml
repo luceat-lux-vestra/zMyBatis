@@ -21,6 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  # Read prior exact-SHA check results for Fast evidence reuse.
   checks: read
   contents: read
 
@@ -39,17 +40,24 @@ jobs:
         run: |
           set -euo pipefail
           checks="$(gh api -H 'Accept: application/vnd.github+json' "repos/$GITHUB_REPOSITORY/commits/$EXPECTED_SHA/check-runs?filter=all&per_page=100")"
-          if ! jq -e --arg name "$EXPECTED_CHECK" '
+          current_run="/actions/runs/${GITHUB_RUN_ID}/"
+          latest="$(jq -c --arg name "$EXPECTED_CHECK" --arg current_run "$current_run" '
             [.check_runs[]
-             | select(.name == $name)
-             | select(.app.slug == "github-actions")
-             | select(.status == "completed" and .conclusion == "success")]
-            | length > 0
-          ' <<<"$checks" >/dev/null; then
-            echo "::error::No successful prior '$EXPECTED_CHECK' check exists for exact HEAD $EXPECTED_SHA."
+             | select(.name == $name and .app.slug == "github-actions")
+             | select(((.details_url // "") | contains($current_run)) | not)]
+            | if length == 0 then empty else max_by(.id) end
+          ' <<<"$checks")"
+          if [ -z "$latest" ]; then
+            echo "::error::No prior '$EXPECTED_CHECK' check exists for exact HEAD $EXPECTED_SHA."
             exit 1
           fi
-          echo "Reused successful Fast evidence for $EXPECTED_CHECK at $EXPECTED_SHA."
+          status="$(jq -r '.status' <<<"$latest")"
+          conclusion="$(jq -r '.conclusion // ""' <<<"$latest")"
+          if [ "$status" != "completed" ] || [ "$conclusion" != "success" ]; then
+            echo "::error::Latest prior '$EXPECTED_CHECK' evidence for exact HEAD $EXPECTED_SHA is status=$status conclusion=$conclusion; refusing stale-success reuse."
+            exit 1
+          fi
+          echo "Reused latest successful Fast evidence for $EXPECTED_CHECK at $EXPECTED_SHA."
 
       - name: Maximize Build Space
         if: ${{ github.event_name != 'pull_request' || github.event.action != 'ready_for_review' }}
@@ -112,17 +120,24 @@ jobs:
         run: |
           set -euo pipefail
           checks="$(gh api -H 'Accept: application/vnd.github+json' "repos/$GITHUB_REPOSITORY/commits/$EXPECTED_SHA/check-runs?filter=all&per_page=100")"
-          if ! jq -e --arg name "$EXPECTED_CHECK" '
+          current_run="/actions/runs/${GITHUB_RUN_ID}/"
+          latest="$(jq -c --arg name "$EXPECTED_CHECK" --arg current_run "$current_run" '
             [.check_runs[]
-             | select(.name == $name)
-             | select(.app.slug == "github-actions")
-             | select(.status == "completed" and .conclusion == "success")]
-            | length > 0
-          ' <<<"$checks" >/dev/null; then
-            echo "::error::No successful prior '$EXPECTED_CHECK' check exists for exact HEAD $EXPECTED_SHA."
+             | select(.name == $name and .app.slug == "github-actions")
+             | select(((.details_url // "") | contains($current_run)) | not)]
+            | if length == 0 then empty else max_by(.id) end
+          ' <<<"$checks")"
+          if [ -z "$latest" ]; then
+            echo "::error::No prior '$EXPECTED_CHECK' check exists for exact HEAD $EXPECTED_SHA."
             exit 1
           fi
-          echo "Reused successful Fast evidence for $EXPECTED_CHECK at $EXPECTED_SHA."
+          status="$(jq -r '.status' <<<"$latest")"
+          conclusion="$(jq -r '.conclusion // ""' <<<"$latest")"
+          if [ "$status" != "completed" ] || [ "$conclusion" != "success" ]; then
+            echo "::error::Latest prior '$EXPECTED_CHECK' evidence for exact HEAD $EXPECTED_SHA is status=$status conclusion=$conclusion; refusing stale-success reuse."
+            exit 1
+          fi
+          echo "Reused latest successful Fast evidence for $EXPECTED_CHECK at $EXPECTED_SHA."
 
       - name: Maximize Build Space
         if: ${{ github.event_name != 'pull_request' || github.event.action != 'ready_for_review' }}
