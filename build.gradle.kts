@@ -1,5 +1,6 @@
 import org.jetbrains.changelog.Changelog
 
+import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
@@ -323,7 +324,7 @@ kover {
 // application scheduler. In the test harness that task can race AsyncLog teardown
 // after all assertions have passed. Disable only that periodic tracker in test
 // JVMs; logging and genuine Logger.error failures remain untouched.
-tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+tasks.withType<Test>().configureEach {
     systemProperty("LowMemoryWatcherManager.REGULAR_TRACKER_UPDATE_PERIOD_MS", "-1")
     systemProperty("intellij.platform.log.sync", "true")
 }
