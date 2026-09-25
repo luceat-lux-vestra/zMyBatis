@@ -19,7 +19,7 @@ object MyBatisEvaluator {
 
     /**
      * Standard MyBatis XML dynamic-SQL tags that XMLScriptBuilder knows how to handle.
-     * Any element tag NOT in this set is considered "unknown" for [ignoreUnknownTags] purposes.
+     * Any element tag NOT in this set is considered "unknown" for `ignoreUnknownTags` purposes.
      * Statement-level wrappers (select/insert/update/delete/script/root) are also excluded
      * from the unknown-tag check because they are stripped / used as context nodes, not
      * passed into XMLScriptBuilder as dynamic content.
@@ -35,8 +35,7 @@ object MyBatisEvaluator {
         val mapAccessor = object : PropertyAccessor {
             override fun getProperty(context: OgnlContext, target: Any, name: Any): Any? {
                 val map = target as Map<*, *>
-                val key = name.toString()
-                return when (key) {
+                return when (val key = name.toString()) {
                     "size" -> map.size
                     "keys", "keySet" -> map.keys
                     "values" -> map.values
