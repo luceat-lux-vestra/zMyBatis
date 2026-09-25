@@ -2,9 +2,9 @@
 """Fail-closed contract for the required Qodana `Inspect code` gate.
 
 The required status context is authoritative only when the producing job turns
-unaccepted Qodana findings into a non-zero result. The temporary known-debt
-allowlist is intentionally closed as well: adding an inspection or path requires
-an explicit policy change instead of silently widening the Qodana escape hatch.
+unaccepted Qodana findings into a non-zero result. Repository source must not
+be hidden behind Qodana exclusions. The only maintained exclusion is Qodana's
+own generated workspace.
 
 This checker deliberately validates a small repository-specific contract without
 a YAML dependency, matching the other workflow-policy checkers.
@@ -28,38 +28,6 @@ ACTION_PATTERN = re.compile(
 )
 EXPECTED_EXCLUSIONS: dict[str, tuple[str, ...]] = {
     "All": (".qodana",),
-    "DialogTitleCapitalization": (
-        "src/main/kotlin/com/algorist/zMyBatis/SqlPreviewDialog.kt",
-        "src/main/kotlin/com/algorist/zMyBatis/settings/ZMyBatisConfigurable.kt",
-    ),
-    "DuplicateArgumentsInSetOfAndMapOfFunctions": (
-        "src/main/kotlin/com/algorist/zMyBatis/ParameterExtractor.kt",
-    ),
-    "KDocUnresolvedReference": (
-        "src/main/kotlin/com/algorist/zMyBatis/SqlFormatter.kt",
-        "src/main/kotlin/com/algorist/zMyBatis/MyBatisEvaluator.kt",
-    ),
-    "MoveVariableDeclarationIntoWhen": (
-        "src/main/kotlin/com/algorist/zMyBatis/MyBatisEvaluator.kt",
-        "src/main/kotlin/com/algorist/zMyBatis/AnnotationSqlExtractor.kt",
-    ),
-    "RedundantIf": (
-        "src/main/kotlin/com/algorist/zMyBatis/services/ConsoleCacheService.kt",
-    ),
-    "RegExpUnnecessaryNonCapturingGroup": (
-        "src/main/kotlin/com/algorist/zMyBatis/ParameterExtractor.kt",
-    ),
-    "RemoveExplicitTypeArguments": (
-        "core/src/main/kotlin/com/algorist/zMyBatis/core/source/SourceGraph.kt",
-    ),
-    "RemoveRedundantQualifierName": ("build.gradle.kts",),
-    "UnusedSymbol": (
-        "core/src/main/kotlin/com/algorist/zMyBatis/core/source/SourceGraph.kt",
-        "src/main/kotlin/com/algorist/zMyBatis/JsonParameterParser.kt",
-    ),
-    "UsePropertyAccessSyntax": (
-        "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
-    ),
 }
 
 
@@ -87,7 +55,7 @@ def parse_exclusions(qodana_text: str, failures: list[str]) -> dict[str, tuple[s
     try:
         start = next(i for i, line in enumerate(lines) if line == "exclude:")
     except StopIteration:
-        fail("qodana.yml must declare the closed known-debt `exclude` block", failures)
+        fail("qodana.yml must exclude only the generated .qodana workspace", failures)
         return {}
 
     parsed: dict[str, tuple[str, ...]] = {}
@@ -180,11 +148,11 @@ def check(workflow_path: Path, qodana_path: Path) -> list[str]:
             if exclusions[name] != EXPECTED_EXCLUSIONS[name]
         )
         if missing:
-            fail(f"qodana.yml is missing known-debt exclusions: {missing}", failures)
+            fail(f"qodana.yml is missing required tooling exclusions: {missing}", failures)
         if unexpected:
-            fail(f"qodana.yml adds unapproved exclusions: {unexpected}", failures)
+            fail(f"qodana.yml adds forbidden source/tooling exclusions: {unexpected}", failures)
         if changed:
-            fail(f"qodana.yml changes approved exclusion paths: {changed}", failures)
+            fail(f"qodana.yml changes the generated-workspace exclusion: {changed}", failures)
 
     return failures
 
@@ -198,7 +166,7 @@ def main(argv: list[str]) -> int:
     if failures:
         return 1
 
-    print("Qodana required gate is fail-closed with an exact known-debt allowlist.")
+    print("Qodana required gate is fail-closed with no repository-source allowlist.")
     return 0
 
 
