@@ -13,8 +13,8 @@ import com.intellij.sql.SqlFileType
  * Strategy:
  *  1. Create an in-memory SQL PsiFile from the raw SQL string.
  *  2. Run [CodeStyleManager.reformatText] on the whole file inside a write action.
- *  3. Return [PsiFile.text] — no Document lookup needed (lightweight PSI files
- *     created via [PsiFileFactory] have no backing Document, so [PsiDocumentManager.getDocument]
+ *  3. Return `PsiFile.text` — no Document lookup needed (lightweight PSI files
+ *     created via [PsiFileFactory] have no backing Document, so `PsiDocumentManager.getDocument`
  *     returns null and must not be used here).
  *
  * The formatting respects the user's own SQL code-style settings
