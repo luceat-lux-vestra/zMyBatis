@@ -62,15 +62,33 @@ def job_name_field(job: Job) -> str | None:
     return None
 
 
-def job_has_if(job: Job) -> bool:
+def job_if_value(job: Job) -> str | None:
     baseline = next((indent_of(line) for line in job.lines if line.strip()), None)
     if baseline is None:
-        return False
-    return any(
-        indent_of(line) == baseline and line.strip().startswith("if:")
-        for line in job.lines
-        if line.strip()
-    )
+        return None
+    for line in job.lines:
+        if not line.strip() or indent_of(line) != baseline:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("if:"):
+            return stripped[len("if:"):].strip()
+    return None
+
+
+def job_needs(job: Job) -> set[str]:
+    baseline = next((indent_of(line) for line in job.lines if line.strip()), None)
+    if baseline is None:
+        return set()
+    for line in job.lines:
+        if not line.strip() or indent_of(line) != baseline:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("needs:"):
+            value = stripped[len("needs:"):].strip()
+            if not (value.startswith("[") and value.endswith("]")):
+                return set()
+            return {item.strip() for item in value[1:-1].split(",") if item.strip()}
+    return set()
 
 
 def trigger_has_path_filter(all_lines: list[str], trigger: str) -> bool:
@@ -109,8 +127,20 @@ def check_entry(entry: dict[str, str], repo_root: Path, classification: str) -> 
     if name != context:
         failures.append(f"'{context}': job '{job_id}' in {produced_by} has name '{name}', expected '{context}'")
 
-    if job_has_if(job):
-        failures.append(f"'{context}': job '{job_id}' in {produced_by} has an 'if:' condition")
+    if context == "Merge Gate":
+        expected_needs = {"build", "test", "inspectCode", "verify", "lint", "dependencyReview"}
+        actual_needs = job_needs(job)
+        if actual_needs != expected_needs:
+            failures.append(
+                f"'Merge Gate': expected needs={sorted(expected_needs)!r}, got {sorted(actual_needs)!r}"
+            )
+
+    job_if = job_if_value(job)
+    if job_if not in (None, "${{ always() }}", "always()"):
+        failures.append(
+            f"'{context}': job '{job_id}' in {produced_by} has conditional if={job_if!r}; "
+            "only an unconditional job or exact always() aggregate is allowed"
+        )
 
     trigger = entry.get("trigger") or "pull_request"
     if trigger not in {"pull_request", "pull_request_target"}:

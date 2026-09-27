@@ -5,6 +5,9 @@
 # - test:        root + core + mybatis-engine checks, including Kover coverage report generation.
 # - inspectCode: fail-closed full-repository Qodana static analysis.
 # - verify:      plugin structure verification + IntelliJ Plugin Verifier.
+# - lint:        workflow/security/governance policy validation.
+# - dependencyReview: pull-request dependency admission control.
+# - mergeGate:   fail-closed aggregate over all required evidence jobs.
 #
 # This workflow never creates release identity or publishes. SemVer release tags are selected
 # explicitly outside ordinary CI and are consumed only by release.yml.
@@ -539,3 +542,113 @@ jobs:
         with:
           name: pluginVerifier-result
           path: ${{ github.workspace }}/build/reports/pluginVerifier
+  lint:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Require immutable action pins
+        run: python3 .github/workflow-policy/check_pins.py .github/workflows
+
+      - name: Require sound permission/credential trust boundaries
+        run: python3 .github/workflow-policy/check_trust_boundary.py .github/workflows/*.yml
+
+      - name: Require merge-gate-policy.yml to match its producing workflows
+        run: python3 .github/workflow-policy/check_required_contexts.py .github/merge-gate-policy.yml .
+
+      - name: Require fail-closed Qodana authority
+        run: python3 .github/workflow-policy/check_qodana_gate.py .github/workflows/build.yml qodana.yml
+
+      - name: Require recurring live-settings audit ownership
+        run: python3 .github/workflow-policy/check_live_settings.py .github/merge-gate-policy.yml --static-only
+
+      - name: Require release provenance contract
+        run: python3 .github/workflow-policy/check_release_provenance.py static .
+
+      - name: Require authoritative governance contract
+        run: python3 .github/workflow-policy/check_governance_contract.py .
+
+      - name: Verify issue metadata policy
+        run: |
+          python3 .github/workflow-policy/test_issue_metadata.py
+          node --test .github/workflow-policy/issue-metadata.test.cjs
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          curl -sSLO https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint_1.7.12_linux_amd64.tar.gz" | sha256sum -c -
+          tar -xzf actionlint_1.7.12_linux_amd64.tar.gz actionlint
+
+      - name: actionlint
+        run: ./actionlint .github/workflows/*.yml
+
+      - name: zizmor
+        run: |
+          set -euo pipefail
+          pipx install "zizmor==1.30.0"
+          zizmor --offline --persona regular .github/workflows/*.yml
+
+      - name: Prove the checks above are actually fail-closed
+        run: |
+          python3 .github/workflow-policy/test_policy.py
+          python3 .github/workflow-policy/test_qodana_gate.py
+          python3 .github/workflow-policy/test_live_settings.py
+          python3 .github/workflow-policy/test_release_provenance.py
+          python3 .github/workflow-policy/test_governance_contract.py
+
+  dependencyReview:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Review dependency changes
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false }}
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+
+      - name: Non-PR validation placeholder
+        if: ${{ github.event_name != 'pull_request' }}
+        run: echo "Dependency Review is pull-request-only; no dependency diff exists for manual dispatch."
+
+  mergeGate:
+    name: Merge Gate
+    needs: [ build, test, inspectCode, verify, lint, dependencyReview ]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every merge-gate component to succeed
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          INSPECT_RESULT: ${{ needs.inspectCode.result }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          DEPENDENCY_REVIEW_RESULT: ${{ needs.dependencyReview.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+          for entry in \
+            "Build=$BUILD_RESULT" \
+            "Test=$TEST_RESULT" \
+            "Inspect code=$INSPECT_RESULT" \
+            "Verify plugin=$VERIFY_RESULT" \
+            "Lint workflows=$LINT_RESULT" \
+            "Dependency Review=$DEPENDENCY_REVIEW_RESULT"
+          do
+            name="${entry%%=*}"
+            result="${entry#*=}"
+            if [ "$result" != "success" ]; then
+              echo "::error::$name concluded '$result'; Merge Gate remains closed."
+              failed=1
+            fi
+          done
+          exit "$failed"

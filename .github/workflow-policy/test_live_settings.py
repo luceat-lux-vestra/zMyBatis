@@ -64,12 +64,7 @@ GOOD_RULESET = {
                 "strict_required_status_checks_policy": True,
                 "do_not_enforce_on_create": False,
                 "required_status_checks": [
-                    {"context": "Build", "integration_id": 15368},
-                    {"context": "Test", "integration_id": 15368},
-                    {"context": "Inspect code", "integration_id": 15368},
-                    {"context": "Verify plugin", "integration_id": 15368},
-                    {"context": "Lint workflows", "integration_id": 15368},
-                    {"context": "Dependency Review", "integration_id": 15368},
+                    {"context": "Merge Gate", "integration_id": 15368},
                 ],
             },
         },

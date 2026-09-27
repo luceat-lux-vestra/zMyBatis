@@ -16,27 +16,13 @@ mergeStrategy:
   requireBranchUpToDate: true
   requireLinearHistory: true
 
-# Every required context must be produced unconditionally for every PR targeting
-# main. Required merge-gate producers use unprivileged pull_request.
+# The live ruleset requires one stable aggregate context. Build/Test/Qodana/
+# Plugin Verifier/workflow-policy/dependency evidence remain separate jobs inside
+# build.yml; Merge Gate runs with always() and fails unless every component is success.
 requiredStatusChecks:
-  - context: Build
+  - context: Merge Gate
     producedBy: .github/workflows/build.yml
-    job: build
-  - context: Test
-    producedBy: .github/workflows/build.yml
-    job: test
-  - context: Inspect code
-    producedBy: .github/workflows/build.yml
-    job: inspectCode
-  - context: Verify plugin
-    producedBy: .github/workflows/build.yml
-    job: verify
-  - context: Lint workflows
-    producedBy: .github/workflows/workflow-lint.yml
-    job: lint
-  - context: Dependency Review
-    producedBy: .github/workflows/dependency-review.yml
-    job: review
+    job: mergeGate
 
 excludedFromRequiredChecks:
   - workflow: release.yml
@@ -46,9 +32,9 @@ excludedFromRequiredChecks:
 
 # Dependency Review promotion evidence:
 # PR #179 exact HEAD 92566edbcba5f52c7dac54d24cb090ab1d69fae8 passed after
-# live Dependency Graph enablement. PR #189 then promoted the checked-in gate;
-# authoritative 2026-09-22 readback confirmed ruleset 22024054 requires
-# Dependency Review with GitHub Actions integration id 15368 and no bypass actors.
+# live Dependency Graph enablement. PR #189 promoted it as an independent required
+# context. The current policy retains Dependency Review as an internal Merge Gate
+# component while the live ruleset requires only the aggregate GitHub Actions context.
 
 advisoryChecks:
   - contexts: [ "CodeQL (actions)" ]

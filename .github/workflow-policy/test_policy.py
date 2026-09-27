@@ -250,8 +250,8 @@ jobs:
         staged_policy = staged_root / ".github" / "merge-gate-policy.yml"
         text = staged_policy.read_text(encoding="utf-8")
         text = text.replace(
-            "producedBy: .github/workflows/dependency-review.yml\n    job: review",
-            "producedBy: .github/workflows/dependency-review.yml\n    job: missing-staged-job",
+            "producedBy: .github/workflows/build.yml\n    job: mergeGate",
+            "producedBy: .github/workflows/build.yml\n    job: missing-staged-job",
             1,
         )
         staged_policy.write_text(text, encoding="utf-8")
@@ -262,8 +262,31 @@ jobs:
             str(staged_root),
         ])
         expect(
-            "check_required_contexts.py rejects a missing staged-required producer",
+            "check_required_contexts.py rejects a missing required producer",
             staged_bad_rc != 0,
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        aggregate_root = Path(tmp) / "repo"
+        shutil.copytree(REPO_ROOT, aggregate_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
+        aggregate_workflow = aggregate_root / ".github" / "workflows" / "build.yml"
+        text = aggregate_workflow.read_text(encoding="utf-8")
+        text = text.replace(
+            "needs: [ build, test, inspectCode, verify, lint, dependencyReview ]",
+            "needs: [ build, test, inspectCode, verify, lint ]",
+            1,
+        )
+        aggregate_workflow.write_text(text, encoding="utf-8")
+        aggregate_bad_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_required_contexts.py"),
+            str(aggregate_root / ".github" / "merge-gate-policy.yml"),
+            str(aggregate_root),
+        ])
+        expect(
+            "check_required_contexts.py rejects a Merge Gate missing one component",
+            aggregate_bad_rc != 0,
             failures,
         )
 
