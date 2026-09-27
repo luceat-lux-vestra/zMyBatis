@@ -13,6 +13,10 @@ name: Repository Settings Drift
 on:
   push:
     branches: [ main ]
+    paths:
+      - ".github/merge-gate-policy.yml"
+      - ".github/workflow-policy/**"
+      - ".github/workflows/repository-settings-drift.yml"
   schedule:
     - cron: '23 2 * * *'
 
