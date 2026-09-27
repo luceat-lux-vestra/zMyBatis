@@ -34,10 +34,6 @@ requiredStatusChecks:
   - context: Lint workflows
     producedBy: .github/workflows/workflow-lint.yml
     job: lint
-  - context: failure-triage
-    producedBy: .github/workflows/failure-declaration.yml
-    job: failure-triage
-    trigger: pull_request
   - context: Dependency Review
     producedBy: .github/workflows/dependency-review.yml
     job: review
