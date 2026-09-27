@@ -542,7 +542,7 @@ jobs:
         with:
           name: pluginVerifier-result
           path: ${{ github.workspace }}/build/reports/pluginVerifier
-lint:
+  lint:
     name: Lint workflows
     runs-on: ubuntu-latest
     timeout-minutes: 15
