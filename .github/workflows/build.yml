@@ -1,4 +1,4 @@
-# PR and main validation for the zMyBatis plugin.
+# Pull-request validation for the zMyBatis plugin.
 #
 # Gates, in dependency order:
 # - build:       assembles the distributable plugin ZIP and keeps it as an artifact.
@@ -13,8 +13,6 @@ name: Build
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
