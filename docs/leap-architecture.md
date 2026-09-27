@@ -4,6 +4,8 @@ Status: target architecture for Epic #60 / architecture task #101.
 
 Audit baseline: `main` `249d3a5058fee71b858cb7926dbb30864ee15858`.
 
+Current-state note: the physical `:core` / `:mybatis-engine` module split described below has since landed in the repository. This document remains the target architecture authority; downstream Leap work is still replacing legacy runtime ownership and must not treat the presence of the modules alone as completion of #60/#64–#67.
+
 This document defines the architecture zMyBatis is moving **to**. The current production classes are migration inputs and behavioral evidence; they are not preservation constraints. Where this document conflicts with an implementation technique in current `main`, the target architecture wins once the corresponding boundary is implemented and proven.
 
 The product policy is defined by [product-contract.md](product-contract.md). Repository/review discipline remains defined by `AGENTS.md` and `.github/merge-gate-policy.yml`.
@@ -86,7 +88,7 @@ root IntelliJ plugin module
   -> Kotlin/JDK only
 ```
 
-This is a dependency DAG, not a linear root -> engine -> core chain. Root IntelliJ adapters consume core contracts directly, while the future `:mybatis-engine` adapter also depends on `:core` and MyBatis. The current implementation phase includes only `:core` in `settings.gradle.kts`; #111 established the direct root plugin -> `:core` dependency. `:mybatis-engine` remains a target module to be introduced by later #64 work. This is the exact-mechanics adjustment permitted by #101; the platform/core dependency direction does not invert.
+This is a dependency DAG, not a linear root -> engine -> core chain. Root IntelliJ adapters consume core contracts directly, while `:mybatis-engine` depends on `:core` and MyBatis. The current repository includes both `:core` and `:mybatis-engine` in `settings.gradle.kts`, and CI runs both module checks. The physical boundary defined by #101 is therefore present; #64 remains open because the semantic preparation/materialization migration and legacy evaluator replacement are not complete merely because the module exists. The platform/core dependency direction does not invert.
 
 The root module remains the IntelliJ plugin module so existing `buildPlugin`, verifier, signing, publishing, and CI entry points do not need a repository-wide workflow rewrite merely to establish architecture.
 
