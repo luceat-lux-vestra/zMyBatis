@@ -150,7 +150,7 @@ Workflow trust-boundary rules:
 - PR-authored code cannot execute with write-scoped authority unless an exact audited event condition excludes PR execution;
 - read-only checkout jobs use `persist-credentials: false`;
 - `Inspect code` is the authoritative Qodana gate;
-- `workflow-lint.yml` runs repository pin/trust/required-context/live-settings/release-provenance checks plus actionlint and zizmor;
+- the internal `Lint workflows` job in `build.yml` runs repository pin/trust/required-context/live-settings/release-provenance checks plus actionlint and zizmor;
 - the checked-in negative controls must continue to fail for deliberately bad fixtures;
 - `release.yml` is included in pinning, permission, actionlint, zizmor, and release-provenance review. It is **not** pending or exempt from hardening.
 
