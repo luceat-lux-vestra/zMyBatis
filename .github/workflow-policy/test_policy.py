@@ -267,6 +267,29 @@ jobs:
             failures,
         )
 
+    with tempfile.TemporaryDirectory() as tmp:
+        aggregate_root = Path(tmp) / "repo"
+        shutil.copytree(REPO_ROOT, aggregate_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
+        aggregate_workflow = aggregate_root / ".github" / "workflows" / "build.yml"
+        text = aggregate_workflow.read_text(encoding="utf-8")
+        text = text.replace(
+            "needs: [ build, test, inspectCode, verify, lint, dependencyReview ]",
+            "needs: [ build, test, inspectCode, verify, lint ]",
+            1,
+        )
+        aggregate_workflow.write_text(text, encoding="utf-8")
+        aggregate_bad_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_required_contexts.py"),
+            str(aggregate_root / ".github" / "merge-gate-policy.yml"),
+            str(aggregate_root),
+        ])
+        expect(
+            "check_required_contexts.py rejects a Merge Gate missing one component",
+            aggregate_bad_rc != 0,
+            failures,
+        )
+
     build = (REPO_ROOT / "build.gradle.kts").read_text(encoding="utf-8")
     expect(
         "template UI-test workflow is absent until real UI tests exist",
