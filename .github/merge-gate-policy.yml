@@ -16,27 +16,13 @@ mergeStrategy:
   requireBranchUpToDate: true
   requireLinearHistory: true
 
-# Every required context must be produced unconditionally for every PR targeting
-# main. Required merge-gate producers use unprivileged pull_request.
+# The live ruleset requires one stable aggregate context. Build/Test/Qodana/
+# Plugin Verifier/workflow-policy/dependency evidence remain separate jobs inside
+# build.yml; Merge Gate runs with always() and fails unless every component is success.
 requiredStatusChecks:
-  - context: Build
+  - context: Merge Gate
     producedBy: .github/workflows/build.yml
-    job: build
-  - context: Test
-    producedBy: .github/workflows/build.yml
-    job: test
-  - context: Inspect code
-    producedBy: .github/workflows/build.yml
-    job: inspectCode
-  - context: Verify plugin
-    producedBy: .github/workflows/build.yml
-    job: verify
-  - context: Lint workflows
-    producedBy: .github/workflows/workflow-lint.yml
-    job: lint
-  - context: Dependency Review
-    producedBy: .github/workflows/dependency-review.yml
-    job: review
+    job: mergeGate
 
 excludedFromRequiredChecks:
   - workflow: release.yml
