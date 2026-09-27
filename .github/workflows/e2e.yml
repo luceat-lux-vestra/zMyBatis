@@ -3,6 +3,12 @@ name: E2E
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "AGENTS.md"
+      - "docs/*.md"
+      - "docs/**/*.md"
   workflow_dispatch:
 
 concurrency:

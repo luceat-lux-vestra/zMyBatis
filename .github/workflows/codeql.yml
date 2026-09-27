@@ -4,8 +4,20 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "AGENTS.md"
+      - "docs/*.md"
+      - "docs/**/*.md"
   push:
     branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "AGENTS.md"
+      - "docs/*.md"
+      - "docs/**/*.md"
   schedule:
     - cron: "47 3 * * 3"
 

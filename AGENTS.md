@@ -111,6 +111,8 @@ Baseline evidence for ordinary code changes is selected by the changed contract 
 
 Leap evidence must be indexed by the new contract/domain boundary where possible rather than by continued existence of legacy class names. Legacy fixtures remain useful only when they can falsify a target invariant or protect shipping behavior during migration.
 
+Documentation-only CI uses a deliberately narrow syntactic fast path when **every** changed file is one of `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, or a Markdown file under `docs/**`. This is not a semantic classifier and does not prove that a documentation claim is correct. In that case the required `Build`, `Test`, `Inspect code`, and `Verify plugin` contexts remain present but skip product/runtime work; `Lint workflows` and `Dependency Review` continue normally. E2E and CodeQL are not scheduled for that docs-only change. Any changed file outside the allowlist, or any inability to establish the changed-file set, restores the ordinary full validation path.
+
 Do not delete, ignore, soften, or bypass assertions/checks to obtain green CI. UNKNOWN/UNVERIFIED evidence is not a PASS.
 
 ## 7.1 Failure handling before remediation
