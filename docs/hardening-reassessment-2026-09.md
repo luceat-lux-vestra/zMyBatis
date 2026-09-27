@@ -1,6 +1,8 @@
 # Hardening Reassessment — 2026-09-20
 
-Owning issue: #178
+Owning issue: #178 (completed)
+
+> **Historical reassessment record.** Findings and rollout language below describe the 2026-09-20 reassessment and its immediate follow-up period. Current enforced merge/release policy lives in `AGENTS.md` and `.github/merge-gate-policy.yml`; statements below that say a later proof or rollout is required are preserved as point-in-time evidence, not as the current backlog.
 
 This pass re-evaluates the completed repository hardening against current external GitHub/OpenSSF guidance and the repository's present API/agent-heavy operating model. It does not discard the existing hardened merge, workflow-security, Qodana, Plugin Verifier, failure-triage, live-drift, or release-provenance controls.
 
