@@ -14,7 +14,6 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: read # Read exact changed-file paths for the bounded docs-only fast path.
 
 jobs:
   lint:
@@ -22,75 +21,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Detect documentation-only scope
-        id: scope
-        if: ${{ github.event_name == 'pull_request' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          changed="$RUNNER_TEMP/pr-changed-files.txt"
-          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" --jq '.[].filename' > "$changed"
-          if [[ ! -s "$changed" ]]; then
-            echo "::error::Could not establish the changed-file set; refusing docs-only fast path."
-            exit 1
-          fi
-          docs_only=true
-          while IFS= read -r path; do
-            case "$path" in
-              README.md|CONTRIBUTING.md|AGENTS.md|docs/*) ;;
-              *) docs_only=false; break ;;
-            esac
-          done < "$changed"
-          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
-          echo "docs-only=$docs_only"
-
       - name: Fetch Sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Require immutable action pins
-        if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: python3 .github/workflow-policy/check_pins.py .github/workflows
 
       - name: Require sound permission/credential trust boundaries
-        if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: python3 .github/workflow-policy/check_trust_boundary.py .github/workflows/*.yml
 
       - name: Require merge-gate-policy.yml to match its producing workflows
-        if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: python3 .github/workflow-policy/check_required_contexts.py .github/merge-gate-policy.yml .
 
       - name: Require fail-closed Qodana authority
-        if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: python3 .github/workflow-policy/check_qodana_gate.py .github/workflows/build.yml qodana.yml
 
       - name: Require recurring live-settings audit ownership
-        if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: python3 .github/workflow-policy/check_live_settings.py .github/merge-gate-policy.yml --static-only
 
       - name: Require release provenance contract
-        if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: python3 .github/workflow-policy/check_release_provenance.py static .
 
       - name: Require authoritative governance contract
         run: python3 .github/workflow-policy/check_governance_contract.py .
 
-      - name: Documentation-only fast path
-        if: ${{ steps.scope.outputs.docs_only == 'true' }}
-        run: echo "Documentation-only change; executable workflow/security/release checks are not applicable."
-
       - name: Verify issue metadata policy
-        if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: |
           python3 .github/workflow-policy/test_issue_metadata.py
           node --test .github/workflow-policy/issue-metadata.test.cjs
 
       - name: Install actionlint
-        if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: |
           set -euo pipefail
           curl -sSLO https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
@@ -98,18 +60,15 @@ jobs:
           tar -xzf actionlint_1.7.12_linux_amd64.tar.gz actionlint
 
       - name: actionlint
-        if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: ./actionlint .github/workflows/*.yml
 
       - name: zizmor
-        if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: |
           set -euo pipefail
           pipx install "zizmor==1.30.0"
           zizmor --offline --persona regular .github/workflows/*.yml
 
       - name: Prove the checks above are actually fail-closed
-        if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: |
           python3 .github/workflow-policy/test_policy.py
           python3 .github/workflow-policy/test_qodana_gate.py
