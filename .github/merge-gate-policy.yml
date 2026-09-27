@@ -125,6 +125,7 @@ labels:
 liveSettingsAudit:
   workflow: .github/workflows/repository-settings-drift.yml
   scheduleCron: "23 2 * * *"
+  pushPaths: [ ".github/merge-gate-policy.yml", ".github/workflow-policy/**", ".github/workflows/repository-settings-drift.yml" ]
   manualSecurityAssertions:
     dependency_graph: true
     dependabot_alerts: true
