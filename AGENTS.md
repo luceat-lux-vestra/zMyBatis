@@ -144,7 +144,7 @@ Current required contexts are exactly:
 - `Lint workflows`
 - `Dependency Review`
 
-The live `main protection` ruleset is expected to enforce those contexts strictly, squash-only linear history, required review-thread resolution, and no bypass actors. `.github/workflows/repository-settings-drift.yml` performs recurring fail-closed live readback against the checked-in policy.
+The live `main protection` ruleset is expected to enforce those contexts strictly, squash-only linear history, required review-thread resolution, and no bypass actors. `.github/workflows/repository-settings-drift.yml` performs scheduled fail-closed live readback and also runs when its checked-in policy or audit implementation changes on main.
 
 Workflow trust-boundary rules:
 
