@@ -75,6 +75,22 @@ def job_if_value(job: Job) -> str | None:
     return None
 
 
+def job_needs(job: Job) -> set[str]:
+    baseline = next((indent_of(line) for line in job.lines if line.strip()), None)
+    if baseline is None:
+        return set()
+    for line in job.lines:
+        if not line.strip() or indent_of(line) != baseline:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("needs:"):
+            value = stripped[len("needs:"):].strip()
+            if not (value.startswith("[") and value.endswith("]")):
+                return set()
+            return {item.strip() for item in value[1:-1].split(",") if item.strip()}
+    return set()
+
+
 def trigger_has_path_filter(all_lines: list[str], trigger: str) -> bool:
     try:
         index = next(i for i, line in enumerate(all_lines) if line.strip() == f"{trigger}:")
@@ -110,6 +126,14 @@ def check_entry(entry: dict[str, str], repo_root: Path, classification: str) -> 
     name = job_name_field(job)
     if name != context:
         failures.append(f"'{context}': job '{job_id}' in {produced_by} has name '{name}', expected '{context}'")
+
+    if context == "Merge Gate":
+        expected_needs = {"build", "test", "inspectCode", "verify", "lint", "dependencyReview"}
+        actual_needs = job_needs(job)
+        if actual_needs != expected_needs:
+            failures.append(
+                f"'Merge Gate': expected needs={sorted(expected_needs)!r}, got {sorted(actual_needs)!r}"
+            )
 
     job_if = job_if_value(job)
     if job_if not in (None, "${{ always() }}", "always()"):
