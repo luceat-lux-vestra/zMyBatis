@@ -40,7 +40,7 @@ CI green is necessary, not sufficient. UNKNOWN/UNVERIFIED evidence is not a PASS
 
 The active release policy is documented in AGENTS.md section 9 and enforced by `.github/workflow-policy/check_release_provenance.py`.
 
-- Ordinary PR/main CI uses the deterministic non-publishing development path.
+- Ordinary PR CI uses the deterministic non-publishing development path; merged main does not repeat the same product-validation suite.
 - Publication tags follow protected `vMAJOR.MINOR.PATCH[-PRERELEASE]` identity; the supported publication line starts at `v1.0.0` and rejects `v0.x` tags.
 - The plugin version is the validated tag with one leading `v` removed.
 - Release tag ancestry, artifact version, signing, and Marketplace publication must stay bound to that one effective version.
