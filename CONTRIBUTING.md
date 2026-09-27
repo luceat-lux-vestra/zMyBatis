@@ -1,6 +1,6 @@
 # Contributing
 
-zMyBatis is a public Apache-2.0 repository. This document covers contribution mechanics. [AGENTS.md](AGENTS.md) is the engineering/review contract, and [docs/test-contracts.md](docs/test-contracts.md) states what the required `Test` context actually proves.
+zMyBatis is a public Apache-2.0 repository. This document covers contribution mechanics. [AGENTS.md](AGENTS.md) is the engineering/review contract, and [docs/test-contracts.md](docs/test-contracts.md) states what the internal `Test` job actually proves.
 
 ## Before you start
 
@@ -20,9 +20,9 @@ zMyBatis is a public Apache-2.0 repository. This document covers contribution me
 
 Run the narrowest evidence capable of falsifying the changed contract and record it in the PR description.
 
-- Documentation-only changes: when every changed file is `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, or a Markdown file under `docs/**`, CI keeps the required contexts but skips product build/test/Qodana/Plugin Verifier work that cannot falsify a documentation-only diff. `Lint workflows` and `Dependency Review` still run. If scope cannot be established, CI falls back to full validation. This scope decision is purely syntactic; reviewers remain responsible for checking that behavioral/contract claims match the implementation.
+- Documentation-only changes: when every changed file is `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, or a Markdown file under `docs/**`, the internal product jobs skip build/test/Qodana/Plugin Verifier work that cannot falsify a documentation-only diff, while `Lint workflows` and `Dependency Review` still run. The required `Merge Gate` remains present and passes only if all six component jobs succeed. If scope cannot be established, CI falls back to full validation. This scope decision is purely syntactic; reviewers remain responsible for checking that behavioral/contract claims match the implementation.
 - Product code: `./gradlew check`; `./gradlew buildPlugin`; `./gradlew verifyPlugin` when IntelliJ/Database API compatibility is plausibly affected.
-- Workflow/policy changes: `python3 .github/workflow-policy/test_policy.py`, `python3 .github/workflow-policy/test_live_settings.py`, and `python3 .github/workflow-policy/test_release_provenance.py` as applicable. CI `Lint workflows` additionally runs immutable-pin checks, trust-boundary checks, required-context/live-settings/release-provenance checks, actionlint, and zizmor.
+- Workflow/policy changes: `python3 .github/workflow-policy/test_policy.py`, `python3 .github/workflow-policy/test_live_settings.py`, and `python3 .github/workflow-policy/test_release_provenance.py` as applicable. The internal `Lint workflows` job additionally runs immutable-pin checks, trust-boundary checks, required-context/live-settings/release-provenance checks, actionlint, and zizmor.
 - Parsing/parameter/evaluation/rendering changes: add or update a falsifiable product contract test. See `docs/test-contracts.md`; the old template/debug tests were removed and must not be cited as evidence.
 - Session/Database Tools lifecycle changes: distinguish pure automated evidence from real IDE/database platform evidence instead of claiming unit tests cover both.
 - Every change: record E2E applicability under [docs/e2e-testing.md](docs/e2e-testing.md). When process-level evidence applies, run the maintained Starter/Driver scenario on the exact final PR HEAD; E2E is not an unconditional required context for lower-level-only changes.
@@ -33,7 +33,7 @@ CI green is necessary, not sufficient. UNKNOWN/UNVERIFIED evidence is not a PASS
 
 - Never weaken `.github/workflow-policy/check_trust_boundary.py`, `check_pins.py`, required-context/live-settings/release-provenance checks, actionlint, or zizmor to make a finding disappear. Fix the underlying state.
 - Deliberately bad fixtures must continue to fail. If they stop failing, the checker regressed.
-- If a required job/context is added or renamed, update `.github/merge-gate-policy.yml` in the same PR.
+- If the required `Merge Gate` contract or one of its component jobs changes, update `.github/merge-gate-policy.yml` in the same PR.
 - `release.yml` is part of the current hardened workflow review surface. It is checked for immutable action pins, permissions/credential boundaries, actionlint/zizmor findings, and the dedicated SemVer/tag/artifact publication-provenance contract.
 - Do not add a manual UI-test workflow unless the repository also contains real UI tests whose result is meaningful evidence. Template IDE/robot-server startup alone is not a test contract.
 
