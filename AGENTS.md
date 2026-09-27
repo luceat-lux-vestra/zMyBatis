@@ -19,7 +19,7 @@ The current execution path is broadly:
 5. resolve datasource + explicit schema and reuse/create a JDBC console;
 6. execute only after the explicit zMyBatis action.
 
-Using MyBatis internally does **not** by itself prove stock MyBatis/JDBC parity. zMyBatis currently owns parameter discovery, OGNL/property-access behavior, unknown-tag compatibility handling, and literal rendering. Product/fidelity decisions and unsupported/degraded cases are owned by Leap #60, starting with #61.
+Using MyBatis internally does **not** by itself prove stock MyBatis/JDBC parity. zMyBatis currently owns parameter discovery, OGNL/property-access behavior, unknown-tag compatibility handling, and literal rendering. Product/fidelity decisions and unsupported/degraded cases are owned by Leap #60. Track #61 completed the product-policy freeze; downstream implementation and evidence remain owned by #62–#67.
 
 Key current ownership areas:
 
@@ -52,7 +52,7 @@ zMyBatis must not replace, wrap, unregister, reorder, or intercept DataGrip buil
 - Platform action IDs remain untouched.
 - `MyBatisActionInterceptorActivity` is session-restoration infrastructure despite its historical name; it is not a global action interceptor.
 - `MyBatisExecuteProxyAction.getActionUpdateThread()` is BGT.
-- Current `update()` unconditionally keeps the zMyBatis action enabled/visible. Whether context-sensitive enablement is the intended product behavior is tracked by Leap #61/#66; do not document the target as if it were current behavior.
+- Current `update()` unconditionally keeps the zMyBatis action enabled/visible. The product decision was frozen by #61 and implementation remains owned by #66; do not document the target as if it were current behavior.
 - UI/console work belongs on the EDT where required; PSI reads obey IntelliJ read-action requirements; blocking work must not be moved onto the EDT.
 
 ## 4. IntelliJ / Database API compatibility
@@ -106,7 +106,8 @@ Baseline evidence for ordinary code changes is selected by the changed contract 
 - `./gradlew check`;
 - `./gradlew buildPlugin`;
 - `./gradlew verifyPlugin` when platform/API compatibility is plausibly affected;
-- required CI/static-analysis gates.
+- required CI/static-analysis gates;
+- an explicit E2E applicability assessment under [docs/e2e-testing.md](docs/e2e-testing.md); when process-level evidence applies, the maintained Starter/Driver scenario must run on the exact final PR HEAD.
 
 Leap evidence must be indexed by the new contract/domain boundary where possible rather than by continued existence of legacy class names. Legacy fixtures remain useful only when they can falsify a target invariant or protect shipping behavior during migration.
 
@@ -173,6 +174,8 @@ Current required contexts are exactly:
 - `Inspect code`
 - `Verify plugin`
 - `Lint workflows`
+- `failure-triage`
+- `Dependency Review`
 
 The live `main protection` ruleset is expected to enforce those contexts strictly, squash-only linear history, required review-thread resolution, and no bypass actors. `.github/workflows/repository-settings-drift.yml` performs recurring fail-closed live readback against the checked-in policy.
 
@@ -187,7 +190,7 @@ Workflow trust-boundary rules:
 - the checked-in negative controls must continue to fail for deliberately bad fixtures;
 - `release.yml` is included in pinning, permission, actionlint, zizmor, and release-provenance review. It is **not** pending or exempt from hardening.
 
-A manual UI-test workflow is not part of the current evidence architecture unless real UI tests exist and provide falsifiable product evidence. Do not retain template automation merely because it came from the upstream plugin template.
+`E2E / Starter / Driver E2E` is maintained process-level evidence from completed issue #130. It remains separately visible rather than an unconditional ruleset context; applicability is decided per change under `docs/e2e-testing.md`, and an applicable scenario must pass on the exact final HEAD. Do not substitute template IDE startup or robot-server smoke for falsifiable production-path evidence.
 
 ## 9. Version and release contract — hardened baseline
 
@@ -226,17 +229,17 @@ In particular, the target deliberately replaces or removes the current:
 - execution-time formatting mutation;
 - safety semantics controlled by Strict OGNL / Ignore Unknown Tags switches.
 
-The target physical dependency graph is a DAG: root IntelliJ plugin -> `:core`, root IntelliJ plugin -> `:mybatis-engine`, and `:mybatis-engine` -> both `:core` and MyBatis; `:core` remains free of IntelliJ/Database Tools/MyBatis dependencies. The current implementation phase includes only `:core` and already wires root -> `:core` via #111; `:mybatis-engine` is not yet a Gradle module. This is the exact-mechanics adjustment allowed by #101, and the core/platform dependency direction must not invert.
+The target physical dependency graph is a DAG: root IntelliJ plugin -> `:core`, root IntelliJ plugin -> `:mybatis-engine`, and `:mybatis-engine` -> both `:core` and MyBatis; `:core` remains free of IntelliJ/Database Tools/MyBatis dependencies. The current repository now includes both `:core` and `:mybatis-engine` in `settings.gradle.kts`; the root module consumes both, and CI runs the module checks explicitly. This realizes the physical split defined by #101 while downstream #64 work continues to replace the legacy evaluator/materialization path. The core/platform dependency direction must not invert.
 
 Bounded safety fixes to the current path and explicitly temporary migration bridges are allowed. They must not be used to justify preserving legacy architecture and must have an owner/deletion criterion when they survive beyond one PR.
 
 Current known product gaps include, among others:
 
 - raw parameter/rendered-SQL INFO logging (#67);
-- current always-enabled action presentation and broader IDE orchestration policy (#61/#66);
-- compatibility-altered OGNL/unknown-tag/literal-rendering behavior that must not be described as stock MyBatis/JDBC parity (#61/#64);
+- current always-enabled action presentation and broader IDE orchestration implementation (policy frozen by #61; implementation owned by #66);
+- compatibility-altered OGNL/unknown-tag/literal-rendering behavior that must not be described as stock MyBatis/JDBC parity (policy frozen by #61; implementation owned by #64);
 - error/degradation paths that still need typed failure outcomes (#64/#67);
-- DataGrip/runtime integration evidence that is not exercised by the deterministic IDEA Ultimate Plugin Verifier target (#61/#67).
+- DataGrip/runtime integration evidence that is not exercised by the deterministic IDEA Ultimate Plugin Verifier target (target-host policy frozen by #61; final evidence owned by #67).
 
 Do not claim these are solved merely because repository hardening is green.
 
