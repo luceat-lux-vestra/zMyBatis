@@ -83,7 +83,7 @@
   <li><b>Declared minimum IDE build:</b> 262 (2026.2 line)</li>
   <li><b>Maintained automated Plugin Verifier target:</b> IntelliJ IDEA Ultimate 2026.2</li>
   <li>The JetBrains Database Tools plugin (<code>com.intellij.database</code>) and a configured data source are required</li>
-  <li><b>DataGrip:</b> a product integration target, but a separate maintained DataGrip verifier/runtime evidence line has not yet been established under #61/#67</li>
+  <li><b>DataGrip:</b> a product integration target whose policy was frozen by completed Track #61; a separate maintained DataGrip verifier/runtime evidence line remains a #67 obligation</li>
   <li>The declared minimum build does not by itself prove every later IDE build or other JetBrains host compatible; broader claims require explicit maintained evidence</li>
 </ul>
 <!-- Plugin description end -->
@@ -108,7 +108,17 @@ For development/testing, a locally built distribution can also be installed thro
 
 ## Product Contract
 
-The current and target capability/safety matrix is maintained in [docs/product-contract.md](./docs/product-contract.md). It is the policy source for Leap Epic #60 / Track #61 and explicitly distinguishes supported, unsupported, compatibility-altered, degraded, and unknown behavior.
+The current and target capability/safety matrix is maintained in [docs/product-contract.md](./docs/product-contract.md). Completed Track #61 froze that product policy for Leap Epic #60; downstream implementation and final evidence continue under Tracks #62–#67. The contract explicitly distinguishes supported, unsupported, compatibility-altered, degraded, and unknown behavior.
+
+## Engineering Documentation
+
+- [Product contract](./docs/product-contract.md) — current/target capability and safety policy
+- [Leap architecture](./docs/leap-architecture.md) — target boundaries plus current migration-state notes
+- [Test contracts](./docs/test-contracts.md) — what automated evidence does and does not prove
+- [Starter / Driver E2E](./docs/e2e-testing.md) — process-level applicability and maintained scenarios
+- [Session persistence](./docs/session-persistence.md) — current datasource/schema persistence contract
+- [Release recovery](./docs/release-recovery.md) — fail-closed Marketplace recovery procedure
+- [Contributing](./CONTRIBUTING.md) and [Security](./SECURITY.md) — repository mechanics and vulnerability reporting
 
 ## Distribution
 
