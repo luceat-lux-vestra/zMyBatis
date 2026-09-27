@@ -5,7 +5,7 @@ Describe the one coherent change and owning issue/Track.
 ## Proof obligations
 
 - [ ] exact candidate HEAD identified
-- [ ] required Build / Test / Inspect code / Verify plugin / Lint workflows / Dependency Review checks pass
+- [ ] required `Merge Gate` passes, with Build / Test / Inspect code / Verify plugin / Lint workflows / Dependency Review component evidence successful
 - [ ] E2E applicability is recorded; when applicable, the maintained Starter/Driver scenario passes on the exact candidate HEAD
 - [ ] failure and recovery paths reviewed
 - [ ] regression and compatibility impact reviewed
