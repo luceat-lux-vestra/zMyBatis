@@ -26,14 +26,14 @@ We do not currently offer a bug bounty. We will acknowledge reports and work wit
 
 Dependabot version-update PRs are enabled and grouped weekly as a maintenance/noise policy. Do not infer the availability or absence of any dependency, alert, or advanced-security capability from this configuration; a maintainer reviewing an update should not assume an absent security alert means an absent vulnerability.
 
-CI-side mitigations that do exist and are enforced automatically (see `.github/merge-gate-policy.yml` and `AGENTS.md` section 9):
+CI-side mitigations that do exist and are enforced automatically (see `.github/merge-gate-policy.yml` and `AGENTS.md` section 8):
 
 - every third-party GitHub Action is pinned to an immutable commit SHA;
 - no job that checks out source in a `pull_request` workflow holds a write-scoped `GITHUB_TOKEN` permission;
 - validation jobs disable credential persistence on checkout;
 - the workflow static-analysis gate (`actionlint`, `zizmor`, and this repository's own trust-boundary checks) is fail-closed and covered by deterministic negative controls, not just documentation.
 
-`release.yml` (JetBrains Marketplace publication) has known, unresolved static-analysis findings and an incomplete release-version-provenance chain; this is a tracked, deliberate gap (see `AGENTS.md` section 10), not something this policy is claiming to have already closed.
+`release.yml` (JetBrains Marketplace publication) is part of the hardened workflow review surface. Release provenance and publication hardening were completed through #56/#205: immutable action pins, explicit permissions, actionlint/zizmor, SemVer tag/artifact identity, signing/provenance, environment-gated credentials, and fail-closed recovery checks are enforced by the maintained repository policy. This does not authorize any particular release; each publication still requires its own validated immutable tag/artifact evidence and maintainer authorization under `AGENTS.md` section 9.
 
 ## Supported versions
 

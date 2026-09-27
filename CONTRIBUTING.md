@@ -24,6 +24,7 @@ Run the narrowest evidence capable of falsifying the changed contract and record
 - Workflow/policy changes: `python3 .github/workflow-policy/test_policy.py`, `python3 .github/workflow-policy/test_live_settings.py`, and `python3 .github/workflow-policy/test_release_provenance.py` as applicable. CI `Lint workflows` additionally runs immutable-pin checks, trust-boundary checks, required-context/live-settings/release-provenance checks, actionlint, and zizmor.
 - Parsing/parameter/evaluation/rendering changes: add or update a falsifiable product contract test. See `docs/test-contracts.md`; the old template/debug tests were removed and must not be cited as evidence.
 - Session/Database Tools lifecycle changes: distinguish pure automated evidence from real IDE/database platform evidence instead of claiming unit tests cover both.
+- Every change: record E2E applicability under [docs/e2e-testing.md](docs/e2e-testing.md). When process-level evidence applies, run the maintained Starter/Driver scenario on the exact final PR HEAD; E2E is not an unconditional required context for lower-level-only changes.
 
 CI green is necessary, not sufficient. UNKNOWN/UNVERIFIED evidence is not a PASS.
 
