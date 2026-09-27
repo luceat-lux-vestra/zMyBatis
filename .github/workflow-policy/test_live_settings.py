@@ -70,7 +70,6 @@ GOOD_RULESET = {
                     {"context": "Verify plugin", "integration_id": 15368},
                     {"context": "Lint workflows", "integration_id": 15368},
                     {"context": "Dependency Review", "integration_id": 15368},
-                    {"context": "failure-triage", "integration_id": 15368},
                 ],
             },
         },
