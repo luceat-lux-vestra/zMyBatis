@@ -163,7 +163,7 @@ Workflow trust-boundary rules:
 
 The active publication contract established by #56 is:
 
-- ordinary PR/main validation is deterministic and non-publishing, using `0.0.0-dev` unless an explicit release version is supplied;
+- ordinary PR validation is deterministic and non-publishing, using `0.0.0-dev` unless an explicit release version is supplied;
 - publication identity is a protected Git tag matching `vMAJOR.MINOR.PATCH[-PRERELEASE]`; the supported publication line starts at `v1.0.0` and rejects `v0.x` tags;
 - the effective JetBrains plugin version is exactly the validated tag with one leading `v` removed;
 - `release.yml` runs only from GitHub Release events and checks out the release tag;
@@ -227,4 +227,4 @@ Review the exact final PR HEAD for:
 
 For Leap architecture work, additionally review dependency direction, whether a legacy component is being preserved by inertia, whether a bridge has a deletion point, and whether an adapter is leaking platform objects into core models.
 
-A PASS applies only to the reviewed HEAD SHA. Any HEAD movement invalidates it. Merge by squash only after fresh HEAD/main readback and exact-head approval. Post-merge validation must complete before the owning issue is closed.
+A PASS applies only to the reviewed HEAD SHA. Any HEAD movement invalidates it. Merge by squash only after fresh HEAD/main readback and exact-head approval. Post-merge workflows are reserved for checks or actions that require merged/default-branch state; ordinary product validation is not repeated merely because main advanced.
