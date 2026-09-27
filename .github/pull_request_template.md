@@ -34,8 +34,8 @@ Describe the one coherent change and owning issue/Track.
 ## Proof obligations
 
 - [ ] exact candidate HEAD identified
-- [ ] required Build / Test / Inspect code / Verify plugin / Lint workflows / failure-triage checks pass
-- [ ] dependency changes clear Dependency Review when applicable
+- [ ] required Build / Test / Inspect code / Verify plugin / Lint workflows / failure-triage / Dependency Review checks pass
+- [ ] E2E applicability is recorded; when applicable, the maintained Starter/Driver scenario passes on the exact candidate HEAD
 - [ ] failure and recovery paths reviewed
 - [ ] regression and compatibility impact reviewed
 - [ ] adversarial/edge evidence added where the change can fail plausibly
