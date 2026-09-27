@@ -319,8 +319,39 @@ def check_workflow(policy: dict[str, Any], text: str) -> list[str]:
     if triggers != {"push", "schedule"}:
         failures.append(f"workflow triggers: expected push+schedule only, got {sorted(triggers)!r}")
     block_text = "\n".join(block)
-    if not re.search(r"(?m)^  push:\s*\n    branches:\s*\[\s*main\s*\]\s*$", block_text):
+    try:
+        push_index = next(i for i, line in enumerate(block) if line.rstrip() == "  push:")
+    except StopIteration:
+        push_block: list[str] = []
+    else:
+        push_block = []
+        for line in block[push_index + 1 :]:
+            if line.strip() and len(line) - len(line.lstrip(" ")) <= 2:
+                break
+            push_block.append(line)
+
+    push_text = "\n".join(push_block)
+    if not re.search(r"(?m)^    branches:\s*\[\s*main\s*\]\s*$", push_text):
         failures.append("workflow push trigger must target exactly [ main ]")
+
+    expected_paths = policy.get("pushPaths")
+    if (
+        not isinstance(expected_paths, list)
+        or not expected_paths
+        or not all(isinstance(item, str) and item for item in expected_paths)
+    ):
+        failures.append(f"{SECTION}.pushPaths must be a non-empty string list")
+    else:
+        actual_paths = [
+            scalar(match.group(1))
+            for line in push_block
+            if (match := re.fullmatch(r"\s{6}-\s*(.+?)\s*", line))
+        ]
+        if actual_paths != expected_paths:
+            failures.append(
+                f"workflow push paths: expected {expected_paths!r}, got {actual_paths!r}"
+            )
+
     crons = re.findall(r"(?m)^\s*-\s*cron:\s*['\"]([^'\"]+)['\"]\s*$", block_text)
     if crons != [policy.get("scheduleCron")]:
         failures.append(f"workflow cron: expected {[policy.get('scheduleCron')]!r}, got {crons!r}")

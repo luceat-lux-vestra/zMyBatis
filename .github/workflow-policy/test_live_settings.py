@@ -249,6 +249,22 @@ class LiveSettingsPolicyTest(unittest.TestCase):
         )
         self.assertTrue(live.check_workflow(POLICY, text))
 
+    def test_push_path_broadening_is_rejected(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8").replace(
+            '      - ".github/workflows/repository-settings-drift.yml"\n',
+            '      - ".github/workflows/repository-settings-drift.yml"\n      - "**"\n',
+            1,
+        )
+        self.assertTrue(live.check_workflow(POLICY, text))
+
+    def test_push_path_removal_is_rejected(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8").replace(
+            '      - ".github/workflow-policy/**"\n',
+            "",
+            1,
+        )
+        self.assertTrue(live.check_workflow(POLICY, text))
+
     def test_if_guard_disabling_audit_is_rejected(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8").replace(
             "    name: Audit repository settings\n",
