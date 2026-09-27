@@ -33,7 +33,7 @@ CI-side mitigations that do exist and are enforced automatically (see `.github/m
 - validation jobs disable credential persistence on checkout;
 - the workflow static-analysis gate (`actionlint`, `zizmor`, and this repository's own trust-boundary checks) is fail-closed and covered by deterministic negative controls, not just documentation.
 
-`release.yml` (JetBrains Marketplace publication) has known, unresolved static-analysis findings and an incomplete release-version-provenance chain; this is a tracked, deliberate gap (see `AGENTS.md` section 10), not something this policy is claiming to have already closed.
+`release.yml` (JetBrains Marketplace publication) is part of the hardened baseline. Immutable action pinning, permission/trust-boundary checks, `actionlint`/`zizmor`, and the repository's fail-closed release-provenance checker cover this workflow. Publication must stop when immutable reviewed-`main` tag provenance, the exact release version, signed artifact identity, or the `jetbrains-marketplace` environment boundary cannot be proven.
 
 ## Supported versions
 
