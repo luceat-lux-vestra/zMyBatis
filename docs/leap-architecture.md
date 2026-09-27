@@ -597,7 +597,7 @@ Do not fake platform evidence with mocks that cannot falsify the relevant behavi
 
 ### Merge gate
 
-Every PR remains exact-HEAD proof-obligation gated. Any HEAD move invalidates approval. Post-merge main is revalidated before closing the owning task.
+Every PR remains exact-HEAD proof-obligation gated. Any HEAD move invalidates approval. Post-merge workflows are limited to evidence or actions that inherently require merged/default-branch state; the ordinary product-validation suite is not repeated after merge.
 
 ## 16. Track ownership after reset
 
@@ -613,7 +613,7 @@ Canonical Java overload identity is #62 work. Remembered-input isolation is #63 
 
 ## 17. First code-bearing task after #101
 
-After this architecture is merged and main is revalidated, the first code task should be a #62 child that introduces the physical `:core` boundary plus canonical source/statement identity **without changing the production execution path**.
+After this architecture is merged and the reviewed merge result is read back from main, the first code task should be a #62 child that introduces the physical `:core` boundary plus canonical source/statement identity **without changing the production execution path**.
 
 Its independent proof obligation is architectural: core compiles without IntelliJ/MyBatis/Database Tools dependencies, XML/Java canonical identities cannot collide, and current production behavior is untouched while the replacement foundation is established.
 
