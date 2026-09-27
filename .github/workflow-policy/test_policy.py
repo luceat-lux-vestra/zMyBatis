@@ -250,8 +250,8 @@ jobs:
         staged_policy = staged_root / ".github" / "merge-gate-policy.yml"
         text = staged_policy.read_text(encoding="utf-8")
         text = text.replace(
-            "producedBy: .github/workflows/dependency-review.yml\n    job: review",
-            "producedBy: .github/workflows/dependency-review.yml\n    job: missing-staged-job",
+            "producedBy: .github/workflows/build.yml\n    job: mergeGate",
+            "producedBy: .github/workflows/build.yml\n    job: missing-staged-job",
             1,
         )
         staged_policy.write_text(text, encoding="utf-8")
@@ -262,7 +262,7 @@ jobs:
             str(staged_root),
         ])
         expect(
-            "check_required_contexts.py rejects a missing staged-required producer",
+            "check_required_contexts.py rejects a missing required producer",
             staged_bad_rc != 0,
             failures,
         )
