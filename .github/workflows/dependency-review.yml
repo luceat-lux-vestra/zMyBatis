@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read # Read exact changed-file paths for the bounded docs-only fast path.
 
 concurrency:
   group: dependency-review-${{ github.event.pull_request.number }}
@@ -18,36 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Detect documentation-only scope
-        id: scope
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          changed="$RUNNER_TEMP/pr-changed-files.txt"
-          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" --jq '.[].filename' > "$changed"
-          if [[ ! -s "$changed" ]]; then
-            echo "::error::Could not establish the changed-file set; refusing docs-only fast path."
-            exit 1
-          fi
-          docs_only=true
-          while IFS= read -r path; do
-            case "$path" in
-              README.md|CONTRIBUTING.md|AGENTS.md|docs/*) ;;
-              *) docs_only=false; break ;;
-            esac
-          done < "$changed"
-          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
-          echo "docs-only=$docs_only"
-
-      - name: Documentation-only fast path
-        if: ${{ steps.scope.outputs.docs_only == 'true' }}
-        run: echo "Dependency review is not applicable to this documentation-only change."
-
       - name: Review dependency changes
-        if: ${{ steps.scope.outputs.docs_only != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: moderate
