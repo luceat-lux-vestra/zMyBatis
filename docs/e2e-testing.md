@@ -1,6 +1,6 @@
 # Starter / Driver process-level testing
 
-Issue #130 owns the repository-wide process-level integration/E2E boundary for zMyBatis.
+Completed issue #130 established the repository-wide process-level integration/E2E boundary for zMyBatis. This document is the maintained operating contract for that harness.
 
 The target proof path is:
 
@@ -8,7 +8,7 @@ The target proof path is:
 
 This layer complements, rather than replaces, core/unit tests and IntelliJ project fixtures. Detailed semantic edge cases remain at the lowest test layer that can prove them reliably.
 
-## Current bootstrap scenarios
+## Maintained bootstrap scenarios
 
 `ZMyBatisStarterDriverE2ETest` currently establishes two small process-level scenarios against the maintained IntelliJ IDEA Ultimate target:
 
@@ -58,7 +58,7 @@ For every run it records:
 
 On failure it archives the Gradle/JUnit result and Starter IDE logs when present. Existing `Build`, `Test`, `Inspect code`, `Verify plugin`, and `Lint workflows` checks are unchanged.
 
-The E2E workflow is initially **characterization evidence, not a required merge context**. Issue #130 requires repeated CI execution to demonstrate acceptable determinism before any deliberate required-context promotion. A green single run is not sufficient evidence of stability.
+Issue #130 completed the harness and its initial repeatability rollout. The current `.github/merge-gate-policy.yml` does **not** make E2E an unconditional required status check for every PR; the workflow remains separately visible process-level evidence. Applicability is decided per change: when installed-plugin or user-path behavior is part of the changed invariant, the relevant Starter/Driver scenario must pass on the exact final PR HEAD before merge. A lower-level-only change may record E2E as not applicable with a layer-based reason.
 
 ## E2E applicability for future work
 
@@ -77,4 +77,4 @@ Pure value objects, deterministic source-graph algorithms, isolated parser seman
 
 Do not move stable semantic matrices into this suite merely to label them E2E. Prefer Driver API/service interaction to Swing traversal. UI interaction is used only when registration or visible product behavior is itself the claim.
 
-Architecture Leap will add representative production-wired scenarios as #62-#66 become available. The harness remains repository-wide after Leap and is extended according to the applicability rule above.
+Architecture Leap continues to add representative production-wired scenarios as #62-#66 boundaries become authoritative. The harness remains repository-wide after Leap and is extended according to the applicability rule above.
