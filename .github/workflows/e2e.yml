@@ -7,10 +7,6 @@ on:
       - "README.md"
       - "CONTRIBUTING.md"
       - "AGENTS.md"
-      - "CHANGELOG.md"
-      - "SECURITY.md"
-      - "LICENSE"
-      - ".github/pull_request_template.md"
       - "docs/*.md"
       - "docs/**/*.md"
   workflow_dispatch:
