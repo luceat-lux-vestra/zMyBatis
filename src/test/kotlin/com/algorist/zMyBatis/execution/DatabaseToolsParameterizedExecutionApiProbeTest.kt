@@ -10,6 +10,9 @@ class DatabaseToolsParameterizedExecutionApiProbeTest {
         val candidates = listOf(
             "com.intellij.database.datagrid.DataRequest",
             "com.intellij.database.datagrid.DataRequest\$QueryRequest",
+            "com.intellij.database.run.ConsoleDataRequest",
+            "com.intellij.database.script.ScriptModel\$PStorage",
+            "com.intellij.database.script.ScriptModel\$ParamIt",
             "com.intellij.database.dataSource.connection.statements.SmartStatementFactoryService",
             "com.intellij.database.dataSource.connection.statements.SmartStatementFactory",
             "com.intellij.database.dataSource.connection.statements.ParameterizedSmartStatement",
