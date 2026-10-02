@@ -164,17 +164,51 @@ object ZeroBindingExecutionMaterializer : ExecutionMaterializer {
 }
 
 /**
- * Maintained production materializer.
+ * DB-agnostic maintained materialization dispatcher.
  *
- * Zero-binding behavior is deliberately inherited unchanged. Maintained non-zero PostgreSQL
- * bindings are admitted only through exact MyBatis handler semantics independently proven against
+ * Zero-binding executions are dialect-neutral. Non-zero bindings are delegated to an explicitly
+ * registered dialect materializer; unsupported dialects fail closed instead of inheriting the
+ * semantics of whichever dialect happened to be implemented first.
+ */
+object MaintainedExecutionMaterializer : ExecutionMaterializer {
+    private val dialectMaterializers: Map<String, ExecutionMaterializer> = mapOf(
+        "postgresql" to PostgresqlExecutionMaterializer,
+    )
+
+    override fun materialize(
+        prepared: PreparedExecution,
+        targetDialectIdentity: TargetDialectIdentity,
+    ): MaterializationResult {
+        if (prepared.rawInterpolations.isNotEmpty()) {
+            return failed(
+                MaterializationFailureKind.RAW_INTERPOLATION_REQUIRES_POLICY,
+                RAW_INTERPOLATION_POLICY_REQUIRED,
+            )
+        }
+        if (prepared.orderedBindings.isEmpty()) {
+            return ZeroBindingExecutionMaterializer.materialize(prepared, targetDialectIdentity)
+        }
+
+        val dialectMaterializer = dialectMaterializers[targetDialectIdentity.value]
+            ?: return failed(
+                MaterializationFailureKind.DIALECT_UNSUPPORTED,
+                DIALECT_UNSUPPORTED,
+            )
+        return dialectMaterializer.materialize(prepared, targetDialectIdentity)
+    }
+}
+
+/**
+ * PostgreSQL non-zero-binding materialization strategy.
+ *
+ * Bindings are admitted only through exact MyBatis handler semantics independently proven against
  * pgjdbc. LongTypeHandler/setLong maps to INT8; IntegerTypeHandler/setInt maps to INT4; and
  * BooleanTypeHandler/setBoolean maps to BOOL.
  *
  * Placeholder substitution is admitted only when the SQL topology is trivially provable. This
  * intentionally rejects quoted/comment/dollar syntax instead of attempting a partial SQL lexer.
  */
-object MaintainedExecutionMaterializer : ExecutionMaterializer {
+private object PostgresqlExecutionMaterializer : ExecutionMaterializer {
     private const val POSTGRESQL = "postgresql"
     private const val MYBATIS_ENGINE_ID = "org.mybatis:mybatis"
     private const val MYBATIS_ENGINE_VERSION = "3.5.19"
@@ -210,20 +244,8 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
         prepared: PreparedExecution,
         targetDialectIdentity: TargetDialectIdentity,
     ): MaterializationResult {
-        if (prepared.rawInterpolations.isNotEmpty()) {
-            return failed(
-                MaterializationFailureKind.RAW_INTERPOLATION_REQUIRES_POLICY,
-                RAW_INTERPOLATION_POLICY_REQUIRED,
-            )
-        }
-        if (prepared.orderedBindings.isEmpty()) {
-            return ZeroBindingExecutionMaterializer.materialize(prepared, targetDialectIdentity)
-        }
-        if (targetDialectIdentity.value != POSTGRESQL) {
-            return failed(
-                MaterializationFailureKind.DIALECT_UNSUPPORTED,
-                POSTGRESQL_DIALECT_REQUIRED,
-            )
+        check(targetDialectIdentity.value == POSTGRESQL) {
+            "PostgreSQL materializer must only be reached through PostgreSQL dialect dispatch"
         }
         if (
             prepared.preparationMetadata.engineIdentity != MYBATIS_ENGINE_ID ||
@@ -659,7 +681,7 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
 
 private const val BINDING_LITERALIZATION_REQUIRED = "materialization-dialect-literalization-required"
 private const val RAW_INTERPOLATION_POLICY_REQUIRED = "materialization-raw-interpolation-policy-required"
-private const val POSTGRESQL_DIALECT_REQUIRED = "materialization-postgresql-dialect-required"
+private const val DIALECT_UNSUPPORTED = "materialization-dialect-unsupported"
 private const val POSTGRESQL_PREPARATION_METADATA_REQUIRED =
     "materialization-postgresql-preparation-metadata-unsupported"
 private const val POSTGRESQL_BIGINT_PREPARATION_METADATA_REQUIRED =
