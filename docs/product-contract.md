@@ -168,12 +168,17 @@ It carries enough information to prove:
 
 The configured IntelliJ/DataGrip datasource owns the DBMS driver, connection/session, vendor SQL semantics, and result handling. **zMyBatis does not define a DBMS support allowlist for an otherwise valid Database Tools datasource.** Oracle, MySQL/MariaDB, PostgreSQL, SQL Server, and other configured datasource families are target-resolution peers.
 
-For non-zero `#{...}` bindings, Leap must first prove a maintainable Database Tools parameterized-execution path that can consume the prepared SQL plus ordered values without prompting the user a second time and without losing the native console/result experience. Until that proof exists:
+For non-zero `#{...}` bindings, Leap requires a maintainable Database Tools parameterized-execution path that can consume the prepared SQL plus ordered values without prompting the user a second time and without losing the native console/result experience.
+
+#251 completed that proof attempt against the maintained 2026.2 baseline and found **NO-GO**: the console/user-parameter subsystem is text-substitution oriented, while the proven session-bound prepared-statement APIs do not expose a maintained bridge back into the native console result/history path. See [Database Tools parameterized execution proof](database-tools-parameterized-execution.md).
+
+Therefore:
 
 - bound values stay structured; they are not converted into PostgreSQL/Oracle/MySQL-specific executable literals by core;
 - the maintained SQL-text materializer admits only the DB-neutral zero-binding case;
 - previous PostgreSQL literalization slices are historical research evidence, not the authoritative cutover path;
-- unsupported/custom TypeHandler semantics remain explicit execution-adapter concerns rather than guessed SQL text.
+- unsupported/custom TypeHandler semantics remain explicit execution-adapter concerns rather than guessed SQL text;
+- #251 does not authorize reflection/internal APIs or a per-DB literalizer fallback; #64/#65 must choose any fallback separately.
 
 ## 10. Preview, formatting, copy, and execution identity
 
