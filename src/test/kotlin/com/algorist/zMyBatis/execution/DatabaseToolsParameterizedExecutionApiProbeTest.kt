@@ -6,24 +6,15 @@ import java.lang.reflect.Modifier
 
 class DatabaseToolsParameterizedExecutionApiProbeTest {
     @Test
-    fun dumpCandidatePublicApi() {
+    fun dumpFocusedCandidateApi() {
         val candidates = listOf(
-            "com.intellij.database.script.QueryParametersProvider",
-            "com.intellij.database.run.ConsoleRunContextParametersTuner",
-            "com.intellij.database.console.ConsoleRunContextParametersTuner",
-            "com.intellij.database.run.ConsoleDataRequest",
-            "com.intellij.database.script.ScriptModel\$PStorage",
-            "com.intellij.database.console.JdbcConsole",
-            "com.intellij.database.console.evaluation.EvaluationRequest",
-            "com.intellij.database.dataSource.DatabaseConnection",
-            "com.intellij.database.dataSource.DatabaseConnectionCore",
-            "com.intellij.database.datagrid.DataRequest\$RawRequest",
-            "com.intellij.database.dataSource.connection.statements.SmartStatementFactoryService",
-            "com.intellij.database.dataSource.connection.statements.StatementParameters",
-            "com.intellij.database.dataSource.connection.statements.StandardExecutionMode",
+            "com.intellij.database.datagrid.DataRequest",
+            "com.intellij.database.datagrid.DataRequest\$QueryRequest",
+            "com.intellij.database.dataSource.connection.statements.SmartStatementFactory",
+            "com.intellij.database.dataSource.connection.statements.ParameterizedStatementData",
+            "com.intellij.database.dataSource.connection.statements.ExecutionResult",
+            "com.intellij.database.dataSource.connection.statements.ResultsProducer",
             "com.intellij.database.dataSource.connection.statements.StandardResultsProcessors",
-            "com.intellij.database.datagrid.mutating.ColumnQueryData",
-            "com.intellij.database.datagrid.JdbcColumnDescriptor",
         )
 
         val report = buildString {
@@ -35,32 +26,15 @@ class DatabaseToolsParameterizedExecutionApiProbeTest {
                 }
                 appendLine("modifiers=${Modifier.toString(clazz.modifiers)}")
                 appendLine("annotations=${clazz.annotations.joinToString { it.annotationClass.qualifiedName.orEmpty() }}")
-                clazz.constructors
+                clazz.declaredConstructors
                     .sortedBy { it.toGenericString() }
-                    .forEach { appendLine("CTOR ${it.toGenericString()}") }
-                clazz.methods
-                    .asSequence()
-                    .filter { method ->
-                        val token = method.name.lowercase()
-                        token.contains("param") ||
-                            token.contains("query") ||
-                            token.contains("statement") ||
-                            token.contains("storage") ||
-                            token.contains("execute") ||
-                            token.contains("request") ||
-                            token.contains("connection") ||
-                            token.contains("session") ||
-                            token.contains("bind") ||
-                            token.contains("power") ||
-                            token.contains("raw") ||
-                            token.contains("offset") ||
-                            token.contains("data")
-                    }
+                    .forEach { appendLine("CTOR ${Modifier.toString(it.modifiers)} ${it.toGenericString()}") }
+                clazz.declaredMethods
                     .sortedBy { it.toGenericString() }
-                    .forEach { appendLine("METHOD ${it.toGenericString()}") }
+                    .forEach { appendLine("METHOD ${Modifier.toString(it.modifiers)} ${it.toGenericString()}") }
             }
         }
 
-        fail("Database Tools 2026.2 API probe\n$report")
+        fail("Database Tools 2026.2 focused API probe\n$report")
     }
 }
