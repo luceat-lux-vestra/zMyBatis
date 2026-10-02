@@ -5,9 +5,6 @@ import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
 import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailureKind
-import com.algorist.zMyBatis.core.materialization.TargetDialectIdentity
-import com.intellij.database.Dbms
-import com.intellij.openapi.progress.ProcessCanceledException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -15,7 +12,7 @@ import org.junit.Test
 
 class DatabaseToolsTargetResolverTest {
     @Test
-    fun uniqueDatasourceSchemaAndDialectResolveExactResources() {
+    fun uniqueDatasourceAndSchemaResolveExactResourcesWithoutDbmsClassification() {
         val descriptor = descriptor("ds-1", "public", "renamed-display")
         val ds = Resource("datasource-1")
         val schema = Resource("schema-public")
@@ -32,57 +29,17 @@ class DatabaseToolsTargetResolverTest {
                     SchemaCandidate("audit", Resource("schema-audit")),
                 )
             },
-            dialectIdentity = { TargetDialectIdentity("postgresql-maintained") },
         ) as ExactTargetSelectionResult.Success
 
         assertSame(ds, result.dataSource)
         assertSame(schema, result.schema)
         assertEquals(descriptor, result.resolvedTarget.descriptor)
         assertEquals(descriptor.targetId, result.resolvedTarget.targetId)
-        assertEquals(
-            TargetDialectIdentity("postgresql-maintained"),
-            result.resolvedTarget.dialectIdentity,
-        )
     }
 
     @Test
-    fun maintainedDatabaseToolsDbmsClassifierAdmitsExactPostgresOnly() {
-        assertEquals(
-            TargetDialectIdentity("postgresql"),
-            classifyDatabaseToolsDbms(Dbms.POSTGRES),
-        )
-        assertEquals(null, classifyDatabaseToolsDbms(Dbms.GREENPLUM))
-        assertEquals(null, classifyDatabaseToolsDbms(Dbms.MYSQL))
-        assertEquals(null, classifyDatabaseToolsDbms(Dbms.UNKNOWN))
-        assertEquals(null, classifyDatabaseToolsDbms(null))
-    }
-
-    @Test
-    fun databaseToolsDbmsLookupPreservesProcessCancellation() {
-        val cancellation = ProcessCanceledException()
-
-        try {
-            resolveDatabaseToolsDialectIdentity { throw cancellation }
-            throw AssertionError("ProcessCanceledException must escape DBMS classification")
-        } catch (ex: ProcessCanceledException) {
-            assertSame(cancellation, ex)
-        }
-    }
-
-    @Test
-    fun ordinaryDatabaseToolsDbmsLookupFailureFailsClosed() {
-        val result = resolveDatabaseToolsDialectIdentity {
-            throw IllegalStateException("unavailable")
-        }
-
-        assertEquals(null, result)
-    }
-
-    @Test
-    fun missingDatasourceFailsWithoutConsultingSchemaOrDialect() {
+    fun missingDatasourceFailsBeforeSchemaLookup() {
         var schemaCalls = 0
-        var dialectCalls = 0
-
         val result = ExactTargetSelectionPolicy.resolve(
             descriptor = descriptor("wanted", "public"),
             dataSources = listOf(
@@ -93,21 +50,15 @@ class DatabaseToolsTargetResolverTest {
                 schemaCalls++
                 emptyList<SchemaCandidate<Resource>>()
             },
-            dialectIdentity = {
-                dialectCalls++
-                TargetDialectIdentity("should-not-run")
-            },
         )
 
         assertFailure(result, TargetResolutionFailureKind.DATA_SOURCE_MISSING)
         assertEquals(0, schemaCalls)
-        assertEquals(0, dialectCalls)
     }
 
     @Test
     fun duplicateStableDatasourceIdFailsAmbiguousWithoutNameFallback() {
         var schemaCalls = 0
-
         val result = ExactTargetSelectionPolicy.resolve(
             descriptor = descriptor("ds-1", "public", "display-name-is-not-authority"),
             dataSources = listOf(
@@ -118,7 +69,6 @@ class DatabaseToolsTargetResolverTest {
                 schemaCalls++
                 listOf(SchemaCandidate("public", Resource("schema")))
             },
-            dialectIdentity = { TargetDialectIdentity("should-not-run") },
         )
 
         assertFailure(result, TargetResolutionFailureKind.DATA_SOURCE_AMBIGUOUS)
@@ -126,27 +76,18 @@ class DatabaseToolsTargetResolverTest {
     }
 
     @Test
-    fun missingSchemaFailsBeforeDialectResolution() {
-        var dialectCalls = 0
-
+    fun missingSchemaFailsClosed() {
         val result = ExactTargetSelectionPolicy.resolve(
             descriptor = descriptor("ds-1", "public"),
             dataSources = listOf(DataSourceCandidate("ds-1", Resource("ds"))),
             schemas = { listOf(SchemaCandidate("other", Resource("other-schema"))) },
-            dialectIdentity = {
-                dialectCalls++
-                TargetDialectIdentity("should-not-run")
-            },
         )
 
         assertFailure(result, TargetResolutionFailureKind.SCHEMA_MISSING)
-        assertEquals(0, dialectCalls)
     }
 
     @Test
     fun duplicateExactSchemaFailsAmbiguous() {
-        var dialectCalls = 0
-
         val result = ExactTargetSelectionPolicy.resolve(
             descriptor = descriptor("ds-1", "public"),
             dataSources = listOf(DataSourceCandidate("ds-1", Resource("ds"))),
@@ -156,14 +97,9 @@ class DatabaseToolsTargetResolverTest {
                     SchemaCandidate("public", Resource("schema-2")),
                 )
             },
-            dialectIdentity = {
-                dialectCalls++
-                TargetDialectIdentity("should-not-run")
-            },
         )
 
         assertFailure(result, TargetResolutionFailureKind.SCHEMA_AMBIGUOUS)
-        assertEquals(0, dialectCalls)
     }
 
     @Test
@@ -172,24 +108,9 @@ class DatabaseToolsTargetResolverTest {
             descriptor = descriptor("ds-1", "Public"),
             dataSources = listOf(DataSourceCandidate("ds-1", Resource("ds"))),
             schemas = { listOf(SchemaCandidate("public", Resource("schema"))) },
-            dialectIdentity = { TargetDialectIdentity("should-not-run") },
         )
 
         assertFailure(result, TargetResolutionFailureKind.SCHEMA_MISSING)
-    }
-
-    @Test
-    fun unknownDialectFailsAfterExactTargetIsProven() {
-        val result = ExactTargetSelectionPolicy.resolve(
-            descriptor = descriptor("ds-1", "public"),
-            dataSources = listOf(DataSourceCandidate("ds-1", Resource("ds"))),
-            schemas = { listOf(SchemaCandidate("public", Resource("schema"))) },
-            dialectIdentity = { null },
-        )
-
-        val failure = (result as ExactTargetSelectionResult.Failed).failure
-        assertEquals(TargetResolutionFailureKind.DIALECT_UNKNOWN, failure.kind)
-        assertEquals("target-resolution-dialect-unknown", failure.code)
     }
 
     @Test
@@ -198,21 +119,16 @@ class DatabaseToolsTargetResolverTest {
         val schemas: (Resource) -> List<SchemaCandidate<Resource>> = {
             listOf(SchemaCandidate("public", Resource("schema")))
         }
-        val dialect: (Resource) -> TargetDialectIdentity? = {
-            TargetDialectIdentity("dialect")
-        }
 
         val before = ExactTargetSelectionPolicy.resolve(
             descriptor("ds-1", "public", "old-name"),
             dataSources,
             schemas,
-            dialect,
         ) as ExactTargetSelectionResult.Success
         val after = ExactTargetSelectionPolicy.resolve(
             descriptor("ds-1", "public", "new-name"),
             dataSources,
             schemas,
-            dialect,
         ) as ExactTargetSelectionResult.Success
 
         assertSame(before.dataSource, after.dataSource)
@@ -226,7 +142,6 @@ class DatabaseToolsTargetResolverTest {
             descriptor = descriptor("missing", "public"),
             dataSources = listOf(DataSourceCandidate("other", secretResource)),
             schemas = { emptyList<SchemaCandidate<Resource>>() },
-            dialectIdentity = { null },
         )
 
         val failure = (result as ExactTargetSelectionResult.Failed).failure
