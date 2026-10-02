@@ -234,7 +234,7 @@ Leap target rules:
 - action invocation captures IDE context and immediately converts it into adapter/application data; `AnActionEvent` never enters core.
 - editor/dialog/popup operations obey EDT requirements.
 - index/PSI source work obeys IntelliJ read-action requirements and emits immutable snapshots.
-- MyBatis preparation/materialization is background/cancellable.
+- MyBatis preparation, zero-binding materialization, and bound-execution handoff work are background/cancellable.
 - project/source/target validity is rechecked after asynchronous or modal boundaries and before execution.
 - cancellation before query invocation means no query invocation.
 - stale callbacks cannot reuse a prior artifact or target.
@@ -291,7 +291,7 @@ Current settings are not automatically product guarantees.
 - #61 — this product contract. Close after #101 architecture and this document are mutually consistent and merged.
 - #62 — source snapshots, dependency graph, canonical XML/Java statement identity.
 - #63 — input provenance/codecs/UI/retention.
-- #64 — isolated MyBatis preparation and materialization.
+- #64 — isolated MyBatis preparation, DB-neutral zero-binding materialization, and structured bound-execution handoff.
 - #65 — target/session descriptor and Database Tools execution resources.
 - #66 — thin IDE action, threading/cancellation/confirmation/user workflow.
 - #67 — diagnostics/privacy, host compatibility, performance/resources, migration cleanup, public-claim reconciliation.
