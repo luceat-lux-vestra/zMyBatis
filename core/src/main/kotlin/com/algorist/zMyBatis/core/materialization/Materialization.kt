@@ -12,7 +12,6 @@ import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.XmlStatementId
 import java.math.BigInteger
 import java.nio.charset.StandardCharsets
-import java.time.LocalDate
 import java.security.MessageDigest
 import java.util.HexFormat
 
