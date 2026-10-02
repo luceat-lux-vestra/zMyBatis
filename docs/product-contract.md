@@ -168,6 +168,8 @@ It carries enough information to prove:
 
 Database Tools currently executes SQL text. Therefore #64 owns a separate target/dialect-aware `ExecutionMaterializer` producing one immutable `MaterializedExecution`.
 
+The product scope is **not PostgreSQL-specific**. PostgreSQL may be the first independently proven dialect adapter, but it is not the top-level materialization contract or the DBMS support boundary. The maintained dispatcher is DB-agnostic and delegates non-zero binding materialization to explicit dialect adapters. Oracle, MySQL/MariaDB, SQL Server, and other supported Database Tools targets require their own proven adapter or a future proven bound-parameter execution path; lack of one adapter must not be misrepresented as the product supporting only PostgreSQL.
+
 Materialization rules:
 
 - exact mapping cardinality;
