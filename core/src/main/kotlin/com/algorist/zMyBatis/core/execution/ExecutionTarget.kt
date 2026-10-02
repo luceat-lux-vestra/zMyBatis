@@ -1,6 +1,5 @@
 package com.algorist.zMyBatis.core.execution
 
-import com.algorist.zMyBatis.core.materialization.TargetDialectIdentity
 import com.algorist.zMyBatis.core.source.SourceFileId
 
 @JvmInline
@@ -53,12 +52,11 @@ data class SourceTargetAssociation(
 /**
  * Exact live target authority produced only after re-resolving a persisted descriptor.
  *
- * Dialect identity belongs here rather than in persisted target identity so materialization always
- * receives dialect semantics derived from the currently resolved target.
+ * DBMS family is deliberately not part of target validity. The selected IntelliJ Database Tools
+ * datasource owns driver/connection/vendor execution semantics.
  */
 data class ResolvedExecutionTarget(
     val descriptor: ExecutionTargetDescriptor,
-    val dialectIdentity: TargetDialectIdentity,
 ) {
     val targetId: ExecutionTargetId
         get() = descriptor.targetId
@@ -70,7 +68,6 @@ enum class TargetResolutionFailureKind {
     SCHEMA_MISSING,
     SCHEMA_AMBIGUOUS,
     DEFAULT_SCHEMA_UNSUPPORTED,
-    DIALECT_UNKNOWN,
     TARGET_STALE,
 }
 
