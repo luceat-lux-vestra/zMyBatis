@@ -252,6 +252,145 @@ class MaterializationTest {
     }
 
     @Test
+    fun postgresqlLocalDateBindingsMaterializeAsTypedDateCasts() {
+        val execution = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?, ?",
+                    bindings = listOf(
+                        localDateBinding(0, LocalDate.of(2026, 10, 2)),
+                        localDateBinding(1, LocalDate.of(2000, 2, 29)),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+
+        assertEquals(
+            "select CAST('2026-10-02' AS DATE), CAST('2000-02-29' AS DATE)",
+            execution.executionSql,
+        )
+    }
+
+    @Test
+    fun explicitDateJdbcTypeIsAdmitted() {
+        val execution = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?",
+                    bindings = listOf(
+                        localDateBinding(0, LocalDate.of(2026, 10, 2), jdbcType = "DATE"),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+
+        assertEquals("select CAST('2026-10-02' AS DATE)", execution.executionSql)
+    }
+
+    @Test
+    fun postgresqlLocalDateMetadataAndValueFailuresFailClosed() {
+        val date = LocalDate.of(2026, 10, 2)
+        val metadataCases = listOf(
+            localDateBinding(0, date, mappingJavaType = "java.time.LocalDateTime") to
+                "materialization-postgresql-date-mapping-java-type-unsupported",
+            localDateBinding(
+                0,
+                date,
+                typeHandler = "org.apache.ibatis.type.LocalDateTimeTypeHandler",
+            ) to "materialization-postgresql-date-type-handler-unsupported",
+            localDateBinding(0, date, jdbcType = "TIMESTAMP") to
+                "materialization-postgresql-date-jdbc-type-unsupported",
+            localDateBinding(0, date, parameterMode = "OUT") to
+                "materialization-postgresql-date-parameter-mode-unsupported",
+            localDateBinding(0, date, numericScale = 0) to
+                "materialization-postgresql-date-numeric-scale-unsupported",
+        )
+
+        metadataCases.forEach { (binding, expectedCode) ->
+            assertFailure(
+                MaintainedExecutionMaterializer.materialize(
+                    prepared(sql = "select ?", bindings = listOf(binding)),
+                    TargetDialectIdentity("postgresql"),
+                ),
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                expectedCode,
+            )
+        }
+
+        assertFailure(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?",
+                    bindings = listOf(
+                        binding(
+                            index = 0,
+                            value = InputValue.Text("2026-10-02"),
+                            declaredJavaType = "java.time.LocalDate",
+                            mappingJavaType = "java.time.LocalDate",
+                            typeHandler = "org.apache.ibatis.type.LocalDateTypeHandler",
+                        ),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+            MaterializationFailureKind.BINDING_VALUE_UNSUPPORTED,
+            "materialization-postgresql-date-value-unsupported",
+        )
+
+        listOf(
+            LocalDate.of(0, 1, 1),
+            LocalDate.of(10_000, 1, 1),
+        ).forEach { value ->
+            assertFailure(
+                MaintainedExecutionMaterializer.materialize(
+                    prepared(sql = "select ?", bindings = listOf(localDateBinding(0, value))),
+                    TargetDialectIdentity("postgresql"),
+                ),
+                MaterializationFailureKind.BINDING_VALUE_OUT_OF_RANGE,
+                "materialization-postgresql-date-value-out-of-range",
+            )
+        }
+    }
+
+    @Test
+    fun mixedBigintLocalDateAndBooleanBindingsPreserveOrderAndFingerprintIdentity() {
+        val first = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?, ?, ?",
+                    bindings = listOf(
+                        longBinding(0, BigInteger.valueOf(41)),
+                        localDateBinding(1, LocalDate.of(2026, 10, 2)),
+                        booleanBinding(2, true),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+        val second = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?, ?, ?",
+                    bindings = listOf(
+                        longBinding(0, BigInteger.valueOf(41)),
+                        localDateBinding(1, LocalDate.of(2026, 10, 3)),
+                        booleanBinding(2, true),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+
+        assertEquals(
+            "select CAST(41 AS BIGINT), CAST('2026-10-02' AS DATE), CAST(TRUE AS BOOLEAN)",
+            first.executionSql,
+        )
+        assertNotEquals(first.fingerprint, second.fingerprint)
+    }
+
+    @Test
     fun postgresqlBooleanBindingsMaterializeAsTypedBooleanCasts() {
         val execution = success(
             MaintainedExecutionMaterializer.materialize(
@@ -806,6 +945,45 @@ class MaterializationTest {
                 bindings = listOf(
                     longBinding(0, BigInteger.ONE),
                     integerBinding(1, BigInteger.valueOf(2)),
+                ),
+                engineVersion = "3.5.20",
+            ),
+            TargetDialectIdentity("postgresql"),
+        )
+
+        assertFailure(
+            result,
+            MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
+            "materialization-postgresql-preparation-metadata-unsupported",
+        )
+    }
+
+    @Test
+    fun localDatePreparationAuthorityFailsWithDateSpecificCode() {
+        val result = MaintainedExecutionMaterializer.materialize(
+            prepared(
+                sql = "select ?",
+                bindings = listOf(localDateBinding(0, LocalDate.of(2026, 10, 2))),
+                engineVersion = "3.5.20",
+            ),
+            TargetDialectIdentity("postgresql"),
+        )
+
+        assertFailure(
+            result,
+            MaterializationFailureKind.PREPARATION_METADATA_UNSUPPORTED,
+            "materialization-postgresql-date-preparation-metadata-unsupported",
+        )
+    }
+
+    @Test
+    fun mixedBigintAndLocalDatePreparationAuthorityFailsWithMixedFamilyCode() {
+        val result = MaintainedExecutionMaterializer.materialize(
+            prepared(
+                sql = "select ?, ?",
+                bindings = listOf(
+                    longBinding(0, BigInteger.ONE),
+                    localDateBinding(1, LocalDate.of(2026, 10, 2)),
                 ),
                 engineVersion = "3.5.20",
             ),
@@ -1814,6 +1992,27 @@ class MaterializationTest {
         value = InputValue.DecimalValue(value),
         origin = origin,
         declaredJavaType = "java.math.BigDecimal",
+        mappingJavaType = mappingJavaType,
+        jdbcType = jdbcType,
+        typeHandler = typeHandler,
+        parameterMode = parameterMode,
+        numericScale = numericScale,
+    )
+
+    private fun localDateBinding(
+        index: Int,
+        value: LocalDate,
+        mappingJavaType: String? = "java.time.LocalDate",
+        jdbcType: String? = null,
+        typeHandler: String = "org.apache.ibatis.type.LocalDateTypeHandler",
+        parameterMode: String = "IN",
+        numericScale: Int? = null,
+        origin: PreparedBindingOrigin = callerOrigin(index),
+    ): PreparedBinding = binding(
+        index = index,
+        value = InputValue.DateValue(value),
+        origin = origin,
+        declaredJavaType = "java.time.LocalDate",
         mappingJavaType = mappingJavaType,
         jdbcType = jdbcType,
         typeHandler = typeHandler,

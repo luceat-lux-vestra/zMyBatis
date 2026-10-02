@@ -199,6 +199,11 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
     private const val BOOLEAN_JAVA_TYPE = "java.lang.Boolean"
     private const val BOOLEAN_TYPE_HANDLER = "org.apache.ibatis.type.BooleanTypeHandler"
     private const val BOOLEAN_JDBC_TYPE = "BOOLEAN"
+    private const val LOCAL_DATE_JAVA_TYPE = "java.time.LocalDate"
+    private const val LOCAL_DATE_TYPE_HANDLER = "org.apache.ibatis.type.LocalDateTypeHandler"
+    private const val DATE_JDBC_TYPE = "DATE"
+    private const val LOCAL_DATE_MIN_YEAR = 1
+    private const val LOCAL_DATE_MAX_YEAR = 9999
     private const val INPUT_MODE = "IN"
 
     override fun materialize(
@@ -273,7 +278,13 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
             binding.metadata.mappingJavaTypeIdentity == BIG_DECIMAL_JAVA_TYPE &&
                 binding.metadata.typeHandlerIdentity == BIG_DECIMAL_TYPE_HANDLER
         }
+        val localDateBindings = bindings.count { binding ->
+            binding.metadata.mappingJavaTypeIdentity == LOCAL_DATE_JAVA_TYPE &&
+                binding.metadata.typeHandlerIdentity == LOCAL_DATE_TYPE_HANDLER
+        }
         return when {
+            localDateBindings == bindings.size -> POSTGRESQL_DATE_PREPARATION_METADATA_REQUIRED
+            localDateBindings > 0 -> POSTGRESQL_PREPARATION_METADATA_REQUIRED
             decimalBindings == bindings.size -> POSTGRESQL_NUMERIC_PREPARATION_METADATA_REQUIRED
             decimalBindings > 0 -> POSTGRESQL_PREPARATION_METADATA_REQUIRED
             byteBindings == bindings.size -> POSTGRESQL_BYTE_PREPARATION_METADATA_REQUIRED
@@ -291,6 +302,9 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
     private fun renderPostgresqlBinding(binding: PreparedBinding): BindingRender {
         val metadata = binding.metadata
         return when {
+            metadata.mappingJavaTypeIdentity == LOCAL_DATE_JAVA_TYPE ||
+                metadata.typeHandlerIdentity == LOCAL_DATE_TYPE_HANDLER ->
+                renderPostgresqlLocalDate(binding)
             metadata.mappingJavaTypeIdentity == BIG_DECIMAL_JAVA_TYPE ||
                 metadata.typeHandlerIdentity == BIG_DECIMAL_TYPE_HANDLER ->
                 renderPostgresqlNumeric(binding)
@@ -521,6 +535,54 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
         return BindingRender.Ready("CAST(${value.value.toPlainString()} AS NUMERIC)")
     }
 
+    private fun renderPostgresqlLocalDate(binding: PreparedBinding): BindingRender {
+        val metadata = binding.metadata
+        if (metadata.mappingJavaTypeIdentity != LOCAL_DATE_JAVA_TYPE) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_DATE_MAPPING_JAVA_TYPE_REQUIRED,
+            )
+        }
+        if (metadata.typeHandlerIdentity != LOCAL_DATE_TYPE_HANDLER) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_DATE_TYPE_HANDLER_REQUIRED,
+            )
+        }
+        if (metadata.jdbcTypeIdentity != null && metadata.jdbcTypeIdentity != DATE_JDBC_TYPE) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_DATE_JDBC_TYPE_REQUIRED,
+            )
+        }
+        if (metadata.parameterMode != INPUT_MODE) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_DATE_INPUT_MODE_REQUIRED,
+            )
+        }
+        if (metadata.numericScale != null) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                POSTGRESQL_DATE_NUMERIC_SCALE_UNSUPPORTED,
+            )
+        }
+
+        val value = binding.value as? InputValue.DateValue
+            ?: return renderFailure(
+                MaterializationFailureKind.BINDING_VALUE_UNSUPPORTED,
+                POSTGRESQL_DATE_VALUE_REQUIRED,
+            )
+        if (value.value.year !in LOCAL_DATE_MIN_YEAR..LOCAL_DATE_MAX_YEAR) {
+            return renderFailure(
+                MaterializationFailureKind.BINDING_VALUE_OUT_OF_RANGE,
+                POSTGRESQL_DATE_VALUE_OUT_OF_RANGE,
+            )
+        }
+
+        return BindingRender.Ready("CAST('${value.value}' AS DATE)")
+    }
+
     private fun renderPostgresqlBoolean(binding: PreparedBinding): BindingRender {
         val metadata = binding.metadata
         if (metadata.mappingJavaTypeIdentity != BOOLEAN_JAVA_TYPE) {
@@ -612,6 +674,8 @@ private const val POSTGRESQL_BOOLEAN_PREPARATION_METADATA_REQUIRED =
     "materialization-postgresql-boolean-preparation-metadata-unsupported"
 private const val POSTGRESQL_NUMERIC_PREPARATION_METADATA_REQUIRED =
     "materialization-postgresql-numeric-preparation-metadata-unsupported"
+private const val POSTGRESQL_DATE_PREPARATION_METADATA_REQUIRED =
+    "materialization-postgresql-date-preparation-metadata-unsupported"
 private const val PLACEHOLDER_TOPOLOGY_REQUIRED = "materialization-placeholder-topology-unproven"
 private const val POSTGRESQL_LONG_MAPPING_JAVA_TYPE_REQUIRED =
     "materialization-postgresql-bigint-mapping-java-type-unsupported"
@@ -683,6 +747,20 @@ private const val POSTGRESQL_BOOLEAN_NUMERIC_SCALE_UNSUPPORTED =
     "materialization-postgresql-boolean-numeric-scale-unsupported"
 private const val POSTGRESQL_BOOLEAN_VALUE_REQUIRED =
     "materialization-postgresql-boolean-value-unsupported"
+private const val POSTGRESQL_DATE_MAPPING_JAVA_TYPE_REQUIRED =
+    "materialization-postgresql-date-mapping-java-type-unsupported"
+private const val POSTGRESQL_DATE_TYPE_HANDLER_REQUIRED =
+    "materialization-postgresql-date-type-handler-unsupported"
+private const val POSTGRESQL_DATE_JDBC_TYPE_REQUIRED =
+    "materialization-postgresql-date-jdbc-type-unsupported"
+private const val POSTGRESQL_DATE_INPUT_MODE_REQUIRED =
+    "materialization-postgresql-date-parameter-mode-unsupported"
+private const val POSTGRESQL_DATE_NUMERIC_SCALE_UNSUPPORTED =
+    "materialization-postgresql-date-numeric-scale-unsupported"
+private const val POSTGRESQL_DATE_VALUE_REQUIRED =
+    "materialization-postgresql-date-value-unsupported"
+private const val POSTGRESQL_DATE_VALUE_OUT_OF_RANGE =
+    "materialization-postgresql-date-value-out-of-range"
 private const val FINGERPRINT_VERSION = "zmybatis-materialized-execution-v1"
 
 private fun failed(kind: MaterializationFailureKind, code: String): MaterializationResult.Failed =
