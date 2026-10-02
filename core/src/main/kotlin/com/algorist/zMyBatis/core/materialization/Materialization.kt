@@ -170,10 +170,14 @@ object ZeroBindingExecutionMaterializer : ExecutionMaterializer {
  * registered dialect materializer; unsupported dialects fail closed instead of inheriting the
  * semantics of whichever dialect happened to be implemented first.
  */
+private interface DialectExecutionMaterializer : ExecutionMaterializer {
+    val dialectIdentity: TargetDialectIdentity
+}
+
 object MaintainedExecutionMaterializer : ExecutionMaterializer {
-    private val dialectMaterializers: Map<String, ExecutionMaterializer> = mapOf(
-        "postgresql" to PostgresqlExecutionMaterializer,
-    )
+    private val dialectMaterializers: Map<String, DialectExecutionMaterializer> =
+        listOf(PostgresqlExecutionMaterializer)
+            .associateBy { it.dialectIdentity.value }
 
     override fun materialize(
         prepared: PreparedExecution,
@@ -208,8 +212,8 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
  * Placeholder substitution is admitted only when the SQL topology is trivially provable. This
  * intentionally rejects quoted/comment/dollar syntax instead of attempting a partial SQL lexer.
  */
-private object PostgresqlExecutionMaterializer : ExecutionMaterializer {
-    private const val POSTGRESQL = "postgresql"
+private object PostgresqlExecutionMaterializer : DialectExecutionMaterializer {
+    override val dialectIdentity = TargetDialectIdentity("postgresql")
     private const val MYBATIS_ENGINE_ID = "org.mybatis:mybatis"
     private const val MYBATIS_ENGINE_VERSION = "3.5.19"
     private const val XML_LANGUAGE_DRIVER = "org.apache.ibatis.scripting.xmltags.XMLLanguageDriver"
@@ -244,7 +248,7 @@ private object PostgresqlExecutionMaterializer : ExecutionMaterializer {
         prepared: PreparedExecution,
         targetDialectIdentity: TargetDialectIdentity,
     ): MaterializationResult {
-        check(targetDialectIdentity.value == POSTGRESQL) {
+        check(targetDialectIdentity == dialectIdentity) {
             "PostgreSQL materializer must only be reached through PostgreSQL dialect dispatch"
         }
         if (
