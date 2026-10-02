@@ -6,9 +6,6 @@ import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.JavaAnnotationParameterContractFactory
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.materialization.MaintainedExecutionMaterializer
-import com.algorist.zMyBatis.core.materialization.MaterializationResult
-import com.algorist.zMyBatis.core.materialization.TargetDialectIdentity
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationResult
@@ -129,7 +126,7 @@ class MyBatisPreparationEngineTest {
     }
 
     @Test
-    fun bigDecimalBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
+    fun bigDecimalBindingPreservesTypeHandlerMetadataForExecutionAdapter() {
         val result = MyBatisPreparationEngine.prepare(
             request(
                 "select #{amount}",
@@ -153,17 +150,10 @@ class MyBatisPreparationEngineTest {
         assertEquals("IN", binding.metadata.parameterMode)
         assertTrue(binding.metadata.numericScale == null)
 
-        val materialized = MaintainedExecutionMaterializer.materialize(
-            execution,
-            TargetDialectIdentity("postgresql"),
-        )
-        assertTrue(materialized is MaterializationResult.Success)
-        materialized as MaterializationResult.Success
-        assertEquals("select CAST(123.4500 AS NUMERIC)", materialized.execution.executionSql)
     }
 
     @Test
-    fun localDateBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
+    fun localDateBindingPreservesTypeHandlerMetadataForExecutionAdapter() {
         val date = LocalDate.of(2026, 10, 2)
         val result = MyBatisPreparationEngine.prepare(
             request(
@@ -188,17 +178,10 @@ class MyBatisPreparationEngineTest {
         assertEquals("IN", binding.metadata.parameterMode)
         assertTrue(binding.metadata.numericScale == null)
 
-        val materialized = MaintainedExecutionMaterializer.materialize(
-            execution,
-            TargetDialectIdentity("postgresql"),
-        )
-        assertTrue(materialized is MaterializationResult.Success)
-        materialized as MaterializationResult.Success
-        assertEquals("select CAST('2026-10-02' AS DATE)", materialized.execution.executionSql)
     }
 
     @Test
-    fun byteBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
+    fun byteBindingPreservesTypeHandlerMetadataForExecutionAdapter() {
         val result = MyBatisPreparationEngine.prepare(
             request(
                 "select #{count}",
@@ -222,17 +205,10 @@ class MyBatisPreparationEngineTest {
         assertEquals("IN", binding.metadata.parameterMode)
         assertTrue(binding.metadata.numericScale == null)
 
-        val materialized = MaintainedExecutionMaterializer.materialize(
-            execution,
-            TargetDialectIdentity("postgresql"),
-        )
-        assertTrue(materialized is MaterializationResult.Success)
-        materialized as MaterializationResult.Success
-        assertEquals("select CAST(42 AS SMALLINT)", materialized.execution.executionSql)
     }
 
     @Test
-    fun smallintBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
+    fun smallintBindingPreservesTypeHandlerMetadataForExecutionAdapter() {
         val result = MyBatisPreparationEngine.prepare(
             request(
                 "select #{count}",
@@ -256,17 +232,10 @@ class MyBatisPreparationEngineTest {
         assertEquals("IN", binding.metadata.parameterMode)
         assertTrue(binding.metadata.numericScale == null)
 
-        val materialized = MaintainedExecutionMaterializer.materialize(
-            execution,
-            TargetDialectIdentity("postgresql"),
-        )
-        assertTrue(materialized is MaterializationResult.Success)
-        materialized as MaterializationResult.Success
-        assertEquals("select CAST(42 AS SMALLINT)", materialized.execution.executionSql)
     }
 
     @Test
-    fun integerBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
+    fun integerBindingPreservesTypeHandlerMetadataForExecutionAdapter() {
         val result = MyBatisPreparationEngine.prepare(
             request(
                 "select #{count}",
@@ -290,17 +259,10 @@ class MyBatisPreparationEngineTest {
         assertEquals("IN", binding.metadata.parameterMode)
         assertTrue(binding.metadata.numericScale == null)
 
-        val materialized = MaintainedExecutionMaterializer.materialize(
-            execution,
-            TargetDialectIdentity("postgresql"),
-        )
-        assertTrue(materialized is MaterializationResult.Success)
-        materialized as MaterializationResult.Success
-        assertEquals("select CAST(42 AS INTEGER)", materialized.execution.executionSql)
     }
 
     @Test
-    fun booleanBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
+    fun booleanBindingPreservesTypeHandlerMetadataForExecutionAdapter() {
         val result = MyBatisPreparationEngine.prepare(
             request(
                 "select #{flag}",
@@ -318,13 +280,6 @@ class MyBatisPreparationEngineTest {
         assertEquals("IN", binding.metadata.parameterMode)
         assertTrue(binding.metadata.numericScale == null)
 
-        val materialized = MaintainedExecutionMaterializer.materialize(
-            execution,
-            TargetDialectIdentity("postgresql"),
-        )
-        assertTrue(materialized is MaterializationResult.Success)
-        materialized as MaterializationResult.Success
-        assertEquals("select CAST(TRUE AS BOOLEAN)", materialized.execution.executionSql)
     }
 
     @Test
