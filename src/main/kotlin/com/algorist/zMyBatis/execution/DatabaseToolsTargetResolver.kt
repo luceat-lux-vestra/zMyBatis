@@ -4,8 +4,6 @@ import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
 import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailure
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailureKind
-import com.algorist.zMyBatis.core.materialization.TargetDialectIdentity
-import com.intellij.database.Dbms
 import com.intellij.database.model.DasNamespace
 import com.intellij.database.psi.DbDataSource
 import com.intellij.database.psi.DbPsiFacade
@@ -41,7 +39,6 @@ internal object ExactTargetSelectionPolicy {
         descriptor: ExecutionTargetDescriptor,
         dataSources: List<DataSourceCandidate<D>>,
         schemas: (D) -> List<SchemaCandidate<S>>,
-        dialectIdentity: (D) -> TargetDialectIdentity?,
     ): ExactTargetSelectionResult<D, S> {
         val targetDataSourceId = descriptor.targetId.dataSourceId.value
         val matchingDataSources = dataSources.filter { it.stableId == targetDataSourceId }
@@ -72,17 +69,8 @@ internal object ExactTargetSelectionPolicy {
             )
         }
 
-        val dialect = dialectIdentity(dataSource)
-            ?: return failed(
-                TargetResolutionFailureKind.DIALECT_UNKNOWN,
-                "target-resolution-dialect-unknown",
-            )
-
         return ExactTargetSelectionResult.Success(
-            resolvedTarget = ResolvedExecutionTarget(
-                descriptor = descriptor,
-                dialectIdentity = dialect,
-            ),
+            resolvedTarget = ResolvedExecutionTarget(descriptor = descriptor),
             dataSource = dataSource,
             schema = schema,
         )
@@ -93,40 +81,6 @@ internal object ExactTargetSelectionPolicy {
         code: String,
     ): ExactTargetSelectionResult.Failed =
         ExactTargetSelectionResult.Failed(TargetResolutionFailure(kind, code))
-}
-
-internal fun interface DatabaseToolsDialectIdentityProvider {
-    fun resolve(dataSource: DbDataSource): TargetDialectIdentity?
-}
-
-private val POSTGRESQL_DIALECT_IDENTITY = TargetDialectIdentity("postgresql")
-
-internal fun classifyDatabaseToolsDbms(dbms: Dbms?): TargetDialectIdentity? = when (dbms) {
-    Dbms.POSTGRES -> POSTGRESQL_DIALECT_IDENTITY
-    else -> null
-}
-
-internal fun resolveDatabaseToolsDialectIdentity(
-    dbmsLookup: () -> Dbms?,
-): TargetDialectIdentity? = try {
-    classifyDatabaseToolsDbms(dbmsLookup())
-} catch (ex: ProcessCanceledException) {
-    throw ex
-} catch (_: Exception) {
-    null
-}
-
-/**
- * Maintained Database Tools DBMS allowlist.
- *
- * #169 proves [DbDataSource.getDbms] on the exact 2026.2 target. Only the exact first-party
- * PostgreSQL DBMS identity is admitted here. PostgreSQL-like derivatives, other first-party
- * DBMS identities, custom DBMS implementations, and UNKNOWN remain fail-closed until each family
- * has its own materialization fidelity evidence.
- */
-internal object MaintainedDatabaseToolsDialectIdentityProvider : DatabaseToolsDialectIdentityProvider {
-    override fun resolve(dataSource: DbDataSource): TargetDialectIdentity? =
-        resolveDatabaseToolsDialectIdentity { dataSource.dbms }
 }
 
 internal sealed interface DatabaseToolsTargetResolution {
@@ -144,15 +98,12 @@ internal sealed interface DatabaseToolsTargetResolution {
 /**
  * Resolves persisted target identity to exact live Database Tools resources.
  *
- * This adapter performs no console creation, document mutation, materialization, or query
- * invocation. Dialect identity is admitted only through the maintained fail-closed Database Tools
- * DBMS classifier.
+ * Datasource DBMS family is deliberately not an admission gate. IntelliJ Database Tools owns the
+ * configured driver, connection/session, and vendor execution semantics.
  */
 @Suppress("unused") // #167 establishes the adapter; orchestration wiring is a later #65 slice.
 internal class DatabaseToolsTargetResolver(
     private val project: Project,
-    private val dialectIdentityProvider: DatabaseToolsDialectIdentityProvider =
-        MaintainedDatabaseToolsDialectIdentityProvider,
 ) {
     fun resolve(descriptor: ExecutionTargetDescriptor): DatabaseToolsTargetResolution {
         val candidates = DbPsiFacade.getInstance(project).dataSources.map { dataSource ->
@@ -171,7 +122,6 @@ internal class DatabaseToolsTargetResolver(
                         .map { schema -> SchemaCandidate(schema.name, schema) }
                         .toList()
                 },
-                dialectIdentity = dialectIdentityProvider::resolve,
             )
         ) {
             is ExactTargetSelectionResult.Success -> DatabaseToolsTargetResolution.Success(

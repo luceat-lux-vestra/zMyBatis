@@ -1,6 +1,5 @@
 package com.algorist.zMyBatis.core.execution
 
-import com.algorist.zMyBatis.core.materialization.TargetDialectIdentity
 import com.algorist.zMyBatis.core.source.SourceFileId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -65,19 +64,15 @@ class ExecutionTargetTest {
     }
 
     @Test
-    fun resolvedTargetAddsDialectWithoutChangingPersistedIdentity() {
+    fun resolvedTargetPreservesExactPersistedIdentityWithoutDbmsGate() {
         val descriptor = ExecutionTargetDescriptor(
             targetId("550e8400-e29b-41d4-a716-446655440000", "public"),
             "orders",
         )
-        val resolved = ResolvedExecutionTarget(
-            descriptor = descriptor,
-            dialectIdentity = TargetDialectIdentity("postgresql-17"),
-        )
+        val resolved = ResolvedExecutionTarget(descriptor = descriptor)
 
         assertEquals(descriptor, resolved.descriptor)
         assertEquals(descriptor.targetId, resolved.targetId)
-        assertEquals(TargetDialectIdentity("postgresql-17"), resolved.dialectIdentity)
     }
 
     @Test
@@ -89,7 +84,6 @@ class ExecutionTargetTest {
                 TargetResolutionFailureKind.SCHEMA_MISSING,
                 TargetResolutionFailureKind.SCHEMA_AMBIGUOUS,
                 TargetResolutionFailureKind.DEFAULT_SCHEMA_UNSUPPORTED,
-                TargetResolutionFailureKind.DIALECT_UNKNOWN,
                 TargetResolutionFailureKind.TARGET_STALE,
             ),
             TargetResolutionFailureKind.entries.toSet(),

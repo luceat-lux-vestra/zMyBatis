@@ -16,12 +16,12 @@ The Leap exists because the current implementation mixes too many correctness do
 
 The target is driven by these invariants:
 
-1. **Correctness over plausibility.** Unknown source, input, evaluation, materialization, or target state blocks execution.
+1. **Correctness over plausibility.** Unknown source, input, evaluation, execution-preparation, or target state blocks execution.
 2. **MyBatis is the semantic authority** for behavior claimed as MyBatis-compatible; zMyBatis must not maintain a parallel approximate dynamic-SQL interpreter.
 3. **Current editor content is authoritative.** Active unsaved edits cannot be silently replaced by stale committed PSI or disk content.
 4. **`#{}` and `${}` are different types of input.** This distinction survives every layer.
 5. **Preparation and execution are separate capabilities.** Preparing, formatting, previewing, restoring state, or cancelling cannot execute SQL.
-6. **Preview and execution cannot drift.** The immutable materialized artifact approved for execution is exactly what the Database Tools adapter executes.
+6. **Preview and execution cannot drift.** The immutable prepared/materialized execution authority approved by the user is exactly what the Database Tools adapter consumes; presentation rendering never becomes a different executable statement.
 7. **Wrong target is worse than refusal.** Datasource/schema ambiguity fails closed.
 8. **Platform objects stay at the edge.** `AnActionEvent`, `Editor`, PSI, `Document`, `JdbcConsole`, database PSI objects, dialogs, and disposables do not leak into core contracts.
 9. **Sensitive data is not diagnostics.** Raw inputs, remembered values, credentials, and rendered SQL are not normal log payloads.
@@ -173,7 +173,7 @@ StatementSourceGraph(
 )
 ```
 
-The graph represents the complete source required for supported preparation. XML fragment/include edges are explicit. Missing, ambiguous, cyclic, unsupported `databaseId`, custom language-driver, or runtime-only dependencies become typed source failures.
+The graph represents the complete source required for supported preparation. XML fragment/include edges are explicit. Missing, ambiguous, and cyclic dependencies become typed source failures. `databaseId` variants are preserved as target-dependent MyBatis semantics rather than classified as generic unsupported source; unresolved effective database-id authority blocks only the statement whose correctness depends on it. Custom language-driver and runtime-only dependencies remain separately unsupported unless promoted by product policy.
 
 ### Parameter contract
 
@@ -203,28 +203,22 @@ PreparedExecution(
 
 `PreparedExecution` is not directly executable by the IDE adapter. It is the immutable result of source+input+MyBatis preparation.
 
-Each ordered binding records enough metadata to decide whether the execution adapter can materialize it safely, including property provenance and relevant Java/JDBC/type-handler identity where available.
+Each ordered binding records enough metadata to let the execution adapter preserve and supply it safely without guessing, including property provenance and relevant Java/JDBC/type-handler identity where available.
 
-### Materialized execution
+### Execution artifact boundary
 
-```text
-MaterializedExecution(
-  preparedIdentity,
-  targetDialectIdentity,
-  executionSql,
-  safetyFlags,
-  fingerprint
-)
-```
+`PreparedExecution` remains authoritative for non-zero bindings until the Database Tools execution adapter has a proven parameterized path. The execution boundary must preserve the exact SQL-with-placeholders plus ordered values; it must not rewrite those values into a vendor-specific SQL string merely because the selected datasource is PostgreSQL, Oracle, MySQL, or another DBMS.
 
-This is the immutable artifact supplied to preview/confirmation/copy/execution. A formatter may derive `displaySql`, but `displaySql` is never substituted back into `executionSql`.
+For zero-binding statements only, the existing immutable `MaterializedExecution` text artifact remains valid because no literalization occurs. A future display/copy projection may render values for humans, but that projection is not execution authority.
 
 ### Execution target
 
 ```text
 ExecutionTargetId(projectScope, stableDataSourceId, explicitSchemaOrSearchPath)
-ExecutionTargetDescriptor(id, diagnosticDisplayName, dialectHint, version)
+ExecutionTargetDescriptor(id, diagnosticDisplayName, version)
 ```
+
+DBMS family is not part of target validity. The datasource selected in Database Tools already owns the driver, connection/session, vendor execution semantics, and native result handling.
 
 No `JdbcConsole`, datasource PSI object, schema PSI object, editor, or `Document` is persisted in this model.
 
@@ -260,7 +254,7 @@ The source adapter discovers the relevant mapper documents/dependencies and supp
 
 Cross-namespace dependencies are loaded into the same isolated configuration in deterministic order. Missing/ambiguous/cyclic resolution is surfaced as typed failure; zMyBatis never substitutes truncated statement text.
 
-Leap v1 rejects source whose correctness depends on unsupported `databaseId`, custom language-driver, provider, or runtime-only extension behavior.
+Leap v1 preserves standard MyBatis `databaseId` variants and `_databaseId` semantics. When correctness depends on them, the selected Database Tools target must provide a proven effective database id before final variant selection/preparation. Custom `DatabaseIdProvider` mappings that cannot be reconstructed from available project/configuration evidence fail narrowly for that dependent statement. Custom language-driver, provider, and runtime-only extension behavior remain separate unsupported capabilities.
 
 ### Java direct annotations
 
@@ -322,23 +316,22 @@ It never returns diagnostic comments as SQL.
 
 `BoundSql.sql`, ordered mappings, additional parameters, and relevant binding metadata are captured before leaving the engine. Raw `${}` provenance remains explicit from the source/input contract even though MyBatis substitution affects the resulting SQL text.
 
-## 8. Materialization boundary
+## 8. Execution boundary
 
-The current Database Tools adapter consumes SQL text. That fact must not leak backward and force the core to claim JDBC/TypeHandler parity.
+The shipping Database Tools integration already executes against a datasource configured by the user. Leap must preserve that DBMS-neutral product boundary rather than introduce a zMyBatis vendor allowlist.
 
-`ExecutionMaterializer` converts a `PreparedExecution` for a resolved target/dialect into exactly one `MaterializedExecution`.
+For zero-binding statements, SQL text may cross the existing immutable materialization boundary byte-for-byte.
 
-Rules:
+For non-zero bindings, the next mandatory proof is a Database Tools parameterized-execution adapter that:
 
-- exact placeholder/mapping cardinality;
-- no `toString()` fallback for unknown objects;
-- no List/Map marker SQL;
-- no unsupported/custom TypeHandler guessing;
-- explicit supported type/dialect matrix;
-- correct escaping/encoding rules per supported materializer;
-- failure outside the matrix.
+- consumes the exact MyBatis-produced SQL placeholder order and prepared values;
+- uses the already-configured datasource/driver/session;
+- does not prompt for the same values again;
+- preserves native console/result/history behavior where the public/maintained platform API allows it;
+- preserves cancellation and target/source revalidation;
+- keeps raw `${}` provenance and confirmation policy separate from `#{...}` bound values.
 
-If a future credible Database Tools API permits parameterized execution while preserving native result/history behavior, a new materializer/adapter may use it without changing core preparation contracts.
+Until that proof succeeds, authoritative Leap code does not vendor-literalize bound values. PostgreSQL-specific literalization work remains non-authoritative historical evidence.
 
 ## 9. Target/session and Database Tools adapter
 
@@ -358,8 +351,8 @@ Execution behavior:
 3. re-check target validity after user/modality/background boundaries;
 4. acquire/reuse a console as an ephemeral resource according to policy;
 5. apply schema/search path and verify success;
-6. supply exactly `MaterializedExecution.executionSql` to the isolated Database Tools adapter;
-7. invoke the native console execution path;
+6. for zero-binding statements, supply the immutable SQL text directly; for bound statements, use the separately proven parameterized Database Tools execution path;
+7. invoke the native Database Tools execution path without introducing a zMyBatis DBMS allowlist;
 8. preserve/restore console document/editor state according to the adapter contract.
 
 `REUSE` and `NEW_EACH` are resource policies, not target identities. In-memory reuse may be removed entirely if it cannot be made simpler and safer than creating an execution console on demand.
@@ -375,10 +368,10 @@ ExecuteMapperStatement
   -> collect explicit input
   -> prepare with MyBatis
   -> resolve target
-  -> materialize for target/dialect
+  -> build the DB-neutral execution request from PreparedExecution
   -> revalidate source + target
   -> apply safety confirmation
-  -> execute materialized artifact
+  -> execute through the Database Tools adapter
   -> present outcome
 ```
 
@@ -414,7 +407,7 @@ Thread ownership is explicit per boundary.
 - produce immutable snapshots before returning to core;
 - cancellation invalidates the current invocation.
 
-### Preparation/materialization
+### Preparation / execution preparation
 
 - background/cancellable CPU work;
 - no Swing/IntelliJ project objects in `:core` or `:mybatis-engine` work items.
@@ -444,7 +437,6 @@ SourceFailure
   MissingDependency
   AmbiguousDependency
   DependencyCycle
-  UnsupportedDatabaseId
   UnsupportedLanguageDriver
   UnsupportedProvider
 
@@ -459,15 +451,13 @@ PreparationFailure
   MyBatisParseFailure
   OgnlFailure
   BindingResolutionFailure
+  DatabaseIdAuthorityUnavailable
   UnsupportedSemantic
   PreparationInvariantFailure
 
 MaterializationFailure
-  UnsupportedDialect
-  UnsupportedType
-  UnsupportedTypeHandler
-  PlaceholderCardinalityMismatch
-  EncodingOrEscapingFailure
+  BoundExecutionRequired
+  RawInterpolationPolicyRequired
 
 TargetFailure
   MissingDatasource
@@ -523,12 +513,15 @@ Implementation is incremental for reviewability, but the target is a replacement
 - keep remembered input off until the new identity/privacy model is complete;
 - delete lexical extractor authority when no production caller depends on it.
 
-### Phase 3 — MyBatis engine and materialization
+### Phase 3 — MyBatis engine and execution preparation
 
 - introduce isolated preparation and typed failures;
-- introduce target-aware materializer and fidelity matrix;
+- preserve SQL-with-placeholders plus ordered bindings as the authoritative non-zero-binding result;
+- feed proven target database-id authority into isolated MyBatis configuration where standard `databaseId` / `_databaseId` semantics require it;
+- keep only the DB-neutral zero-binding immutable SQL-text materialization bridge;
+- complete #251's Database Tools parameterized-execution proof before bound-statement cutover;
 - build negative/hostile tests before enabling execution;
-- delete current `MyBatisEvaluator` once the new path is wired.
+- delete current `MyBatisEvaluator` only once the DB-neutral bound execution path is wired.
 
 ### Phase 4 — target/session adapter
 
@@ -560,7 +553,7 @@ Temporary bridges must be named as migration-only and carry an owning issue + de
 - parameter contract/provenance;
 - safety policy;
 - typed failure transitions;
-- materialized-artifact identity rules independent of IDE.
+- zero-binding materialized-artifact identity plus structured bound-execution refusal/handoff rules independent of IDE.
 
 `:mybatis-engine` tests cover:
 
@@ -604,7 +597,7 @@ Every PR remains exact-HEAD proof-obligation gated. Any HEAD move invalidates ap
 - #61 — target product/capability/safety decisions; closes after #101 consistency, not after all implementation.
 - #62 — source authority, dependency graph, canonical statement/method identity.
 - #63 — input provenance, codecs, UI contract, remembered-input policy.
-- #64 — isolated MyBatis preparation, `PreparedExecution`, target-aware materialization.
+- #64 — isolated MyBatis preparation, `PreparedExecution`, DB-neutral zero-binding text bridge, and bound-execution handoff.
 - #65 — stable target/session descriptors and Database Tools execution resources.
 - #66 — thin action, threading, cancellation, confirmation, UX orchestration.
 - #67 — diagnostics/privacy, compatibility, performance/resource evidence, documentation and legacy deletion closure.
@@ -624,7 +617,7 @@ Do not create later speculative implementation tasks until that slice is merged 
 - **Refactor the god action in place:** rejected; it preserves the wrong ownership boundary.
 - **Improve `ParameterExtractor` regexes until tests pass:** rejected; syntax heuristics are not caller-input provenance.
 - **Keep `MyBatisEvaluator` and add more strict flags:** rejected; safety must not depend on settings and global semantic mutation remains unsound.
-- **Treat final literal SQL as if it were JDBC execution:** rejected; materialization has explicit fidelity limits.
+- **Treat vendor-rendered final literal SQL as equivalent to bound JDBC/Database Tools execution:** rejected; non-zero bindings stay structured unless a separately approved fallback proves equivalent semantics.
 - **Couple persisted session truth to live `JdbcConsole` registration/reconstruction:** rejected; descriptor identity and platform resource lifetime are separate concerns.
 - **Format SQL and then execute the formatted output:** rejected; presentation cannot mutate execution meaning.
 - **Support Kotlin/providers/custom drivers now because tests can be written:** rejected for Leap v1; scope follows product value and maintainable evidence, not testability alone.
