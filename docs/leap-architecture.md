@@ -16,12 +16,12 @@ The Leap exists because the current implementation mixes too many correctness do
 
 The target is driven by these invariants:
 
-1. **Correctness over plausibility.** Unknown source, input, evaluation, materialization, or target state blocks execution.
+1. **Correctness over plausibility.** Unknown source, input, evaluation, execution-preparation, or target state blocks execution.
 2. **MyBatis is the semantic authority** for behavior claimed as MyBatis-compatible; zMyBatis must not maintain a parallel approximate dynamic-SQL interpreter.
 3. **Current editor content is authoritative.** Active unsaved edits cannot be silently replaced by stale committed PSI or disk content.
 4. **`#{}` and `${}` are different types of input.** This distinction survives every layer.
 5. **Preparation and execution are separate capabilities.** Preparing, formatting, previewing, restoring state, or cancelling cannot execute SQL.
-6. **Preview and execution cannot drift.** The immutable materialized artifact approved for execution is exactly what the Database Tools adapter executes.
+6. **Preview and execution cannot drift.** The immutable prepared/materialized execution authority approved by the user is exactly what the Database Tools adapter consumes; presentation rendering never becomes a different executable statement.
 7. **Wrong target is worse than refusal.** Datasource/schema ambiguity fails closed.
 8. **Platform objects stay at the edge.** `AnActionEvent`, `Editor`, PSI, `Document`, `JdbcConsole`, database PSI objects, dialogs, and disposables do not leak into core contracts.
 9. **Sensitive data is not diagnostics.** Raw inputs, remembered values, credentials, and rendered SQL are not normal log payloads.
@@ -203,7 +203,7 @@ PreparedExecution(
 
 `PreparedExecution` is not directly executable by the IDE adapter. It is the immutable result of source+input+MyBatis preparation.
 
-Each ordered binding records enough metadata to decide whether the execution adapter can materialize it safely, including property provenance and relevant Java/JDBC/type-handler identity where available.
+Each ordered binding records enough metadata to let the execution adapter preserve and supply it safely without guessing, including property provenance and relevant Java/JDBC/type-handler identity where available.
 
 ### Execution artifact boundary
 
@@ -407,7 +407,7 @@ Thread ownership is explicit per boundary.
 - produce immutable snapshots before returning to core;
 - cancellation invalidates the current invocation.
 
-### Preparation/materialization
+### Preparation / execution preparation
 
 - background/cancellable CPU work;
 - no Swing/IntelliJ project objects in `:core` or `:mybatis-engine` work items.
@@ -553,7 +553,7 @@ Temporary bridges must be named as migration-only and carry an owning issue + de
 - parameter contract/provenance;
 - safety policy;
 - typed failure transitions;
-- materialized-artifact identity rules independent of IDE.
+- zero-binding materialized-artifact identity plus structured bound-execution refusal/handoff rules independent of IDE.
 
 `:mybatis-engine` tests cover:
 
@@ -617,7 +617,7 @@ Do not create later speculative implementation tasks until that slice is merged 
 - **Refactor the god action in place:** rejected; it preserves the wrong ownership boundary.
 - **Improve `ParameterExtractor` regexes until tests pass:** rejected; syntax heuristics are not caller-input provenance.
 - **Keep `MyBatisEvaluator` and add more strict flags:** rejected; safety must not depend on settings and global semantic mutation remains unsound.
-- **Treat final literal SQL as if it were JDBC execution:** rejected; materialization has explicit fidelity limits.
+- **Treat vendor-rendered final literal SQL as equivalent to bound JDBC/Database Tools execution:** rejected; non-zero bindings stay structured unless a separately approved fallback proves equivalent semantics.
 - **Couple persisted session truth to live `JdbcConsole` registration/reconstruction:** rejected; descriptor identity and platform resource lifetime are separate concerns.
 - **Format SQL and then execute the formatted output:** rejected; presentation cannot mutate execution meaning.
 - **Support Kotlin/providers/custom drivers now because tests can be written:** rejected for Leap v1; scope follows product value and maintainable evidence, not testability alone.
