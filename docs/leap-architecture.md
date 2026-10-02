@@ -219,6 +219,8 @@ MaterializedExecution(
 
 This is the immutable artifact supplied to preview/confirmation/copy/execution. A formatter may derive `displaySql`, but `displaySql` is never substituted back into `executionSql`.
 
+Materialization orchestration is DB-agnostic. Zero-binding artifacts require no dialect literalization. Non-zero bindings are delegated through explicit dialect strategies selected by `targetDialectIdentity`; PostgreSQL is one strategy, not the product boundary. Adding Oracle, MySQL/MariaDB, SQL Server, or another maintained DBMS must add/extend a dialect adapter (or replace literalization with a separately proven bound-parameter Database Tools execution path), not add more DB-specific branches to the top-level dispatcher.
+
 ### Execution target
 
 ```text
