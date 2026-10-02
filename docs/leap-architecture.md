@@ -205,28 +205,20 @@ PreparedExecution(
 
 Each ordered binding records enough metadata to decide whether the execution adapter can materialize it safely, including property provenance and relevant Java/JDBC/type-handler identity where available.
 
-### Materialized execution
+### Execution artifact boundary
 
-```text
-MaterializedExecution(
-  preparedIdentity,
-  targetDialectIdentity,
-  executionSql,
-  safetyFlags,
-  fingerprint
-)
-```
+`PreparedExecution` remains authoritative for non-zero bindings until the Database Tools execution adapter has a proven parameterized path. The execution boundary must preserve the exact SQL-with-placeholders plus ordered values; it must not rewrite those values into a vendor-specific SQL string merely because the selected datasource is PostgreSQL, Oracle, MySQL, or another DBMS.
 
-This is the immutable artifact supplied to preview/confirmation/copy/execution. A formatter may derive `displaySql`, but `displaySql` is never substituted back into `executionSql`.
-
-Materialization orchestration is DB-agnostic. Zero-binding artifacts require no dialect literalization. Non-zero bindings are delegated through explicit dialect strategies selected by `targetDialectIdentity`; PostgreSQL is one strategy, not the product boundary. Adding Oracle, MySQL/MariaDB, SQL Server, or another maintained DBMS must add/extend a dialect adapter (or replace literalization with a separately proven bound-parameter Database Tools execution path), not add more DB-specific branches to the top-level dispatcher.
+For zero-binding statements only, the existing immutable `MaterializedExecution` text artifact remains valid because no literalization occurs. A future display/copy projection may render values for humans, but that projection is not execution authority.
 
 ### Execution target
 
 ```text
 ExecutionTargetId(projectScope, stableDataSourceId, explicitSchemaOrSearchPath)
-ExecutionTargetDescriptor(id, diagnosticDisplayName, dialectHint, version)
+ExecutionTargetDescriptor(id, diagnosticDisplayName, version)
 ```
+
+DBMS family is not part of target validity. The datasource selected in Database Tools already owns the driver, connection/session, vendor execution semantics, and native result handling.
 
 No `JdbcConsole`, datasource PSI object, schema PSI object, editor, or `Document` is persisted in this model.
 
@@ -324,23 +316,22 @@ It never returns diagnostic comments as SQL.
 
 `BoundSql.sql`, ordered mappings, additional parameters, and relevant binding metadata are captured before leaving the engine. Raw `${}` provenance remains explicit from the source/input contract even though MyBatis substitution affects the resulting SQL text.
 
-## 8. Materialization boundary
+## 8. Execution boundary
 
-The current Database Tools adapter consumes SQL text. That fact must not leak backward and force the core to claim JDBC/TypeHandler parity.
+The shipping Database Tools integration already executes against a datasource configured by the user. Leap must preserve that DBMS-neutral product boundary rather than introduce a zMyBatis vendor allowlist.
 
-`ExecutionMaterializer` converts a `PreparedExecution` for a resolved target/dialect into exactly one `MaterializedExecution`.
+For zero-binding statements, SQL text may cross the existing immutable materialization boundary byte-for-byte.
 
-Rules:
+For non-zero bindings, the next mandatory proof is a Database Tools parameterized-execution adapter that:
 
-- exact placeholder/mapping cardinality;
-- no `toString()` fallback for unknown objects;
-- no List/Map marker SQL;
-- no unsupported/custom TypeHandler guessing;
-- explicit supported type/dialect matrix;
-- correct escaping/encoding rules per supported materializer;
-- failure outside the matrix.
+- consumes the exact MyBatis-produced SQL placeholder order and prepared values;
+- uses the already-configured datasource/driver/session;
+- does not prompt for the same values again;
+- preserves native console/result/history behavior where the public/maintained platform API allows it;
+- preserves cancellation and target/source revalidation;
+- keeps raw `${}` provenance and confirmation policy separate from `#{...}` bound values.
 
-If a future credible Database Tools API permits parameterized execution while preserving native result/history behavior, a new materializer/adapter may use it without changing core preparation contracts.
+Until that proof succeeds, authoritative Leap code does not vendor-literalize bound values. PostgreSQL-specific literalization work remains non-authoritative historical evidence.
 
 ## 9. Target/session and Database Tools adapter
 
@@ -360,8 +351,8 @@ Execution behavior:
 3. re-check target validity after user/modality/background boundaries;
 4. acquire/reuse a console as an ephemeral resource according to policy;
 5. apply schema/search path and verify success;
-6. supply exactly `MaterializedExecution.executionSql` to the isolated Database Tools adapter;
-7. invoke the native console execution path;
+6. for zero-binding statements, supply the immutable SQL text directly; for bound statements, use the separately proven parameterized Database Tools execution path;
+7. invoke the native Database Tools execution path without introducing a zMyBatis DBMS allowlist;
 8. preserve/restore console document/editor state according to the adapter contract.
 
 `REUSE` and `NEW_EACH` are resource policies, not target identities. In-memory reuse may be removed entirely if it cannot be made simpler and safer than creating an execution console on demand.
@@ -377,10 +368,10 @@ ExecuteMapperStatement
   -> collect explicit input
   -> prepare with MyBatis
   -> resolve target
-  -> materialize for target/dialect
+  -> build the DB-neutral execution request from PreparedExecution
   -> revalidate source + target
   -> apply safety confirmation
-  -> execute materialized artifact
+  -> execute through the Database Tools adapter
   -> present outcome
 ```
 
