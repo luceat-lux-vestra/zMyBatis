@@ -167,6 +167,29 @@ jobs:
     # It may upload code-scanning results with exactly security-events:write;
     # renaming the workflow or adding any second write scope must fail closed.
     codeql_source = (WORKFLOWS_DIR / "codeql.yml").read_text(encoding="utf-8")
+    codeql_build_start = codeql_source.index("      - name: Build Java/Kotlin for CodeQL")
+    codeql_build_end = codeql_source.index("      - name: Analyze", codeql_build_start)
+    codeql_build_step = codeql_source[codeql_build_start:codeql_build_end]
+    expect(
+        "CodeQL Java/Kotlin extraction disables Gradle build-cache reuse",
+        "--no-build-cache" in codeql_build_step,
+        failures,
+    )
+    for compile_task in (
+        ":compileKotlin",
+        ":core:compileKotlin",
+        ":mybatis-engine:compileKotlin",
+    ):
+        expect(
+            f"CodeQL Java/Kotlin extraction explicitly compiles {compile_task}",
+            compile_task in codeql_build_step,
+            failures,
+        )
+    expect(
+        "CodeQL Java/Kotlin extraction does not use buildPlugin as a partial compilation proxy",
+        "buildPlugin" not in codeql_build_step,
+        failures,
+    )
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         exact = tmp_path / "codeql.yml"
