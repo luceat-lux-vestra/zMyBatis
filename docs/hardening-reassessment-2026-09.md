@@ -22,13 +22,13 @@ Dependabot proposes dependency movement; Dependency Review is a distinct PR admi
 
 PR #179 proved the producer after live Dependency Graph enablement. PR #189 promoted the checked-in merge-gate contract, and authoritative 2026-09-22 readback confirmed live `main protection` ruleset `22024054` requires `Dependency Review` with GitHub Actions integration id `15368` and no bypass actors. The staged promotion is complete; future changes to this context still require atomic checked-in/live reconciliation.
 
-### ADVISORY — CodeQL Actions; Kotlin upstream-blocked
+### ADVISORY — CodeQL Actions + Java/Kotlin
 
-GitHub Actions CodeQL analysis runs on exact pull-request heads, main, and schedule.
+GitHub CodeQL analysis runs on exact pull-request heads, main, and schedule for both GitHub Actions and Java/Kotlin.
 
-The first Java/Kotlin leg established a tooling boundary instead of a green badge: the stable extractor rejected Kotlin 2.4.20 while GitHub's published support documentation lists it. #181 owns re-enablement when the normal stable bundle accepts the real build. The repository will not downgrade Kotlin or use a nightly bundle only to satisfy an advisory scanner.
+The original Java/Kotlin probe correctly established an upstream tooling boundary when stable CodeQL 2.27.0 rejected Kotlin 2.4.20. Stable CodeQL bundle 2.27.1 added Kotlin 2.4.20 support, and #181 restores the normal action-managed Java/Kotlin leg with a manual real-repository Gradle build. No nightly bundle or Kotlin downgrade is used.
 
-Qodana Inspect code, Build, Test, Plugin Verifier, Lint workflows, and failure-triage remain authoritative.
+CodeQL remains advisory. Qodana Inspect code, Build, Test, Plugin Verifier, Lint workflows, Dependency Review, and the aggregate Merge Gate remain the authoritative merge controls.
 
 ### PASS — existing workflow/release hardening remains authoritative
 

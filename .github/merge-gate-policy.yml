@@ -37,15 +37,14 @@ excludedFromRequiredChecks:
 # component while the live ruleset requires only the aggregate GitHub Actions context.
 
 advisoryChecks:
-  - contexts: [ "CodeQL (actions)" ]
+  - contexts: [ "CodeQL (actions)", "CodeQL (java-kotlin)" ]
     producedBy: .github/workflows/codeql.yml
     disposition: advisory
     reason: >-
-      Stable CodeQL Actions analysis complements but does not replace the
-      required Qodana Inspect code authority. Java/Kotlin analysis is tracked
-      separately in #181 because the stable extractor rejects Kotlin 2.4.20
-      despite GitHub's published support table. Do not substitute a nightly
-      scanner or downgrade Kotlin solely to make an advisory check green.
+      Stable CodeQL Actions and Java/Kotlin analysis complement but do not
+      replace the required Qodana Inspect code authority. Stable CodeQL bundle
+      2.27.1 accepts Kotlin 2.4.20, so #181 restores the Java/Kotlin leg without
+      a nightly scanner or product Kotlin downgrade.
 
 # Enforced by .github/workflow-policy/check_trust_boundary.py.
 trustBoundary:
