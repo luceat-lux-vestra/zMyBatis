@@ -163,6 +163,41 @@ class MyBatisPreparationEngineTest {
     }
 
     @Test
+    fun localDateBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
+        val date = LocalDate.of(2026, 10, 2)
+        val result = MyBatisPreparationEngine.prepare(
+            request(
+                "select #{eventDate}",
+                listOf(
+                    Parameter(
+                        "java.time.LocalDate",
+                        "eventDate",
+                        InputValue.DateValue(date),
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(result is PreparationResult.Success)
+        val execution = (result as PreparationResult.Success).execution
+        val binding = execution.orderedBindings.single()
+        assertEquals(InputValue.DateValue(date), binding.value)
+        assertEquals("java.time.LocalDate", binding.metadata.mappingJavaTypeIdentity)
+        assertEquals("org.apache.ibatis.type.LocalDateTypeHandler", binding.metadata.typeHandlerIdentity)
+        assertTrue(binding.metadata.jdbcTypeIdentity == null)
+        assertEquals("IN", binding.metadata.parameterMode)
+        assertTrue(binding.metadata.numericScale == null)
+
+        val materialized = MaintainedExecutionMaterializer.materialize(
+            execution,
+            TargetDialectIdentity("postgresql"),
+        )
+        assertTrue(materialized is MaterializationResult.Success)
+        materialized as MaterializationResult.Success
+        assertEquals("select CAST('2026-10-02' AS DATE)", materialized.execution.executionSql)
+    }
+
+    @Test
     fun byteBindingCrossesMaintainedPostgresqlMaterializationBoundary() {
         val result = MyBatisPreparationEngine.prepare(
             request(
