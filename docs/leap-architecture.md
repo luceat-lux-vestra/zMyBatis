@@ -207,7 +207,9 @@ Each ordered binding records enough metadata to let the execution adapter preser
 
 ### Execution artifact boundary
 
-`PreparedExecution` remains authoritative for non-zero bindings until the Database Tools execution adapter has a proven parameterized path. The execution boundary must preserve the exact SQL-with-placeholders plus ordered values; it must not rewrite those values into a vendor-specific SQL string merely because the selected datasource is PostgreSQL, Oracle, MySQL, or another DBMS.
+`PreparedExecution` remains authoritative for non-zero bindings. #251 tested the maintained Database Tools 2026.2 surface and found no public/maintained path that simultaneously performs programmatic ordered binding through the configured session and preserves the native console result/history UX. The exact evidence and rejected candidates are recorded in [Database Tools parameterized execution proof](database-tools-parameterized-execution.md).
+
+The execution boundary must preserve the exact SQL-with-placeholders plus ordered values; it must not rewrite those values into a vendor-specific SQL string merely because the selected datasource is PostgreSQL, Oracle, MySQL, or another DBMS. The #251 NO-GO result also does not authorize an internal/reflection-based bridge or automatic per-DB literalizer fallback.
 
 For zero-binding statements only, the existing immutable `MaterializedExecution` text artifact remains valid because no literalization occurs. A future display/copy projection may render values for humans, but that projection is not execution authority.
 
