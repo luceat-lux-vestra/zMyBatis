@@ -57,21 +57,25 @@ class MaterializationTest {
     }
 
     @Test
-    fun maintainedMaterializerKeepsZeroBindingBehaviorUnchanged() {
+    fun maintainedMaterializerKeepsZeroBindingBehaviorDialectNeutral() {
         val sql = "select '?' as literal_marker, payload ? 'key' as dialect_operator"
-        val execution = success(
-            MaintainedExecutionMaterializer.materialize(
-                prepared(
-                    sql = sql,
-                    engineIdentity = "unverified-engine",
-                    engineVersion = "0.0.0",
-                    languageDriverIdentity = "unverified.LanguageDriver",
-                ),
-                TargetDialectIdentity("postgresql"),
-            ),
-        )
 
-        assertEquals(sql, execution.executionSql)
+        listOf("postgresql", "oracle", "mysql", "sqlserver").forEach { dialect ->
+            val execution = success(
+                MaintainedExecutionMaterializer.materialize(
+                    prepared(
+                        sql = sql,
+                        engineIdentity = "unverified-engine",
+                        engineVersion = "0.0.0",
+                        languageDriverIdentity = "unverified.LanguageDriver",
+                    ),
+                    TargetDialectIdentity(dialect),
+                ),
+            )
+
+            assertEquals(sql, execution.executionSql)
+            assertEquals(TargetDialectIdentity(dialect), execution.targetDialectIdentity)
+        }
     }
 
     @Test
@@ -794,17 +798,19 @@ class MaterializationTest {
     }
 
     @Test
-    fun nonPostgresqlDialectFailsClosed() {
-        val result = MaintainedExecutionMaterializer.materialize(
-            prepared(sql = "select ?", bindings = listOf(longBinding(0, BigInteger.ONE))),
-            TargetDialectIdentity("mysql"),
-        )
+    fun unimplementedBindingDialectFailsClosedWithoutPostgresqlCoupling() {
+        listOf("oracle", "mysql", "sqlserver").forEach { dialect ->
+            val result = MaintainedExecutionMaterializer.materialize(
+                prepared(sql = "select ?", bindings = listOf(longBinding(0, BigInteger.ONE))),
+                TargetDialectIdentity(dialect),
+            )
 
-        assertFailure(
-            result,
-            MaterializationFailureKind.DIALECT_UNSUPPORTED,
-            "materialization-postgresql-dialect-required",
-        )
+            assertFailure(
+                result,
+                MaterializationFailureKind.DIALECT_UNSUPPORTED,
+                "materialization-dialect-unsupported",
+            )
+        }
     }
 
     @Test
