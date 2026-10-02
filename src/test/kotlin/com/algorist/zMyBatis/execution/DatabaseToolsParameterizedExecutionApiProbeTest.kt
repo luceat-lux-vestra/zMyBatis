@@ -10,11 +10,14 @@ class DatabaseToolsParameterizedExecutionApiProbeTest {
         val candidates = listOf(
             "com.intellij.database.datagrid.DataRequest",
             "com.intellij.database.datagrid.DataRequest\$QueryRequest",
+            "com.intellij.database.dataSource.connection.statements.SmartStatementFactoryService",
             "com.intellij.database.dataSource.connection.statements.SmartStatementFactory",
+            "com.intellij.database.dataSource.connection.statements.ParameterizedSmartStatement",
+            "com.intellij.database.dataSource.connection.statements.StatementParameters",
             "com.intellij.database.dataSource.connection.statements.ParameterizedStatementData",
-            "com.intellij.database.dataSource.connection.statements.ExecutionResult",
-            "com.intellij.database.dataSource.connection.statements.ResultsProducer",
-            "com.intellij.database.dataSource.connection.statements.StandardResultsProcessors",
+            "com.intellij.database.dataSource.connection.statements.ParameterizedStatementBasis",
+            "com.intellij.database.dataSource.connection.statements.ParameterizedStatementDecoration",
+            "com.intellij.database.script.QueryParametersProvider",
         )
 
         val report = buildString {
@@ -26,12 +29,30 @@ class DatabaseToolsParameterizedExecutionApiProbeTest {
                 }
                 appendLine("modifiers=${Modifier.toString(clazz.modifiers)}")
                 appendLine("annotations=${clazz.annotations.joinToString { it.annotationClass.qualifiedName.orEmpty() }}")
+                clazz.declaredFields
+                    .sortedBy { it.toGenericString() }
+                    .forEach { field ->
+                        appendLine(
+                            "FIELD ${Modifier.toString(field.modifiers)} ${field.toGenericString()} " +
+                                "annotations=${field.annotations.joinToString { it.annotationClass.qualifiedName.orEmpty() }}"
+                        )
+                    }
                 clazz.declaredConstructors
                     .sortedBy { it.toGenericString() }
-                    .forEach { appendLine("CTOR ${Modifier.toString(it.modifiers)} ${it.toGenericString()}") }
+                    .forEach { ctor ->
+                        appendLine(
+                            "CTOR ${Modifier.toString(ctor.modifiers)} ${ctor.toGenericString()} " +
+                                "annotations=${ctor.annotations.joinToString { it.annotationClass.qualifiedName.orEmpty() }}"
+                        )
+                    }
                 clazz.declaredMethods
                     .sortedBy { it.toGenericString() }
-                    .forEach { appendLine("METHOD ${Modifier.toString(it.modifiers)} ${it.toGenericString()}") }
+                    .forEach { method ->
+                        appendLine(
+                            "METHOD ${Modifier.toString(method.modifiers)} ${method.toGenericString()} " +
+                                "annotations=${method.annotations.joinToString { it.annotationClass.qualifiedName.orEmpty() }}"
+                        )
+                    }
             }
         }
 
