@@ -173,7 +173,7 @@ StatementSourceGraph(
 )
 ```
 
-The graph represents the complete source required for supported preparation. XML fragment/include edges are explicit. Missing, ambiguous, cyclic, unsupported `databaseId`, custom language-driver, or runtime-only dependencies become typed source failures.
+The graph represents the complete source required for supported preparation. XML fragment/include edges are explicit. Missing, ambiguous, and cyclic dependencies become typed source failures. `databaseId` variants are preserved as target-dependent MyBatis semantics rather than classified as generic unsupported source; unresolved effective database-id authority blocks only the statement whose correctness depends on it. Custom language-driver and runtime-only dependencies remain separately unsupported unless promoted by product policy.
 
 ### Parameter contract
 
@@ -254,7 +254,7 @@ The source adapter discovers the relevant mapper documents/dependencies and supp
 
 Cross-namespace dependencies are loaded into the same isolated configuration in deterministic order. Missing/ambiguous/cyclic resolution is surfaced as typed failure; zMyBatis never substitutes truncated statement text.
 
-Leap v1 rejects source whose correctness depends on unsupported `databaseId`, custom language-driver, provider, or runtime-only extension behavior.
+Leap v1 preserves standard MyBatis `databaseId` variants and `_databaseId` semantics. When correctness depends on them, the selected Database Tools target must provide a proven effective database id before final variant selection/preparation. Custom `DatabaseIdProvider` mappings that cannot be reconstructed from available project/configuration evidence fail narrowly for that dependent statement. Custom language-driver, provider, and runtime-only extension behavior remain separate unsupported capabilities.
 
 ### Java direct annotations
 
@@ -437,7 +437,6 @@ SourceFailure
   MissingDependency
   AmbiguousDependency
   DependencyCycle
-  UnsupportedDatabaseId
   UnsupportedLanguageDriver
   UnsupportedProvider
 
@@ -452,15 +451,13 @@ PreparationFailure
   MyBatisParseFailure
   OgnlFailure
   BindingResolutionFailure
+  DatabaseIdAuthorityUnavailable
   UnsupportedSemantic
   PreparationInvariantFailure
 
 MaterializationFailure
-  UnsupportedDialect
-  UnsupportedType
-  UnsupportedTypeHandler
-  PlaceholderCardinalityMismatch
-  EncodingOrEscapingFailure
+  BoundExecutionRequired
+  RawInterpolationPolicyRequired
 
 TargetFailure
   MissingDatasource
@@ -516,12 +513,15 @@ Implementation is incremental for reviewability, but the target is a replacement
 - keep remembered input off until the new identity/privacy model is complete;
 - delete lexical extractor authority when no production caller depends on it.
 
-### Phase 3 — MyBatis engine and materialization
+### Phase 3 — MyBatis engine and execution preparation
 
 - introduce isolated preparation and typed failures;
-- introduce target-aware materializer and fidelity matrix;
+- preserve SQL-with-placeholders plus ordered bindings as the authoritative non-zero-binding result;
+- feed proven target database-id authority into isolated MyBatis configuration where standard `databaseId` / `_databaseId` semantics require it;
+- keep only the DB-neutral zero-binding immutable SQL-text materialization bridge;
+- complete #251's Database Tools parameterized-execution proof before bound-statement cutover;
 - build negative/hostile tests before enabling execution;
-- delete current `MyBatisEvaluator` once the new path is wired.
+- delete current `MyBatisEvaluator` only once the DB-neutral bound execution path is wired.
 
 ### Phase 4 — target/session adapter
 
@@ -597,7 +597,7 @@ Every PR remains exact-HEAD proof-obligation gated. Any HEAD move invalidates ap
 - #61 — target product/capability/safety decisions; closes after #101 consistency, not after all implementation.
 - #62 — source authority, dependency graph, canonical statement/method identity.
 - #63 — input provenance, codecs, UI contract, remembered-input policy.
-- #64 — isolated MyBatis preparation, `PreparedExecution`, target-aware materialization.
+- #64 — isolated MyBatis preparation, `PreparedExecution`, DB-neutral zero-binding text bridge, and bound-execution handoff.
 - #65 — stable target/session descriptors and Database Tools execution resources.
 - #66 — thin action, threading, cancellation, confirmation, UX orchestration.
 - #67 — diagnostics/privacy, compatibility, performance/resource evidence, documentation and legacy deletion closure.
