@@ -29,12 +29,12 @@ Target contract baseline: product decisions frozen from fresh `main` `249d3a5058
 | Provider annotations | **UNSUPPORTED** in Leap v1 | stop before preparation; no speculative runtime provider model |
 | `databaseId`-dependent selection | **UNSUPPORTED/UNKNOWN** in Leap v1 when correctness depends on it | #62/#64 block |
 | Custom language drivers / runtime-only mapper extensions | **UNSUPPORTED** in Leap v1 | future explicit product decision only |
-| `#{}` | **SUPPORTED concept** through typed binding preparation/materialization within maintained type/dialect fidelity | #63/#64 |
+| `#{}` | **SUPPORTED concept** through typed MyBatis binding preparation; Leap execution must preserve ordered bound values and delegate DB execution to Database Tools rather than require a zMyBatis DBMS allowlist | #63/#64/#65 |
 | `${}` | **SUPPORTED only as explicit raw interpolation**, separately provenanced and confirmed | #63/#66 |
 | Generated aliases / `@Param` / collection aliases | Supported only when provenance is actually established; never guessed solely by naming | #62/#63 |
 | Unknown parameter requirements | **UNSUPPORTED for execution** until resolved explicitly | #63 |
 | MyBatis/application custom TypeHandler runtime parity | **UNSUPPORTED unless explicitly reproduced/evidenced** | #64 |
-| Literal final SQL through Database Tools | Supported only as an explicit **materialized execution artifact** within a maintained type/dialect matrix; not JDBC/TypeHandler parity | #64/#65 |
+| Literal final SQL through Database Tools | Current shipping compatibility behavior only. Leap must first prove Database Tools parameterized execution for non-zero bindings; zero-binding SQL text remains a DB-neutral transitional case | #64/#65 |
 | SELECT | Supported after all source/input/preparation/target contracts pass | #66 orchestration |
 | INSERT/UPDATE/DELETE | Supported only with mandatory final-artifact confirmation | #66 |
 | Unknown semantic side-effect classification | Blocks; static SQL classification is not authorization | #64/#66 |
@@ -153,7 +153,7 @@ The target engine:
 
 Evaluation errors are never SQL text.
 
-## 9. Prepared and materialized execution
+## 9. Prepared execution and Database Tools execution
 
 The authoritative core result is structured `PreparedExecution` (or equivalent), not a formatted SQL string.
 
@@ -164,33 +164,27 @@ It carries enough information to prove:
 - MyBatis-produced SQL placeholder structure;
 - ordered binding descriptors/values and additional-parameter provenance;
 - raw interpolation provenance;
-- supported/unsupported materialization requirements.
+- preparation metadata required by the execution adapter.
 
-Database Tools currently executes SQL text. Therefore #64 owns a separate target/dialect-aware `ExecutionMaterializer` producing one immutable `MaterializedExecution`.
+The configured IntelliJ/DataGrip datasource owns the DBMS driver, connection/session, vendor SQL semantics, and result handling. **zMyBatis does not define a DBMS support allowlist for an otherwise valid Database Tools datasource.** Oracle, MySQL/MariaDB, PostgreSQL, SQL Server, and other configured datasource families are target-resolution peers.
 
-The product scope is **not PostgreSQL-specific**. PostgreSQL may be the first independently proven dialect adapter, but it is not the top-level materialization contract or the DBMS support boundary. The maintained dispatcher is DB-agnostic and delegates non-zero binding materialization to explicit dialect adapters. Oracle, MySQL/MariaDB, SQL Server, and other supported Database Tools targets require their own proven adapter or a future proven bound-parameter execution path; lack of one adapter must not be misrepresented as the product supporting only PostgreSQL.
+For non-zero `#{...}` bindings, Leap must first prove a maintainable Database Tools parameterized-execution path that can consume the prepared SQL plus ordered values without prompting the user a second time and without losing the native console/result experience. Until that proof exists:
 
-Materialization rules:
-
-- exact mapping cardinality;
-- explicit supported type/dialect matrix;
-- no unknown-object `toString()` fallback;
-- no comment+`NULL` marker fallbacks;
-- no unsupported/custom TypeHandler guessing;
-- typed failure outside maintained fidelity.
-
-The result is not described as JDBC/TypeHandler parity.
+- bound values stay structured; they are not converted into PostgreSQL/Oracle/MySQL-specific executable literals by core;
+- the maintained SQL-text materializer admits only the DB-neutral zero-binding case;
+- previous PostgreSQL literalization slices are historical research evidence, not the authoritative cutover path;
+- unsupported/custom TypeHandler semantics remain explicit execution-adapter concerns rather than guessed SQL text.
 
 ## 10. Preview, formatting, copy, and execution identity
 
-One immutable `MaterializedExecution` is the execution authority.
+The immutable prepared statement identity, ordered bindings, safety state, and exact resolved Database Tools target together form execution authority.
 
-- preview/confirmation displays that artifact or an explicitly labeled presentation projection;
-- clipboard behavior refers to the same approved artifact according to policy;
+- preview/confirmation must represent the same prepared SQL/binding set that will execute;
+- a display-only rendered SQL projection may exist for readability/copy, but it is never substituted back into the execution authority;
 - formatting is presentation-only;
-- formatted text can never replace the execution SQL;
 - source/target revisions are revalidated before irreversible execution;
-- if source or target changed materially after preparation, the artifact is invalidated and must be re-prepared.
+- if source or target changed materially after preparation, the execution authority is invalidated and must be re-prepared/re-resolved;
+- zero-binding statements may continue to use the immutable `MaterializedExecution` SQL-text artifact because no value literalization is involved.
 
 ## 11. Safety posture
 
