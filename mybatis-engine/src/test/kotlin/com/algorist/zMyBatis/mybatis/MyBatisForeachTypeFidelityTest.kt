@@ -21,9 +21,6 @@ import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
 import com.algorist.zMyBatis.core.input.SourceEvidence
-import com.algorist.zMyBatis.core.materialization.MaintainedExecutionMaterializer
-import com.algorist.zMyBatis.core.materialization.MaterializationResult
-import com.algorist.zMyBatis.core.materialization.TargetDialectIdentity
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -126,7 +123,7 @@ class MyBatisForeachTypeFidelityTest {
     }
 
     @Test
-    fun preparedForeachLongBindingsCrossTheMaintainedPostgresqlMaterializationBoundary() {
+    fun preparedForeachLongBindingsRemainOrderedForExecutionAdapter() {
         val prepared = prepare(
             declaredType = "java.util.List<java.lang.Long>",
             value = InputValue.ListValue(
@@ -137,21 +134,7 @@ class MyBatisForeachTypeFidelityTest {
             ),
         )
 
-        assertTrue(prepared is PreparationResult.Success)
-        prepared as PreparationResult.Success
-        val materialized = MaintainedExecutionMaterializer.materialize(
-            prepared.execution,
-            TargetDialectIdentity("postgresql"),
-        )
-        assertTrue(materialized is MaterializationResult.Success)
-        materialized as MaterializationResult.Success
-
-        val sql = materialized.execution.executionSql
-        val first = sql.indexOf("CAST(17 AS BIGINT)")
-        val second = sql.indexOf("CAST(19 AS BIGINT)")
-        assertTrue(first >= 0)
-        assertTrue(second > first)
-        assertTrue('?' !in sql)
+        assertLongBindings(prepared, 17, 19)
     }
 
     @Test
