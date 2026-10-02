@@ -112,6 +112,146 @@ class MaterializationTest {
     }
 
     @Test
+    fun postgresqlNumericBindingsMaterializeAsExactTypedNumericCasts() {
+        val execution = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?, ?, ?",
+                    bindings = listOf(
+                        decimalBinding(0, BigDecimal("123.4500")),
+                        decimalBinding(1, BigDecimal("-0.00125")),
+                        decimalBinding(2, BigDecimal("1E+3")),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+
+        assertEquals(
+            "select CAST(123.4500 AS NUMERIC), CAST(-0.00125 AS NUMERIC), CAST(1000 AS NUMERIC)",
+            execution.executionSql,
+        )
+    }
+
+    @Test
+    fun explicitDecimalAndNumericJdbcTypesAreAdmitted() {
+        listOf("DECIMAL", "NUMERIC").forEach { jdbcType ->
+            val execution = success(
+                MaintainedExecutionMaterializer.materialize(
+                    prepared(
+                        sql = "select ?",
+                        bindings = listOf(decimalBinding(0, BigDecimal("42.125"), jdbcType = jdbcType)),
+                    ),
+                    TargetDialectIdentity("postgresql"),
+                ),
+            )
+
+            assertEquals("select CAST(42.125 AS NUMERIC)", execution.executionSql)
+        }
+    }
+
+    @Test
+    fun mixedBigintNumericAndBooleanBindingsPreserveOrderAndFingerprintIdentity() {
+        val first = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?, ?, ?",
+                    bindings = listOf(
+                        longBinding(0, BigInteger.valueOf(41)),
+                        decimalBinding(1, BigDecimal("42.50")),
+                        booleanBinding(2, true),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+        val second = success(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?, ?, ?",
+                    bindings = listOf(
+                        longBinding(0, BigInteger.valueOf(41)),
+                        decimalBinding(1, BigDecimal("42.51")),
+                        booleanBinding(2, true),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+        )
+
+        assertEquals(
+            "select CAST(41 AS BIGINT), CAST(42.50 AS NUMERIC), CAST(TRUE AS BOOLEAN)",
+            first.executionSql,
+        )
+        assertNotEquals(first.executionSql, second.executionSql)
+        assertNotEquals(first.fingerprint, second.fingerprint)
+    }
+
+    @Test
+    fun postgresqlNumericMetadataAndValueFailuresFailClosed() {
+        val metadataCases = listOf(
+            decimalBinding(0, BigDecimal.ONE, mappingJavaType = "java.lang.Double") to
+                "materialization-postgresql-numeric-mapping-java-type-unsupported",
+            decimalBinding(
+                0,
+                BigDecimal.ONE,
+                typeHandler = "org.apache.ibatis.type.DoubleTypeHandler",
+            ) to "materialization-postgresql-numeric-type-handler-unsupported",
+            decimalBinding(0, BigDecimal.ONE, jdbcType = "DOUBLE") to
+                "materialization-postgresql-numeric-jdbc-type-unsupported",
+            decimalBinding(0, BigDecimal.ONE, parameterMode = "OUT") to
+                "materialization-postgresql-numeric-parameter-mode-unsupported",
+            decimalBinding(0, BigDecimal.ONE, numericScale = 2) to
+                "materialization-postgresql-numeric-scale-metadata-unsupported",
+        )
+
+        metadataCases.forEach { (binding, expectedCode) ->
+            assertFailure(
+                MaintainedExecutionMaterializer.materialize(
+                    prepared(sql = "select ?", bindings = listOf(binding)),
+                    TargetDialectIdentity("postgresql"),
+                ),
+                MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+                expectedCode,
+            )
+        }
+
+        assertFailure(
+            MaintainedExecutionMaterializer.materialize(
+                prepared(
+                    sql = "select ?",
+                    bindings = listOf(
+                        binding(
+                            index = 0,
+                            value = InputValue.IntegerValue(BigInteger.ONE),
+                            declaredJavaType = "java.math.BigDecimal",
+                            mappingJavaType = "java.math.BigDecimal",
+                            typeHandler = "org.apache.ibatis.type.BigDecimalTypeHandler",
+                        ),
+                    ),
+                ),
+                TargetDialectIdentity("postgresql"),
+            ),
+            MaterializationFailureKind.BINDING_VALUE_UNSUPPORTED,
+            "materialization-postgresql-numeric-value-unsupported",
+        )
+
+        listOf(
+            BigDecimal(BigInteger.ONE, -131_072),
+            BigDecimal(BigInteger.ONE, 16_384),
+        ).forEach { value ->
+            assertFailure(
+                MaintainedExecutionMaterializer.materialize(
+                    prepared(sql = "select ?", bindings = listOf(decimalBinding(0, value))),
+                    TargetDialectIdentity("postgresql"),
+                ),
+                MaterializationFailureKind.BINDING_VALUE_OUT_OF_RANGE,
+                "materialization-postgresql-numeric-value-out-of-range",
+            )
+        }
+    }
+
+    @Test
     fun postgresqlBooleanBindingsMaterializeAsTypedBooleanCasts() {
         val execution = success(
             MaintainedExecutionMaterializer.materialize(
@@ -1653,6 +1793,27 @@ class MaterializationTest {
         value = InputValue.IntegerValue(value),
         origin = origin,
         declaredJavaType = "java.lang.Integer",
+        mappingJavaType = mappingJavaType,
+        jdbcType = jdbcType,
+        typeHandler = typeHandler,
+        parameterMode = parameterMode,
+        numericScale = numericScale,
+    )
+
+    private fun decimalBinding(
+        index: Int,
+        value: BigDecimal,
+        mappingJavaType: String? = "java.math.BigDecimal",
+        jdbcType: String? = null,
+        typeHandler: String = "org.apache.ibatis.type.BigDecimalTypeHandler",
+        parameterMode: String = "IN",
+        numericScale: Int? = null,
+        origin: PreparedBindingOrigin = callerOrigin(index),
+    ): PreparedBinding = binding(
+        index = index,
+        value = InputValue.DecimalValue(value),
+        origin = origin,
+        declaredJavaType = "java.math.BigDecimal",
         mappingJavaType = mappingJavaType,
         jdbcType = jdbcType,
         typeHandler = typeHandler,
