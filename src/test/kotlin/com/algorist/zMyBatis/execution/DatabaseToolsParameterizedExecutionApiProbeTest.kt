@@ -16,6 +16,14 @@ class DatabaseToolsParameterizedExecutionApiProbeTest {
             "com.intellij.database.console.JdbcConsole",
             "com.intellij.database.console.evaluation.EvaluationRequest",
             "com.intellij.database.dataSource.DatabaseConnection",
+            "com.intellij.database.dataSource.DatabaseConnectionCore",
+            "com.intellij.database.datagrid.DataRequest\$RawRequest",
+            "com.intellij.database.dataSource.connection.statements.SmartStatementFactoryService",
+            "com.intellij.database.dataSource.connection.statements.StatementParameters",
+            "com.intellij.database.dataSource.connection.statements.StandardExecutionMode",
+            "com.intellij.database.dataSource.connection.statements.StandardResultsProcessors",
+            "com.intellij.database.datagrid.mutating.ColumnQueryData",
+            "com.intellij.database.datagrid.JdbcColumnDescriptor",
         )
 
         val report = buildString {
@@ -42,7 +50,11 @@ class DatabaseToolsParameterizedExecutionApiProbeTest {
                             token.contains("request") ||
                             token.contains("connection") ||
                             token.contains("session") ||
-                            token.contains("bind")
+                            token.contains("bind") ||
+                            token.contains("power") ||
+                            token.contains("raw") ||
+                            token.contains("offset") ||
+                            token.contains("data")
                     }
                     .sortedBy { it.toGenericString() }
                     .forEach { appendLine("METHOD ${it.toGenericString()}") }
