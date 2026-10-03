@@ -102,6 +102,22 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     }
 
     /**
+     * Linearizes one startup migration state transition with project shutdown.
+     *
+     * Source/VFS discovery happens outside this lock. Once that evidence is ready, persistence
+     * promotion/cleanup either completes before shutdown or is rejected after shutdown wins.
+     */
+    internal fun runStartupMigrationTransitionIfActive(block: () -> Unit): Boolean =
+        synchronized(lifecycleLock) {
+            if (project.isDisposed || shuttingDown) {
+                false
+            } else {
+                block()
+                true
+            }
+        }
+
+    /**
      * Registers a live console only as an in-memory REUSE optimization.
      *
      * v3 target selection persistence is owned independently by [ExecutionTargetDescriptorStore].
