@@ -178,9 +178,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                 "(code=${storedTarget.failure.code}); requiring explicit re-selection"
                         )
                         ensureConsole(e, project, mapperKey, sourceFileId, targetBridge, forceNew) {
-                                console,
-                                targetId,
-                            ->
+                                console, targetId ->
                             proceedWithParamsAndExecute(
                                 e,
                                 project,
@@ -198,9 +196,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                     StoredExecutionTargetResolution.Missing -> {
                         LOG.info("zMyBatis: no persisted execution target for $mapperKey; showing chooser")
                         ensureConsole(e, project, mapperKey, sourceFileId, targetBridge, forceNew) {
-                                console,
-                                targetId,
-                            ->
+                                console, targetId ->
                             proceedWithParamsAndExecute(
                                 e,
                                 project,
@@ -577,6 +573,60 @@ open class MyBatisExecuteProxyAction : AnAction() {
                     }
                 }
             },
+        )
+    }
+
+    private fun isInvocationCurrent(
+        project: com.intellij.openapi.project.Project,
+        sourceRevision: LegacyActionSourceRevision,
+        sourceFileId: SourceFileId,
+        targetBridge: StoredExecutionTargetBridge,
+        expectedTargetId: ExecutionTargetId?,
+    ): Boolean {
+        if (!isSourceRevisionCurrent(project, sourceRevision)) return false
+        if (expectedTargetId == null) return true
+        if (targetBridge.isCurrent(sourceFileId, expectedTargetId)) return true
+
+        showTargetRevisionRefusal(project)
+        return false
+    }
+
+    private fun showInvocationInvalidated(
+        project: com.intellij.openapi.project.Project,
+        sourceRevision: LegacyActionSourceRevision,
+        sourceFileId: SourceFileId,
+        targetBridge: StoredExecutionTargetBridge,
+        expectedTargetId: ExecutionTargetId?,
+    ) {
+        if (!LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision)) {
+            showSourceRevisionRefusal(
+                project,
+                "The mapper source changed while zMyBatis was preparing the query. " +
+                    "Run zMyBatis again from the current source.",
+            )
+            return
+        }
+        if (expectedTargetId != null && !targetBridge.isCurrent(sourceFileId, expectedTargetId)) {
+            showTargetRevisionRefusal(project)
+            return
+        }
+        if (!isProjectUnavailable(project)) {
+            Messages.showErrorDialog(
+                project,
+                "The execution context changed while zMyBatis was preparing the query. " +
+                    "Run zMyBatis again.",
+                "zMyBatis: Invocation Invalidated",
+            )
+        }
+    }
+
+    private fun showTargetRevisionRefusal(project: com.intellij.openapi.project.Project) {
+        if (isProjectUnavailable(project)) return
+        Messages.showErrorDialog(
+            project,
+            "The configured datasource or schema changed while zMyBatis was preparing the query. " +
+                "Select the execution target again.",
+            "zMyBatis: Target Changed",
         )
     }
 
