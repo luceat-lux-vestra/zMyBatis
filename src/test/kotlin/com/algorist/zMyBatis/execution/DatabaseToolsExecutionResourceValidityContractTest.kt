@@ -67,6 +67,7 @@ class DatabaseToolsExecutionResourceValidityContractTest {
         val documentAccess = perform.indexOf("val consoleDoc = console.document")
         val firstEditorCheck = perform.indexOf("consoleEditor.isDisposed")
         val nativeQuery = perform.indexOf("JdbcConsoleProvider.doRunQueryInConsole")
+        val lastProjectCheck = perform.lastIndexOf("if (isProjectUnavailable())")
         val lastDisposedCheck = perform.lastIndexOf("Disposer.isDisposed(console)")
         val lastEditorCheck = perform.lastIndexOf("consoleEditor.isDisposed")
 
@@ -76,6 +77,12 @@ class DatabaseToolsExecutionResourceValidityContractTest {
         assertTrue(documentAccess > firstEditorCheck)
 
         assertTrue("native query invocation must exist", nativeQuery >= 0)
+        assertTrue("project lifecycle must be rechecked after console document mutation", lastProjectCheck >= 0)
+        val finalProjectBranch = perform.substring(lastProjectCheck, lastDisposedCheck)
+        assertTrue(
+            "lifecycle closure after document mutation must restore the original console text",
+            finalProjectBranch.contains("restoreConsoleDocumentAfterFailure(consoleDoc, originalText)"),
+        )
         assertTrue("console must be rechecked immediately before native execution path", lastDisposedCheck >= 0)
         assertTrue(nativeQuery > lastDisposedCheck)
         assertTrue("editor must be rechecked before native execution path", lastEditorCheck >= 0)
