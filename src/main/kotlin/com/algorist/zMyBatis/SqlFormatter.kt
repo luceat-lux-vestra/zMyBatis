@@ -3,6 +3,7 @@ package com.algorist.zMyBatis
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.codeStyle.CodeStyleManager
 import com.intellij.sql.SqlFileType
@@ -37,12 +38,15 @@ object SqlFormatter {
      * @param sql      The raw resolved SQL string to format.
      * @return         The formatted SQL, or [sql] unchanged if formatting fails.
      */
+    @Suppress("TooGenericExceptionCaught")
     fun format(project: Project, sql: String): String {
         if (sql.isBlank()) return sql.trim()
         return try {
             formatInternal(project, sql)
-        } catch (e: Throwable) {
-            LOG.warn("zMyBatis: SQL formatting failed, returning original SQL. Reason: ${e.message}")
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: Exception) {
+            LOG.warn("zMyBatis: SQL formatting failed, returning original SQL (${e::class.java.name})")
             sql
         }
     }
