@@ -1,4 +1,6 @@
-@file:Suppress("DialogTitleCapitalization")\n\npackage com.algorist.zMyBatis.execution
+@file:Suppress("DialogTitleCapitalization")
+
+package com.algorist.zMyBatis.execution
 
 import com.algorist.zMyBatis.services.ConsoleCacheService
 import com.intellij.database.console.JdbcConsole
