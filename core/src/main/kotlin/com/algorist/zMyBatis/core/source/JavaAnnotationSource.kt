@@ -25,8 +25,8 @@ class JavaAnnotationStatementVariant(
     private val sqlSegmentSnapshot = sqlSegments.toTypedArray()
 
     init {
-        require(databaseId == null || databaseId.isNotBlank()) {
-            "Java annotation database id must be null or non-blank"
+        require(databaseId == null || databaseId.isNotEmpty()) {
+            "Java annotation database id must be null or non-empty"
         }
         require(sqlSegmentSnapshot.isNotEmpty()) {
             "Java annotation variant requires at least one SQL segment"
