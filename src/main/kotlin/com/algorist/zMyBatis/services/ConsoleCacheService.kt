@@ -17,7 +17,12 @@ import com.intellij.openapi.util.Disposer
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Project-level service that owns the JdbcConsole cache and restart persistence.
+ * Project-level owner of live JdbcConsole cache/resource lifecycle plus migration-only v2
+ * persistence compatibility.
+ *
+ * New restart target authority is v3 [ExecutionTargetDescriptorStore] state. The shipping action
+ * registers v3-backed consoles through [putEphemeral], so creating/disposing a live console cannot
+ * create or delete v3 target identity.
  *
  * Persistence v2 deliberately does not migrate the legacy application-level
  * `zMyBatis.session.*` records. Those records contain only a collision-prone project hash and
@@ -94,8 +99,8 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
 
     /**
      * Returns a live cached console only while the project session lifecycle is active.
-     * Disposal cleanup and replacement are serialized with [put] so a stale entry can never clear
-     * persistence belonging to a newer entry for the same mapper.
+     * Disposal cleanup and replacement are serialized with registration so a stale entry can never
+     * clear legacy v2 state belonging to a newer entry. Ephemeral entries never own v3 persistence.
      */
     fun get(mapperKey: String): JdbcConsole? = synchronized(lifecycleLock) {
         if (shuttingDown) return@synchronized null
@@ -122,7 +127,9 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     }
 
     /**
-     * Caches [console] and updates restart persistence as one lifecycle transition.
+     * Legacy v2 registration path retained for migration compatibility/tests.
+     *
+     * Caches [console] and updates v2 restart persistence as one lifecycle transition.
      *
      * Restart persistence requires both a stable datasource UUID and an explicitly selected schema.
      * "Use Default Schema" remains reusable in-process but is not persisted because the effective
