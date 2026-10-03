@@ -72,8 +72,7 @@ internal object LegacyActionSourceRevisionGuard {
 
         val document = FileDocumentManager.getInstance().getCachedDocument(virtualFile)
             ?: return false
-        if (!PsiDocumentManager.getInstance(project).isCommitted(document)) return false
-
-        return document.modificationStamp == revision.documentModificationStamp
+        return PsiDocumentManager.getInstance(project).isCommitted(document) &&
+            document.modificationStamp == revision.documentModificationStamp
     }
 }
