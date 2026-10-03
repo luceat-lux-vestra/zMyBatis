@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap
  * `zMyBatis.session.*` records. Those records contain only a collision-prone project hash and
  * mutable datasource display name, so there is no safe way to prove which project/datasource they
  * belonged to. Ignoring them is the fail-closed migration policy: the user selects datasource/schema
- * once again and only then is a v2 record created.
+ * again and current v3 target authority is created without reviving the retired v2 writer.
  */
 @Service(Service.Level.PROJECT)
 class ConsoleCacheService(private val project: Project) : com.intellij.openapi.Disposable {
@@ -80,8 +80,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
 
     /**
      * Returns a live cached console only while the project session lifecycle is active.
-     * Disposal cleanup and replacement are serialized with registration so a stale entry can never
-     * clear legacy v2 state belonging to a newer entry. Ephemeral entries never own v3 persistence.
+     * Ephemeral console disposal affects only the in-memory cache and never owns v2/v3 persistence.
      */
     fun get(mapperKey: String): JdbcConsole? = synchronized(lifecycleLock) {
         if (shuttingDown) return@synchronized null
@@ -209,15 +208,6 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         }
     }
 
-    @Suppress("unused")
-    fun remove(mapperKey: String) {
-        synchronized(lifecycleLock) {
-            cache.remove(mapperKey)
-            clearSessionLocked(mapperKey)
-        }
-        LOG.info("zMyBatis: explicitly removed session for $mapperKey")
-    }
-
     /**
      * Atomically closes the resource-acquisition gate. v2 is read/cleanup-only migration state and
      * v3 is owned by ExecutionTargetDescriptorStore, so shutdown never writes persistence from live
@@ -262,11 +252,6 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         return raw.lineSequence().filter { it.isNotBlank() }.distinct().toList()
     }
 
-    private fun addToIndexLocked(id: String) {
-        val ids = savedSessionIdsLocked().toMutableSet()
-        if (ids.add(id)) writeIndexLocked(ids)
-    }
-
     private fun removeFromIndexLocked(id: String) {
         val ids = savedSessionIdsLocked().filterTo(linkedSetOf()) { it != id }
         writeIndexLocked(ids)
@@ -288,6 +273,4 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     }
 
     private fun recordKey(id: String): String = "$RECORD_PREFIX$id"
-
-
 }
