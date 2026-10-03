@@ -27,6 +27,44 @@ internal fun consoleCacheTargetIdentityMatches(
     expectedTargetId: ExecutionTargetId?,
 ): Boolean = cachedTargetId == expectedTargetId
 
+@Suppress("TooGenericExceptionCaught")
+internal fun <T> disposeOwnedResourcesPreservingFailureSemantics(
+    resources: Iterable<T>,
+    isDisposed: (T) -> Boolean,
+    disposeResource: (T) -> Unit,
+) {
+    var primaryFailure: Throwable? = null
+
+    for (resource in resources) {
+        if (isDisposed(resource)) continue
+        try {
+            disposeResource(resource)
+        } catch (failure: Throwable) {
+            primaryFailure = combineResourceDisposalFailure(primaryFailure, failure)
+        }
+    }
+
+    primaryFailure?.let { throw it }
+}
+
+private fun combineResourceDisposalFailure(
+    primaryFailure: Throwable?,
+    nextFailure: Throwable,
+): Throwable {
+    if (primaryFailure == null) return nextFailure
+
+    val primaryIsStrong = primaryFailure is ProcessCanceledException || primaryFailure !is Exception
+    val nextIsStrong = nextFailure is ProcessCanceledException || nextFailure !is Exception
+
+    return if (!primaryIsStrong && nextIsStrong) {
+        if (nextFailure !== primaryFailure) nextFailure.addSuppressed(primaryFailure)
+        nextFailure
+    } else {
+        if (nextFailure !== primaryFailure) primaryFailure.addSuppressed(nextFailure)
+        primaryFailure
+    }
+}
+
 @Service(Service.Level.PROJECT)
 class ConsoleCacheService(private val project: Project) : com.intellij.openapi.Disposable {
 
@@ -199,11 +237,12 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             throw fatal
         }
 
+        var supersededEntry: Entry? = null
         val accepted = synchronized(lifecycleLock) {
             if (shuttingDown || sentinel.isDisposed) {
                 false
             } else {
-                cache[mapperKey] = entry
+                supersededEntry = cache.put(mapperKey, entry)
                 true
             }
         }
@@ -213,6 +252,10 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             if (!sentinel.isDisposed) Disposer.dispose(sentinel)
             return false
         }
+
+        supersededEntry
+            ?.takeIf { it.console !== console }
+            ?.let { disposeDetachedEntries(listOf(it)) }
 
         LOG.info("zMyBatis: ephemeral console cached for $mapperKey")
         return true
@@ -271,11 +314,23 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         LOG.info("zMyBatis: markShuttingDown — console acquisition and migration disabled")
     }
 
+    private fun disposeDetachedEntries(entries: Iterable<Entry>) {
+        disposeOwnedResourcesPreservingFailureSemantics(
+            resources = entries.map { it.console },
+            isDisposed = { Disposer.isDisposed(it) },
+            disposeResource = { Disposer.dispose(it) },
+        )
+    }
+
     override fun dispose() {
-        synchronized(lifecycleLock) {
+        val detachedEntries = synchronized(lifecycleLock) {
             shuttingDown = true
             activeSelections.clear()
+            val entries = cache.values.toList()
             cache.clear()
+            entries
         }
+
+        disposeDetachedEntries(detachedEntries)
     }
 }
