@@ -22,6 +22,11 @@ import java.util.concurrent.ConcurrentHashMap
  * storage surface: registering, observing, or disposing a live console cannot create, mutate, or
  * delete v2/v3 target persistence.
  */
+internal fun consoleCacheTargetIdentityMatches(
+    cachedTargetId: ExecutionTargetId?,
+    expectedTargetId: ExecutionTargetId?,
+): Boolean = cachedTargetId == expectedTargetId
+
 @Service(Service.Level.PROJECT)
 class ConsoleCacheService(private val project: Project) : com.intellij.openapi.Disposable {
 
@@ -93,7 +98,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
                 }
                 return@synchronized null
             }
-            if (entry.targetId != expectedTargetId) {
+            if (!consoleCacheTargetIdentityMatches(entry.targetId, expectedTargetId)) {
                 if (cache.remove(mapperKey, entry)) {
                     rejectedEntry = entry
                     LOG.info("zMyBatis: cached console target no longer matches invocation — evicting")
