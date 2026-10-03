@@ -39,7 +39,7 @@
 
 <h3>Data Source and Schema Selection</h3>
 <p>On execution without a reusable live console, a popup lets you choose the target <b>data source</b> and <b>schema</b>. Live console reuse is scoped per mapper file.</p>
-<p>Restart persistence is intentionally narrower: only sessions with a stable datasource UUID and an explicit named schema are persisted/restored. <b>Use Default Schema</b> and datasources without a stable UUID are in-process only. Missing, ambiguous, or failed datasource/schema restoration is rejected rather than redirected.</p>
+<p>Restart persistence stores only target identity: a stable datasource UUID plus an explicit named schema, associated with the canonical mapper source. <b>Use Default Schema</b> and datasources without a stable UUID are in-process only. Startup never recreates a console; the persisted target is resolved exactly when the next explicit execution needs one, and missing/ambiguous targets require re-selection rather than redirection.</p>
 
 <h3>Annotation Support</h3>
 <ul>
@@ -104,7 +104,7 @@ For development/testing, a locally built distribution can also be installed thro
 2. Right-click and choose **Execute (zMyBatis)**.
 3. The plugin extracts the current mapper statement source, heuristically discovers required inputs, evaluates the supported dynamic-SQL path, and converts mapped values into zMyBatis literal SQL.
 4. Depending on settings, the SQL may be formatted and/or previewed before it is sent to a JetBrains Database Tools JDBC console.
-5. Target reuse/restoration follows the hardened datasource/schema identity rules described above; ambiguous restoration is rejected.
+5. Target reuse follows the hardened datasource/schema identity rules described above. Persisted targets are resolved exactly at action time; startup does not recreate database consoles, and stale/ambiguous targets require explicit re-selection.
 
 ## Product Contract
 

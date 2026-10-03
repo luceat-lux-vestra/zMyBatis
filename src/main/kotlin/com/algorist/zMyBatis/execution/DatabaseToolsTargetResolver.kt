@@ -102,6 +102,17 @@ internal fun resolveDatabaseToolsDatabaseId(
     null
 }
 
+internal fun databaseToolsStableDataSourceId(dataSource: DbDataSource): String? = try {
+    DbImplUtil.getMaybeLocalDataSource(dataSource)
+        ?.uniqueId
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+} catch (ex: ProcessCanceledException) {
+    throw ex
+} catch (_: Exception) {
+    null
+}
+
 /**
  * Database Tools DBMS identity is semantic input for MyBatis databaseId only.
  *
@@ -133,7 +144,7 @@ internal class DatabaseToolsTargetResolver(
     fun resolve(descriptor: ExecutionTargetDescriptor): DatabaseToolsTargetResolution {
         val candidates = DbPsiFacade.getInstance(project).dataSources.map { dataSource ->
             DataSourceCandidate(
-                stableId = stableDataSourceId(dataSource),
+                stableId = databaseToolsStableDataSourceId(dataSource),
                 resource = dataSource,
             )
         }
@@ -161,14 +172,4 @@ internal class DatabaseToolsTargetResolver(
         }
     }
 
-    private fun stableDataSourceId(dataSource: DbDataSource): String? = try {
-        DbImplUtil.getMaybeLocalDataSource(dataSource)
-            ?.uniqueId
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-    } catch (ex: ProcessCanceledException) {
-        throw ex
-    } catch (_: Exception) {
-        null
-    }
 }

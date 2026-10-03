@@ -59,11 +59,13 @@ Formatting currently feeds the string that is later executed.
 
 **Disposition:** retain only as a presentation adapter if useful. Formatting may produce display text but never changes the immutable execution artifact.
 
-### `ConsoleCacheService` and startup restoration
+### Target persistence and `ConsoleCacheService`
 
-Hardening #57 established strong target-identity rules. Current v2 persistence stores string records (`mapperKey`, stable datasource UUID, datasource display name, explicit schema), not live `JdbcConsole` objects. The architectural coupling is that persisted-record creation/removal follows live-console cache registration/disposal, and startup eagerly reconstructs consoles from those records.
+Hardening #57 established strong target-identity rules. #260 introduced independent project-scoped v3 source -> target descriptor persistence, and #262 migrates valid v2 records into that authority without recreating consoles at startup. Persisted v3 identity is stable datasource UUID + exact explicit schema, associated with canonical source identity; datasource display name remains presentation-only.
 
-**Disposition:** preserve the stable-target contracts, replace the live-console-cache/persistence lifecycle coupling, and keep persisted target/session descriptor data independently meaningful. Consoles are ephemeral Database Tools resources created/reused in-memory only when needed.
+The shipping legacy action now resolves a stored v3 target exactly on a live-console cache miss and acquires a console only for that explicit invocation. `REUSE` and `NEW_EACH` are resource policies over the same persisted target authority. Closing an ephemeral console no longer deletes v3 target identity. The old v2 reader/cleanup path and portions of `ConsoleCacheService` remain migration compatibility/deletion debt under #65.
+
+**Disposition:** continue isolating Database Tools console mechanics and delete the remaining migration-only v2/cache surface when no supported upgrade path needs it. This Phase-4 progress does not authorize Phase-5 Leap execution cutover; #258 still blocks that cutover until the bound-execution contract is satisfied.
 
 ### Settings
 
@@ -533,10 +535,12 @@ Implementation is incremental for reviewability, but the target is a replacement
 
 ### Phase 4 — target/session adapter
 
-- persist target descriptors;
-- migrate/invalidate v2 records only when identity is provable;
-- remove startup eager console recreation;
-- isolate Database Tools console mechanics.
+Current progress: v3 target descriptors are persisted independently; provable v2 records migrate to v3; startup eager console recreation is removed; the shipping action performs exact target re-resolution and deferred console acquisition through a migration bridge.
+
+Remaining:
+- finish isolating Database Tools console mechanics from the legacy action;
+- retire the migration-only v2 reader/cleanup path when the supported upgrade window permits;
+- keep console/resource policy independent from persisted target identity.
 
 ### Phase 5 — orchestration cutover
 

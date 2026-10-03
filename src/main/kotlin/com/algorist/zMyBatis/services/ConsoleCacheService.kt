@@ -1,9 +1,6 @@
 package com.algorist.zMyBatis.services
 
 import com.intellij.database.console.JdbcConsole
-import com.intellij.database.psi.DbDataSource
-import com.intellij.database.psi.DbPsiFacade
-import com.intellij.database.util.DbImplUtil
 import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -17,13 +14,18 @@ import com.intellij.openapi.util.Disposer
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Project-level service that owns the JdbcConsole cache and restart persistence.
+ * Project-level owner of live JdbcConsole cache/resource lifecycle plus migration-only v2
+ * persistence compatibility.
+ *
+ * New restart target authority is v3 [ExecutionTargetDescriptorStore] state. The shipping action
+ * registers v3-backed consoles through [putEphemeral], so creating/disposing a live console cannot
+ * create or delete v3 target identity.
  *
  * Persistence v2 deliberately does not migrate the legacy application-level
  * `zMyBatis.session.*` records. Those records contain only a collision-prone project hash and
  * mutable datasource display name, so there is no safe way to prove which project/datasource they
  * belonged to. Ignoring them is the fail-closed migration policy: the user selects datasource/schema
- * once again and only then is a v2 record created.
+ * again and current v3 target authority is created without reviving the retired v2 writer.
  */
 @Service(Service.Level.PROJECT)
 class ConsoleCacheService(private val project: Project) : com.intellij.openapi.Disposable {
@@ -36,26 +38,11 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
 
         fun getInstance(project: Project): ConsoleCacheService = project.service()
 
-        /**
-         * Returns the IDE-assigned datasource UUID. Display names are diagnostic only and must
-         * never participate in restart identity.
-         */
-        fun stableDataSourceId(dataSource: DbDataSource): String? = try {
-            DbImplUtil.getMaybeLocalDataSource(dataSource)
-                ?.uniqueId
-                ?.toString()
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
-        } catch (ex: Throwable) {
-            LOG.warn("zMyBatis: cannot obtain stable datasource identity for '${dataSource.name}'", ex)
-            null
-        }
     }
 
     private class Entry(
         val console: JdbcConsole,
         val sentinel: CheckedDisposable,
-        val persistedSession: PersistedConsoleSession?
     )
 
     /** Project-scoped store; no application-global project namespace is needed. */
@@ -87,14 +74,13 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
 
     internal fun handleProjectClosing(closingProject: Project) {
         if (closingProject !== project) return
-        LOG.info("zMyBatis: project closing — marking shutdown for session preservation")
+        LOG.info("zMyBatis: project closing — marking shutdown for persistence preservation")
         markShuttingDown()
     }
 
     /**
      * Returns a live cached console only while the project session lifecycle is active.
-     * Disposal cleanup and replacement are serialized with [put] so a stale entry can never clear
-     * persistence belonging to a newer entry for the same mapper.
+     * Ephemeral console disposal affects only the in-memory cache and never owns v2/v3 persistence.
      */
     fun get(mapperKey: String): JdbcConsole? = synchronized(lifecycleLock) {
         if (shuttingDown) return@synchronized null
@@ -102,8 +88,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         if (!entry.sentinel.isDisposed) return@synchronized entry.console
 
         if (cache.remove(mapperKey, entry)) {
-            LOG.info("zMyBatis: disposed console observed — clearing session for $mapperKey")
-            clearSessionLocked(mapperKey)
+            LOG.info("zMyBatis: disposed ephemeral console observed for $mapperKey")
         }
         null
     }
@@ -117,52 +102,51 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     }
 
     /**
-     * Caches [console] and updates restart persistence as one lifecycle transition.
+     * Linearizes one startup migration state transition with project shutdown.
      *
-     * Restart persistence requires both a stable datasource UUID and an explicitly selected schema.
-     * "Use Default Schema" remains reusable in-process but is not persisted because the effective
-     * default schema may change across restarts and cannot be proven from an empty schema identity.
-     *
-     * The transition is accepted only while the service is active and the console sentinel is live.
-     * A rejected registration never removes/replaces an older live entry and never mutates its
-     * persisted session. The caller retains ownership of [console] when this method returns false.
+     * Source/VFS discovery happens outside this lock. Once that evidence is ready, persistence
+     * promotion/cleanup either completes before shutdown or is rejected after shutdown wins.
      */
-    fun put(
-        mapperKey: String,
-        console: JdbcConsole,
-        dataSourceId: String?,
-        dataSourceName: String,
-        schemaName: String
-    ): Boolean {
-        val stableDataSourceId = dataSourceId?.takeIf { it.isNotBlank() }
-        val persistedSession = if (stableDataSourceId != null && schemaName.isNotBlank()) {
-            PersistedConsoleSession(
-                mapperKey = mapperKey,
-                dataSourceId = stableDataSourceId,
-                dataSourceName = dataSourceName,
-                schemaName = schemaName
-            )
-        } else {
-            null
+    internal fun runStartupMigrationTransitionIfActive(block: () -> Unit): Boolean =
+        synchronized(lifecycleLock) {
+            if (project.isDisposed || shuttingDown) {
+                false
+            } else {
+                block()
+                true
+            }
         }
 
+    /**
+     * Registers a live console only as an in-memory REUSE optimization.
+     *
+     * v3 target selection persistence is owned independently by [ExecutionTargetDescriptorStore].
+     * Registration clears any obsolete v2 record once, but disposal/shutdown of this console never
+     * creates or removes persisted target identity.
+     */
+    fun putEphemeral(
+        mapperKey: String,
+        console: JdbcConsole,
+    ): Boolean = registerConsole(mapperKey, console)
+
+    private fun registerConsole(
+        mapperKey: String,
+        console: JdbcConsole,
+    ): Boolean {
         val sentinel = Disposer.newCheckedDisposable(console)
         if (sentinel.isDisposed) {
-            LOG.warn("zMyBatis: console already disposed at put() for $mapperKey — rejecting registration")
+            LOG.warn("zMyBatis: console already disposed at registration for $mapperKey — rejecting")
             return false
         }
 
-        val entry = Entry(console, sentinel, persistedSession)
+        val entry = Entry(console, sentinel)
         try {
             Disposer.register(sentinel) {
                 synchronized(lifecycleLock) {
                     if (!cache.remove(mapperKey, entry)) {
                         LOG.info("zMyBatis: stale sentinel fired for $mapperKey — ignoring")
-                    } else if (shuttingDown) {
-                        LOG.info("zMyBatis: console disposed during shutdown — keeping session for $mapperKey")
                     } else {
-                        LOG.info("zMyBatis: console closed by user — clearing session for $mapperKey")
-                        clearSessionLocked(mapperKey)
+                        LOG.info("zMyBatis: ephemeral console disposed for $mapperKey")
                     }
                 }
             }
@@ -176,17 +160,8 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             if (shuttingDown || sentinel.isDisposed) {
                 false
             } else {
-                if (persistedSession != null) {
-                    saveSession(persistedSession)
-                } else {
-                    clearSessionLocked(mapperKey)
-                    val reason = if (stableDataSourceId == null) {
-                        "datasource '$dataSourceName' has no stable ID"
-                    } else {
-                        "default schema has no stable restart identity"
-                    }
-                    LOG.warn("zMyBatis: $reason; session will not survive restart")
-                }
+                // Live console registration is resource lifecycle only. Persistence cleanup,
+                // including migration-only v2 state, remains startup migration ownership.
                 cache[mapperKey] = entry
                 true
             }
@@ -198,28 +173,8 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             return false
         }
 
-        LOG.info(
-            "zMyBatis: console cached for $mapperKey " +
-                "(ds=$dataSourceName, dsId=${dataSourceId ?: "<unpersisted>"}, schema=$schemaName)"
-        )
+        LOG.info("zMyBatis: ephemeral console cached for $mapperKey")
         return true
-    }
-
-    /** Resolves an exact datasource UUID. Missing or duplicate IDs fail closed. */
-    fun findDataSourceById(dataSourceId: String): DbDataSource? {
-        val matches = DbPsiFacade.getInstance(project).dataSources
-            .filter { stableDataSourceId(it) == dataSourceId }
-        return when (matches.size) {
-            1 -> matches.single()
-            0 -> {
-                LOG.info("zMyBatis: datasource id '$dataSourceId' is no longer available")
-                null
-            }
-            else -> {
-                LOG.error("zMyBatis: datasource id '$dataSourceId' is ambiguous (${matches.size} matches)")
-                null
-            }
-        }
     }
 
     /**
@@ -268,34 +223,22 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         }
     }
 
-    @Suppress("unused")
-    fun remove(mapperKey: String) {
-        synchronized(lifecycleLock) {
-            cache.remove(mapperKey)
-            clearSessionLocked(mapperKey)
-        }
-        LOG.info("zMyBatis: explicitly removed session for $mapperKey")
-    }
-
     /**
-     * Atomically enters shutdown before re-persisting. Disposal callbacks and new registrations use
-     * the same lock, so no callback can erase state and no queued restore/selection can recreate it
-     * after shutdown wins the lifecycle race.
+     * Atomically closes the resource-acquisition gate. v2 is read/cleanup-only migration state and
+     * v3 is owned by ExecutionTargetDescriptorStore, so shutdown never writes persistence from live
+     * console resources.
      */
     fun markShuttingDown() {
-        val persisted = synchronized(lifecycleLock) {
+        synchronized(lifecycleLock) {
             shuttingDown = true
-            val count = persistAllLiveSessions()
             activeSelections.clear()
-            count
         }
-        LOG.info("zMyBatis: markShuttingDown — persisted $persisted live session(s)")
+        LOG.info("zMyBatis: markShuttingDown — console acquisition disabled")
     }
 
     override fun dispose() {
         synchronized(lifecycleLock) {
             shuttingDown = true
-            persistAllLiveSessions()
             activeSelections.clear()
             cache.clear()
         }
@@ -305,19 +248,6 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         val id = ConsoleSessionPersistenceFormat.sessionId(mapperKey)
         synchronized(persistenceLock) {
             removeRecordByIdLocked(id)
-        }
-    }
-
-    private fun saveSession(session: PersistedConsoleSession) {
-        val id = ConsoleSessionPersistenceFormat.sessionId(session.mapperKey)
-        synchronized(persistenceLock) {
-            // Keep the id indexed first so every partial write remains discoverable for cleanup.
-            // Then invalidate any older payload before writing the replacement. If the final write
-            // is interrupted, startup sees an indexed-but-missing record and prunes it rather than
-            // restoring stale datasource/schema identity.
-            addToIndexLocked(id)
-            store.unsetValue(recordKey(id))
-            store.setValue(recordKey(id), ConsoleSessionPersistenceFormat.encode(session))
         }
     }
 
@@ -335,11 +265,6 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     private fun savedSessionIdsLocked(): List<String> {
         val raw = store.getValue(INDEX_KEY) ?: return emptyList()
         return raw.lineSequence().filter { it.isNotBlank() }.distinct().toList()
-    }
-
-    private fun addToIndexLocked(id: String) {
-        val ids = savedSessionIdsLocked().toMutableSet()
-        if (ids.add(id)) writeIndexLocked(ids)
     }
 
     private fun removeFromIndexLocked(id: String) {
@@ -363,16 +288,4 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     }
 
     private fun recordKey(id: String): String = "$RECORD_PREFIX$id"
-
-    private fun persistAllLiveSessions(): Int {
-        var persisted = 0
-        for ((mapperKey, entry) in cache) {
-            if (entry.sentinel.isDisposed) continue
-            val session = entry.persistedSession ?: continue
-            saveSession(session)
-            persisted++
-            LOG.info("zMyBatis: re-persisted session for $mapperKey")
-        }
-        return persisted
-    }
 }

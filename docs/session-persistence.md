@@ -1,32 +1,52 @@
-# Console session persistence
+# Execution target persistence
 
-zMyBatis restart persistence is deliberately fail-closed. A saved console is restored only when the project, mapper, datasource and explicitly selected schema can be resolved without guessing.
+zMyBatis restart target selection is deliberately fail-closed. The authoritative restart state is a project-scoped **v3 source -> execution-target descriptor**, not a live `JdbcConsole`. Startup migrates/prunes persistence only; it never recreates a console, switches schema, opens an editor, mutates a console document, or executes SQL.
 
-## v2 identity
+## v3 identity
 
-- **Project** — storage uses the project-scoped IntelliJ `PropertiesComponent`; there is no application-global project hash namespace.
-- **Mapper** — the session records the mapper's VFS URL. The URL must still resolve to a valid file at startup.
-- **Datasource** — the authoritative identity is the IDE-assigned datasource UUID obtained from the datasource configuration. The display name is stored only for diagnostics and may change without redirecting the session.
-- **Schema** — restart persistence requires a non-empty, explicitly selected schema name. Restoration succeeds only when exactly one matching schema exists on the resolved datasource and switching to it succeeds.
+- **Project** — storage uses the project-scoped IntelliJ `PropertiesComponent`; project identity is storage scope and is not serialized into each record.
+- **Source** — the association stores the canonical `SourceFileId` using the `vfs:<VirtualFile.url>` convention. Its record/index ID is a fixed lowercase SHA-256 of that canonical source identity.
+- **Datasource** — authoritative identity is the IDE-assigned stable datasource UUID. The display name is presentation metadata only and may change without redirecting the selection.
+- **Schema** — restart persistence requires an explicit non-blank schema name. The exact schema string is preserved as identity; zMyBatis does not case-fold or trim it into a different identifier.
 
-A datasource for which zMyBatis cannot obtain a stable ID may still be used during the current IDE process, but that console is not persisted for restart. It is never restored by display-name fallback.
+A datasource without a stable UUID may still be selected for the current execution, but it cannot become restart target authority. **Use Default Schema** is likewise in-process only because an implicit default/search path may change. Choosing either an unproven datasource identity or default schema removes any older persisted v3 selection for that source rather than retaining a stale named target.
 
-**Use Default Schema** is also in-process only. An empty schema selection does not identify which schema will be effective after restart, and an IDE/database default may change. Persisting that choice could silently redirect a later query, so zMyBatis deliberately requires the user to choose the target again after restart.
+The v3 store keeps source association and target descriptor independently meaningful without a live console. Malformed/index-mismatched/orphan records fail closed and are pruned.
 
-## Legacy storage
+## Startup and v2 migration
+
+The previous v2 format stores strings only: mapper VFS URL, stable datasource UUID, datasource display name, and explicit schema. It does not serialize a live `JdbcConsole`.
+
+At startup:
+
+1. structurally invalid v2/v3 state is pruned fail-closed;
+2. a v3 `vfs:` source association is retained only while its exact VFS URL still resolves without refresh;
+3. a v2 record migrates only when its exact mapper URL still resolves and therefore proves the canonical `SourceFileId("vfs:<url>")`;
+4. the migration adapter converts only that proven source identity plus the v2 stable datasource/schema identity;
+5. v3 is saved/validated before v2 cleanup, so an interrupted migration may leave duplicate v2+v3 state but cannot roll the source back to the older v2 target on the next startup;
+6. if valid v3 state already exists for the source, v3 wins and the duplicate v2 record is removed.
+
+Startup does **not** resolve datasource/schema resources or create a console. Exact datasource UUID + exact schema re-resolution occurs when an explicit execution later needs a Database Tools resource.
+
+## Older application-global storage
 
 Versions before persistence v2 stored application-global `zMyBatis.session.*` records using `project.basePath.hashCode()` for the project index and datasource display name for datasource identity.
 
-Those records are intentionally **not migrated or read by v2**. A hash collision or duplicate/renamed datasource name makes the original identity impossible to prove safely. The first query after upgrading therefore asks the user to select datasource/schema again and creates a new v2 record only when the target has a stable datasource ID and an explicit schema.
+Those records remain intentionally **unmigrated and unread**. A hash collision or duplicate/renamed datasource name makes original ownership impossible to prove safely. They are also left untouched rather than bulk-deleted because cleanup cannot prove which project's legacy record it owns.
 
-Legacy application-level records are also left untouched rather than bulk-deleted: the same collision problem means a cleanup routine could not prove which project's legacy record it was deleting.
+## Action-time target resolution and console lifecycle
 
-## Failure and cleanup behavior
+On an explicit zMyBatis execution action:
 
-At startup zMyBatis removes a v2 session when its mapper no longer exists, its datasource UUID is missing/ambiguous, or its named schema is missing/ambiguous. A malformed/stale index record is pruned. Transient console construction failures leave the valid session un-restored so a later startup can retry without redirecting it to a different identity.
+- an existing live console may be reused under the `REUSE` policy;
+- otherwise the v3 descriptor is resolved to exactly one live datasource and exactly one named schema through the maintained Database Tools target resolver;
+- missing or ambiguous datasource/schema resolution invalidates the stored selection and requires explicit user re-selection;
+- only after exact resolution does zMyBatis create a console and switch it to the proven schema;
+- `NEW_EACH` creates a fresh console for the action but uses the same v3 target authority;
+- explicit named datasource/schema selection updates v3 independently of console registration.
 
-Persistence replacement keeps the session ID indexed, invalidates the previous payload, and only then writes the replacement. If the replacement is interrupted after invalidation, the next startup sees an indexed-but-missing record and prunes it instead of restoring the older datasource/schema identity.
+Live console caching is therefore an ephemeral optimization, not persistence authority. Closing or disposing a REUSE console does **not** delete the v3 target selection; the next explicit action re-resolves the descriptor and acquires a fresh resource.
 
-Closing a live console removes its v2 session. Project/IDE shutdown marks the project-scoped cache as shutting down under the lifecycle lock before re-persisting live sessions. After that marker, new datasource selections and console registrations are rejected; a queued startup restoration therefore cannot recreate a session while the project is closing. If startup stale cleanup races with project close, whichever operation acquires the lifecycle lock first defines the result: active cleanup may remove proven-stale state, but once shutdown has begun later cleanup is deferred and the persisted state is re-evaluated on the next startup rather than deleted during close.
+The old v2 reader/cleanup path remains only as bounded migration compatibility while #65 completes legacy `ConsoleCacheService` deletion/isolation. The v2 writer is retired, and v2 cleanup is startup-migration ownership rather than live-console registration/disposal behavior. New v3 target identity is never created or deleted merely because a console is registered or disposed.
 
-Startup restoration only reconstructs console state. It never injects SQL into the console and never invokes query execution.
+Project shutdown gates new selection/migration work. If migration cleanup is interrupted by shutdown, retained persisted state is re-evaluated on the next startup rather than guessed or redirected.

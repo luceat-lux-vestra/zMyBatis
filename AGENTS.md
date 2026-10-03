@@ -27,7 +27,7 @@ Key current ownership areas:
 - parameters: `ParameterExtractor`, `JsonParameterParser`, parameter UI/history;
 - dynamic SQL/rendering: `MyBatisEvaluator`, `SqlFormatter`, preview;
 - execution/DataGrip integration: `MyBatisExecuteProxyAction`;
-- session identity/lifecycle: `ConsoleCacheService`, startup restoration;
+- target persistence/resource lifecycle: `ExecutionTargetDescriptorStore`, `StoredExecutionTargetBridge`, migration-only v2 `ConsoleCacheService`, and action-time console acquisition;
 - settings: `ZMyBatisSettings`, configurable UI.
 
 These are **current-state ownership descriptions**, not target component boundaries. Leap replacement/deletion dispositions are defined by `docs/leap-architecture.md`.
@@ -50,7 +50,7 @@ Current `MyBatisExecuteProxyAction` still emits raw parameter values and rendere
 zMyBatis must not replace, wrap, unregister, reorder, or intercept DataGrip built-in Execute/Explain/console actions.
 
 - Platform action IDs remain untouched.
-- `MyBatisActionInterceptorActivity` is session-restoration infrastructure despite its historical name; it is not a global action interceptor.
+- `MyBatisActionInterceptorActivity` is target-persistence migration/cleanup infrastructure despite its historical name; it does not recreate consoles and is not a global action interceptor.
 - `MyBatisExecuteProxyAction.getActionUpdateThread()` is BGT.
 - Current `update()` unconditionally keeps the zMyBatis action enabled/visible. The product decision was frozen by #61 and implementation remains owned by #66; do not document the target as if it were current behavior.
 - UI/console work belongs on the EDT where required; PSI reads obey IntelliJ read-action requirements; blocking work must not be moved onto the EDT.
@@ -68,18 +68,21 @@ The plugin uses `com.intellij.database.*`, including APIs that can move between 
 
 Executing correct SQL against the wrong datasource/schema is a higher-severity failure than refusing to execute.
 
-The current v2 persistence baseline established by hardening #57 is:
+Hardening #57 established the stable datasource/schema safety baseline, and #260/#262 migrate that authority into the current v3 target-selection model:
 
-- persistence is project-scoped; active state no longer uses `project.basePath.hashCode()` as a project namespace;
-- restart restoration uses a stable IDE datasource UUID, never datasource display-name fallback;
-- restart persistence requires an explicit named schema; `Use Default Schema` and datasources without a stable UUID are in-process only;
-- missing or ambiguous datasource/schema identity and failed named-schema switching fail closed;
-- legacy application-global hash/name records are deliberately not migrated or read because their original ownership cannot be proven safely;
-- registration, disposal, stale cleanup, and shutdown ordering are serialized by the project lifecycle contract;
-- interrupted persistence replacement must not resurrect an older datasource/schema identity;
-- startup restoration may reconstruct state/consoles but must never execute SQL.
+- persistence is project-scoped; active state does not use `project.basePath.hashCode()` as a project namespace;
+- v3 persists canonical source association separately from target identity;
+- restart restoration uses a stable IDE datasource UUID as part of target identity, paired with the exact explicit named schema; under v3 this restores target authority for action-time resolution, not a live console, and datasource display name is presentation-only;
+- `Use Default Schema` and datasources without a stable UUID remain in-process only and cannot leave an older restart target behind;
+- malformed, interrupted, index-mismatched, orphan, or source-stale persisted state fails closed;
+- legacy application-global hash/name records remain deliberately unread because their original ownership cannot be proven safely;
+- v2 project-scoped records are migration-only and convert to v3 only when the exact canonical source identity is proven;
+- startup performs migration/pruning only and creates no `JdbcConsole`;
+- datasource/schema resources are resolved exactly when an explicit action needs a console;
+- `REUSE`/`NEW_EACH` are ephemeral resource policies; live console registration/disposal is not v3 target-persistence authority;
+- cancellation and shutdown remain fail-closed across target resolution/resource acquisition.
 
-The v2 persisted record is string data (`mapperKey`, stable datasource UUID, datasource display name, explicit schema); it does **not** serialize a live `JdbcConsole`. The architectural coupling to replace is that persisted-record creation/removal follows live-console cache registration/disposal, and startup eagerly reconstructs consoles from those records. Leap #65 keeps the proven target-identity invariants while separating descriptor persistence from ephemeral Database Tools resource lifetime.
+The remaining v2 reader/cleanup and mixed `ConsoleCacheService` surface are compatibility debt owned by #65, not the current target identity model.
 
 See [docs/session-persistence.md](docs/session-persistence.md) for the current persistence contract and [docs/test-contracts.md](docs/test-contracts.md) for automated versus platform-dependent evidence.
 
@@ -87,10 +90,10 @@ See [docs/session-persistence.md](docs/session-persistence.md) for the current p
 
 Only the user's explicit zMyBatis execution action may execute SQL.
 
-Extraction, parameter discovery, evaluation, preview, formatting, settings, diagnostics, and startup/session restoration must not execute a statement as a side effect.
+Extraction, parameter discovery, evaluation, preview, formatting, settings, diagnostics, and startup target migration must not execute a statement as a side effect.
 
 - No auto-confirm, auto-retry, or auto-reexecute of failed statements.
-- Project shutdown must win deterministically over queued restore/selection/execution work.
+- Project shutdown must win deterministically over migration/selection/resource-acquisition/execution work.
 - Consoles, listeners, callbacks, dialogs, editors, PSI objects, and scheduled work must not retain disposed project state.
 - Re-check project/lifecycle availability after asynchronous boundaries.
 - Expected unsupported/degraded/user failures should not be promoted to IntelliJ fatal errors. The complete typed diagnostic model is owned by Leap #67.
@@ -189,7 +192,7 @@ In particular, the target deliberately replaces or removes the current:
 - regex/keyword parameter extraction as caller-input authority;
 - dialog-owned parameter semantics and raw-string history identity;
 - global/regex/literal/error-string `MyBatisEvaluator` behavior;
-- v2 persisted-record/live-console-cache lifecycle coupling and startup eager console reconstruction;
+- remaining migration-only v2/legacy `ConsoleCacheService` surface and console mechanics still embedded in the shipping god action;
 - execution-time formatting mutation;
 - safety semantics controlled by Strict OGNL / Ignore Unknown Tags switches.
 
