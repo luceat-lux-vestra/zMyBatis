@@ -26,15 +26,18 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.testFramework.LightVirtualFile
 
-internal sealed interface DatabaseToolsConsoleFailure {
-    data class SchemaSwitchFailed(val schemaName: String) : DatabaseToolsConsoleFailure
+internal sealed interface DatabaseToolsConsoleAcquisitionFailure {
+    data class SchemaSwitchFailed(val schemaName: String) : DatabaseToolsConsoleAcquisitionFailure
     data class ConsoleCreationFailed(
         val dataSourceName: String,
         val detail: String?,
-    ) : DatabaseToolsConsoleFailure
-    data class EditorUnavailable(val consoleTitle: String) : DatabaseToolsConsoleFailure
-    data object ScriptModelUnavailable : DatabaseToolsConsoleFailure
-    data class ExecutionFailed(val detail: String) : DatabaseToolsConsoleFailure
+    ) : DatabaseToolsConsoleAcquisitionFailure
+}
+
+internal sealed interface DatabaseToolsSqlExecutionFailure {
+    data class EditorUnavailable(val consoleTitle: String) : DatabaseToolsSqlExecutionFailure
+    data object ScriptModelUnavailable : DatabaseToolsSqlExecutionFailure
+    data class ExecutionFailed(val detail: String) : DatabaseToolsSqlExecutionFailure
 }
 
 /**
@@ -62,7 +65,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         resourceKey: String,
         forceNew: Boolean,
         onConsoleReady: (JdbcConsole) -> Unit,
-        onFailure: (DatabaseToolsConsoleFailure) -> Unit,
+        onFailure: (DatabaseToolsConsoleAcquisitionFailure) -> Unit,
     ) {
         var console: JdbcConsole? = null
         try {
@@ -82,7 +85,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 val schemaName = schema.name
                 Disposer.dispose(console)
                 console = null
-                onFailure(DatabaseToolsConsoleFailure.SchemaSwitchFailed(schemaName))
+                onFailure(DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed(schemaName))
                 return
             }
 
@@ -121,7 +124,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             LOG.error("zMyBatis: failed to create console for ${dataSource.name}", ex)
             if (!isProjectUnavailable()) {
                 onFailure(
-                    DatabaseToolsConsoleFailure.ConsoleCreationFailed(
+                    DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed(
                         dataSourceName = dataSource.name,
                         detail = ex.message,
                     )
@@ -148,7 +151,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         console: JdbcConsole,
         sql: String,
         onExecuted: () -> Unit,
-        onFailure: (DatabaseToolsConsoleFailure) -> Unit,
+        onFailure: (DatabaseToolsSqlExecutionFailure) -> Unit,
     ) {
         if (isProjectUnavailable()) return
         if (sql.isBlank()) {
@@ -174,7 +177,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                         performExecution(console, sql, retryEditor, onExecuted, onFailure)
                     } else {
                         LOG.warn("zMyBatis: editor still null after opening for '${console.title}'")
-                        onFailure(DatabaseToolsConsoleFailure.EditorUnavailable(console.title))
+                        onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable(console.title))
                     }
                 }, ModalityState.any())
             } else {
@@ -191,7 +194,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         sql: String,
         consoleEditor: EditorEx,
         onExecuted: () -> Unit,
-        onFailure: (DatabaseToolsConsoleFailure) -> Unit,
+        onFailure: (DatabaseToolsSqlExecutionFailure) -> Unit,
     ) {
         if (isProjectUnavailable()) return
         val consoleDoc = console.document
@@ -219,7 +222,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             if (info == null) {
                 LOG.warn("zMyBatis: findScriptModelNoInject returned null (SQL length=${sql.length})")
                 restoreConsoleDocument(consoleDoc, originalText)
-                onFailure(DatabaseToolsConsoleFailure.ScriptModelUnavailable)
+                onFailure(DatabaseToolsSqlExecutionFailure.ScriptModelUnavailable)
                 return
             }
 
@@ -235,7 +238,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
             if (!isProjectUnavailable()) {
                 onFailure(
-                    DatabaseToolsConsoleFailure.ExecutionFailed(
+                    DatabaseToolsSqlExecutionFailure.ExecutionFailed(
                         ex.message ?: ex.javaClass.simpleName,
                     )
                 )
