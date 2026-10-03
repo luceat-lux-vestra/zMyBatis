@@ -82,7 +82,7 @@ class StatementSourceGraphRevalidatorProjectFixtureTest : LightJavaCodeInsightFi
         failure as SourceGraphRevalidationFailure.SourceChanged
         assertEquals(snapshot.revision, failure.expectedRevision)
         assertTrue(failure.actualRevision.value.startsWith("document:"))
-        assertNotEquals(snapshot.revision, failure.actualRevision)
+        assertFalse(snapshot.revision == failure.actualRevision)
     }
 
     fun testVfsSnapshotSurvivesSavedDocumentLoadButUnsavedEditIsStale() {
@@ -132,7 +132,7 @@ class StatementSourceGraphRevalidatorProjectFixtureTest : LightJavaCodeInsightFi
             virtualFile.rename(this, "RenamedMapper.xml")
         }
 
-        assertNotEquals(oldFileId.value, "vfs:" + virtualFile.url)
+        assertFalse(oldFileId.value == "vfs:" + virtualFile.url)
         val failure = failed(StatementSourceGraphRevalidator.revalidate(graph(snapshot)))
         assertEquals(oldFileId, failure.sourceFileId)
         assertTrue(
