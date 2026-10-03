@@ -28,6 +28,7 @@ import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.popup.JBPopupListener
@@ -141,6 +142,8 @@ open class MyBatisExecuteProxyAction : AnAction() {
                     }
                 }
             }
+        } catch (ex: ProcessCanceledException) {
+            throw ex
         } catch (ex: Throwable) {
             LOG.error("zMyBatis runMyBatisQuery failed", ex)
             Messages.showErrorDialog(e.project, "Error preparing MyBatis query:\n${ex.message}", "zMyBatis Error")
@@ -381,6 +384,9 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 "zMyBatis: session prepared for $fileKey " +
                     "(ds=${ds.name}, schema=${schemaName ?: "<default>"})"
             )
+        } catch (ex: ProcessCanceledException) {
+            console?.let { Disposer.dispose(it) }
+            throw ex
         } catch (ex: Throwable) {
             console?.let { Disposer.dispose(it) }
             LOG.error("zMyBatis: failed to create console for ${ds.name}", ex)
@@ -401,6 +407,8 @@ open class MyBatisExecuteProxyAction : AnAction() {
             console.switchSchema(SearchPath.of(path), false)
             LOG.info("zMyBatis: schema '${schema.name}' (kind=$kind) switched on console")
             true
+        } catch (ex: ProcessCanceledException) {
+            throw ex
         } catch (ex: Throwable) {
             LOG.warn("zMyBatis: failed to switch schema '${schema.name}'", ex)
             false
