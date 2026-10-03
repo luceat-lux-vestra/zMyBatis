@@ -11,6 +11,7 @@ import com.algorist.zMyBatis.services.ExecutionTargetDescriptorStore
 import com.algorist.zMyBatis.services.PersistedExecutionTargetSelection
 import com.intellij.database.model.DasNamespace
 import com.intellij.database.psi.DbDataSource
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 
 /**
@@ -123,7 +124,17 @@ internal class StoredExecutionTargetBridge private constructor(
     ): Boolean {
         val selection = loadSelection(sourceFileId) ?: return false
         if (selection.descriptor.targetId != expectedTargetId) return false
-        return resolveDescriptor(selection.descriptor) is DatabaseToolsTargetResolution.Success
+        return try {
+            when (val resolved = resolveDescriptor(selection.descriptor)) {
+                is DatabaseToolsTargetResolution.Success ->
+                    resolved.resolvedTarget.targetId == expectedTargetId
+                is DatabaseToolsTargetResolution.Failed -> false
+            }
+        } catch (ex: ProcessCanceledException) {
+            throw ex
+        } catch (_: Exception) {
+            false
+        }
     }
 
     internal fun rememberIdentity(
