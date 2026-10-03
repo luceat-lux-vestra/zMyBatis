@@ -204,4 +204,17 @@ It does **not** establish that future Database Tools versions cannot expose the 
 It does **not** authorize internal/reflection-based integration.
 It does **not** authorize per-DB literalizers automatically.
 
-#64 and #65 must make the fallback/product decision separately after this proof. Until then, non-zero bindings remain fail-closed with `BOUND_EXECUTION_REQUIRED`.
+## 9. Post-proof disposition — #258
+
+#258 makes the separate #64/#65 product/architecture decision for the maintained 2026.2 baseline: **no fallback is authorized**.
+
+Consequences:
+
+- non-zero bindings remain structured `PreparedExecution` and fail closed with `BOUND_EXECUTION_REQUIRED`;
+- zero-binding `MaterializedExecution` remains a valid DB-neutral artifact, but it does not authorize a split production action where bound statements silently fall back to legacy execution;
+- console text substitution / a second parameter prompt is not a substitute for ordered typed binding;
+- raw/smart prepared execution is not promoted by adding a zMyBatis-owned result UI;
+- internal/reflection APIs and per-DB executable literalizers remain rejected as implicit fallbacks;
+- the current legacy action stays the shipping execution authority until a complete replacement execution contract exists, so Phase-5 action cutover and legacy evaluator/action deletion remain blocked by this gate.
+
+The proof may be reopened when a maintained Database Tools baseline exposes relevant new public/maintained capability. A different native result/history requirement also requires an explicit separately reviewed product/architecture change; it is not inferred from this NO-GO evidence.
