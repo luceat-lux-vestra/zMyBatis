@@ -1,22 +1,28 @@
 package com.algorist.zMyBatis
 
-import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiJavaFile
+import com.intellij.testFramework.fixtures.IdeaTestFixtureFactory
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
+import com.intellij.testFramework.fixtures.TempDirTestFixture
 
 class LegacyActionSourceRevisionGuardProjectFixtureTest : LightJavaCodeInsightFixtureTestCase() {
 
+    override fun getTempDirFixture(): TempDirTestFixture =
+        IdeaTestFixtureFactory.getFixtureFactory().createTempDirTestFixture()
+
     fun testCommittedSourceRemainsCurrentUntilDocumentRevisionChanges() {
-        val psiFile = myFixture.configureByText(
-            JavaFileType.INSTANCE,
+        val created = myFixture.addFileToProject(
+            "fixture/Mapper.java",
             """
             class Mapper {
                 String sql = "SELECT 1";
             }
             """.trimIndent(),
         ) as PsiJavaFile
+        myFixture.configureFromExistingVirtualFile(created.virtualFile)
+        val psiFile = myFixture.file as PsiJavaFile
         val editor = myFixture.editor
         val document = editor.document
         val documentManager = PsiDocumentManager.getInstance(project)
@@ -47,14 +53,16 @@ class LegacyActionSourceRevisionGuardProjectFixtureTest : LightJavaCodeInsightFi
     }
 
     fun testUncommittedLegacyPsiSourceFailsClosedUntilExplicitCommit() {
-        val psiFile = myFixture.configureByText(
-            JavaFileType.INSTANCE,
+        val created = myFixture.addFileToProject(
+            "fixture/Mapper.java",
             """
             class Mapper {
                 String sql = "SELECT saved";
             }
             """.trimIndent(),
         ) as PsiJavaFile
+        myFixture.configureFromExistingVirtualFile(created.virtualFile)
+        val psiFile = myFixture.file as PsiJavaFile
         val editor = myFixture.editor
         val document = editor.document
         val documentManager = PsiDocumentManager.getInstance(project)
