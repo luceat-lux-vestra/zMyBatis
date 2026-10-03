@@ -34,7 +34,7 @@ Target contract baseline: product decisions frozen from fresh `main` `249d3a5058
 | Generated aliases / `@Param` / collection aliases | Supported only when provenance is actually established; never guessed solely by naming | #62/#63 |
 | Unknown parameter requirements | **UNSUPPORTED for execution** until resolved explicitly | #63 |
 | MyBatis/application custom TypeHandler runtime parity | **UNSUPPORTED unless explicitly reproduced/evidenced** | #64 |
-| Literal final SQL through Database Tools | Current shipping compatibility behavior only. Leap must first prove Database Tools parameterized execution for non-zero bindings; zero-binding SQL text remains a DB-neutral transitional case | #64/#65 |
+| Literal final SQL through Database Tools | Current shipping compatibility behavior only. Zero-binding SQL text remains a DB-neutral transitional artifact; #258 forbids treating that subset as permission for a split production cutover while non-zero binding execution remains unresolved | #64/#65/#66 |
 | SELECT | Supported after all source/input/preparation/target contracts pass | #66 orchestration |
 | INSERT/UPDATE/DELETE | Supported only with mandatory final-artifact confirmation | #66 |
 | Unknown semantic side-effect classification | Blocks; static SQL classification is not authorization | #64/#66 |
@@ -174,13 +174,18 @@ For non-zero `#{...}` bindings, Leap requires a maintainable Database Tools para
 
 #251 completed that proof attempt against the maintained 2026.2 baseline and found **NO-GO**: the console/user-parameter subsystem is text-substitution oriented, while the proven session-bound prepared-statement APIs do not expose a maintained bridge back into the native console result/history path. See [Database Tools parameterized execution proof](database-tools-parameterized-execution.md).
 
+#258 resolves the required post-proof product/architecture decision for the maintained 2026.2 baseline: **no fallback is authorized**.
+
 Therefore:
 
-- bound values stay structured; they are not converted into PostgreSQL/Oracle/MySQL-specific executable literals by core;
+- bound values stay structured and non-zero bindings fail closed with `BOUND_EXECUTION_REQUIRED`; they are not converted into PostgreSQL/Oracle/MySQL-specific executable literals by core;
 - the maintained SQL-text materializer admits only the DB-neutral zero-binding case;
+- zero-binding `MaterializedExecution` remains a valid artifact, but that subset does not authorize a split production cutover where bound statements silently fall back to the legacy execution path;
+- the current legacy action remains the shipping execution authority until a complete replacement execution contract exists; Phase-5 action cutover and legacy evaluator/action deletion remain blocked by the non-zero-binding execution gate;
 - previous PostgreSQL literalization slices are historical research evidence, not the authoritative cutover path;
 - unsupported/custom TypeHandler semantics remain explicit execution-adapter concerns rather than guessed SQL text;
-- #251 does not authorize reflection/internal APIs or a per-DB literalizer fallback; #64/#65 must choose any fallback separately.
+- console text substitution/second prompting, reflection/internal API bridges, per-DB literalizers, and a zMyBatis-owned custom result UI are not fallback paths under the current contract;
+- the parameterized-execution proof is reopened only when the maintained Database Tools baseline exposes relevant new public/maintained capability, or when an explicit separately reviewed product decision changes the native result/history requirement.
 
 ## 10. Preview, formatting, copy, and execution identity
 
@@ -276,7 +281,7 @@ A small safety patch may remove current INFO leakage before the full Leap cutove
 5. derive a provenanced input contract;
 6. collect and validate explicit user input;
 7. prepare through isolated MyBatis semantics, including the proven target database id when required;
-8. keep non-zero bindings structured for the Database Tools parameterized execution path; zero-binding SQL may cross the DB-neutral immutable text boundary;
+8. keep non-zero bindings structured and fail closed until the Database Tools parameterized execution gate is satisfied; zero-binding SQL may cross the DB-neutral immutable text boundary without authorizing a partial production action cutover;
 9. revalidate source and target revisions;
 10. require mutation/raw confirmation where applicable;
 11. execute through the configured Database Tools datasource/session without a zMyBatis DBMS allowlist;
