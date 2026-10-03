@@ -369,6 +369,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         )
     }
 
+    @Suppress("UsePropertyAccessSyntax")
     private fun executeOnConsole(
         console: JdbcConsole,
         project: com.intellij.openapi.project.Project,
@@ -379,7 +380,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
             sql = pureSql,
             onExecuted = {
                 if (ZMyBatisSettings.getInstance().copyToClipboard) {
-                    CopyPasteManager.getInstance().contents = StringSelection(pureSql)
+                    CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
                 }
             },
             onFailure = { failure ->
