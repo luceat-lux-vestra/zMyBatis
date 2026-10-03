@@ -44,7 +44,8 @@ open class MyBatisExecuteProxyAction : AnAction() {
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        e.presentation.isEnabledAndVisible = true
+        e.presentation.isEnabledAndVisible =
+            MyBatisContextAnalyzer.analyze(e) != MyBatisContextAnalyzer.ContextType.NONE
     }
 
     private fun isProjectUnavailable(project: com.intellij.openapi.project.Project): Boolean =
