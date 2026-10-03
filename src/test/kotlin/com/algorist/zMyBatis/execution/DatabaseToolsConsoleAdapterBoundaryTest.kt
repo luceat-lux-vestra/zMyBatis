@@ -37,6 +37,9 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         assertFalse(adapter.contains("ExecutionTargetDescriptorStore"))
         assertFalse(adapter.contains("StoredExecutionTargetBridge"))
         assertFalse(adapter.contains("PropertiesComponent"))
+        assertFalse(adapter.contains("ZMyBatisSettings"))
+        assertFalse(adapter.contains("CopyPasteManager"))
+        assertFalse(adapter.contains("Messages.show"))
     }
 
     private fun source(relativePath: String): String =
