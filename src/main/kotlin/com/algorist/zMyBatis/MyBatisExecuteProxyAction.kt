@@ -173,6 +173,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                         }
                     }
                     is StoredExecutionTargetResolution.Invalid -> {
+                        cache.evict(mapperKey)
                         LOG.info(
                             "zMyBatis: persisted execution target is stale " +
                                 "(code=${storedTarget.failure.code}); requiring explicit re-selection"
