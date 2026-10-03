@@ -55,7 +55,8 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     private class Entry(
         val console: JdbcConsole,
         val sentinel: CheckedDisposable,
-        val persistedSession: PersistedConsoleSession?
+        val persistedSession: PersistedConsoleSession?,
+        val ownsLegacyPersistence: Boolean,
     )
 
     /** Project-scoped store; no application-global project namespace is needed. */
@@ -102,8 +103,12 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         if (!entry.sentinel.isDisposed) return@synchronized entry.console
 
         if (cache.remove(mapperKey, entry)) {
-            LOG.info("zMyBatis: disposed console observed — clearing session for $mapperKey")
-            clearSessionLocked(mapperKey)
+            if (entry.ownsLegacyPersistence) {
+                LOG.info("zMyBatis: disposed legacy console observed — clearing v2 session for $mapperKey")
+                clearSessionLocked(mapperKey)
+            } else {
+                LOG.info("zMyBatis: disposed ephemeral console observed for $mapperKey")
+            }
         }
         null
     }
@@ -146,23 +151,72 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             null
         }
 
+        return registerConsole(
+            mapperKey = mapperKey,
+            console = console,
+            persistedSession = persistedSession,
+            ownsLegacyPersistence = true,
+            updatePersistence = {
+                if (persistedSession != null) {
+                    saveSession(persistedSession)
+                } else {
+                    clearSessionLocked(mapperKey)
+                    val reason = if (stableDataSourceId == null) {
+                        "datasource '$dataSourceName' has no stable ID"
+                    } else {
+                        "default schema has no stable restart identity"
+                    }
+                    LOG.warn("zMyBatis: $reason; session will not survive restart")
+                }
+            },
+        )
+    }
+
+    /**
+     * Registers a live console only as an in-memory REUSE optimization.
+     *
+     * v3 target selection persistence is owned independently by [ExecutionTargetDescriptorStore].
+     * Registration clears any obsolete v2 record once, but disposal/shutdown of this console never
+     * creates or removes persisted target identity.
+     */
+    fun putEphemeral(
+        mapperKey: String,
+        console: JdbcConsole,
+    ): Boolean =
+        registerConsole(
+            mapperKey = mapperKey,
+            console = console,
+            persistedSession = null,
+            ownsLegacyPersistence = false,
+            updatePersistence = { clearSessionLocked(mapperKey) },
+        )
+
+    private fun registerConsole(
+        mapperKey: String,
+        console: JdbcConsole,
+        persistedSession: PersistedConsoleSession?,
+        ownsLegacyPersistence: Boolean,
+        updatePersistence: () -> Unit,
+    ): Boolean {
         val sentinel = Disposer.newCheckedDisposable(console)
         if (sentinel.isDisposed) {
-            LOG.warn("zMyBatis: console already disposed at put() for $mapperKey — rejecting registration")
+            LOG.warn("zMyBatis: console already disposed at registration for $mapperKey — rejecting")
             return false
         }
 
-        val entry = Entry(console, sentinel, persistedSession)
+        val entry = Entry(console, sentinel, persistedSession, ownsLegacyPersistence)
         try {
             Disposer.register(sentinel) {
                 synchronized(lifecycleLock) {
                     if (!cache.remove(mapperKey, entry)) {
                         LOG.info("zMyBatis: stale sentinel fired for $mapperKey — ignoring")
                     } else if (shuttingDown) {
-                        LOG.info("zMyBatis: console disposed during shutdown — keeping session for $mapperKey")
-                    } else {
-                        LOG.info("zMyBatis: console closed by user — clearing session for $mapperKey")
+                        LOG.info("zMyBatis: console disposed during shutdown for $mapperKey")
+                    } else if (entry.ownsLegacyPersistence) {
+                        LOG.info("zMyBatis: legacy console closed by user — clearing v2 session for $mapperKey")
                         clearSessionLocked(mapperKey)
+                    } else {
+                        LOG.info("zMyBatis: ephemeral console closed by user for $mapperKey")
                     }
                 }
             }
@@ -176,17 +230,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             if (shuttingDown || sentinel.isDisposed) {
                 false
             } else {
-                if (persistedSession != null) {
-                    saveSession(persistedSession)
-                } else {
-                    clearSessionLocked(mapperKey)
-                    val reason = if (stableDataSourceId == null) {
-                        "datasource '$dataSourceName' has no stable ID"
-                    } else {
-                        "default schema has no stable restart identity"
-                    }
-                    LOG.warn("zMyBatis: $reason; session will not survive restart")
-                }
+                updatePersistence()
                 cache[mapperKey] = entry
                 true
             }
@@ -200,7 +244,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
 
         LOG.info(
             "zMyBatis: console cached for $mapperKey " +
-                "(ds=$dataSourceName, dsId=${dataSourceId ?: "<unpersisted>"}, schema=$schemaName)"
+                "(legacyPersistence=$ownsLegacyPersistence)"
         )
         return true
     }
