@@ -82,7 +82,7 @@ Hardening #57 established the stable datasource/schema safety baseline, and #260
 - `REUSE`/`NEW_EACH` are ephemeral resource policies; live console registration/disposal is not v3 target-persistence authority;
 - cancellation and shutdown remain fail-closed across target resolution/resource acquisition.
 
-The remaining v2 reader/writer and mixed `ConsoleCacheService` surface are compatibility debt owned by #65, not the current target identity model.
+The remaining v2 reader/cleanup and mixed `ConsoleCacheService` surface are compatibility debt owned by #65, not the current target identity model.
 
 See [docs/session-persistence.md](docs/session-persistence.md) for the current persistence contract and [docs/test-contracts.md](docs/test-contracts.md) for automated versus platform-dependent evidence.
 
