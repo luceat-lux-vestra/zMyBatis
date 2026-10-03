@@ -48,7 +48,20 @@ internal class ExecutionTargetDescriptorStore(project: Project) {
     fun load(sourceFileId: SourceFileId): PersistedExecutionTargetSelection? =
         synchronized(persistenceLock) {
             val id = ExecutionTargetSelectionPersistenceFormat.selectionId(sourceFileId)
-            loadSelectionLocked(id)?.takeIf { it.association.sourceFileId == sourceFileId }
+            if (id !in savedSelectionIdsLocked()) {
+                // The index is the discovery authority. Never resurrect an orphan payload after
+                // interrupted/corrupt persistence; fail closed and make the orphan cleanable.
+                store.unsetValue(recordKey(id))
+                return@synchronized null
+            }
+
+            val selection = loadSelectionLocked(id)
+            if (selection == null || selection.association.sourceFileId != sourceFileId) {
+                removeRecordByIdLocked(id)
+                null
+            } else {
+                selection
+            }
         }
 
     /**
