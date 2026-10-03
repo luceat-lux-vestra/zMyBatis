@@ -32,6 +32,22 @@ class MyBatisActionUpdateProjectFixtureTest : LightJavaCodeInsightFixtureTestCas
         assertNotApplicable(updatePresentation(myFixture.editor, mapper))
     }
 
+    fun testNonMyBatisXmlSelectIsHidden() {
+        val ordinaryXml = myFixture.configureByText(
+            XmlFileType.INSTANCE,
+            """
+            <form>
+              <select>
+                <option>one</option>
+              </select>
+            </form>
+            """.trimIndent()
+        )
+
+        moveCaretTo(ordinaryXml, myFixture.editor, "one")
+        assertNotApplicable(updatePresentation(myFixture.editor, ordinaryXml))
+    }
+
     fun testDirectJavaStatementAnnotationIsVisible() {
         addStatementAnnotation("Select")
         val mapper = myFixture.configureByText(
