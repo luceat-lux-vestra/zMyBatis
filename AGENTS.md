@@ -81,7 +81,7 @@ Hardening #57 established the stable datasource/schema safety baseline, and #260
 - v2 project-scoped records are migration-only and convert to v3 only when the exact canonical source identity is proven;
 - startup performs migration/pruning only and creates no `JdbcConsole`;
 - datasource/schema resources are resolved exactly when an explicit action needs a console;
-- `REUSE`/`NEW_EACH` are ephemeral resource policies; live console registration/disposal is not v3 target-persistence authority;
+- `REUSE`/`NEW_EACH` are ephemeral resource policies; live console registration/disposal is not v3 target-persistence authority; the project-scoped REUSE cache owns retained live consoles and must dispose superseded entries and all remaining cached consoles when the service is disposed;
 - cancellation and shutdown remain fail-closed across target resolution/resource acquisition.
 
 The remaining v2 reader/cleanup is isolated in `LegacyV2ConsoleSessionMigrationStore` and remains compatibility debt owned by #65. `ConsoleCacheService` now owns live resource/selection/shutdown lifecycle only and has no persistence storage surface.
