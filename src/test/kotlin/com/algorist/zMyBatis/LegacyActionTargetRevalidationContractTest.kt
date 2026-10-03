@@ -92,11 +92,10 @@ class LegacyActionTargetRevalidationContractTest {
             .substringBefore("internal fun rememberIdentity(")
 
         assertTrue(revalidation.contains("selection.descriptor.targetId != expectedTargetId"))
-        assertTrue(
-            revalidation.contains(
-                "resolveDescriptor(selection.descriptor) is DatabaseToolsTargetResolution.Success",
-            ),
-        )
+        assertTrue(revalidation.contains("resolveDescriptor(selection.descriptor)"))
+        assertTrue(revalidation.contains("resolved.resolvedTarget.targetId == expectedTargetId"))
+        assertTrue(revalidation.contains("catch (_: Exception)"))
+        assertTrue(revalidation.contains("false"))
         assertFalse(
             "pre-execution revalidation must not delete persisted authority",
             revalidation.contains("removeSelection("),
