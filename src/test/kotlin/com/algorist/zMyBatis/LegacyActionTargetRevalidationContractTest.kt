@@ -76,7 +76,11 @@ class LegacyActionTargetRevalidationContractTest {
 
         assertTrue(cache.contains("val targetId: ExecutionTargetId?"))
         assertTrue(cache.contains("expectedTargetId: ExecutionTargetId?"))
-        assertTrue(cache.contains("if (entry.targetId != expectedTargetId)"))
+        assertTrue(
+            cache.contains(
+                "if (!consoleCacheTargetIdentityMatches(entry.targetId, expectedTargetId))",
+            ),
+        )
         assertTrue(
             "mismatched cached console must be evicted rather than silently reused",
             cache.contains("cache.remove(mapperKey, entry)"),
