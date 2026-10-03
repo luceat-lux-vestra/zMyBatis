@@ -59,7 +59,325 @@ class SensitiveLoggingContractTest {
         )
 
         val metadataOnlyEvidence = listOf(
-            "parameters resolved (count=${paramValues.size})",
+            "parameters resolved (count=${',
+            "SQL evaluated (length=${',
+            "parameter values collected (count=${',
+        )
+
+        metadataOnlyEvidence.forEach { token ->
+            assertTrue("expected metadata-only logging evidence is missing: $token", source.contains(token))
+        }
+    }
+
+    @Test
+    fun `logging detector rejects values but permits count and length metadata`() {
+        val unsafe = listOf(
+            """LOG.info("sql=${'$'}rawSql")""",
+            """LOG.warn("values=${'$'}{values.keys}")""",
+            """LOG.debug("input=${'$'}paramValues")""",
+            """LOG.error("secret=${'$'}{credential.value}")""",
+        )
+        unsafe.forEach { sample ->
+            assertFalse("unsafe sample must be rejected: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+
+        val safeMetadata = listOf(
+            """LOG.info("sqlLength=${'$'}{sql.length}")""",
+            """LOG.info("parameterCount=${'$'}{values.size}")""",
+            """LOG.info("discovered=${'$'}{extracted.params.size}")""",
+        )
+        safeMetadata.forEach { sample ->
+            assertTrue("metadata-only sample must remain allowed: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+    }
+
+    private fun loggingWindows(source: String): List<String> {
+        val lines = source.lines()
+        return lines.indices.mapNotNull { index ->
+            if (!LOG_CALL.containsMatchIn(lines[index])) {
+                null
+            } else {
+                lines.subList(index, minOf(index + 8, lines.size)).joinToString("\n")
+            }
+        }
+    }
+
+    private fun findSensitiveInterpolations(loggingWindow: String): List<String> =
+        FORBIDDEN.flatMap { pattern -> pattern.findAll(loggingWindow).map { it.value }.toList() }
+}
+}{paramValues.size})",
+            "SQL evaluated (length=${rawSql.length})",
+            "parameter values collected (count=${values.size})",
+        )
+
+        metadataOnlyEvidence.forEach { token ->
+            assertTrue("expected metadata-only logging evidence is missing: $token", source.contains(token))
+        }
+    }
+
+    @Test
+    fun `logging detector rejects values but permits count and length metadata`() {
+        val unsafe = listOf(
+            """LOG.info("sql=${'$'}rawSql")""",
+            """LOG.warn("values=${'$'}{values.keys}")""",
+            """LOG.debug("input=${'$'}paramValues")""",
+            """LOG.error("secret=${'$'}{credential.value}")""",
+        )
+        unsafe.forEach { sample ->
+            assertFalse("unsafe sample must be rejected: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+
+        val safeMetadata = listOf(
+            """LOG.info("sqlLength=${'$'}{sql.length}")""",
+            """LOG.info("parameterCount=${'$'}{values.size}")""",
+            """LOG.info("discovered=${'$'}{extracted.params.size}")""",
+        )
+        safeMetadata.forEach { sample ->
+            assertTrue("metadata-only sample must remain allowed: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+    }
+
+    private fun loggingWindows(source: String): List<String> {
+        val lines = source.lines()
+        return lines.indices.mapNotNull { index ->
+            if (!LOG_CALL.containsMatchIn(lines[index])) {
+                null
+            } else {
+                lines.subList(index, minOf(index + 8, lines.size)).joinToString("\n")
+            }
+        }
+    }
+
+    private fun findSensitiveInterpolations(loggingWindow: String): List<String> =
+        FORBIDDEN.flatMap { pattern -> pattern.findAll(loggingWindow).map { it.value }.toList() }
+}
+}{rawSql.length})",
+            "parameter values collected (count=${values.size})",
+        )
+
+        metadataOnlyEvidence.forEach { token ->
+            assertTrue("expected metadata-only logging evidence is missing: $token", source.contains(token))
+        }
+    }
+
+    @Test
+    fun `logging detector rejects values but permits count and length metadata`() {
+        val unsafe = listOf(
+            """LOG.info("sql=${'$'}rawSql")""",
+            """LOG.warn("values=${'$'}{values.keys}")""",
+            """LOG.debug("input=${'$'}paramValues")""",
+            """LOG.error("secret=${'$'}{credential.value}")""",
+        )
+        unsafe.forEach { sample ->
+            assertFalse("unsafe sample must be rejected: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+
+        val safeMetadata = listOf(
+            """LOG.info("sqlLength=${'$'}{sql.length}")""",
+            """LOG.info("parameterCount=${'$'}{values.size}")""",
+            """LOG.info("discovered=${'$'}{extracted.params.size}")""",
+        )
+        safeMetadata.forEach { sample ->
+            assertTrue("metadata-only sample must remain allowed: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+    }
+
+    private fun loggingWindows(source: String): List<String> {
+        val lines = source.lines()
+        return lines.indices.mapNotNull { index ->
+            if (!LOG_CALL.containsMatchIn(lines[index])) {
+                null
+            } else {
+                lines.subList(index, minOf(index + 8, lines.size)).joinToString("\n")
+            }
+        }
+    }
+
+    private fun findSensitiveInterpolations(loggingWindow: String): List<String> =
+        FORBIDDEN.flatMap { pattern -> pattern.findAll(loggingWindow).map { it.value }.toList() }
+}
+}{paramValues.size})",
+            "SQL evaluated (length=${rawSql.length})",
+            "parameter values collected (count=${values.size})",
+        )
+
+        metadataOnlyEvidence.forEach { token ->
+            assertTrue("expected metadata-only logging evidence is missing: $token", source.contains(token))
+        }
+    }
+
+    @Test
+    fun `logging detector rejects values but permits count and length metadata`() {
+        val unsafe = listOf(
+            """LOG.info("sql=${'$'}rawSql")""",
+            """LOG.warn("values=${'$'}{values.keys}")""",
+            """LOG.debug("input=${'$'}paramValues")""",
+            """LOG.error("secret=${'$'}{credential.value}")""",
+        )
+        unsafe.forEach { sample ->
+            assertFalse("unsafe sample must be rejected: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+
+        val safeMetadata = listOf(
+            """LOG.info("sqlLength=${'$'}{sql.length}")""",
+            """LOG.info("parameterCount=${'$'}{values.size}")""",
+            """LOG.info("discovered=${'$'}{extracted.params.size}")""",
+        )
+        safeMetadata.forEach { sample ->
+            assertTrue("metadata-only sample must remain allowed: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+    }
+
+    private fun loggingWindows(source: String): List<String> {
+        val lines = source.lines()
+        return lines.indices.mapNotNull { index ->
+            if (!LOG_CALL.containsMatchIn(lines[index])) {
+                null
+            } else {
+                lines.subList(index, minOf(index + 8, lines.size)).joinToString("\n")
+            }
+        }
+    }
+
+    private fun findSensitiveInterpolations(loggingWindow: String): List<String> =
+        FORBIDDEN.flatMap { pattern -> pattern.findAll(loggingWindow).map { it.value }.toList() }
+}
+}{values.size})",
+        )
+
+        metadataOnlyEvidence.forEach { token ->
+            assertTrue("expected metadata-only logging evidence is missing: $token", source.contains(token))
+        }
+    }
+
+    @Test
+    fun `logging detector rejects values but permits count and length metadata`() {
+        val unsafe = listOf(
+            """LOG.info("sql=${'$'}rawSql")""",
+            """LOG.warn("values=${'$'}{values.keys}")""",
+            """LOG.debug("input=${'$'}paramValues")""",
+            """LOG.error("secret=${'$'}{credential.value}")""",
+        )
+        unsafe.forEach { sample ->
+            assertFalse("unsafe sample must be rejected: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+
+        val safeMetadata = listOf(
+            """LOG.info("sqlLength=${'$'}{sql.length}")""",
+            """LOG.info("parameterCount=${'$'}{values.size}")""",
+            """LOG.info("discovered=${'$'}{extracted.params.size}")""",
+        )
+        safeMetadata.forEach { sample ->
+            assertTrue("metadata-only sample must remain allowed: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+    }
+
+    private fun loggingWindows(source: String): List<String> {
+        val lines = source.lines()
+        return lines.indices.mapNotNull { index ->
+            if (!LOG_CALL.containsMatchIn(lines[index])) {
+                null
+            } else {
+                lines.subList(index, minOf(index + 8, lines.size)).joinToString("\n")
+            }
+        }
+    }
+
+    private fun findSensitiveInterpolations(loggingWindow: String): List<String> =
+        FORBIDDEN.flatMap { pattern -> pattern.findAll(loggingWindow).map { it.value }.toList() }
+}
+}{paramValues.size})",
+            "SQL evaluated (length=${rawSql.length})",
+            "parameter values collected (count=${values.size})",
+        )
+
+        metadataOnlyEvidence.forEach { token ->
+            assertTrue("expected metadata-only logging evidence is missing: $token", source.contains(token))
+        }
+    }
+
+    @Test
+    fun `logging detector rejects values but permits count and length metadata`() {
+        val unsafe = listOf(
+            """LOG.info("sql=${'$'}rawSql")""",
+            """LOG.warn("values=${'$'}{values.keys}")""",
+            """LOG.debug("input=${'$'}paramValues")""",
+            """LOG.error("secret=${'$'}{credential.value}")""",
+        )
+        unsafe.forEach { sample ->
+            assertFalse("unsafe sample must be rejected: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+
+        val safeMetadata = listOf(
+            """LOG.info("sqlLength=${'$'}{sql.length}")""",
+            """LOG.info("parameterCount=${'$'}{values.size}")""",
+            """LOG.info("discovered=${'$'}{extracted.params.size}")""",
+        )
+        safeMetadata.forEach { sample ->
+            assertTrue("metadata-only sample must remain allowed: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+    }
+
+    private fun loggingWindows(source: String): List<String> {
+        val lines = source.lines()
+        return lines.indices.mapNotNull { index ->
+            if (!LOG_CALL.containsMatchIn(lines[index])) {
+                null
+            } else {
+                lines.subList(index, minOf(index + 8, lines.size)).joinToString("\n")
+            }
+        }
+    }
+
+    private fun findSensitiveInterpolations(loggingWindow: String): List<String> =
+        FORBIDDEN.flatMap { pattern -> pattern.findAll(loggingWindow).map { it.value }.toList() }
+}
+}{rawSql.length})",
+            "parameter values collected (count=${values.size})",
+        )
+
+        metadataOnlyEvidence.forEach { token ->
+            assertTrue("expected metadata-only logging evidence is missing: $token", source.contains(token))
+        }
+    }
+
+    @Test
+    fun `logging detector rejects values but permits count and length metadata`() {
+        val unsafe = listOf(
+            """LOG.info("sql=${'$'}rawSql")""",
+            """LOG.warn("values=${'$'}{values.keys}")""",
+            """LOG.debug("input=${'$'}paramValues")""",
+            """LOG.error("secret=${'$'}{credential.value}")""",
+        )
+        unsafe.forEach { sample ->
+            assertFalse("unsafe sample must be rejected: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+
+        val safeMetadata = listOf(
+            """LOG.info("sqlLength=${'$'}{sql.length}")""",
+            """LOG.info("parameterCount=${'$'}{values.size}")""",
+            """LOG.info("discovered=${'$'}{extracted.params.size}")""",
+        )
+        safeMetadata.forEach { sample ->
+            assertTrue("metadata-only sample must remain allowed: $sample", findSensitiveInterpolations(sample).isEmpty())
+        }
+    }
+
+    private fun loggingWindows(source: String): List<String> {
+        val lines = source.lines()
+        return lines.indices.mapNotNull { index ->
+            if (!LOG_CALL.containsMatchIn(lines[index])) {
+                null
+            } else {
+                lines.subList(index, minOf(index + 8, lines.size)).joinToString("\n")
+            }
+        }
+    }
+
+    private fun findSensitiveInterpolations(loggingWindow: String): List<String> =
+        FORBIDDEN.flatMap { pattern -> pattern.findAll(loggingWindow).map { it.value }.toList() }
+}
+}{paramValues.size})",
             "SQL evaluated (length=${rawSql.length})",
             "parameter values collected (count=${values.size})",
         )
