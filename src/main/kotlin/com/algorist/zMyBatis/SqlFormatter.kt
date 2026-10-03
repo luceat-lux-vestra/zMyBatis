@@ -21,8 +21,9 @@ import com.intellij.sql.SqlFileType
  * The formatting respects the user's own SQL code-style settings
  * (Settings → Editor → Code Style → SQL).
  *
- * Falls back to the original SQL string if anything goes wrong so that
- * execution is never blocked by a formatting failure.
+ * Falls back to the original SQL string for ordinary formatting failures so that
+ * execution is not blocked by a recoverable presentation failure. Cancellation and
+ * fatal non-Exception throwables propagate instead of being converted into success.
  */
 object SqlFormatter {
 
@@ -36,7 +37,7 @@ object SqlFormatter {
      *
      * @param project  The current project (required for [PsiFileFactory] and [CodeStyleManager]).
      * @param sql      The raw resolved SQL string to format.
-     * @return         The formatted SQL, or [sql] unchanged if formatting fails.
+     * @return         The formatted SQL, or [sql] unchanged for an ordinary formatting failure.
      */
     @Suppress("TooGenericExceptionCaught")
     fun format(project: Project, sql: String): String {
