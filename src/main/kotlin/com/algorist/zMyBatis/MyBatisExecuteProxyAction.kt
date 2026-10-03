@@ -99,18 +99,22 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 }
             }
 
-            val sqlContent = extractSqlContent(context, editor, psiFile)
-            if (sqlContent == null) {
-                LOG.warn("zMyBatis: extractSqlContent returned null. Context: $context")
-                return
-            }
-
-            val annotationDependencies =
+            val statementAnnotation =
                 if (context == MyBatisContextAnalyzer.ContextType.ANNOTATION) {
+                    findCurrentStatementAnnotation(editor, psiFile)
+                        ?: run {
+                            LOG.warn("zMyBatis: statement annotation unavailable after context analysis")
+                            return
+                        }
+                } else {
+                    null
+                }
+            val annotationDependencies =
+                if (statementAnnotation != null) {
                     when (
                         val capture = LegacyAnnotationDependencyRevisionGuard.capture(
                             project,
-                            findCurrentStatementAnnotation(editor, psiFile),
+                            statementAnnotation,
                         )
                     ) {
                         is LegacyAnnotationDependencyRevisionCaptureResult.Captured ->
@@ -139,6 +143,19 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 root = rootSourceRevision,
                 annotationDependencies = annotationDependencies,
             )
+
+            val sqlContent =
+                if (statementAnnotation != null) {
+                    AnnotationSqlExtractor.extract(statementAnnotation)
+                } else {
+                    extractSqlContent(context, editor, psiFile)
+                }
+            if (sqlContent == null) {
+                LOG.warn("zMyBatis: extractSqlContent returned null. Context: $context")
+                return
+            }
+            // Capture precedes extraction so external dependency drift cannot produce old SQL
+            // paired with a newer revision token. Revalidate immediately after extraction.
             if (!isSourceRevisionCurrent(project, sourceRevision)) return
 
             val historyFileKey = psiFile.virtualFile?.path ?: psiFile.name
