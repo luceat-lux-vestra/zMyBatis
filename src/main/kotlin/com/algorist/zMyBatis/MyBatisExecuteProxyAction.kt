@@ -105,24 +105,32 @@ open class MyBatisExecuteProxyAction : AnAction() {
             } else {
                 when (val storedTarget = StoredExecutionTargetBridge.forProject(project).resolve(sourceFileId)) {
                     is StoredExecutionTargetResolution.Success -> {
-                        LOG.info("zMyBatis: resolved persisted execution target for $mapperKey")
-                        buildAndDeliverConsole(
-                            project = project,
-                            ds = storedTarget.dataSource,
-                            schema = storedTarget.schema,
-                            fileKey = mapperKey,
-                            sourceFileId = sourceFileId,
-                            forceNew = forceNew,
-                            rememberSelection = false,
-                        ) { console ->
-                            proceedWithParamsAndExecute(
-                                e,
-                                project,
-                                sqlContent,
-                                context,
-                                console,
-                                statementKey,
-                            )
+                        if (!cache.beginSelection(mapperKey)) {
+                            LOG.info("zMyBatis: console acquisition already in progress for $mapperKey")
+                            return
+                        }
+                        try {
+                            LOG.info("zMyBatis: resolved persisted execution target for $mapperKey")
+                            buildAndDeliverConsole(
+                                project = project,
+                                ds = storedTarget.dataSource,
+                                schema = storedTarget.schema,
+                                fileKey = mapperKey,
+                                sourceFileId = sourceFileId,
+                                forceNew = forceNew,
+                                rememberSelection = false,
+                            ) { console ->
+                                proceedWithParamsAndExecute(
+                                    e,
+                                    project,
+                                    sqlContent,
+                                    context,
+                                    console,
+                                    statementKey,
+                                )
+                            }
+                        } finally {
+                            cache.endSelection(mapperKey)
                         }
                     }
                     is StoredExecutionTargetResolution.Invalid -> {
