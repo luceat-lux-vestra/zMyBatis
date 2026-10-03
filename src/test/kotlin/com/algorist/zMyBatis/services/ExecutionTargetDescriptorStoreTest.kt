@@ -93,6 +93,25 @@ class ExecutionTargetDescriptorStoreTest : BasePlatformTestCase() {
         )
     }
 
+    fun testUnindexedRecordIsNotDirectlyLoadableAndIsPruned() {
+        val source = SourceFileId("vfs:file:///project/Orphan.xml")
+        val id = ExecutionTargetSelectionPersistenceFormat.selectionId(source)
+        val targetId = target("ds-1", "public")
+        val payload = PersistedExecutionTargetSelection(
+            SourceTargetAssociation(source, targetId),
+            ExecutionTargetDescriptor(targetId, "orders"),
+        )
+        val recordKey = "${ExecutionTargetDescriptorStore.RECORD_PREFIX}$id"
+        projectStore().setValue(
+            recordKey,
+            ExecutionTargetSelectionPersistenceFormat.encode(payload),
+        )
+
+        assertNull(ExecutionTargetDescriptorStore.getInstance(project).load(source))
+        assertNull(projectStore().getValue(recordKey))
+        assertNull(projectStore().getValue(ExecutionTargetDescriptorStore.INDEX_KEY))
+    }
+
     fun testRecordWhoseSourceDoesNotMatchIndexedIdentityIsPruned() {
         val indexedSource = SourceFileId("vfs:file:///project/Indexed.xml")
         val payloadSource = SourceFileId("vfs:file:///project/Payload.xml")
