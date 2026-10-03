@@ -14,6 +14,7 @@ import com.algorist.zMyBatis.core.source.JavaMethodParameterMetadata
 import com.algorist.zMyBatis.core.source.JavaStatementId
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
 import com.algorist.zMyBatis.core.source.MethodSignature
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRange
 import com.algorist.zMyBatis.core.source.SourceRevision
@@ -110,6 +111,25 @@ class PreparationTest {
     }
 
     @Test
+    fun requestRejectsDatabaseIdSelectionPreparationDrift() {
+        val selected = capture(databaseId = MyBatisDatabaseId("PostgreSQL"))
+        val contract = JavaAnnotationParameterContractFactory.build(selected)
+        val environment = environment(contract)
+
+        val result = MyBatisPreparationRequest.create(
+            PreparationSource.JavaAnnotation(selected),
+            contract,
+            environment,
+            effectiveDatabaseId = MyBatisDatabaseId("Oracle"),
+        )
+
+        assertTrue(result is PreparationRequestResult.Failed)
+        result as PreparationRequestResult.Failed
+        assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, result.failure.kind)
+        assertEquals("preparation-database-id-context-mismatch", result.failure.code)
+    }
+
+    @Test
     fun preparedExecutionCopiesMutableCollectionsAndRejectsRawBoundConflation() {
         val capture = capture()
         val contract = JavaAnnotationParameterContractFactory.build(capture)
@@ -189,6 +209,7 @@ class PreparationTest {
         methodName: String = "find",
         revision: String = "revision-1",
         sql: String = "select #{id}",
+        databaseId: MyBatisDatabaseId? = null,
     ): JavaAnnotationStatementCapture {
         val fileId = SourceFileId("mapper.java")
         val statementId = JavaStatementId(
@@ -213,6 +234,7 @@ class PreparationTest {
                     myBatisParamAlias = "id",
                 ),
             ),
+            effectiveDatabaseId = databaseId,
         )
     }
 }

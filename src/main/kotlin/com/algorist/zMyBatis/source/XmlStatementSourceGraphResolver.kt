@@ -1,15 +1,21 @@
 package com.algorist.zMyBatis.source
 
 import com.algorist.zMyBatis.core.source.CapturedStatement
+import com.algorist.zMyBatis.core.source.DatabaseIdVariantSelection
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
 import com.algorist.zMyBatis.core.source.SourceDependencyEdge
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRange
 import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
 import com.algorist.zMyBatis.core.source.XmlStatementId
+import com.algorist.zMyBatis.core.source.selectDatabaseIdVariant
 
 sealed interface XmlStatementSourceGraphResult {
-    data class Resolved(val graph: StatementSourceGraph) : XmlStatementSourceGraphResult
+    data class Resolved(
+        val graph: StatementSourceGraph,
+        val effectiveDatabaseId: MyBatisDatabaseId? = null,
+    ) : XmlStatementSourceGraphResult
     data class Failed(val failure: XmlStatementSourceGraphFailure) : XmlStatementSourceGraphResult
 }
 
@@ -36,6 +42,7 @@ data class XmlResolvedFragmentId(
     val sourceFileId: SourceFileId,
     val namespace: String,
     val fragmentId: String,
+    val databaseId: String? = null,
 ) {
     init {
         require(namespace.isNotBlank()) { "fragment namespace must not be blank" }
@@ -124,6 +131,35 @@ sealed interface XmlStatementSourceGraphFailure {
         override fun hashCode(): Int = pathSnapshot.hashCode()
     }
 
+    data class DatabaseIdAuthorityUnavailable(
+        val sourceFileId: SourceFileId,
+        val logicalId: String,
+    ) : XmlStatementSourceGraphFailure
+
+    class DatabaseIdMappingUnproven(
+        val sourceFileId: SourceFileId,
+        val logicalId: String,
+        declaredDatabaseIds: List<String>,
+    ) : XmlStatementSourceGraphFailure {
+        private val declaredSnapshot = declaredDatabaseIds.toList()
+
+        val declaredDatabaseIds: List<String>
+            get() = declaredSnapshot.toList()
+
+        override fun equals(other: Any?): Boolean =
+            other is DatabaseIdMappingUnproven &&
+                sourceFileId == other.sourceFileId &&
+                logicalId == other.logicalId &&
+                declaredSnapshot == other.declaredSnapshot
+
+        override fun hashCode(): Int {
+            var result = sourceFileId.hashCode()
+            result = 31 * result + logicalId.hashCode()
+            result = 31 * result + declaredSnapshot.hashCode()
+            return result
+        }
+    }
+
     data class UnsupportedSemantics(
         val sourceFileId: SourceFileId,
         val evidence: XmlUnsupportedSemanticsEvidence,
@@ -135,6 +171,7 @@ object XmlStatementSourceGraphResolver {
         rootStatementId: XmlStatementId,
         snapshots: List<SourceSnapshot>,
         discoveries: List<XmlMapperDocumentDiscovery>,
+        effectiveDatabaseId: MyBatisDatabaseId? = null,
     ): XmlStatementSourceGraphResult {
         val snapshotGroups = snapshots.groupBy { it.fileId }
         duplicateKey(snapshotGroups)?.let {
@@ -179,10 +216,35 @@ object XmlStatementSourceGraphResolver {
                 XmlStatementSourceGraphFailure.RootStatementMissing(rootStatementId),
             )
         }
-        val rootDeclaration = rootDiscovery.statements.singleOrNull { it.id == rootStatementId.statementId }
-            ?: return XmlStatementSourceGraphResult.Failed(
+        val rootCandidates = rootDiscovery.statements.filter { it.id == rootStatementId.statementId }
+        val rootDeclaration = when (
+            val selection = selectDatabaseIdVariant(
+                rootCandidates,
+                effectiveDatabaseId,
+                databaseIdOf = XmlMapperStatementDeclaration::databaseId,
+            )
+        ) {
+            is DatabaseIdVariantSelection.Selected -> selection.variant
+            DatabaseIdVariantSelection.Missing -> return XmlStatementSourceGraphResult.Failed(
                 XmlStatementSourceGraphFailure.RootStatementMissing(rootStatementId),
             )
+            DatabaseIdVariantSelection.Ambiguous -> return XmlStatementSourceGraphResult.Failed(
+                XmlStatementSourceGraphFailure.RootStatementMissing(rootStatementId),
+            )
+            DatabaseIdVariantSelection.AuthorityUnavailable -> return XmlStatementSourceGraphResult.Failed(
+                XmlStatementSourceGraphFailure.DatabaseIdAuthorityUnavailable(
+                    rootDiscovery.sourceFileId,
+                    rootStatementId.statementId,
+                ),
+            )
+            is DatabaseIdVariantSelection.MappingUnproven -> return XmlStatementSourceGraphResult.Failed(
+                XmlStatementSourceGraphFailure.DatabaseIdMappingUnproven(
+                    rootDiscovery.sourceFileId,
+                    rootStatementId.statementId,
+                    selection.declaredDatabaseIds,
+                ),
+            )
+        }
 
         val blockerByFileId = discoveriesByFileId.values.associate { discovery ->
             discovery.sourceFileId to firstDocumentFailure(discovery)
@@ -227,6 +289,7 @@ object XmlStatementSourceGraphResolver {
                         ownerDiscovery = frame.candidate.discovery,
                         include = include,
                         candidatesByCanonicalName = candidatesByCanonicalName,
+                        effectiveDatabaseId = effectiveDatabaseId,
                     )
                 ) {
                     is TargetResolution.Failed -> return targetResolution.failure
@@ -265,7 +328,11 @@ object XmlStatementSourceGraphResolver {
 
         val rootIncludes = rootDiscovery.includes
             .filter {
-                it.owner == XmlMapperDeclarationRef.Statement(rootDeclaration.id, rootDeclaration.kind)
+                it.owner == XmlMapperDeclarationRef.Statement(
+                    rootDeclaration.id,
+                    rootDeclaration.kind,
+                    rootDeclaration.databaseId,
+                )
             }
             .sortedWith(includeComparator)
 
@@ -275,6 +342,7 @@ object XmlStatementSourceGraphResolver {
                     ownerDiscovery = rootDiscovery,
                     include = include,
                     candidatesByCanonicalName = candidatesByCanonicalName,
+                    effectiveDatabaseId = effectiveDatabaseId,
                 )
             ) {
                 is TargetResolution.Failed -> {
@@ -304,13 +372,14 @@ object XmlStatementSourceGraphResolver {
             sourceSnapshots = reachableFileIds.map { snapshotsByFileId.getValue(it) },
             dependencies = dependencyEdges,
         )
-        return XmlStatementSourceGraphResult.Resolved(graph)
+        return XmlStatementSourceGraphResult.Resolved(graph, effectiveDatabaseId)
     }
 
     private fun resolveTarget(
         ownerDiscovery: XmlMapperDocumentDiscovery,
         include: XmlMapperIncludeReference,
         candidatesByCanonicalName: Map<String, List<FragmentCandidate>>,
+        effectiveDatabaseId: MyBatisDatabaseId?,
     ): TargetResolution {
         if (containsPropertyPlaceholder(include.refid)) {
             return TargetResolution.Failed(
@@ -328,17 +397,21 @@ object XmlStatementSourceGraphResolver {
             "${ownerDiscovery.namespace}.${include.refid}"
         }
         val candidates = candidatesByCanonicalName[canonicalName].orEmpty()
-        if (candidates.isEmpty()) {
-            return TargetResolution.Failed(
+        return when (
+            val selection = selectDatabaseIdVariant(
+                candidates,
+                effectiveDatabaseId,
+            ) { it.declaration.databaseId }
+        ) {
+            is DatabaseIdVariantSelection.Selected -> TargetResolution.Resolved(selection.variant)
+            DatabaseIdVariantSelection.Missing -> TargetResolution.Failed(
                 XmlStatementSourceGraphFailure.MissingFragment(
                     ownerFileId = ownerDiscovery.sourceFileId,
                     refid = include.refid,
                     referenceRange = include.sourceRange,
                 ),
             )
-        }
-        if (candidates.size != 1) {
-            return TargetResolution.Failed(
+            DatabaseIdVariantSelection.Ambiguous -> TargetResolution.Failed(
                 XmlStatementSourceGraphFailure.AmbiguousFragment(
                     ownerFileId = ownerDiscovery.sourceFileId,
                     refid = include.refid,
@@ -346,8 +419,20 @@ object XmlStatementSourceGraphResolver {
                     candidates = candidates.map { it.resolvedId },
                 ),
             )
+            DatabaseIdVariantSelection.AuthorityUnavailable -> TargetResolution.Failed(
+                XmlStatementSourceGraphFailure.DatabaseIdAuthorityUnavailable(
+                    ownerDiscovery.sourceFileId,
+                    canonicalName,
+                ),
+            )
+            is DatabaseIdVariantSelection.MappingUnproven -> TargetResolution.Failed(
+                XmlStatementSourceGraphFailure.DatabaseIdMappingUnproven(
+                    ownerDiscovery.sourceFileId,
+                    canonicalName,
+                    selection.declaredDatabaseIds,
+                ),
+            )
         }
-        return TargetResolution.Resolved(candidates.single())
     }
 
     private fun firstDocumentFailure(
@@ -471,7 +556,12 @@ object XmlStatementSourceGraphResolver {
         FragmentFrame(
             candidate = candidate,
             includes = candidate.discovery.includes
-                .filter { it.owner == XmlMapperDeclarationRef.Fragment(candidate.declaration.id) }
+                .filter {
+                    it.owner == XmlMapperDeclarationRef.Fragment(
+                        candidate.declaration.id,
+                        candidate.declaration.databaseId,
+                    )
+                }
                 .sortedWith(includeComparator),
         )
 
@@ -513,6 +603,7 @@ object XmlStatementSourceGraphResolver {
             sourceFileId = discovery.sourceFileId,
             namespace = discovery.namespace,
             fragmentId = declaration.id,
+            databaseId = declaration.databaseId,
         )
     }
 

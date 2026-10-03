@@ -12,6 +12,7 @@ import com.algorist.zMyBatis.core.input.InternalBinding
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.source.JavaAnnotationStatementCapture
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.StatementId
@@ -70,6 +71,7 @@ class MyBatisPreparationRequest private constructor(
     val source: PreparationSource,
     val parameterContract: ParameterContract,
     val inputEnvironment: InputEnvironment,
+    val effectiveDatabaseId: MyBatisDatabaseId?,
 ) {
     val statementId: StatementId
         get() = source.sourceGraph.rootStatement.id
@@ -86,11 +88,13 @@ class MyBatisPreparationRequest private constructor(
         private const val REVISION_DRIFT = "preparation-source-revision-drift"
         private const val ENVIRONMENT_DRIFT = "preparation-input-environment-drift"
         private const val JAVA_DEPENDENCY_UNSUPPORTED = "java-annotation-preparation-dependency-unsupported"
+        private const val DATABASE_ID_CONTEXT_MISMATCH = "preparation-database-id-context-mismatch"
 
         fun create(
             source: PreparationSource,
             parameterContract: ParameterContract,
             inputEnvironment: InputEnvironment,
+            effectiveDatabaseId: MyBatisDatabaseId? = null,
         ): PreparationRequestResult {
             if (parameterContract.isPreparationBlocked) {
                 return PreparationRequestResult.Failed(
@@ -145,8 +149,26 @@ class MyBatisPreparationRequest private constructor(
                 is XmlMapperPreparationSource -> Unit
             }
 
+            val selectedDatabaseId = when (source) {
+                is PreparationSource.JavaAnnotation -> source.capture.effectiveDatabaseId
+                is XmlMapperPreparationSource -> source.effectiveDatabaseId
+            }
+            if (
+                selectedDatabaseId != null &&
+                effectiveDatabaseId != null &&
+                selectedDatabaseId != effectiveDatabaseId
+            ) {
+                return PreparationRequestResult.Failed(
+                    PreparationFailure(
+                        PreparationFailureKind.PREPARATION_INVARIANT,
+                        DATABASE_ID_CONTEXT_MISMATCH,
+                    ),
+                )
+            }
+            val resolvedDatabaseId = selectedDatabaseId ?: effectiveDatabaseId
+
             return PreparationRequestResult.Ready(
-                MyBatisPreparationRequest(source, parameterContract, inputEnvironment),
+                MyBatisPreparationRequest(source, parameterContract, inputEnvironment, resolvedDatabaseId),
             )
         }
     }
@@ -224,11 +246,15 @@ data class PreparationMetadata(
     val engineIdentity: String,
     val engineVersion: String,
     val languageDriverIdentity: String,
+    val databaseId: String? = null,
 ) {
     init {
         require(engineIdentity.isNotBlank()) { "preparation engine identity must not be blank" }
         require(engineVersion.isNotBlank()) { "preparation engine version must not be blank" }
         require(languageDriverIdentity.isNotBlank()) { "language driver identity must not be blank" }
+        require(databaseId == null || databaseId.isNotBlank()) {
+            "preparation database id must be null or non-blank"
+        }
     }
 }
 

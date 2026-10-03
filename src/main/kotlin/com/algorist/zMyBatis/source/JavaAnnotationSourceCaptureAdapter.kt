@@ -1,7 +1,8 @@
 package com.algorist.zMyBatis.source
 
 import com.algorist.zMyBatis.core.source.CapturedStatement
-import com.algorist.zMyBatis.core.source.JavaAnnotationStatementCapture
+import com.algorist.zMyBatis.core.source.JavaAnnotationStatementVariantsCapture
+import com.algorist.zMyBatis.core.source.JavaAnnotationStatementVariant
 import com.algorist.zMyBatis.core.source.JavaMethodParameterMetadata
 import com.algorist.zMyBatis.core.source.JavaStatementId
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
@@ -38,7 +39,7 @@ import com.intellij.psi.PsiWildcardType
 import com.intellij.psi.util.PsiTreeUtil
 
 sealed interface JavaAnnotationSourceCaptureResult {
-    data class Captured(val capture: JavaAnnotationStatementCapture) : JavaAnnotationSourceCaptureResult
+    data class Captured(val capture: JavaAnnotationStatementVariantsCapture) : JavaAnnotationSourceCaptureResult
 
     data class Failed(val failure: JavaAnnotationSourceCaptureFailure) : JavaAnnotationSourceCaptureResult
 }
@@ -54,7 +55,6 @@ enum class JavaAnnotationSourceCaptureFailure {
     PROVIDER_ANNOTATION,
     MISSING_STATEMENT_ANNOTATION,
     AMBIGUOUS_STATEMENT_ANNOTATION,
-    UNSUPPORTED_DATABASE_ID,
     UNSUPPORTED_AFFECT_DATA,
     UNSUPPORTED_LANGUAGE_DRIVER,
     UNRESOLVED_MAPPER_TYPE,
@@ -78,7 +78,9 @@ object JavaAnnotationSourceCaptureAdapter {
         "org.apache.ibatis.annotations.Delete" to StatementKind.DELETE,
     )
 
-    private val statementAnnotationContainers = statementAnnotations.keys.mapTo(linkedSetOf()) { "$it.List" }
+    private val statementAnnotationContainers = statementAnnotations.entries.associateTo(linkedMapOf()) {
+        "${it.key}.List" to it.value
+    }
 
     private val providerAnnotations = setOf(
         "org.apache.ibatis.annotations.SelectProvider",
@@ -169,33 +171,21 @@ object JavaAnnotationSourceCaptureAdapter {
         if (method.hasAnnotation(LANG_ANNOTATION)) {
             return failed(JavaAnnotationSourceCaptureFailure.UNSUPPORTED_LANGUAGE_DRIVER)
         }
-        if (
-            methodAnnotations.any { annotation ->
-                statementAnnotationContainers.any { annotationMatches(annotation, it) }
-            }
+        val statementAnnotationVariants = when (
+            val resolution = resolveStatementAnnotations(methodAnnotations)
         ) {
-            return failed(JavaAnnotationSourceCaptureFailure.AMBIGUOUS_STATEMENT_ANNOTATION)
+            is StatementAnnotationsResolution.Ready -> resolution.annotations
+            StatementAnnotationsResolution.Failed ->
+                return failed(JavaAnnotationSourceCaptureFailure.AMBIGUOUS_STATEMENT_ANNOTATION)
         }
-
-        val directAnnotations = methodAnnotations.mapNotNull { annotation ->
-            statementAnnotations.entries.firstOrNull { (annotationName, _) ->
-                annotationMatches(annotation, annotationName)
-            }?.let { (_, kind) -> annotation to kind }
-        }
-        if (directAnnotations.isEmpty()) {
+        if (statementAnnotationVariants.isEmpty()) {
             return failed(JavaAnnotationSourceCaptureFailure.MISSING_STATEMENT_ANNOTATION)
         }
-        if (directAnnotations.size != 1) {
-            return failed(JavaAnnotationSourceCaptureFailure.AMBIGUOUS_STATEMENT_ANNOTATION)
-        }
-
-        val (statementAnnotation, statementKind) = directAnnotations.single()
-        if (statementAnnotation.findDeclaredAttributeValue("databaseId") != null) {
-            return failed(JavaAnnotationSourceCaptureFailure.UNSUPPORTED_DATABASE_ID)
-        }
         if (
-            statementKind == StatementKind.SELECT &&
-            statementAnnotation.findDeclaredAttributeValue("affectData") != null
+            statementAnnotationVariants.any { (annotation, statementKind) ->
+                statementKind == StatementKind.SELECT &&
+                    annotation.findDeclaredAttributeValue("affectData") != null
+            }
         ) {
             return failed(JavaAnnotationSourceCaptureFailure.UNSUPPORTED_AFFECT_DATA)
         }
@@ -249,15 +239,36 @@ object JavaAnnotationSourceCaptureAdapter {
             )
         }
 
-        val sqlSegments = when (
-            val resolution = resolveAnnotationStrings(
-                statementAnnotation,
-                afterSynchronization.snapshot.fileId,
-                state,
-            )
-        ) {
-            is StringsResolution.Resolved -> resolution.values
-            is StringsResolution.Failed -> return failed(resolution.failure)
+        val resolvedVariants = mutableListOf<ResolvedStatementVariant>()
+        statementAnnotationVariants.forEach { (annotation, statementKind) ->
+            val databaseId = annotation.findDeclaredAttributeValue("databaseId")?.let { member ->
+                when (
+                    val resolution = resolveStringMember(
+                        member,
+                        afterSynchronization.snapshot.fileId,
+                        state,
+                    )
+                ) {
+                    // MyBatis annotations use the empty string as the default key, but all
+                    // non-empty values (including whitespace) are matched exactly.
+                    is StringResolution.Resolved -> resolution.value.takeIf(String::isNotEmpty)
+                    is StringResolution.Failed -> return failed(resolution.failure)
+                }
+            }
+            val sqlSegments = when (
+                val resolution = resolveAnnotationStrings(
+                    annotation,
+                    afterSynchronization.snapshot.fileId,
+                    state,
+                )
+            ) {
+                is StringsResolution.Resolved -> resolution.values
+                is StringsResolution.Failed -> return failed(resolution.failure)
+            }
+            resolvedVariants += ResolvedStatementVariant(databaseId, statementKind, sqlSegments)
+        }
+        if (resolvedVariants.groupBy { it.databaseId }.values.any { it.size != 1 }) {
+            return failed(JavaAnnotationSourceCaptureFailure.AMBIGUOUS_STATEMENT_ANNOTATION)
         }
 
         val methodRange = method.textRange
@@ -268,7 +279,7 @@ object JavaAnnotationSourceCaptureAdapter {
         )
         val statement = CapturedStatement(
             id = statementId,
-            kind = statementKind,
+            kind = resolvedVariants.first().statementKind,
             sourceRange = SourceRange(methodRange.startOffset, methodRange.endOffset),
         )
 
@@ -283,9 +294,11 @@ object JavaAnnotationSourceCaptureAdapter {
         }
 
         return JavaAnnotationSourceCaptureResult.Captured(
-            JavaAnnotationStatementCapture(
+            JavaAnnotationStatementVariantsCapture(
                 sourceGraph = graph,
-                sqlSegments = sqlSegments,
+                variants = resolvedVariants.map {
+                    JavaAnnotationStatementVariant(it.databaseId, it.statementKind, it.sqlSegments)
+                },
                 parameters = parameters,
             ),
         )
@@ -307,6 +320,44 @@ object JavaAnnotationSourceCaptureAdapter {
 
     private fun annotationMatches(annotation: PsiAnnotation, annotationName: String): Boolean =
         annotation.hasQualifiedName(annotationName)
+
+    private fun resolveStatementAnnotations(
+        annotations: List<PsiAnnotation>,
+    ): StatementAnnotationsResolution {
+        val resolved = mutableListOf<Pair<PsiAnnotation, StatementKind>>()
+        annotations.forEach { annotation ->
+            val direct = statementAnnotations.entries.firstOrNull { (annotationName, _) ->
+                annotationMatches(annotation, annotationName)
+            }
+            if (direct != null) {
+                resolved += annotation to direct.value
+                return@forEach
+            }
+
+            val container = statementAnnotationContainers.entries.firstOrNull { (annotationName, _) ->
+                annotationMatches(annotation, annotationName)
+            } ?: return@forEach
+            val directAnnotationName = container.key.removeSuffix(".List")
+            val value = annotation.findAttributeValue("value")
+                ?: return StatementAnnotationsResolution.Failed
+            val members = if (value is PsiArrayInitializerMemberValue) {
+                value.initializers.toList()
+            } else {
+                listOf(value)
+            }
+            if (members.isEmpty()) return StatementAnnotationsResolution.Failed
+            members.forEach { member ->
+                val nested = member as? PsiAnnotation
+                    ?: return StatementAnnotationsResolution.Failed
+                if (!annotationMatches(nested, directAnnotationName)) {
+                    return StatementAnnotationsResolution.Failed
+                }
+                resolved += nested to container.value
+            }
+        }
+        return StatementAnnotationsResolution.Ready(resolved)
+    }
+
 
     private fun parameterTypeIdentity(type: PsiType): JavaTypeIdentity? {
         if (!isResolvableType(type)) return null
@@ -348,8 +399,9 @@ object JavaAnnotationSourceCaptureAdapter {
         annotation: PsiAnnotation,
         ownerFileId: SourceFileId,
         state: CaptureState,
+        attributeName: String = "value",
     ): StringResolution {
-        val value = annotation.findAttributeValue("value")
+        val value = annotation.findAttributeValue(attributeName)
             ?: return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
         if (value is PsiArrayInitializerMemberValue) {
             return StringResolution.Failed(JavaAnnotationSourceCaptureFailure.UNRESOLVED_ANNOTATION_VALUE)
@@ -503,6 +555,20 @@ object JavaAnnotationSourceCaptureAdapter {
 
     private fun failed(failure: JavaAnnotationSourceCaptureFailure): JavaAnnotationSourceCaptureResult =
         JavaAnnotationSourceCaptureResult.Failed(failure)
+
+    private data class ResolvedStatementVariant(
+        val databaseId: String?,
+        val statementKind: StatementKind,
+        val sqlSegments: List<String>,
+    )
+
+    private sealed interface StatementAnnotationsResolution {
+        data class Ready(
+            val annotations: List<Pair<PsiAnnotation, StatementKind>>,
+        ) : StatementAnnotationsResolution
+
+        data object Failed : StatementAnnotationsResolution
+    }
 
     private sealed interface StringResolution {
         data class Resolved(val value: String) : StringResolution

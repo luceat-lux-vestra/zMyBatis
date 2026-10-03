@@ -1,6 +1,11 @@
 package com.algorist.zMyBatis.source
 
+import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
 import com.algorist.zMyBatis.core.source.JavaAnnotationStatementCapture
+import com.algorist.zMyBatis.core.source.JavaAnnotationStatementSelectionResult
+import com.algorist.zMyBatis.core.source.JavaAnnotationStatementVariantsCapture
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
+import com.algorist.zMyBatis.core.source.selectJavaAnnotationStatementVariant
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.command.WriteCommandAction
@@ -67,50 +72,138 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
         }
     }
 
-    fun testDatabaseIdAffectDataAndRepeatableStatementsFailClosed() {
+    fun testDatabaseIdVariantsAreCapturedBeforeTargetAwareSelection() {
         val mapperFile = myFixture.configureByText(
             JavaFileType.INSTANCE,
             """
             package fixture;
 
             import org.apache.ibatis.annotations.Select;
+            import org.apache.ibatis.annotations.Update;
 
             interface SemanticBoundaryMapper {
-                @Select(value = "SELECT oracle", databaseId = "oracle")
+                @Select(value = "SELECT oracle", databaseId = "Oracle")
                 Object databaseSpecific();
 
                 @Select(value = "DELETE FROM jobs WHERE id = 1 RETURNING id", affectData = true)
                 Object mutatingSelect();
 
-                @Select(value = "SELECT oracle", databaseId = "oracle")
-                @Select(value = "SELECT postgres", databaseId = "postgres")
+                @Select(value = "SELECT oracle", databaseId = "Oracle")
+                @Select(value = "SELECT postgres", databaseId = "PostgreSQL")
                 Object repeated();
 
-                @Select.List({@Select("SELECT 1"), @Select("SELECT 2")})
+                @Select(value = "SELECT postgres mixed", databaseId = "PostgreSQL")
+                @Update(value = "UPDATE jobs SET active = 1", databaseId = "Oracle")
+                Object mixedKinds();
+
+                @Select.List({
+                    @Select(value = "SELECT oracle container", databaseId = "Oracle"),
+                    @Select(value = "SELECT postgres container", databaseId = "PostgreSQL")
+                })
                 Object explicitContainer();
+
+                @Select("SELECT default")
+                @Select(value = "SELECT conventional", databaseId = "PostgreSQL")
+                @Select(value = "SELECT custom", databaseId = "pg")
+                Object customMapping();
+
+                @Select(value = "SELECT explicit default", databaseId = "")
+                Object explicitEmptyDatabaseId();
+
+                @Select(value = "SELECT padded", databaseId = " PostgreSQL ")
+                Object paddedDatabaseId();
             }
             """.trimIndent(),
         )
 
-        assertFailure(
-            mapperFile.text,
-            "databaseSpecific()",
-            JavaAnnotationSourceCaptureFailure.UNSUPPORTED_DATABASE_ID,
+        moveCaretTo(mapperFile.text, "databaseSpecific()")
+        val databaseSpecific = captured(JavaAnnotationSourceCaptureAdapter.capture(project, myFixture.editor))
+        assertEquals(listOf("Oracle"), databaseSpecific.variants.map { it.databaseId })
+        assertEquals(
+            JavaAnnotationStatementSelectionResult.AuthorityUnavailable,
+            selectJavaAnnotationStatementVariant(databaseSpecific, null),
         )
+        val oracleSpecific = selected(
+            databaseSpecific,
+            MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.ORACLE),
+        )
+        assertEquals(listOf("SELECT oracle"), oracleSpecific.sqlSegments)
+        assertEquals(ConventionalMyBatisDatabaseIds.ORACLE, oracleSpecific.effectiveDatabaseId?.value)
+
+        moveCaretTo(mapperFile.text, "repeated()")
+        val repeated = captured(JavaAnnotationSourceCaptureAdapter.capture(project, myFixture.editor))
+        assertEquals(listOf("Oracle", "PostgreSQL"), repeated.variants.map { it.databaseId })
+        val postgres = selected(
+            repeated,
+            MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+        )
+        assertEquals(listOf("SELECT postgres"), postgres.sqlSegments)
+        assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, postgres.effectiveDatabaseId?.value)
+
+        moveCaretTo(mapperFile.text, "mixedKinds()")
+        val mixedKinds = captured(JavaAnnotationSourceCaptureAdapter.capture(project, myFixture.editor))
+        assertEquals(
+            listOf(StatementKind.SELECT, StatementKind.UPDATE),
+            mixedKinds.variants.map { it.statementKind },
+        )
+        val mixedPostgres = selected(
+            mixedKinds,
+            MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+        )
+        val mixedOracle = selected(
+            mixedKinds,
+            MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.ORACLE),
+        )
+        assertEquals(StatementKind.SELECT, mixedPostgres.sourceGraph.rootStatement.kind)
+        assertEquals(listOf("SELECT postgres mixed"), mixedPostgres.sqlSegments)
+        assertEquals(StatementKind.UPDATE, mixedOracle.sourceGraph.rootStatement.kind)
+        assertEquals(listOf("UPDATE jobs SET active = 1"), mixedOracle.sqlSegments)
+
+        moveCaretTo(mapperFile.text, "explicitContainer()")
+        val container = captured(JavaAnnotationSourceCaptureAdapter.capture(project, myFixture.editor))
+        val oracleContainer = selected(
+            container,
+            MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.ORACLE),
+        )
+        assertEquals(listOf("SELECT oracle container"), oracleContainer.sqlSegments)
+
         assertFailure(
             mapperFile.text,
             "mutatingSelect()",
             JavaAnnotationSourceCaptureFailure.UNSUPPORTED_AFFECT_DATA,
         )
-        assertFailure(
-            mapperFile.text,
-            "repeated()",
-            JavaAnnotationSourceCaptureFailure.AMBIGUOUS_STATEMENT_ANNOTATION,
+
+        moveCaretTo(mapperFile.text, "customMapping()")
+        val custom = captured(JavaAnnotationSourceCaptureAdapter.capture(project, myFixture.editor))
+        val customSelection = selectJavaAnnotationStatementVariant(
+            custom,
+            MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
         )
-        assertFailure(
-            mapperFile.text,
-            "explicitContainer()",
-            JavaAnnotationSourceCaptureFailure.AMBIGUOUS_STATEMENT_ANNOTATION,
+        assertTrue(customSelection is JavaAnnotationStatementSelectionResult.MappingUnproven)
+        assertEquals(
+            listOf("pg"),
+            (customSelection as JavaAnnotationStatementSelectionResult.MappingUnproven).declaredDatabaseIds,
+        )
+
+        moveCaretTo(mapperFile.text, "explicitEmptyDatabaseId()")
+        val explicitEmpty = captured(JavaAnnotationSourceCaptureAdapter.capture(project, myFixture.editor))
+        assertEquals(listOf<String?>(null), explicitEmpty.variants.map { it.databaseId })
+        assertEquals(
+            listOf("SELECT explicit default"),
+            selected(explicitEmpty, MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL)).sqlSegments,
+        )
+
+        moveCaretTo(mapperFile.text, "paddedDatabaseId()")
+        val padded = captured(JavaAnnotationSourceCaptureAdapter.capture(project, myFixture.editor))
+        assertEquals(listOf(" PostgreSQL "), padded.variants.map { it.databaseId })
+        val paddedSelection = selectJavaAnnotationStatementVariant(
+            padded,
+            MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+        )
+        assertTrue(paddedSelection is JavaAnnotationStatementSelectionResult.MappingUnproven)
+        assertEquals(
+            listOf(" PostgreSQL "),
+            (paddedSelection as JavaAnnotationStatementSelectionResult.MappingUnproven).declaredDatabaseIds,
         )
     }
 
@@ -288,7 +381,7 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
         moveCaretTo(myFixture.file.text, "find()")
         val capture = captured(JavaAnnotationSourceCaptureAdapter.capture(project, myFixture.editor))
 
-        assertEquals(listOf(draftSql), capture.sqlSegments)
+        assertEquals(listOf(draftSql), capture.variants.single().sqlSegments)
         assertTrue(PsiDocumentManager.getInstance(project).isCommitted(constantsDocument))
         assertTrue(FileDocumentManager.getInstance().isDocumentUnsaved(constantsDocument))
         assertTrue(Files.readString(backingPath).contains(savedSql))
@@ -311,10 +404,19 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
         )
     }
 
-    private fun captured(result: JavaAnnotationSourceCaptureResult): JavaAnnotationStatementCapture =
+    private fun captured(result: JavaAnnotationSourceCaptureResult): JavaAnnotationStatementVariantsCapture =
         when (result) {
             is JavaAnnotationSourceCaptureResult.Captured -> result.capture
             is JavaAnnotationSourceCaptureResult.Failed -> throw AssertionError("expected capture but got ${result.failure}")
+        }
+
+    private fun selected(
+        capture: JavaAnnotationStatementVariantsCapture,
+        databaseId: MyBatisDatabaseId,
+    ): JavaAnnotationStatementCapture =
+        when (val result = selectJavaAnnotationStatementVariant(capture, databaseId)) {
+            is JavaAnnotationStatementSelectionResult.Selected -> result.capture
+            else -> throw AssertionError("expected selected Java annotation variant but got $result")
         }
 
     private fun moveCaretTo(fileText: String, marker: String) {

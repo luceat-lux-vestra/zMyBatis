@@ -37,6 +37,7 @@ object MyBatisPreparationEngine {
         "java-annotation-dynamic-numeric-character-reference-unsupported"
     private const val DYNAMIC_OGNL_UNSUPPORTED = "java-annotation-dynamic-ognl-node-unsupported"
     private const val DYNAMIC_OGNL_PROPERTY_UNPROVEN = "java-annotation-dynamic-ognl-property-unproven"
+    private const val DATABASE_ID_AUTHORITY_UNAVAILABLE = "mybatis-database-id-authority-unavailable"
     private const val DYNAMIC_OGNL_PARSE_FAILURE = "java-annotation-dynamic-ognl-parse-failure"
     private const val BIND_SOURCE_PROVENANCE_MISMATCH = "mybatis-bind-source-provenance-mismatch"
     private const val BIND_RESERVED_CONTEXT = "mybatis-bind-reserved-context-name-unsupported"
@@ -103,11 +104,17 @@ object MyBatisPreparationEngine {
                     script,
                     dynamicOgnlRootProperties(request),
                     request.parameterContract.internalBindings,
+                    databaseIdAvailable = request.effectiveDatabaseId != null,
                 )
             ) {
                 DynamicOgnlAdmission.Result.Admitted -> Unit
                 is DynamicOgnlAdmission.Result.Unsupported ->
                     return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_OGNL_UNSUPPORTED)
+                DynamicOgnlAdmission.Result.DatabaseIdAuthorityUnavailable ->
+                    return failed(
+                        PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                        DATABASE_ID_AUTHORITY_UNAVAILABLE,
+                    )
                 is DynamicOgnlAdmission.Result.UnprovenProperty ->
                     return PreparationResult.Failed(
                         PreparationFailure(
@@ -181,6 +188,7 @@ object MyBatisPreparationEngine {
                     parameterType,
                     parameterValues,
                     foreachAdmission.locals,
+                    databaseId = request.effectiveDatabaseId?.value,
                 )
             ) {
                 is IsolatedDynamicMyBatisPreparation.Result.Ready -> isolated.boundSql
@@ -188,7 +196,14 @@ object MyBatisPreparationEngine {
                     return PreparationResult.Failed(isolated.failure)
             }
         } else {
-            when (val static = prepareStaticBoundSql(script, parameterType, parameterValues)) {
+            when (
+                val static = prepareStaticBoundSql(
+                    script,
+                    parameterType,
+                    parameterValues,
+                    request.effectiveDatabaseId?.value,
+                )
+            ) {
                 is StaticBoundSqlResult.Ready -> static.boundSql
                 is StaticBoundSqlResult.Failed -> return PreparationResult.Failed(static.failure)
             }
@@ -228,6 +243,7 @@ object MyBatisPreparationEngine {
                         engineIdentity = ENGINE_ID,
                         engineVersion = ENGINE_VERSION,
                         languageDriverIdentity = boundSql.languageDriverIdentity,
+                        databaseId = request.effectiveDatabaseId?.value,
                     ),
                 ),
             )
@@ -252,8 +268,10 @@ object MyBatisPreparationEngine {
         script: String,
         parameterType: MyBatisParameterType,
         parameterValues: Map<String, Any?>,
+        databaseId: String?,
     ): StaticBoundSqlResult {
         val configuration = Configuration()
+        configuration.databaseId = databaseId
         val languageDriver = configuration.defaultScriptingLanguageInstance
         val parameterObject = parentParameterObject(parameterValues)
         val resolvedParameterType = when (parameterType) {

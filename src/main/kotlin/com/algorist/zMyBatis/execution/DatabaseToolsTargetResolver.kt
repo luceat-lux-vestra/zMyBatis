@@ -4,6 +4,9 @@ import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
 import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailure
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailureKind
+import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
+import com.intellij.database.Dbms
 import com.intellij.database.model.DasNamespace
 import com.intellij.database.psi.DbDataSource
 import com.intellij.database.psi.DbPsiFacade
@@ -83,6 +86,27 @@ internal object ExactTargetSelectionPolicy {
         ExactTargetSelectionResult.Failed(TargetResolutionFailure(kind, code))
 }
 
+internal fun classifyDatabaseToolsDatabaseId(dbms: Dbms?): MyBatisDatabaseId? = when (dbms) {
+    Dbms.POSTGRES -> MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL)
+    Dbms.ORACLE -> MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.ORACLE)
+    else -> null
+}
+
+internal fun resolveDatabaseToolsDatabaseId(
+    dbmsLookup: () -> Dbms?,
+): MyBatisDatabaseId? = try {
+    classifyDatabaseToolsDatabaseId(dbmsLookup())
+} catch (ex: ProcessCanceledException) {
+    throw ex
+} catch (_: Exception) {
+    null
+}
+
+/**
+ * Database Tools DBMS identity is semantic input for MyBatis databaseId only.
+ *
+ * A missing or unmapped DBMS identity never invalidates the already-resolved datasource/schema.
+ */
 internal sealed interface DatabaseToolsTargetResolution {
     data class Success(
         val resolvedTarget: ResolvedExecutionTarget,
@@ -99,7 +123,8 @@ internal sealed interface DatabaseToolsTargetResolution {
  * Resolves persisted target identity to exact live Database Tools resources.
  *
  * Datasource DBMS family is deliberately not an admission gate. IntelliJ Database Tools owns the
- * configured driver, connection/session, and vendor execution semantics.
+ * configured driver, connection/session, and vendor execution semantics. A proven DBMS identity is
+ * translated only into optional MyBatis databaseId context after exact target resolution.
  */
 @Suppress("unused") // #167 establishes the adapter; orchestration wiring is a later #65 slice.
 internal class DatabaseToolsTargetResolver(
@@ -125,7 +150,10 @@ internal class DatabaseToolsTargetResolver(
             )
         ) {
             is ExactTargetSelectionResult.Success -> DatabaseToolsTargetResolution.Success(
-                resolvedTarget = selected.resolvedTarget,
+                resolvedTarget = ResolvedExecutionTarget(
+                    descriptor = selected.resolvedTarget.descriptor,
+                    effectiveDatabaseId = resolveDatabaseToolsDatabaseId { selected.dataSource.dbms },
+                ),
                 dataSource = selected.dataSource,
                 schema = selected.schema,
             )

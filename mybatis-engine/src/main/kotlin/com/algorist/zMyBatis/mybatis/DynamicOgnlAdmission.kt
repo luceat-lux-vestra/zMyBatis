@@ -19,6 +19,7 @@ internal object DynamicOgnlAdmission {
         script: String,
         callerRootProperties: Set<String>,
         internalBindings: List<InternalBinding>,
+        databaseIdAvailable: Boolean = false,
     ): Result {
         if (script.length > MAX_SCRIPT_LENGTH) return Result.Unsupported("DynamicScript[length]")
 
@@ -51,11 +52,19 @@ internal object DynamicOgnlAdmission {
             return Result.BindAuthority(null, BindAuthorityProblem.SOURCE_CONTRACT_MISMATCH)
         }
 
-        val admittedCallerRoots = callerRootProperties - reservedContextNames
+        val admittedCallerRoots = buildSet {
+            addAll(callerRootProperties - reservedContextNames)
+            if (databaseIdAvailable) add("_databaseId")
+        }
         return when (val admission = IsolatedOgnlAstAdmission.inspect(expressions, admittedCallerRoots)) {
             IsolatedOgnlAstAdmission.Result.Admitted -> Result.Admitted
             is IsolatedOgnlAstAdmission.Result.Unsupported -> Result.Unsupported(admission.nodeType)
-            is IsolatedOgnlAstAdmission.Result.UnprovenProperty -> Result.UnprovenProperty(admission.property)
+            is IsolatedOgnlAstAdmission.Result.UnprovenProperty ->
+                if (admission.property == "_databaseId" && !databaseIdAvailable) {
+                    Result.DatabaseIdAuthorityUnavailable
+                } else {
+                    Result.UnprovenProperty(admission.property)
+                }
             is IsolatedOgnlAstAdmission.Result.Malformed -> Result.MalformedExpression(admission.diagnosticType)
             is IsolatedOgnlAstAdmission.Result.Invariant -> Result.Invariant(admission.diagnosticType)
         }
@@ -165,6 +174,8 @@ internal object DynamicOgnlAdmission {
         data class UnprovenProperty(
             val property: String,
         ) : Result
+
+        data object DatabaseIdAuthorityUnavailable : Result
 
         data class BindAuthority(
             val name: String?,

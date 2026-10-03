@@ -1,5 +1,6 @@
 package com.algorist.zMyBatis.core.execution
 
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
 import com.algorist.zMyBatis.core.source.SourceFileId
 
 @JvmInline
@@ -53,10 +54,12 @@ data class SourceTargetAssociation(
  * Exact live target authority produced only after re-resolving a persisted descriptor.
  *
  * DBMS family is deliberately not part of target validity. The selected IntelliJ Database Tools
- * datasource owns driver/connection/vendor execution semantics.
+ * datasource owns driver/connection/vendor execution semantics. [effectiveDatabaseId] is optional
+ * MyBatis semantic context and cannot make an otherwise valid target invalid.
  */
 data class ResolvedExecutionTarget(
     val descriptor: ExecutionTargetDescriptor,
+    val effectiveDatabaseId: MyBatisDatabaseId? = null,
 ) {
     val targetId: ExecutionTargetId
         get() = descriptor.targetId

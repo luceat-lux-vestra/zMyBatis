@@ -9,6 +9,8 @@ import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationResult
 import com.algorist.zMyBatis.core.preparation.XmlMapperPreparationSource
 import com.algorist.zMyBatis.core.source.CapturedStatement
+import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
 import com.algorist.zMyBatis.core.source.SourceDependencyEdge
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRange
@@ -166,12 +168,40 @@ class XmlMapperPreparationEngineTest {
     }
 
     @Test
+    fun stockMapperParserSelectsPostgresqlAndOracleStatementAndFragmentVariants() {
+        val fixture = fixture(
+            content = mapperDocument(
+                "example.Mapper",
+                """
+                    <sql id="columns">default_col</sql>
+                    <sql id="columns" databaseId="PostgreSQL">pg_col</sql>
+                    <sql id="columns" databaseId="Oracle">ora_col</sql>
+                    <select id="find">SELECT <include refid="columns"/> FROM default_table</select>
+                    <select id="find" databaseId="PostgreSQL">SELECT <include refid="columns"/> FROM pg_table</select>
+                    <select id="find" databaseId="Oracle">SELECT <include refid="columns"/> FROM ora_table</select>
+                """,
+            ),
+        )
+
+        val postgres = success(
+            prepare(fixture, MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL)),
+        )
+        val oracle = success(
+            prepare(fixture, MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.ORACLE)),
+        )
+
+        assertEquals("SELECT pg_col FROM pg_table", normalize(postgres.sqlWithPlaceholders))
+        assertEquals("SELECT ora_col FROM ora_table", normalize(oracle.sqlWithPlaceholders))
+        assertEquals("PostgreSQL", postgres.preparationMetadata.databaseId)
+        assertEquals("Oracle", oracle.preparationMetadata.databaseId)
+    }
+
+    @Test
     fun runtimeClassLoadingSurfacesFailBeforeMyBatisParser() {
         listOf(
             "resultType=\"example.Payload\"",
             "parameterType=\"example.Payload\"",
             "lang=\"example.Driver\"",
-            "databaseId=\"vendor\"",
         ).forEachIndexed { index, attribute ->
             val fixture = fixture(
                 file = "vfs:/danger-$index.xml",
@@ -306,7 +336,10 @@ class XmlMapperPreparationEngineTest {
         }
     }
 
-    private fun prepare(fixture: Fixture): PreparationResult {
+    private fun prepare(
+        fixture: Fixture,
+        databaseId: MyBatisDatabaseId? = null,
+    ): PreparationResult {
         val revisions = fixture.graph.sourceSnapshots.associate { it.fileId to it.revision }
         val contract = ParameterContract(
             statementId = fixture.graph.rootStatement.id,
@@ -318,7 +351,10 @@ class XmlMapperPreparationEngineTest {
         )
         val environment = (InputEnvironment.validate(contract, emptyList()) as InputEnvironmentResult.Success).environment
         val request = MyBatisPreparationRequest.create(
-            XmlMapperPreparationSource(fixture.graph),
+            XmlMapperPreparationSource(
+                sourceGraph = fixture.graph,
+                effectiveDatabaseId = databaseId,
+            ),
             contract,
             environment,
         ) as PreparationRequestResult.Ready
