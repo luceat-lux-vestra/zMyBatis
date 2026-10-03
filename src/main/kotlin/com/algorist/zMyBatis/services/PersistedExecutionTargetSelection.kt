@@ -79,34 +79,6 @@ internal object ExecutionTargetSelectionPersistenceFormat {
         }
     }
 
-    /**
-     * Converts a structurally valid v2 session only when the caller has already proved the
-     * canonical source identity and it exactly matches the v2 mapper URL convention.
-     */
-    fun fromLegacyV2(
-        session: PersistedConsoleSession,
-        canonicalSourceFileId: SourceFileId?,
-    ): PersistedExecutionTargetSelection? {
-        val sourceFileId = canonicalSourceFileId ?: return null
-        if (sourceFileId.value != "vfs:${session.mapperKey}") return null
-
-        return try {
-            val targetId = ExecutionTargetId(
-                dataSourceId = StableDataSourceId(session.dataSourceId),
-                schema = ExplicitSchemaIdentity(session.schemaName),
-            )
-            PersistedExecutionTargetSelection(
-                association = SourceTargetAssociation(sourceFileId, targetId),
-                descriptor = ExecutionTargetDescriptor(
-                    targetId = targetId,
-                    dataSourceDisplayName = session.dataSourceName.takeIf { it.isNotEmpty() },
-                ),
-            )
-        } catch (_: IllegalArgumentException) {
-            null
-        }
-    }
-
     fun isValidSelectionId(value: String): Boolean =
         value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' }
 
