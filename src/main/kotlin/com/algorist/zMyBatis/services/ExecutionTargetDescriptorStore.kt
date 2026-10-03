@@ -17,7 +17,7 @@ import com.intellij.openapi.project.Project
  * persistence authority.
  */
 @Service(Service.Level.PROJECT)
-internal class ExecutionTargetDescriptorStore(private val project: Project) {
+internal class ExecutionTargetDescriptorStore(project: Project) {
     companion object {
         private val LOG = Logger.getInstance(ExecutionTargetDescriptorStore::class.java)
 
