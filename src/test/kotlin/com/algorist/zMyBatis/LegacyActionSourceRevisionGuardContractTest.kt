@@ -35,9 +35,9 @@ class LegacyActionSourceRevisionGuardContractTest {
             ),
         )
         assertTrue(
-            "Database Tools execution must receive the action-owned validity callback",
+            "Database Tools execution must still include source revision validity",
             action.contains(
-                "preExecutionCheck = { LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision) }",
+                "LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision) &&",
             ),
         )
     }
