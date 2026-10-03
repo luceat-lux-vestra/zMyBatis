@@ -261,7 +261,10 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 return
             }
 
-            if (isProjectUnavailable()) return
+            if (isProjectUnavailable()) {
+                restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
+                return
+            }
             if (Disposer.isDisposed(console)) {
                 LOG.warn("zMyBatis: console unavailable before native query invocation")
                 restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
