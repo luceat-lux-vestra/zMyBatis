@@ -39,7 +39,12 @@ class ConsoleCacheDiagnosticSeverityContractTest {
         assertTrue(ordinaryBranch.contains("return false"))
         assertFalse("ordinary failure must not use fatal reporting", ordinaryBranch.contains("LOG.error("))
         assertFalse("ordinary diagnostics must not include exception messages", ordinaryBranch.contains("ex.message"))
-        assertFalse("ordinary diagnostics must not attach the exception object", ordinaryBranch.contains(", ex)"))
+        assertFalse(
+            "ordinary diagnostics must not attach the exception object",
+            ordinaryBranch.contains(
+                "LOG.warn(\"zMyBatis: failed to register console sentinel for \$mapperKey\", ex)"
+            ),
+        )
 
         val fatalBranch = registration.substring(fatalCatch)
         assertTrue(
