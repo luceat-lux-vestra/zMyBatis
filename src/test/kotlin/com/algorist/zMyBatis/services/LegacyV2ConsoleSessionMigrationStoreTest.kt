@@ -1,12 +1,11 @@
 package com.algorist.zMyBatis.services
 
 import com.intellij.ide.util.PropertiesComponent
-import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
-class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
+class LegacyV2ConsoleSessionMigrationStoreTest : BasePlatformTestCase() {
 
     companion object {
         private const val V2_INDEX = "zMyBatis.session.v2.__index__"
@@ -27,7 +26,7 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
         projectStore.setValue(V2_INDEX, id)
         projectStore.setValue("$V2_RECORD_PREFIX$id", ConsoleSessionPersistenceFormat.encode(session))
 
-        val restored = ConsoleCacheService.getInstance(project).pruneStaleIndex()
+        val restored = LegacyV2ConsoleSessionMigrationStore.getInstance(project).pruneStaleIndex()
 
         assertEquals(listOf(session), restored)
     }
@@ -40,7 +39,7 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
         applicationStore.setValue("$LEGACY_PREFIX$legacyMapperKey", "orders|||public")
 
         try {
-            assertTrue(ConsoleCacheService.getInstance(project).pruneStaleIndex().isEmpty())
+            assertTrue(LegacyV2ConsoleSessionMigrationStore.getInstance(project).pruneStaleIndex().isEmpty())
         } finally {
             applicationStore.unsetValue(legacyIndex)
             applicationStore.unsetValue("$LEGACY_PREFIX$legacyMapperKey")
@@ -51,7 +50,7 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
         val projectStore = PropertiesComponent.getInstance(project)
         projectStore.setValue(V2_INDEX, "../../not-a-session-id")
 
-        assertTrue(ConsoleCacheService.getInstance(project).pruneStaleIndex().isEmpty())
+        assertTrue(LegacyV2ConsoleSessionMigrationStore.getInstance(project).pruneStaleIndex().isEmpty())
         assertNull(projectStore.getValue(V2_INDEX))
     }
 
@@ -62,7 +61,7 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
         projectStore.setValue(V2_INDEX, id)
         projectStore.unsetValue("$V2_RECORD_PREFIX$id")
 
-        assertTrue(ConsoleCacheService.getInstance(project).pruneStaleIndex().isEmpty())
+        assertTrue(LegacyV2ConsoleSessionMigrationStore.getInstance(project).pruneStaleIndex().isEmpty())
         assertNull(projectStore.getValue(V2_INDEX))
         assertNull(projectStore.getValue("$V2_RECORD_PREFIX$id"))
     }
@@ -81,70 +80,28 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
         projectStore.setValue(V2_INDEX, id)
         projectStore.setValue("$V2_RECORD_PREFIX$id", raw)
 
-        assertTrue(ConsoleCacheService.getInstance(project).pruneStaleIndex().isEmpty())
+        assertTrue(LegacyV2ConsoleSessionMigrationStore.getInstance(project).pruneStaleIndex().isEmpty())
         assertNull(projectStore.getValue(V2_INDEX))
         assertNull(projectStore.getValue("$V2_RECORD_PREFIX$id"))
     }
 
-    fun testSelectionGuardIsScopedToProjectService() {
-        val cache = ConsoleCacheService.getInstance(project)
-        val mapperKey = "file:///tmp/zmybatis/Mapper.xml"
-
-        assertTrue(cache.beginSelection(mapperKey))
-        assertFalse(cache.beginSelection(mapperKey))
-        cache.endSelection(mapperKey)
-        assertTrue(cache.beginSelection(mapperKey))
-        cache.endSelection(mapperKey)
-    }
-
-    fun testShutdownGateRejectsNewSelection() {
-        // Shutdown is irreversible in production. Use a fresh service instance so this test cannot
-        // leak the shutdown marker into other platform tests that share the project fixture.
-        val cache = newIsolatedCache()
-        val mapperKey = "file:///tmp/zmybatis/ClosingMapper.xml"
-
-        assertFalse(cache.isShuttingDown())
-        assertTrue(cache.beginSelection(mapperKey))
-        cache.endSelection(mapperKey)
-
-        cache.markShuttingDown()
-
-        assertTrue(cache.isShuttingDown())
-        assertFalse(cache.beginSelection(mapperKey))
-    }
-
-    fun testProjectClosingHookEntersSameShutdownGate() {
-        val cache = newIsolatedCache()
-
-        assertFalse(cache.isShuttingDown())
-
-        cache.handleProjectClosing(project)
-
-        assertTrue(cache.isShuttingDown())
-        assertFalse(cache.beginSelection("file:///tmp/zmybatis/AfterCloseMapper.xml"))
-    }
-
-    fun testShutdownGatePreservesPersistedStateAgainstLateCleanup() {
-        val mapperKey = "file:///tmp/zmybatis/ClosingRestoreMapper.xml"
+    fun testClearSessionRemovesOnlyV2ProjectState() {
+        val mapperKey = "file:///tmp/zmybatis/CleanupMapper.xml"
         val session = PersistedConsoleSession(
             mapperKey = mapperKey,
-            dataSourceId = "550e8400-e29b-41d4-a716-446655440099",
+            dataSourceId = "550e8400-e29b-41d4-a716-446655440001",
             dataSourceName = "orders",
             schemaName = "public"
         )
         val id = ConsoleSessionPersistenceFormat.sessionId(mapperKey)
         val projectStore = PropertiesComponent.getInstance(project)
-        val raw = ConsoleSessionPersistenceFormat.encode(session)
         projectStore.setValue(V2_INDEX, id)
-        projectStore.setValue("$V2_RECORD_PREFIX$id", raw)
-        // Keep the irreversible shutdown state local to this test instance.
-        val cache = newIsolatedCache()
+        projectStore.setValue("$V2_RECORD_PREFIX$id", ConsoleSessionPersistenceFormat.encode(session))
 
-        cache.markShuttingDown()
-        cache.clearSession(mapperKey)
+        LegacyV2ConsoleSessionMigrationStore.getInstance(project).clearSession(mapperKey)
 
-        assertEquals(id, projectStore.getValue(V2_INDEX))
-        assertEquals(raw, projectStore.getValue("$V2_RECORD_PREFIX$id"))
+        assertNull(projectStore.getValue(V2_INDEX))
+        assertNull(projectStore.getValue("$V2_RECORD_PREFIX$id"))
     }
 
     override fun tearDown() {
@@ -161,9 +118,6 @@ class ConsoleCacheServicePersistenceTest : BasePlatformTestCase() {
             super.tearDown()
         }
     }
-
-    private fun newIsolatedCache(): ConsoleCacheService =
-        ConsoleCacheService(project).also { Disposer.register(testRootDisposable, it) }
 
     private fun encodeField(value: String): String =
         Base64.getUrlEncoder().withoutPadding()

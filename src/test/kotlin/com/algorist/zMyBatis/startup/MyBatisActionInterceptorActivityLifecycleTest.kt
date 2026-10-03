@@ -9,6 +9,7 @@ import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.services.ConsoleCacheService
 import com.algorist.zMyBatis.services.ConsoleSessionPersistenceFormat
 import com.algorist.zMyBatis.services.ExecutionTargetDescriptorStore
+import com.algorist.zMyBatis.services.LegacyV2ConsoleSessionMigrationStore
 import com.algorist.zMyBatis.services.PersistedConsoleSession
 import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.util.Disposer
@@ -27,12 +28,7 @@ class MyBatisActionInterceptorActivityLifecycleTest : BasePlatformTestCase() {
         val cache = newIsolatedCache()
         val targetStore = ExecutionTargetDescriptorStore.getInstance(project)
 
-        MyBatisActionInterceptorActivity().migratePersistedSelections(
-            project = project,
-            cache = cache,
-            targetStore = targetStore,
-            resolveSourceUrl = { it },
-        )
+        migrate(cache, targetStore) { it }
 
         val sourceFileId = SourceFileId("vfs:$mapperKey")
         val migrated = requireNotNull(targetStore.load(sourceFileId))
@@ -49,12 +45,7 @@ class MyBatisActionInterceptorActivityLifecycleTest : BasePlatformTestCase() {
         val cache = newIsolatedCache()
         val targetStore = ExecutionTargetDescriptorStore.getInstance(project)
 
-        MyBatisActionInterceptorActivity().migratePersistedSelections(
-            project = project,
-            cache = cache,
-            targetStore = targetStore,
-            resolveSourceUrl = { null },
-        )
+        migrate(cache, targetStore) { null }
 
         assertNull(targetStore.load(SourceFileId("vfs:$mapperKey")))
         assertV2Absent(mapperKey)
@@ -68,12 +59,7 @@ class MyBatisActionInterceptorActivityLifecycleTest : BasePlatformTestCase() {
         seedV2(mapperKey, "ds-old", "old", "old_schema")
         val cache = newIsolatedCache()
 
-        MyBatisActionInterceptorActivity().migratePersistedSelections(
-            project = project,
-            cache = cache,
-            targetStore = targetStore,
-            resolveSourceUrl = { it },
-        )
+        migrate(cache, targetStore) { it }
 
         val retained = requireNotNull(targetStore.load(sourceFileId))
         assertEquals("ds-new", retained.descriptor.targetId.dataSourceId.value)
@@ -87,12 +73,7 @@ class MyBatisActionInterceptorActivityLifecycleTest : BasePlatformTestCase() {
         saveV3(sourceFileId, "ds-1", "public", "orders")
         val cache = newIsolatedCache()
 
-        MyBatisActionInterceptorActivity().migratePersistedSelections(
-            project = project,
-            cache = cache,
-            targetStore = targetStore,
-            resolveSourceUrl = { null },
-        )
+        migrate(cache, targetStore) { null }
 
         assertNull(targetStore.load(sourceFileId))
     }
@@ -103,15 +84,10 @@ class MyBatisActionInterceptorActivityLifecycleTest : BasePlatformTestCase() {
         saveV3(sourceFileId, "ds-1", "public", "orders")
         val cache = newIsolatedCache()
 
-        MyBatisActionInterceptorActivity().migratePersistedSelections(
-            project = project,
-            cache = cache,
-            targetStore = targetStore,
-            resolveSourceUrl = {
-                cache.markShuttingDown()
-                null
-            },
-        )
+        migrate(cache, targetStore) {
+            cache.markShuttingDown()
+            null
+        }
 
         assertNotNull(targetStore.load(sourceFileId))
     }
@@ -122,15 +98,10 @@ class MyBatisActionInterceptorActivityLifecycleTest : BasePlatformTestCase() {
         val cache = newIsolatedCache()
         val targetStore = ExecutionTargetDescriptorStore.getInstance(project)
 
-        MyBatisActionInterceptorActivity().migratePersistedSelections(
-            project = project,
-            cache = cache,
-            targetStore = targetStore,
-            resolveSourceUrl = {
-                cache.markShuttingDown()
-                it
-            },
-        )
+        migrate(cache, targetStore) {
+            cache.markShuttingDown()
+            it
+        }
 
         assertNull(targetStore.load(SourceFileId("vfs:$mapperKey")))
         assertNotNull(projectStore().getValue(V2_INDEX))
@@ -144,12 +115,7 @@ class MyBatisActionInterceptorActivityLifecycleTest : BasePlatformTestCase() {
         val targetStore = ExecutionTargetDescriptorStore.getInstance(project)
         cache.markShuttingDown()
 
-        MyBatisActionInterceptorActivity().migratePersistedSelections(
-            project = project,
-            cache = cache,
-            targetStore = targetStore,
-            resolveSourceUrl = { it },
-        )
+        migrate(cache, targetStore) { it }
 
         assertNull(targetStore.load(SourceFileId("vfs:$mapperKey")))
         assertNotNull(projectStore().getValue(V2_INDEX))
@@ -163,6 +129,20 @@ class MyBatisActionInterceptorActivityLifecycleTest : BasePlatformTestCase() {
         } finally {
             super.tearDown()
         }
+    }
+
+    private fun migrate(
+        cache: ConsoleCacheService,
+        targetStore: ExecutionTargetDescriptorStore,
+        resolveSourceUrl: (String) -> String?,
+    ) {
+        MyBatisActionInterceptorActivity().migratePersistedSelections(
+            project = project,
+            cache = cache,
+            migrationStore = LegacyV2ConsoleSessionMigrationStore.getInstance(project),
+            targetStore = targetStore,
+            resolveSourceUrl = resolveSourceUrl,
+        )
     }
 
     private fun newIsolatedCache(): ConsoleCacheService =

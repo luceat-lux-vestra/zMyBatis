@@ -1,7 +1,6 @@
 package com.algorist.zMyBatis.services
 
 import com.intellij.database.console.JdbcConsole
-import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -14,30 +13,20 @@ import com.intellij.openapi.util.Disposer
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Project-level owner of live JdbcConsole cache/resource lifecycle plus migration-only v2
- * persistence compatibility.
+ * Project-level owner of live JdbcConsole cache/resource lifecycle and startup lifecycle gating.
  *
- * New restart target authority is v3 [ExecutionTargetDescriptorStore] state. The shipping action
- * registers v3-backed consoles through [putEphemeral], so creating/disposing a live console cannot
- * create or delete v3 target identity.
- *
- * Persistence v2 deliberately does not migrate the legacy application-level
- * `zMyBatis.session.*` records. Those records contain only a collision-prone project hash and
- * mutable datasource display name, so there is no safe way to prove which project/datasource they
- * belonged to. Ignoring them is the fail-closed migration policy: the user selects datasource/schema
- * again and current v3 target authority is created without reviving the retired v2 writer.
+ * Persisted target identity is owned by [ExecutionTargetDescriptorStore]. Migration-only v2 state
+ * is owned by [LegacyV2ConsoleSessionMigrationStore]. This service therefore has no persistence
+ * storage surface: registering, observing, or disposing a live console cannot create, mutate, or
+ * delete v2/v3 target persistence.
  */
 @Service(Service.Level.PROJECT)
 class ConsoleCacheService(private val project: Project) : com.intellij.openapi.Disposable {
 
     companion object {
         private val LOG = Logger.getInstance(ConsoleCacheService::class.java)
-        private const val PROPS_PREFIX = "zMyBatis.session.v2."
-        private const val INDEX_KEY = "${PROPS_PREFIX}__index__"
-        private const val RECORD_PREFIX = "${PROPS_PREFIX}record."
 
         fun getInstance(project: Project): ConsoleCacheService = project.service()
-
     }
 
     private class Entry(
@@ -45,11 +34,8 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         val sentinel: CheckedDisposable,
     )
 
-    /** Project-scoped store; no application-global project namespace is needed. */
-    private val store: PropertiesComponent = PropertiesComponent.getInstance(project)
     private val cache = ConcurrentHashMap<String, Entry>()
     private val activeSelections = ConcurrentHashMap.newKeySet<String>()
-    private val persistenceLock = Any()
     private val lifecycleLock = Any()
 
     @Volatile
@@ -74,13 +60,13 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
 
     internal fun handleProjectClosing(closingProject: Project) {
         if (closingProject !== project) return
-        LOG.info("zMyBatis: project closing — marking shutdown for persistence preservation")
+        LOG.info("zMyBatis: project closing — marking shutdown")
         markShuttingDown()
     }
 
     /**
      * Returns a live cached console only while the project session lifecycle is active.
-     * Ephemeral console disposal affects only the in-memory cache and never owns v2/v3 persistence.
+     * Ephemeral console disposal affects only the in-memory cache.
      */
     fun get(mapperKey: String): JdbcConsole? = synchronized(lifecycleLock) {
         if (shuttingDown) return@synchronized null
@@ -102,10 +88,10 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     }
 
     /**
-     * Linearizes one startup migration state transition with project shutdown.
+     * Linearizes one startup migration persistence transition with project shutdown.
      *
-     * Source/VFS discovery happens outside this lock. Once that evidence is ready, persistence
-     * promotion/cleanup either completes before shutdown or is rejected after shutdown wins.
+     * Source/VFS discovery happens outside this lock. Once that evidence is ready, v2/v3 mutation
+     * either completes before shutdown or is rejected after shutdown wins.
      */
     internal fun runStartupMigrationTransitionIfActive(block: () -> Unit): Boolean =
         synchronized(lifecycleLock) {
@@ -120,9 +106,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     /**
      * Registers a live console only as an in-memory REUSE optimization.
      *
-     * v3 target selection persistence is owned independently by [ExecutionTargetDescriptorStore].
-     * Registration clears any obsolete v2 record once, but disposal/shutdown of this console never
-     * creates or removes persisted target identity.
+     * Registration/disposal has no v2 or v3 persistence side effects.
      */
     fun putEphemeral(
         mapperKey: String,
@@ -160,8 +144,6 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             if (shuttingDown || sentinel.isDisposed) {
                 false
             } else {
-                // Live console registration is resource lifecycle only. Persistence cleanup,
-                // including migration-only v2 state, remains startup migration ownership.
                 cache[mapperKey] = entry
                 true
             }
@@ -178,54 +160,9 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     }
 
     /**
-     * Returns only structurally valid v2 records and removes stale/malformed index entries.
-     * The index stores fixed SHA-256 record IDs rather than file paths, so arbitrary mapper paths
-     * cannot corrupt the index format.
-     */
-    internal fun pruneStaleIndex(): List<PersistedConsoleSession> = synchronized(lifecycleLock) {
-        if (shuttingDown) return@synchronized emptyList()
-        synchronized(persistenceLock) {
-            val ids = savedSessionIdsLocked()
-            if (ids.isEmpty()) return@synchronized emptyList()
-
-            val valid = mutableListOf<PersistedConsoleSession>()
-            for (id in ids) {
-                if (!ConsoleSessionPersistenceFormat.isValidSessionId(id)) {
-                    LOG.warn("zMyBatis: pruning malformed session index id '$id'")
-                    removeFromIndexLocked(id)
-                    continue
-                }
-
-                val session = loadSessionLocked(id)
-                if (session == null) {
-                    LOG.info("zMyBatis: pruning stale session index id '$id'")
-                    removeRecordByIdLocked(id)
-                    continue
-                }
-                valid.add(session)
-            }
-            valid
-        }
-    }
-
-    /**
-     * Removes stale persisted state only while the project lifecycle is active. A restore may
-     * discover stale-looking state just as project close begins; if shutdown wins the lifecycle
-     * lock, preservation takes precedence and the next startup re-evaluates the state safely.
-     */
-    fun clearSession(mapperKey: String) {
-        synchronized(lifecycleLock) {
-            if (shuttingDown) {
-                LOG.info("zMyBatis: skipping session cleanup during shutdown for $mapperKey")
-                return@synchronized
-            }
-            clearSessionLocked(mapperKey)
-        }
-    }
-
-    /**
-     * Atomically closes the resource-acquisition gate. v2 is read/cleanup-only migration state and
-     * v3 is owned by ExecutionTargetDescriptorStore, so shutdown never writes persistence from live
+     * Atomically closes resource acquisition and startup migration transitions.
+     *
+     * Persistence stores are separate services, so shutdown never writes persistence from live
      * console resources.
      */
     fun markShuttingDown() {
@@ -233,7 +170,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             shuttingDown = true
             activeSelections.clear()
         }
-        LOG.info("zMyBatis: markShuttingDown — console acquisition disabled")
+        LOG.info("zMyBatis: markShuttingDown — console acquisition and migration disabled")
     }
 
     override fun dispose() {
@@ -243,49 +180,4 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             cache.clear()
         }
     }
-
-    private fun clearSessionLocked(mapperKey: String) {
-        val id = ConsoleSessionPersistenceFormat.sessionId(mapperKey)
-        synchronized(persistenceLock) {
-            removeRecordByIdLocked(id)
-        }
-    }
-
-    private fun loadSessionLocked(id: String): PersistedConsoleSession? {
-        val raw = store.getValue(recordKey(id)) ?: return null
-        val session = ConsoleSessionPersistenceFormat.decode(raw) ?: return null
-        return if (ConsoleSessionPersistenceFormat.sessionId(session.mapperKey) == id) {
-            session
-        } else {
-            LOG.warn("zMyBatis: session id/content mismatch for '$id'")
-            null
-        }
-    }
-
-    private fun savedSessionIdsLocked(): List<String> {
-        val raw = store.getValue(INDEX_KEY) ?: return emptyList()
-        return raw.lineSequence().filter { it.isNotBlank() }.distinct().toList()
-    }
-
-    private fun removeFromIndexLocked(id: String) {
-        val ids = savedSessionIdsLocked().filterTo(linkedSetOf()) { it != id }
-        writeIndexLocked(ids)
-    }
-
-    private fun writeIndexLocked(ids: Set<String>) {
-        if (ids.isEmpty()) {
-            store.unsetValue(INDEX_KEY)
-        } else {
-            store.setValue(INDEX_KEY, ids.sorted().joinToString("\n"))
-        }
-    }
-
-    private fun removeRecordByIdLocked(id: String) {
-        if (ConsoleSessionPersistenceFormat.isValidSessionId(id)) {
-            store.unsetValue(recordKey(id))
-        }
-        removeFromIndexLocked(id)
-    }
-
-    private fun recordKey(id: String): String = "$RECORD_PREFIX$id"
 }

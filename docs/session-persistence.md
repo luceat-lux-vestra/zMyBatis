@@ -47,6 +47,6 @@ On an explicit zMyBatis execution action:
 
 Live console caching is therefore an ephemeral optimization, not persistence authority. Closing or disposing a REUSE console does **not** delete the v3 target selection; the next explicit action re-resolves the descriptor and acquires a fresh resource.
 
-The old v2 reader/cleanup path remains only as bounded migration compatibility while #65 completes legacy `ConsoleCacheService` deletion/isolation. The v2 writer is retired, and v2 cleanup is startup-migration ownership rather than live-console registration/disposal behavior. New v3 target identity is never created or deleted merely because a console is registered or disposed.
+The old v2 reader/cleanup path remains only as bounded migration compatibility in `LegacyV2ConsoleSessionMigrationStore`. `ConsoleCacheService` now owns only live console/selection/shutdown lifecycle and contains no v2/v3 persistence store. The v2 writer is retired, and startup explicitly composes the lifecycle transition gate with the migration store so v2 cleanup cannot race past shutdown. New v3 target identity is never created or deleted merely because a console is registered or disposed.
 
 Project shutdown gates new selection/migration work. If migration cleanup is interrupted by shutdown, retained persisted state is re-evaluated on the next startup rather than guessed or redirected.

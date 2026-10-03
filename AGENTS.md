@@ -27,7 +27,7 @@ Key current ownership areas:
 - parameters: `ParameterExtractor`, `JsonParameterParser`, parameter UI/history;
 - dynamic SQL/rendering: `MyBatisEvaluator`, `SqlFormatter`, preview;
 - execution/DataGrip integration: `MyBatisExecuteProxyAction`;
-- target persistence/resource lifecycle: `ExecutionTargetDescriptorStore`, `StoredExecutionTargetBridge`, migration-only v2 `ConsoleCacheService`, and action-time console acquisition;
+- target persistence/resource lifecycle: `ExecutionTargetDescriptorStore`, `StoredExecutionTargetBridge`, migration-only `LegacyV2ConsoleSessionMigrationStore`, persistence-neutral `ConsoleCacheService` live-resource lifecycle, and action-time console acquisition;
 - settings: `ZMyBatisSettings`, configurable UI.
 
 These are **current-state ownership descriptions**, not target component boundaries. Leap replacement/deletion dispositions are defined by `docs/leap-architecture.md`.
@@ -82,7 +82,7 @@ Hardening #57 established the stable datasource/schema safety baseline, and #260
 - `REUSE`/`NEW_EACH` are ephemeral resource policies; live console registration/disposal is not v3 target-persistence authority;
 - cancellation and shutdown remain fail-closed across target resolution/resource acquisition.
 
-The remaining v2 reader/cleanup and mixed `ConsoleCacheService` surface are compatibility debt owned by #65, not the current target identity model.
+The remaining v2 reader/cleanup is isolated in `LegacyV2ConsoleSessionMigrationStore` and remains compatibility debt owned by #65. `ConsoleCacheService` now owns live resource/selection/shutdown lifecycle only and has no persistence storage surface.
 
 See [docs/session-persistence.md](docs/session-persistence.md) for the current persistence contract and [docs/test-contracts.md](docs/test-contracts.md) for automated versus platform-dependent evidence.
 

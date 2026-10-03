@@ -3,7 +3,9 @@ package com.algorist.zMyBatis.startup
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.services.ConsoleCacheService
 import com.algorist.zMyBatis.services.ExecutionTargetDescriptorStore
+import com.algorist.zMyBatis.services.LegacyV2ConsoleSessionMigrationStore
 import com.algorist.zMyBatis.services.LegacyV2TargetSelectionMigration
+import com.algorist.zMyBatis.services.PersistedConsoleSession
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
@@ -25,10 +27,12 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
         if (project.isDisposed) return
 
         val cache = ConsoleCacheService.getInstance(project)
+        val migrationStore = LegacyV2ConsoleSessionMigrationStore.getInstance(project)
         val targetStore = ExecutionTargetDescriptorStore.getInstance(project)
         migratePersistedSelections(
             project = project,
             cache = cache,
+            migrationStore = migrationStore,
             targetStore = targetStore,
             resolveSourceUrl = { url ->
                 VirtualFileManager.getInstance()
@@ -49,6 +53,7 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
     internal fun migratePersistedSelections(
         project: Project,
         cache: ConsoleCacheService,
+        migrationStore: LegacyV2ConsoleSessionMigrationStore,
         targetStore: ExecutionTargetDescriptorStore,
         resolveSourceUrl: (String) -> String?,
     ) {
@@ -58,8 +63,11 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
         pruneMissingV3Sources(targetStore, resolveSourceUrl, shouldStop)
         if (shouldStop()) return
 
-        val sessions = cache.pruneStaleIndex()
-        if (sessions.isEmpty()) return
+        var sessions = emptyList<PersistedConsoleSession>()
+        val indexTransitionCompleted = cache.runStartupMigrationTransitionIfActive {
+            sessions = migrationStore.pruneStaleIndex()
+        }
+        if (!indexTransitionCompleted || sessions.isEmpty()) return
 
         for (session in sessions) {
             if (project.isDisposed || cache.isShuttingDown()) return
@@ -68,14 +76,14 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
             if (shouldStop()) return
             if (resolvedUrl != session.mapperKey) {
                 LOG.info("zMyBatis: pruning v2 target selection whose source can no longer be proven")
-                cache.clearSession(session.mapperKey)
+                if (!clearV2IfActive(cache, migrationStore, session.mapperKey)) return
                 continue
             }
 
             val sourceFileId = try {
                 SourceFileId("vfs:$resolvedUrl")
             } catch (_: IllegalArgumentException) {
-                cache.clearSession(session.mapperKey)
+                if (!clearV2IfActive(cache, migrationStore, session.mapperKey)) return
                 continue
             }
 
@@ -83,7 +91,7 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
             val transitionCompleted = cache.runStartupMigrationTransitionIfActive {
                 if (targetStore.load(sourceFileId) == null) {
                     if (migrated == null) {
-                        cache.clearSession(session.mapperKey)
+                        migrationStore.clearSession(session.mapperKey)
                         return@runStartupMigrationTransitionIfActive
                     }
                     targetStore.save(migrated.association, migrated.descriptor)
@@ -91,10 +99,18 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
 
                 // Save/validate v3 first. If cleanup is interrupted, duplicate v2+v3 state is
                 // harmless and the next startup keeps v3 authoritative before removing v2 again.
-                cache.clearSession(session.mapperKey)
+                migrationStore.clearSession(session.mapperKey)
             }
             if (!transitionCompleted) return
         }
+    }
+
+    private fun clearV2IfActive(
+        cache: ConsoleCacheService,
+        migrationStore: LegacyV2ConsoleSessionMigrationStore,
+        mapperKey: String,
+    ): Boolean = cache.runStartupMigrationTransitionIfActive {
+        migrationStore.clearSession(mapperKey)
     }
 
     private fun pruneMissingV3Sources(
