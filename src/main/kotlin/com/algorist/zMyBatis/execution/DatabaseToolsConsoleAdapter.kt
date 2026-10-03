@@ -35,6 +35,7 @@ internal sealed interface DatabaseToolsConsoleAcquisitionFailure {
 }
 
 internal sealed interface DatabaseToolsSqlExecutionFailure {
+    data object ConsoleUnavailable : DatabaseToolsSqlExecutionFailure
     data class EditorUnavailable(val consoleTitle: String) : DatabaseToolsSqlExecutionFailure
     data object ScriptModelUnavailable : DatabaseToolsSqlExecutionFailure
     data class ExecutionFailed(val detail: String) : DatabaseToolsSqlExecutionFailure
@@ -167,6 +168,11 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         onFailure: (DatabaseToolsSqlExecutionFailure) -> Unit,
     ) {
         if (isProjectUnavailable()) return
+        if (Disposer.isDisposed(console)) {
+            LOG.warn("zMyBatis: console unavailable before SQL execution")
+            onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
+            return
+        }
         if (sql.isBlank()) {
             LOG.warn("zMyBatis: SQL is blank, skipping execution")
             return
@@ -175,7 +181,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         val consoleDoc = console.document
         val consolePsiFile = console.file
         val existingEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
-            .firstOrNull { it is EditorEx } as? EditorEx
+            .firstOrNull { it is EditorEx && !it.isDisposed } as? EditorEx
 
         if (existingEditor == null) {
             LOG.info("zMyBatis: no existing editor for console '${console.title}', attempting to open...")
@@ -184,8 +190,13 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 FileEditorManager.getInstance(project).openFile(vFile, true)
                 ApplicationManager.getApplication().invokeLater({
                     if (isProjectUnavailable()) return@invokeLater
+                    if (Disposer.isDisposed(console)) {
+                        LOG.warn("zMyBatis: console unavailable after editor-open scheduling")
+                        onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
+                        return@invokeLater
+                    }
                     val retryEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
-                        .firstOrNull { it is EditorEx } as? EditorEx
+                        .firstOrNull { it is EditorEx && !it.isDisposed } as? EditorEx
                     if (retryEditor != null) {
                         performExecution(console, sql, retryEditor, onExecuted, onFailure)
                     } else {
@@ -210,6 +221,17 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         onFailure: (DatabaseToolsSqlExecutionFailure) -> Unit,
     ) {
         if (isProjectUnavailable()) return
+        if (Disposer.isDisposed(console)) {
+            LOG.warn("zMyBatis: console unavailable before execution preparation")
+            onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
+            return
+        }
+        if (consoleEditor.isDisposed) {
+            LOG.warn("zMyBatis: console editor unavailable before execution preparation")
+            onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable(console.title))
+            return
+        }
+
         val consoleDoc = console.document
         val consolePsiFile = console.file
         val originalText = consoleDoc.text
@@ -239,7 +261,23 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 return
             }
 
-            if (isProjectUnavailable()) return
+            if (isProjectUnavailable()) {
+                restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
+                return
+            }
+            if (Disposer.isDisposed(console)) {
+                LOG.warn("zMyBatis: console unavailable before native query invocation")
+                restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
+                onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
+                return
+            }
+            if (consoleEditor.isDisposed) {
+                LOG.warn("zMyBatis: console editor unavailable before native query invocation")
+                restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
+                onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable(console.title))
+                return
+            }
+
             LOG.info("zMyBatis: executing on console '${console.title}'")
             JdbcConsoleProvider.doRunQueryInConsole(console, info)
             onExecuted()
