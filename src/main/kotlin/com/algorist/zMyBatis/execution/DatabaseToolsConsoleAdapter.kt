@@ -119,9 +119,12 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         } catch (ex: ProcessCanceledException) {
             console?.let { Disposer.dispose(it) }
             throw ex
-        } catch (ex: Throwable) {
+        } catch (ex: Exception) {
             console?.let { Disposer.dispose(it) }
-            LOG.error("zMyBatis: failed to create console for ${dataSource.name}", ex)
+            LOG.warn(
+                "zMyBatis: console creation failed " +
+                    "(dataSource=${dataSource.name}, type=${ex.javaClass.name})"
+            )
             if (!isProjectUnavailable()) {
                 onFailure(
                     DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed(
@@ -130,6 +133,10 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                     )
                 )
             }
+        } catch (fatal: Throwable) {
+            console?.let { Disposer.dispose(it) }
+            LOG.error("zMyBatis: fatal console creation failure", fatal)
+            throw fatal
         }
     }
 
@@ -142,9 +149,15 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             true
         } catch (ex: ProcessCanceledException) {
             throw ex
-        } catch (ex: Throwable) {
-            LOG.warn("zMyBatis: failed to switch schema '${schema.name}'", ex)
+        } catch (ex: Exception) {
+            LOG.warn(
+                "zMyBatis: schema switch failed " +
+                    "(schema=${schema.name}, type=${ex.javaClass.name})"
+            )
             false
+        } catch (fatal: Throwable) {
+            LOG.error("zMyBatis: fatal schema-switch failure", fatal)
+            throw fatal
         }
 
     fun executeSql(
@@ -233,8 +246,8 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         } catch (ex: ProcessCanceledException) {
             restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
             throw ex
-        } catch (ex: Throwable) {
-            LOG.error("zMyBatis: execution failed", ex)
+        } catch (ex: Exception) {
+            LOG.warn("zMyBatis: SQL execution failed (type=${ex.javaClass.name})")
             restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
             if (!isProjectUnavailable()) {
                 onFailure(
@@ -243,6 +256,10 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                     )
                 )
             }
+        } catch (fatal: Throwable) {
+            LOG.error("zMyBatis: fatal SQL execution failure", fatal)
+            restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
+            throw fatal
         }
     }
 
@@ -264,8 +281,13 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
     ) {
         try {
             restoreConsoleDocument(consoleDoc, originalText)
-        } catch (restoreEx: Throwable) {
-            LOG.warn("zMyBatis: failed to restore console document: ${restoreEx.message}")
+        } catch (restoreEx: ProcessCanceledException) {
+            throw restoreEx
+        } catch (restoreEx: Exception) {
+            LOG.warn(
+                "zMyBatis: failed to restore console document " +
+                    "(type=${restoreEx.javaClass.name})"
+            )
         }
     }
 }
