@@ -3,6 +3,9 @@
 package com.algorist.zMyBatis
 
 import com.algorist.zMyBatis.MyBatisContextAnalyzer.analyze
+import com.algorist.zMyBatis.core.source.SourceFileId
+import com.algorist.zMyBatis.execution.StoredExecutionTargetBridge
+import com.algorist.zMyBatis.execution.StoredExecutionTargetResolution
 import com.algorist.zMyBatis.services.ConsoleCacheService
 import com.algorist.zMyBatis.settings.ConsoleSessionPolicy
 import com.algorist.zMyBatis.settings.ZMyBatisSettings
@@ -88,6 +91,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
 
             val historyFileKey = psiFile.virtualFile?.path ?: psiFile.name
             val mapperKey = psiFile.viewProvider.virtualFile.url
+            val sourceFileId = SourceFileId("vfs:$mapperKey")
             val statementKey = extractStatementKey(context, editor, psiFile, historyFileKey)
             val cache = ConsoleCacheService.getInstance(project)
 
@@ -98,9 +102,43 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 LOG.info("zMyBatis: reusing cached console for $mapperKey")
                 proceedWithParamsAndExecute(e, project, sqlContent, context, cachedConsole, statementKey)
             } else {
-                LOG.info("zMyBatis: no live console for $mapperKey, showing data-source chooser")
-                ensureConsole(e, project, mapperKey, forceNew) { console ->
-                    proceedWithParamsAndExecute(e, project, sqlContent, context, console, statementKey)
+                when (val storedTarget = StoredExecutionTargetBridge.forProject(project).resolve(sourceFileId)) {
+                    is StoredExecutionTargetResolution.Success -> {
+                        LOG.info("zMyBatis: resolved persisted execution target for $mapperKey")
+                        buildAndDeliverConsole(
+                            project = project,
+                            ds = storedTarget.dataSource,
+                            schema = storedTarget.schema,
+                            fileKey = mapperKey,
+                            sourceFileId = sourceFileId,
+                            forceNew = forceNew,
+                            rememberSelection = false,
+                        ) { console ->
+                            proceedWithParamsAndExecute(
+                                e,
+                                project,
+                                sqlContent,
+                                context,
+                                console,
+                                statementKey,
+                            )
+                        }
+                    }
+                    is StoredExecutionTargetResolution.Invalid -> {
+                        LOG.info(
+                            "zMyBatis: persisted execution target is stale " +
+                                "(code=${storedTarget.failure.code}); requiring explicit re-selection"
+                        )
+                        ensureConsole(e, project, mapperKey, sourceFileId, forceNew) { console ->
+                            proceedWithParamsAndExecute(e, project, sqlContent, context, console, statementKey)
+                        }
+                    }
+                    StoredExecutionTargetResolution.Missing -> {
+                        LOG.info("zMyBatis: no persisted execution target for $mapperKey; showing chooser")
+                        ensureConsole(e, project, mapperKey, sourceFileId, forceNew) { console ->
+                            proceedWithParamsAndExecute(e, project, sqlContent, context, console, statementKey)
+                        }
+                    }
                 }
             }
         } catch (ex: Throwable) {
@@ -162,6 +200,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         originalEvent: AnActionEvent,
         project: com.intellij.openapi.project.Project,
         fileKey: String,
+        sourceFileId: SourceFileId,
         forceNew: Boolean,
         onConsoleReady: (JdbcConsole) -> Unit
     ) {
@@ -193,7 +232,16 @@ open class MyBatisExecuteProxyAction : AnAction() {
                     override fun actionPerformed(ignored: AnActionEvent) {
                         LOG.info("zMyBatis: Default schema selected for DS: ${ds.name}")
                         cache.endSelection(fileKey)
-                        buildAndDeliverConsole(project, ds, null, fileKey, forceNew, onConsoleReady)
+                        buildAndDeliverConsole(
+                            project,
+                            ds,
+                            null,
+                            fileKey,
+                            sourceFileId,
+                            forceNew,
+                            true,
+                            onConsoleReady,
+                        )
                     }
                 })
                 dsGroup.addSeparator()
@@ -206,7 +254,16 @@ open class MyBatisExecuteProxyAction : AnAction() {
                             override fun actionPerformed(ignored: AnActionEvent) {
                                 LOG.info("zMyBatis: Schema selected: ${schema.name} for DS: ${ds.name}")
                                 cache.endSelection(fileKey)
-                                buildAndDeliverConsole(project, ds, schema, fileKey, forceNew, onConsoleReady)
+                                buildAndDeliverConsole(
+                                    project,
+                                    ds,
+                                    schema,
+                                    fileKey,
+                                    sourceFileId,
+                                    forceNew,
+                                    true,
+                                    onConsoleReady,
+                                )
                             }
                         })
                     }
@@ -256,7 +313,9 @@ open class MyBatisExecuteProxyAction : AnAction() {
         ds: DbDataSource,
         schema: DasNamespace?,
         fileKey: String,
+        sourceFileId: SourceFileId,
         forceNew: Boolean,
+        rememberSelection: Boolean,
         onConsoleReady: (JdbcConsole) -> Unit
     ) {
         var console: JdbcConsole? = null
@@ -286,15 +345,24 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 return
             }
 
-            val schemaName = schema?.name ?: ""
+            val schemaName = schema?.name
             val dataSourceId = ConsoleCacheService.stableDataSourceId(ds)
+            if (rememberSelection) {
+                val persisted = StoredExecutionTargetBridge.forProject(project).remember(
+                    sourceFileId = sourceFileId,
+                    stableDataSourceId = dataSourceId,
+                    dataSourceDisplayName = ds.name,
+                    schemaName = schemaName,
+                )
+                if (!persisted) {
+                    LOG.info("zMyBatis: selected target has no stable restart identity")
+                }
+            }
+
             if (!forceNew) {
-                cache.put(
+                cache.putEphemeral(
                     mapperKey = fileKey,
                     console = console,
-                    dataSourceId = dataSourceId,
-                    dataSourceName = ds.name,
-                    schemaName = schemaName
                 )
                 if (cache.get(fileKey) !== console) {
                     LOG.warn("zMyBatis: console was not live after cache registration for $fileKey — skipping query")
@@ -313,7 +381,8 @@ open class MyBatisExecuteProxyAction : AnAction() {
             console = null
             LOG.info(
                 "zMyBatis: session prepared for $fileKey " +
-                    "(ds=${ds.name}, dsId=${dataSourceId ?: "<unpersisted>"}, schema=$schemaName)"
+                    "(ds=${ds.name}, dsId=${dataSourceId ?: "<unpersisted>"}, " +
+                    "schema=${schemaName ?: "<default>"})"
             )
         } catch (ex: Throwable) {
             console?.let { Disposer.dispose(it) }
