@@ -79,18 +79,21 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
                 continue
             }
 
-            if (targetStore.load(sourceFileId) == null) {
-                val migrated = LegacyV2TargetSelectionMigration.convert(session, sourceFileId)
-                if (migrated == null) {
-                    cache.clearSession(session.mapperKey)
-                    continue
+            val migrated = LegacyV2TargetSelectionMigration.convert(session, sourceFileId)
+            val transitionCompleted = cache.runStartupMigrationTransitionIfActive {
+                if (targetStore.load(sourceFileId) == null) {
+                    if (migrated == null) {
+                        cache.clearSession(session.mapperKey)
+                        return@runStartupMigrationTransitionIfActive
+                    }
+                    targetStore.save(migrated.association, migrated.descriptor)
                 }
-                targetStore.save(migrated.association, migrated.descriptor)
-            }
 
-            // Save/validate v3 first. If cleanup is interrupted, duplicate v2+v3 state is harmless
-            // and the next startup keeps v3 authoritative before removing v2 again.
-            cache.clearSession(session.mapperKey)
+                // Save/validate v3 first. If cleanup is interrupted, duplicate v2+v3 state is
+                // harmless and the next startup keeps v3 authoritative before removing v2 again.
+                cache.clearSession(session.mapperKey)
+            }
+            if (!transitionCompleted) return
         }
     }
 
