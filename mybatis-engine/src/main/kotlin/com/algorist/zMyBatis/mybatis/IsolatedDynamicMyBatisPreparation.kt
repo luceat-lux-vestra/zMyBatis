@@ -39,6 +39,7 @@ internal object IsolatedDynamicMyBatisPreparation {
         parameterType: MyBatisParameterType,
         parameterValues: Map<String, Any?>,
         admittedForeachLocals: Map<String, InternalBindingKind> = emptyMap(),
+        databaseId: String? = null,
     ): Result {
         if (!safeParameterType(parameterType)) {
             return Result.Failed(invariantFailure("mybatis-isolated-parameter-type-not-jdk-owned"))
@@ -61,7 +62,7 @@ internal object IsolatedDynamicMyBatisPreparation {
 
         return try {
             URLClassLoader(arrayOf(myBatisLocation), platformLoader).use { loader ->
-                prepareIn(loader, script, parameterType, parameterValues, admittedForeachLocals)
+                prepareIn(loader, script, parameterType, parameterValues, admittedForeachLocals, databaseId)
             }
         } catch (failure: Throwable) {
             rethrowFatal(failure)
@@ -75,6 +76,7 @@ internal object IsolatedDynamicMyBatisPreparation {
         parameterType: MyBatisParameterType,
         parameterValues: Map<String, Any?>,
         admittedForeachLocals: Map<String, InternalBindingKind>,
+        databaseId: String?,
     ): Result {
         val configurationClass = Class.forName(CONFIGURATION, true, loader)
         if (configurationClass.classLoader !== loader) {
@@ -97,6 +99,11 @@ internal object IsolatedDynamicMyBatisPreparation {
         }
 
         val configuration = configurationClass.getDeclaredConstructor().newInstance()
+        databaseId?.let {
+            configurationClass
+                .getMethod("setDatabaseId", String::class.java)
+                .invoke(configuration, it)
+        }
         val languageDriver = configurationClass
             .getMethod("getDefaultScriptingLanguageInstance")
             .invoke(configuration)

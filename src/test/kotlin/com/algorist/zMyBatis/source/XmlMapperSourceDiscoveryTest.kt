@@ -280,11 +280,16 @@ class XmlMapperSourceDiscoveryTest {
     }
 
     @Test
-    fun databaseIdAndLanguageDriverEvidenceIsPreservedExplicitly() {
+    fun databaseIdVariantsArePreservedWhileLanguageDriverRemainsUnsupportedEvidence() {
         val xml = """
             <mapper namespace="fixture.Mapper">
-              <select id="find" databaseId="postgres" lang="fixture.CustomDriver">SELECT 1</select>
-              <sql id="columns" databaseId="oracle">id</sql>
+              <select id="find">SELECT default</select>
+              <select id="find" databaseId="PostgreSQL" lang="fixture.CustomDriver">SELECT postgres</select>
+              <select id="find" databaseId="Oracle">SELECT oracle</select>
+              <select id="emptyId" databaseId="">SELECT empty</select>
+              <select id="paddedId" databaseId=" PostgreSQL ">SELECT padded</select>
+              <sql id="columns">id</sql>
+              <sql id="columns" databaseId="Oracle">oracle_id</sql>
               <select id="nestedEvidence">
                 <selectKey keyProperty="id" resultType="long" databaseId="h2">SELECT 1</selectKey>
               </select>
@@ -295,17 +300,24 @@ class XmlMapperSourceDiscoveryTest {
 
         assertEquals(
             listOf(
-                Triple(XmlUnsupportedSemanticsKind.DATABASE_ID, "select", "postgres"),
+                "find:null",
+                "find:PostgreSQL",
+                "find:Oracle",
+                "emptyId:",
+                "paddedId: PostgreSQL ",
+                "nestedEvidence:null",
+            ),
+            discovery.statements.map { "${it.id}:${it.databaseId}" },
+        )
+        assertEquals(
+            listOf("columns:null", "columns:Oracle"),
+            discovery.fragments.map { "${it.id}:${it.databaseId}" },
+        )
+        assertEquals(
+            listOf(
                 Triple(XmlUnsupportedSemanticsKind.LANGUAGE_DRIVER, "select", "fixture.CustomDriver"),
-                Triple(XmlUnsupportedSemanticsKind.DATABASE_ID, "sql", "oracle"),
-                Triple(XmlUnsupportedSemanticsKind.DATABASE_ID, "selectKey", "h2"),
             ),
             discovery.unsupportedSemantics.map { Triple(it.kind, it.elementName, it.value) },
-        )
-        assertTrue(
-            discovery.unsupportedSemantics.all {
-                xml.substring(it.sourceRange.startOffset, it.sourceRange.endOffsetExclusive).startsWith("<${it.elementName}")
-            },
         )
     }
 

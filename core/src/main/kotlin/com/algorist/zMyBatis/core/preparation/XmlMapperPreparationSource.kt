@@ -1,5 +1,6 @@
 package com.algorist.zMyBatis.core.preparation
 
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.SourceSnapshot
@@ -20,6 +21,7 @@ import com.algorist.zMyBatis.core.source.XmlStatementId
 class XmlMapperPreparationSource(
     override val sourceGraph: StatementSourceGraph,
     additionalAuthoritySnapshots: List<SourceSnapshot> = emptyList(),
+    val effectiveDatabaseId: MyBatisDatabaseId? = null,
 ) : PreparationSource {
     private val additionalAuthoritySnapshot = additionalAuthoritySnapshots.toList()
 

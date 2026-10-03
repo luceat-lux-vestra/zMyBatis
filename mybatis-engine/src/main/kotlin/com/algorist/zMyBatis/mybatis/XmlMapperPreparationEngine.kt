@@ -65,7 +65,7 @@ object XmlMapperPreparationEngine {
     private const val CLASSLOADER_INVARIANT = "mybatis-xml-classloader-isolation-failure"
 
     private val dangerousAttribute = Regex(
-        """(?i)\b(?:databaseId|lang|parameterType|parameterMap|resultType|resultMap|typeHandler|javaType)\s*=""",
+        """(?i)\b(?:lang|parameterType|parameterMap|resultType|resultMap|typeHandler|javaType)\s*=""",
     )
     private val dangerousElement = Regex(
         """(?i)<\s*(?:resultMap|parameterMap|cache|cache-ref|selectKey)\b""",
@@ -172,6 +172,11 @@ object XmlMapperPreparationEngine {
         val boundSqlClass = runtime.boundSqlClass
 
         val configuration = configurationClass.getDeclaredConstructor().newInstance()
+        request.effectiveDatabaseId?.let { databaseId ->
+            configurationClass
+                .getMethod("setDatabaseId", String::class.java)
+                .invoke(configuration, databaseId.value)
+        }
         val sqlFragments = configurationClass.getMethod("getSqlFragments").invoke(configuration) as? Map<*, *>
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
         val constructor = builderClass.getConstructor(
@@ -274,6 +279,7 @@ object XmlMapperPreparationEngine {
                         engineIdentity = ENGINE_ID,
                         engineVersion = ENGINE_VERSION,
                         languageDriverIdentity = languageDriver.javaClass.name,
+                        databaseId = request.effectiveDatabaseId?.value,
                     ),
                 ),
             )

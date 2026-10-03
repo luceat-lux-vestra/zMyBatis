@@ -1,5 +1,7 @@
 package com.algorist.zMyBatis.source
 
+import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.SourceSnapshot
@@ -11,6 +13,198 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class XmlStatementSourceGraphResolverTest {
+    @Test
+    fun databaseIdRootVariantsSelectPostgresqlAndOracleFromTargetAuthority() {
+        val root = document(
+            "root.xml",
+            """
+                <mapper namespace="a.Mapper">
+                  <select id="find">SELECT default</select>
+                  <select id="find" databaseId="PostgreSQL">SELECT postgres</select>
+                  <select id="find" databaseId="Oracle">SELECT oracle</select>
+                </mapper>
+            """.trimIndent(),
+        )
+        val id = rootId(root, "a.Mapper", "find")
+
+        val postgresResult = resolveWithDatabaseId(
+            MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+            id,
+            root,
+        ) as XmlStatementSourceGraphResult.Resolved
+        val oracleResult = resolveWithDatabaseId(
+            MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.ORACLE),
+            id,
+            root,
+        ) as XmlStatementSourceGraphResult.Resolved
+        val postgres = postgresResult.graph
+        val oracle = oracleResult.graph
+
+        assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, postgresResult.effectiveDatabaseId?.value)
+        assertEquals(ConventionalMyBatisDatabaseIds.ORACLE, oracleResult.effectiveDatabaseId?.value)
+
+        val postgresTag = root.snapshot.content.substring(
+            postgres.rootStatement.sourceRange.startOffset,
+            postgres.rootStatement.sourceRange.endOffsetExclusive,
+        )
+        val oracleTag = root.snapshot.content.substring(
+            oracle.rootStatement.sourceRange.startOffset,
+            oracle.rootStatement.sourceRange.endOffsetExclusive,
+        )
+        assertTrue(postgresTag.contains("databaseId=\"PostgreSQL\""))
+        assertTrue(oracleTag.contains("databaseId=\"Oracle\""))
+    }
+
+    @Test
+    fun databaseIdFragmentVariantControlsReachableDependencyGraph() {
+        val root = document(
+            "root.xml",
+            """
+                <mapper namespace="a.Mapper">
+                  <sql id="columns"><include refid="default.Common.base"/></sql>
+                  <sql id="columns" databaseId="PostgreSQL"><include refid="pg.Common.base"/></sql>
+                  <sql id="columns" databaseId="Oracle"><include refid="ora.Common.base"/></sql>
+                  <select id="find">SELECT <include refid="columns"/></select>
+                </mapper>
+            """.trimIndent(),
+        )
+        val defaultCommon = document(
+            "default.xml",
+            """<mapper namespace="default.Common"><sql id="base">default_col</sql></mapper>""",
+        )
+        val pgCommon = document(
+            "pg.xml",
+            """<mapper namespace="pg.Common"><sql id="base">pg_col</sql></mapper>""",
+        )
+        val oraCommon = document(
+            "ora.xml",
+            """<mapper namespace="ora.Common"><sql id="base">ora_col</sql></mapper>""",
+        )
+        val id = rootId(root, "a.Mapper", "find")
+
+        val postgres = resolved(
+            resolveWithDatabaseId(
+                MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+                id,
+                root,
+                defaultCommon,
+                pgCommon,
+                oraCommon,
+            ),
+        )
+        val oracle = resolved(
+            resolveWithDatabaseId(
+                MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.ORACLE),
+                id,
+                root,
+                defaultCommon,
+                pgCommon,
+                oraCommon,
+            ),
+        )
+
+        assertEquals(
+            setOf("vfs:root.xml", "vfs:pg.xml"),
+            postgres.sourceSnapshots.map { it.fileId.value }.toSet(),
+        )
+        assertEquals(
+            setOf("vfs:root.xml", "vfs:ora.xml"),
+            oracle.sourceSnapshots.map { it.fileId.value }.toSet(),
+        )
+    }
+
+    @Test
+    fun databaseIdDependentRootFailsNarrowlyWithoutAuthorityOrWithUnprovenCustomMapping() {
+        val conventional = document(
+            "conventional.xml",
+            """
+                <mapper namespace="a.Mapper">
+                  <select id="find">SELECT default</select>
+                  <select id="find" databaseId="PostgreSQL">SELECT postgres</select>
+                </mapper>
+            """.trimIndent(),
+        )
+        val conventionalFailure = failed(
+            resolve(conventional, rootId(conventional, "a.Mapper", "find")),
+        )
+        assertTrue(conventionalFailure is XmlStatementSourceGraphFailure.DatabaseIdAuthorityUnavailable)
+
+        val custom = document(
+            "custom.xml",
+            """
+                <mapper namespace="a.Mapper">
+                  <select id="find">SELECT default</select>
+                  <select id="find" databaseId="PostgreSQL">SELECT conventional</select>
+                  <select id="find" databaseId="pg">SELECT custom</select>
+                </mapper>
+            """.trimIndent(),
+        )
+        val customFailure = failed(
+            resolveWithDatabaseId(
+                MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+                rootId(custom, "a.Mapper", "find"),
+                custom,
+            ),
+        )
+        assertTrue(customFailure is XmlStatementSourceGraphFailure.DatabaseIdMappingUnproven)
+        customFailure as XmlStatementSourceGraphFailure.DatabaseIdMappingUnproven
+        assertEquals(listOf("pg"), customFailure.declaredDatabaseIds)
+    }
+
+    @Test
+    fun xmlDatabaseIdIdentityIsExactAndNeverWhitespaceNormalized() {
+        fun assertUnproven(databaseId: String) {
+            val document = document(
+                "exact-database-id.xml",
+                """
+                    <mapper namespace="a.Mapper">
+                      <select id="find">SELECT default</select>
+                      <select id="find" databaseId="$databaseId">SELECT specific</select>
+                    </mapper>
+                """.trimIndent(),
+            )
+            val failure = failed(
+                resolveWithDatabaseId(
+                    MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+                    rootId(document, "a.Mapper", "find"),
+                    document,
+                ),
+            )
+            assertTrue(failure is XmlStatementSourceGraphFailure.DatabaseIdMappingUnproven)
+            failure as XmlStatementSourceGraphFailure.DatabaseIdMappingUnproven
+            assertEquals(listOf(databaseId), failure.declaredDatabaseIds)
+        }
+
+        assertUnproven("")
+        assertUnproven(" PostgreSQL ")
+    }
+
+    @Test
+    fun conventionalOtherVendorVariantAllowsDefaultFallback() {
+        val root = document(
+            "root.xml",
+            """
+                <mapper namespace="a.Mapper">
+                  <select id="find">SELECT default</select>
+                  <select id="find" databaseId="Oracle">SELECT oracle</select>
+                </mapper>
+            """.trimIndent(),
+        )
+
+        val graph = resolved(
+            resolveWithDatabaseId(
+                MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+                rootId(root, "a.Mapper", "find"),
+                root,
+            ),
+        )
+        val tag = root.snapshot.content.substring(
+            graph.rootStatement.sourceRange.startOffset,
+            graph.rootStatement.sourceRange.endOffsetExclusive,
+        )
+        assertEquals("<select id=\"find\">", tag)
+    }
+
     @Test
     fun sameNamespaceIncludeResolvesToSameFileDependency() {
         val root = document(
@@ -373,6 +567,17 @@ class XmlStatementSourceGraphResolverTest {
         rootStatementId = rootStatementId,
         snapshots = fixtures.map { it.snapshot },
         discoveries = fixtures.map { it.discovery },
+    )
+
+    private fun resolveWithDatabaseId(
+        databaseId: MyBatisDatabaseId,
+        rootStatementId: XmlStatementId,
+        vararg fixtures: DocumentFixture,
+    ): XmlStatementSourceGraphResult = XmlStatementSourceGraphResolver.resolve(
+        rootStatementId = rootStatementId,
+        snapshots = fixtures.map { it.snapshot },
+        discoveries = fixtures.map { it.discovery },
+        effectiveDatabaseId = databaseId,
     )
 
     private fun resolved(result: XmlStatementSourceGraphResult) =

@@ -5,17 +5,20 @@ import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.JavaAnnotationParameterContractFactory
+import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationResult
 import com.algorist.zMyBatis.core.preparation.PreparationSource
 import com.algorist.zMyBatis.core.source.CapturedStatement
+import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
 import com.algorist.zMyBatis.core.source.JavaAnnotationStatementCapture
 import com.algorist.zMyBatis.core.source.JavaMethodParameterMetadata
 import com.algorist.zMyBatis.core.source.JavaStatementId
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
 import com.algorist.zMyBatis.core.source.MethodSignature
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRange
 import com.algorist.zMyBatis.core.source.SourceRevision
@@ -70,6 +73,44 @@ class MyBatisPreparationEngineTest {
         assertEquals("select 1", execution.sqlWithPlaceholders)
         assertTrue(execution.orderedBindings.isEmpty())
         assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    @Test
+    fun dynamicDatabaseIdUsesTargetAuthorityAndFailsClosedWhenAuthorityIsMissing() {
+        val script = """
+            <script>
+              <choose>
+                <when test="_databaseId == 'PostgreSQL'">select 'postgres'</when>
+                <when test="_databaseId == 'Oracle'">select 'oracle'</when>
+                <otherwise>select 'default'</otherwise>
+              </choose>
+            </script>
+        """.trimIndent()
+
+        val postgres = MyBatisPreparationEngine.prepare(
+            requestWithProvenZeroInputs(
+                script,
+                MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+            ),
+        )
+        val oracle = MyBatisPreparationEngine.prepare(
+            requestWithProvenZeroInputs(
+                script,
+                MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.ORACLE),
+            ),
+        )
+        val missing = MyBatisPreparationEngine.prepare(requestWithProvenZeroInputs(script))
+
+        assertEquals("select 'postgres'", (postgres as PreparationResult.Success).execution.sqlWithPlaceholders.trim())
+        assertEquals("PostgreSQL", postgres.execution.preparationMetadata.databaseId)
+        assertEquals("select 'oracle'", (oracle as PreparationResult.Success).execution.sqlWithPlaceholders.trim())
+        assertEquals("Oracle", oracle.execution.preparationMetadata.databaseId)
+        val failure = (missing as PreparationResult.Failed).failure
+        assertEquals(
+            com.algorist.zMyBatis.core.preparation.PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+            failure.kind,
+        )
+        assertEquals("mybatis-database-id-authority-unavailable", failure.code)
     }
 
     @Test
@@ -321,7 +362,38 @@ class MyBatisPreparationEngineTest {
         assertEquals("java-param:0", binding.requirementId?.value)
     }
 
-    private fun request(sql: String, parameters: List<Parameter>): MyBatisPreparationRequest {
+    private fun requestWithProvenZeroInputs(
+        sql: String,
+        databaseId: MyBatisDatabaseId? = null,
+    ): MyBatisPreparationRequest {
+        val capture = capture(sql, emptyList())
+        val sourceRevisions = capture.sourceGraph.sourceSnapshots.associate { it.fileId to it.revision }
+        val contract = ParameterContract(
+            statementId = capture.sourceGraph.rootStatement.id,
+            requirements = emptyList(),
+            aliases = emptyList(),
+            internalBindings = emptyList(),
+            blockingProblems = emptyList(),
+            sourceRevisions = sourceRevisions,
+        )
+        val environmentResult = InputEnvironment.validate(contract, emptyList())
+        assertTrue(environmentResult is InputEnvironmentResult.Success)
+        val environment = (environmentResult as InputEnvironmentResult.Success).environment
+        val requestResult = MyBatisPreparationRequest.create(
+            PreparationSource.JavaAnnotation(capture),
+            contract,
+            environment,
+            effectiveDatabaseId = databaseId,
+        )
+        assertTrue(requestResult is PreparationRequestResult.Ready)
+        return (requestResult as PreparationRequestResult.Ready).request
+    }
+
+    private fun request(
+        sql: String,
+        parameters: List<Parameter>,
+        databaseId: MyBatisDatabaseId? = null,
+    ): MyBatisPreparationRequest {
         val capture = capture(sql, parameters)
         val contract = JavaAnnotationParameterContractFactory.build(capture)
         assertFalse("test fixture unexpectedly produced a blocked contract", contract.isPreparationBlocked)
@@ -336,6 +408,7 @@ class MyBatisPreparationEngineTest {
             PreparationSource.JavaAnnotation(capture),
             contract,
             environment,
+            effectiveDatabaseId = databaseId,
         )
         assertTrue(requestResult is PreparationRequestResult.Ready)
         return (requestResult as PreparationRequestResult.Ready).request

@@ -34,10 +34,12 @@ sealed interface XmlMapperDeclarationRef {
     data class Statement(
         override val id: String,
         val kind: StatementKind,
+        val databaseId: String? = null,
     ) : XmlMapperDeclarationRef
 
     data class Fragment(
         override val id: String,
+        val databaseId: String? = null,
     ) : XmlMapperDeclarationRef
 }
 
@@ -45,11 +47,13 @@ data class XmlMapperStatementDeclaration(
     val id: String,
     val kind: StatementKind,
     val sourceRange: SourceRange,
+    val databaseId: String? = null,
 )
 
 data class XmlMapperFragmentDeclaration(
     val id: String,
     val sourceRange: SourceRange,
+    val databaseId: String? = null,
 )
 
 data class XmlMapperIncludeReference(
@@ -59,7 +63,6 @@ data class XmlMapperIncludeReference(
 )
 
 enum class XmlUnsupportedSemanticsKind {
-    DATABASE_ID,
     LANGUAGE_DRIVER,
 }
 
@@ -137,8 +140,8 @@ object XmlMapperSourceDiscovery {
         val fragments = mutableListOf<XmlMapperFragmentDeclaration>()
         val includes = mutableListOf<XmlMapperIncludeReference>()
         val unsupportedSemantics = mutableListOf<XmlUnsupportedSemanticsEvidence>()
-        val statementIds = mutableSetOf<String>()
-        val fragmentIds = mutableSetOf<String>()
+        val statementIds = mutableSetOf<Pair<String, String?>>()
+        val fragmentIds = mutableSetOf<Pair<String, String?>>()
 
         var namespace: String? = null
         var depth = 0
@@ -194,19 +197,23 @@ object XmlMapperSourceDiscovery {
                         if (id == null || id.isBlank()) {
                             return failed(XmlMapperDiscoveryFailure.INVALID_DECLARATION)
                         }
+                        // MyBatis XML databaseId matching is exact: even "" or padded values are
+                        // non-null variant identifiers rather than the default declaration.
+                        val databaseId = reader.getAttributeValue(null, "databaseId")
+                        val variantKey = id to databaseId
 
                         currentOwner = if (statementKind != null) {
-                            if (!statementIds.add(id)) {
+                            if (!statementIds.add(variantKey)) {
                                 return failed(XmlMapperDiscoveryFailure.DUPLICATE_STATEMENT_ID)
                             }
-                            statements += XmlMapperStatementDeclaration(id, statementKind, sourceRange)
-                            XmlMapperDeclarationRef.Statement(id, statementKind)
+                            statements += XmlMapperStatementDeclaration(id, statementKind, sourceRange, databaseId)
+                            XmlMapperDeclarationRef.Statement(id, statementKind, databaseId)
                         } else {
-                            if (!fragmentIds.add(id)) {
+                            if (!fragmentIds.add(variantKey)) {
                                 return failed(XmlMapperDiscoveryFailure.DUPLICATE_FRAGMENT_ID)
                             }
-                            fragments += XmlMapperFragmentDeclaration(id, sourceRange)
-                            XmlMapperDeclarationRef.Fragment(id)
+                            fragments += XmlMapperFragmentDeclaration(id, sourceRange, databaseId)
+                            XmlMapperDeclarationRef.Fragment(id, databaseId)
                         }
                         currentOwnerDepth = depth
                         continue
@@ -270,14 +277,6 @@ object XmlMapperSourceDiscovery {
         sourceRange: SourceRange,
         target: MutableList<XmlUnsupportedSemanticsEvidence>,
     ) {
-        reader.getAttributeValue(null, "databaseId")?.let {
-            target += XmlUnsupportedSemanticsEvidence(
-                kind = XmlUnsupportedSemanticsKind.DATABASE_ID,
-                elementName = localName,
-                value = it,
-                sourceRange = sourceRange,
-            )
-        }
         reader.getAttributeValue(null, "lang")?.let {
             target += XmlUnsupportedSemanticsEvidence(
                 kind = XmlUnsupportedSemanticsKind.LANGUAGE_DRIVER,

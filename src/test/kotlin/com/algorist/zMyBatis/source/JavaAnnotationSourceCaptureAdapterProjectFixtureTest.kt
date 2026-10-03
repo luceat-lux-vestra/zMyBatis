@@ -1,6 +1,6 @@
 package com.algorist.zMyBatis.source
 
-import com.algorist.zMyBatis.core.source.JavaAnnotationStatementCapture
+import com.algorist.zMyBatis.core.source.JavaAnnotationStatementVariantsCapture
 import com.algorist.zMyBatis.core.source.JavaStatementId
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.intellij.ide.highlighter.JavaFileType
@@ -88,7 +88,7 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
                 " WHERE id = #{id}",
                 " AND active = 1",
             ),
-            capture.sqlSegments,
+            capture.variants.single().sqlSegments,
         )
         assertEquals(2, capture.parameters.size)
         assertEquals(0, capture.parameters[0].index)
@@ -176,7 +176,7 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
 
         val capture = captured(JavaAnnotationSourceCaptureAdapter.capture(project, editor))
 
-        assertEquals(listOf(draftSql), capture.sqlSegments)
+        assertEquals(listOf(draftSql), capture.variants.single().sqlSegments)
         assertTrue(
             "semantic capture must synchronize PSI to the authoritative active Document",
             documentManager.isCommitted(document),
@@ -223,7 +223,7 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
         val capture = captured(JavaAnnotationSourceCaptureAdapter.capture(project, myFixture.editor))
         val rootFileId = capture.sourceGraph.rootStatement.id.sourceFileId
 
-        assertEquals(listOf("SELECT 1"), capture.sqlSegments)
+        assertEquals(listOf("SELECT 1"), capture.variants.single().sqlSegments)
         assertEquals(2, capture.sourceGraph.sourceSnapshots.size)
         assertEquals(2, capture.sourceGraph.dependencies.size)
         assertTrue(
@@ -273,7 +273,7 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
         val rootFileId = capture.sourceGraph.rootStatement.id.sourceFileId
         val constantsFileId = capture.sourceGraph.sourceSnapshots.single { it.fileId != rootFileId }.fileId
 
-        assertEquals(listOf("SELECT 2 LIMIT 5"), capture.sqlSegments)
+        assertEquals(listOf("SELECT 2 LIMIT 5"), capture.variants.single().sqlSegments)
         assertEquals(2, capture.sourceGraph.sourceSnapshots.size)
         assertEquals(2, capture.sourceGraph.dependencies.size)
         assertTrue(
@@ -484,7 +484,7 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
     }
 
     fun testCapturedModelRetainsNoIntellijPlatformObjects() {
-        val captureFieldTypes = JavaAnnotationStatementCapture::class.java.declaredFields.map { it.type.name }
+        val captureFieldTypes = JavaAnnotationStatementVariantsCapture::class.java.declaredFields.map { it.type.name }
         val parameterFieldTypes = com.algorist.zMyBatis.core.source.JavaMethodParameterMetadata::class.java
             .declaredFields
             .map { it.type.name }
@@ -505,7 +505,7 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
         )
     }
 
-    private fun captured(result: JavaAnnotationSourceCaptureResult): JavaAnnotationStatementCapture =
+    private fun captured(result: JavaAnnotationSourceCaptureResult): JavaAnnotationStatementVariantsCapture =
         when (result) {
             is JavaAnnotationSourceCaptureResult.Captured -> result.capture
             is JavaAnnotationSourceCaptureResult.Failed -> throw AssertionError("expected capture but got ${result.failure}")

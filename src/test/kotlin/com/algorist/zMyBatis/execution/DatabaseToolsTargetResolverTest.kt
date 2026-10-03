@@ -5,12 +5,46 @@ import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
 import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailureKind
+import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
+import com.intellij.database.Dbms
+import com.intellij.openapi.progress.ProcessCanceledException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DatabaseToolsTargetResolverTest {
+    @Test
+    fun databaseToolsDbmsProducesSemanticDatabaseIdWithoutBecomingTargetAdmission() {
+        assertEquals(
+            ConventionalMyBatisDatabaseIds.POSTGRESQL,
+            classifyDatabaseToolsDatabaseId(Dbms.POSTGRES)?.value,
+        )
+        assertEquals(
+            ConventionalMyBatisDatabaseIds.ORACLE,
+            classifyDatabaseToolsDatabaseId(Dbms.ORACLE)?.value,
+        )
+        assertEquals(null, classifyDatabaseToolsDatabaseId(Dbms.MYSQL))
+        assertEquals(null, classifyDatabaseToolsDatabaseId(Dbms.UNKNOWN))
+        assertEquals(null, classifyDatabaseToolsDatabaseId(null))
+    }
+
+    @Test
+    fun databaseIdLookupPreservesCancellationAndOrdinaryFailureBecomesUnknownContext() {
+        val cancellation = ProcessCanceledException()
+        try {
+            resolveDatabaseToolsDatabaseId { throw cancellation }
+            throw AssertionError("ProcessCanceledException must escape database-id lookup")
+        } catch (actual: ProcessCanceledException) {
+            assertSame(cancellation, actual)
+        }
+
+        assertEquals(
+            null,
+            resolveDatabaseToolsDatabaseId { throw IllegalStateException("metadata unavailable") },
+        )
+    }
+
     @Test
     fun uniqueDatasourceAndSchemaResolveExactResourcesWithoutDbmsClassification() {
         val descriptor = descriptor("ds-1", "public", "renamed-display")
