@@ -63,7 +63,7 @@ Formatting currently feeds the string that is later executed.
 
 Hardening #57 established strong target-identity rules. #260 introduced independent project-scoped v3 source -> target descriptor persistence, and #262 migrates valid v2 records into that authority without recreating consoles at startup. Persisted v3 identity is stable datasource UUID + exact explicit schema, associated with canonical source identity; datasource display name remains presentation-only.
 
-The shipping legacy action now resolves a stored v3 target exactly on a live-console cache miss and acquires a console only for that explicit invocation. `REUSE` and `NEW_EACH` are resource policies over the same persisted target authority. Closing an ephemeral console no longer deletes v3 target identity. The old v2 reader/writer and portions of `ConsoleCacheService` remain migration compatibility/deletion debt under #65.
+The shipping legacy action now resolves a stored v3 target exactly on a live-console cache miss and acquires a console only for that explicit invocation. `REUSE` and `NEW_EACH` are resource policies over the same persisted target authority. Closing an ephemeral console no longer deletes v3 target identity. The old v2 reader/cleanup path and portions of `ConsoleCacheService` remain migration compatibility/deletion debt under #65.
 
 **Disposition:** continue isolating Database Tools console mechanics and delete the remaining migration-only v2/cache surface when no supported upgrade path needs it. This Phase-4 progress does not authorize Phase-5 Leap execution cutover; #258 still blocks that cutover until the bound-execution contract is satisfied.
 
@@ -539,7 +539,7 @@ Current progress: v3 target descriptors are persisted independently; provable v2
 
 Remaining:
 - finish isolating Database Tools console mechanics from the legacy action;
-- retire the migration-only v2 reader/writer when the supported upgrade window permits;
+- retire the migration-only v2 reader/cleanup path when the supported upgrade window permits;
 - keep console/resource policy independent from persisted target identity.
 
 ### Phase 5 — orchestration cutover
