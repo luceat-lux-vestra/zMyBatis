@@ -37,7 +37,7 @@ class LegacyActionSourceRevisionGuardContractTest {
         assertTrue(
             "Database Tools execution must receive the action-owned validity callback",
             action.contains(
-                "preExecutionCheck = { isSourceRevisionCurrent(project, sourceRevision) }",
+                "preExecutionCheck = { LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision) }",
             ),
         )
     }
@@ -85,6 +85,13 @@ class LegacyActionSourceRevisionGuardContractTest {
         assertTrue(
             "source invalidation after SQL injection must restore original console text",
             finalBranch.contains("restoreConsoleDocumentAfterFailure(consoleDoc, originalText)"),
+        )
+        assertTrue(
+            "adapter must report invalidation only after cleanup",
+            finalBranch.indexOf("restoreConsoleDocumentAfterFailure(consoleDoc, originalText)") <
+                finalBranch.indexOf(
+                    "onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)",
+                ),
         )
     }
 
