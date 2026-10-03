@@ -209,9 +209,11 @@ Each ordered binding records enough metadata to let the execution adapter preser
 
 `PreparedExecution` remains authoritative for non-zero bindings. #251 tested the maintained Database Tools 2026.2 surface and found no public/maintained path that simultaneously performs programmatic ordered binding through the configured session and preserves the native console result/history UX. The exact evidence and rejected candidates are recorded in [Database Tools parameterized execution proof](database-tools-parameterized-execution.md).
 
-The execution boundary must preserve the exact SQL-with-placeholders plus ordered values; it must not rewrite those values into a vendor-specific SQL string merely because the selected datasource is PostgreSQL, Oracle, MySQL, or another DBMS. The #251 NO-GO result also does not authorize an internal/reflection-based bridge or automatic per-DB literalizer fallback.
+#258 freezes the post-proof disposition for that maintained baseline: **there is no bound-execution fallback**. Non-zero bindings remain non-executable through the Leap adapter and fail closed with `BOUND_EXECUTION_REQUIRED` until a separately proven replacement execution contract exists.
 
-For zero-binding statements only, the existing immutable `MaterializedExecution` text artifact remains valid because no literalization occurs. A future display/copy projection may render values for humans, but that projection is not execution authority.
+The execution boundary must preserve the exact SQL-with-placeholders plus ordered values; it must not rewrite those values into a vendor-specific SQL string merely because the selected datasource is PostgreSQL, Oracle, MySQL, or another DBMS. The #251/#258 decision also rejects console text-substitution/second-prompt execution, internal/reflection-based bridges, automatic per-DB literalizers, and a zMyBatis-owned custom result UI as implicit fallbacks.
+
+For zero-binding statements only, the existing immutable `MaterializedExecution` text artifact remains valid because no literalization occurs. A future display/copy projection may render values for humans, but that projection is not execution authority. The zero-binding subset is evidence for the replacement boundary, not permission to split the shipping action between Leap and legacy execution based on binding cardinality.
 
 ### Execution target
 
@@ -326,16 +328,18 @@ The shipping Database Tools integration already executes against a datasource co
 
 For zero-binding statements, SQL text may cross the existing immutable materialization boundary byte-for-byte.
 
-For non-zero bindings, the next mandatory proof is a Database Tools parameterized-execution adapter that:
+For non-zero bindings, #251 already performed the mandatory Database Tools parameterized-execution proof against the maintained 2026.2 baseline and returned NO-GO. #258 therefore keeps the gate closed rather than selecting an unsafe fallback.
+
+Any future re-probe must still prove an adapter that:
 
 - consumes the exact MyBatis-produced SQL placeholder order and prepared values;
 - uses the already-configured datasource/driver/session;
 - does not prompt for the same values again;
-- preserves native console/result/history behavior where the public/maintained platform API allows it;
+- preserves native console/result/history behavior under the then-current product contract;
 - preserves cancellation and target/source revalidation;
 - keeps raw `${}` provenance and confirmation policy separate from `#{...}` bound values.
 
-Until that proof succeeds, authoritative Leap code does not vendor-literalize bound values. PostgreSQL-specific literalization work remains non-authoritative historical evidence.
+Until that proof succeeds, authoritative Leap code returns `BOUND_EXECUTION_REQUIRED` for non-zero bindings and does not vendor-literalize them. PostgreSQL-specific literalization work remains non-authoritative historical evidence. The proof may be reopened when a maintained Database Tools baseline exposes relevant new public/maintained capability, or by a separately reviewed product change to the native result/history requirement.
 
 ## 9. Target/session and Database Tools adapter
 
@@ -355,7 +359,7 @@ Execution behavior:
 3. re-check target validity after user/modality/background boundaries;
 4. acquire/reuse a console as an ephemeral resource according to policy;
 5. apply schema/search path and verify success;
-6. for zero-binding statements, supply the immutable SQL text directly; for bound statements, use the separately proven parameterized Database Tools execution path;
+6. for zero-binding statements, supply the immutable SQL text directly; for bound statements, require the separately proven parameterized Database Tools execution path and fail with `BOUND_EXECUTION_REQUIRED` while that gate is closed;
 7. invoke the native Database Tools execution path without introducing a zMyBatis DBMS allowlist;
 8. preserve/restore console document/editor state according to the adapter contract.
 
@@ -523,7 +527,7 @@ Implementation is incremental for reviewability, but the target is a replacement
 - preserve SQL-with-placeholders plus ordered bindings as the authoritative non-zero-binding result;
 - feed proven target database-id authority into isolated MyBatis configuration where standard `databaseId` / `_databaseId` semantics require it;
 - keep only the DB-neutral zero-binding immutable SQL-text materialization bridge;
-- complete #251's Database Tools parameterized-execution proof before bound-statement cutover;
+- respect #251's NO-GO evidence and #258's no-fallback disposition; bound-statement and Phase-5 production cutover stay blocked until a later proof satisfies the execution contract;
 - build negative/hostile tests before enabling execution;
 - delete current `MyBatisEvaluator` only once the DB-neutral bound execution path is wired.
 
@@ -536,7 +540,9 @@ Implementation is incremental for reviewability, but the target is a replacement
 
 ### Phase 5 — orchestration cutover
 
-- wire the thin action to the new use case;
+Prerequisite: a complete replacement execution contract must exist for both zero-binding and supported non-zero-binding statements. #258 explicitly forbids using the zero-binding subset to create a production split where other statements silently remain on legacy execution.
+
+- wire the thin action to the new use case only after that prerequisite is satisfied;
 - add mandatory mutation/raw confirmation and stale-source/target revalidation;
 - remove legacy action orchestration, old parameter/history/settings paths, and compatibility switches in the same cutover series with explicit deletion criteria.
 
@@ -621,7 +627,8 @@ Do not create later speculative implementation tasks until that slice is merged 
 - **Refactor the god action in place:** rejected; it preserves the wrong ownership boundary.
 - **Improve `ParameterExtractor` regexes until tests pass:** rejected; syntax heuristics are not caller-input provenance.
 - **Keep `MyBatisEvaluator` and add more strict flags:** rejected; safety must not depend on settings and global semantic mutation remains unsound.
-- **Treat vendor-rendered final literal SQL as equivalent to bound JDBC/Database Tools execution:** rejected; non-zero bindings stay structured unless a separately approved fallback proves equivalent semantics.
+- **Treat vendor-rendered final literal SQL as equivalent to bound JDBC/Database Tools execution:** rejected; non-zero bindings stay structured and #258 authorizes no fallback on the maintained 2026.2 baseline.
+- **Partially cut over the shipping action for zero-binding statements while bound statements silently use legacy execution:** rejected; it creates two production execution authorities and weakens preview/execution and deletion invariants.
 - **Couple persisted session truth to live `JdbcConsole` registration/reconstruction:** rejected; descriptor identity and platform resource lifetime are separate concerns.
 - **Format SQL and then execute the formatted output:** rejected; presentation cannot mutate execution meaning.
 - **Support Kotlin/providers/custom drivers now because tests can be written:** rejected for Leap v1; scope follows product value and maintainable evidence, not testability alone.
