@@ -111,6 +111,11 @@ liveSettingsAudit:
   workflow: .github/workflows/repository-settings-drift.yml
   scheduleCron: "23 2 * * *"
   pushPaths: [ ".github/merge-gate-policy.yml", ".github/workflow-policy/**", ".github/workflows/repository-settings-drift.yml" ]
+  # PR #236 retired the legacy failure-triage pull_request_target workflow.
+  # Repository Actions policy 5153 was created solely for that removed path and
+  # must not remain as an independent live exception.
+  actionsEventPoliciesExpectedActiveIds: []
+  retiredActionsEventPolicyIds: [ 5153 ]
   manualSecurityAssertions:
     dependency_graph: true
     dependabot_alerts: true

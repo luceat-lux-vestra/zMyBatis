@@ -88,6 +88,69 @@ GOOD_PUBLICATION_RULESET = {
 
 
 class LiveSettingsPolicyTest(unittest.TestCase):
+    def test_actions_event_policy_expectations_are_exact(self):
+        self.assertEqual(
+            ([], [5153]),
+            live.actions_event_policy_expectations(POLICY),
+        )
+
+    def test_actions_event_policy_expectations_reject_reactivation(self):
+        policy = copy.deepcopy(POLICY)
+        policy["actionsEventPoliciesExpectedActiveIds"] = [5153]
+        with self.assertRaises(ValueError):
+            live.actions_event_policy_expectations(policy)
+
+    def test_actions_event_policy_expectations_reject_missing_retirement(self):
+        policy = copy.deepcopy(POLICY)
+        policy["retiredActionsEventPolicyIds"] = []
+        with self.assertRaises(ValueError):
+            live.actions_event_policy_expectations(policy)
+
+    def test_empty_actions_event_policy_readback_is_accepted(self):
+        self.assertEqual(
+            [],
+            live.compare_actions_event_policies(
+                POLICY,
+                {"total_count": 0, "policies": []},
+            ),
+        )
+
+    def test_retired_actions_event_policy_is_rejected(self):
+        failures = live.compare_actions_event_policies(
+            POLICY,
+            {
+                "total_count": 1,
+                "policies": [
+                    {
+                        "id": 5153,
+                        "name": "Allow audited failure triage workflow",
+                        "target": "actions",
+                        "enforcement": "active",
+                    }
+                ],
+            },
+        )
+        self.assertTrue(
+            any("retired Actions event policy 5153 still exists" in item for item in failures)
+        )
+
+    def test_undeclared_actions_event_policy_is_rejected(self):
+        failures = live.compare_actions_event_policies(
+            POLICY,
+            {
+                "total_count": 1,
+                "policies": [{"id": 9999, "target": "actions", "enforcement": "active"}],
+            },
+        )
+        self.assertTrue(any("actions event-policy ids" in item for item in failures))
+
+    def test_actions_event_policy_count_mismatch_is_rejected(self):
+        failures = live.compare_actions_event_policies(
+            POLICY,
+            {"total_count": 1, "policies": []},
+        )
+        self.assertTrue(any("total_count" in item for item in failures))
+
     def test_manual_security_assertions_are_complete(self):
         self.assertEqual(
             {
