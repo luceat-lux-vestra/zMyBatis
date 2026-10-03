@@ -443,7 +443,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         DatabaseToolsConsoleAdapter.getInstance(project).executeSql(
             console = console,
             sql = pureSql,
-            preExecutionCheck = { isSourceRevisionCurrent(project, sourceRevision) },
+            preExecutionCheck = { LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision) },
             onExecuted = {
                 if (ZMyBatisSettings.getInstance().copyToClipboard) {
                     CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
@@ -451,6 +451,13 @@ open class MyBatisExecuteProxyAction : AnAction() {
             },
             onFailure = { failure ->
                 when (failure) {
+                    DatabaseToolsSqlExecutionFailure.InvocationInvalidated -> {
+                        showSourceRevisionRefusal(
+                            project,
+                            "The mapper source changed while zMyBatis was preparing the query. " +
+                                "Run zMyBatis again from the current source.",
+                        )
+                    }
                     DatabaseToolsSqlExecutionFailure.ConsoleUnavailable -> {
                         Messages.showErrorDialog(
                             project,
