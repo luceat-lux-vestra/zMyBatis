@@ -3,6 +3,8 @@ package com.algorist.zMyBatis
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.project.DumbService
+import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiMethod
@@ -28,26 +30,46 @@ object MyBatisContextAnalyzer {
         "org.apache.ibatis.annotations.Delete",
     )
 
+    /**
+     * Classifies only the current local editor/PSI context.
+     *
+     * This method is intentionally safe to use from action update(): it performs no mapper SQL
+     * extraction, parameter analysis, datasource enumeration, persistence, or console work.
+     * Java annotation resolution is refused while indexes are unavailable; XML statement-tag
+     * classification remains local PSI only.
+     */
     fun analyze(e: AnActionEvent): ContextType {
-        val project = e.project
+        val project = e.project ?: return ContextType.NONE
+        if (project.isDisposed) return ContextType.NONE
+
         val editor: Editor = e.getData(CommonDataKeys.EDITOR) ?: return ContextType.NONE
+        if (editor.isDisposed) return ContextType.NONE
+
         val psiFile: PsiFile = e.getData(CommonDataKeys.PSI_FILE) ?: return ContextType.NONE
-        if (project == null) return ContextType.NONE
+        if (!psiFile.isValid || psiFile.textLength == 0) return ContextType.NONE
 
-        val element = psiFile.findElementAt(editor.caretModel.offset) ?: return ContextType.NONE
+        val offset = editor.caretModel.offset.coerceIn(0, psiFile.textLength - 1)
+        val element = psiFile.findElementAt(offset) ?: return ContextType.NONE
 
-        // 1. Check XML
         if (psiFile is XmlFile && isInMyBatisStatementTag(element)) {
             return ContextType.XML
         }
 
-        // 2. Check Java (use safe hasAnnotation)
         if (psiFile is PsiJavaFile) {
+            if (DumbService.isDumb(project)) return ContextType.NONE
+
             val method: PsiMethod =
                 PsiTreeUtil.getParentOfType(element, PsiMethod::class.java) ?: return ContextType.NONE
 
-            if (methodHasAnyAnnotation(method, PROVIDER_ANNOTATIONS)) return ContextType.PROVIDER
-            if (methodHasAnyAnnotation(method, STATEMENT_ANNOTATIONS)) return ContextType.ANNOTATION
+            return try {
+                when {
+                    methodHasAnyAnnotation(method, PROVIDER_ANNOTATIONS) -> ContextType.PROVIDER
+                    methodHasAnyAnnotation(method, STATEMENT_ANNOTATIONS) -> ContextType.ANNOTATION
+                    else -> ContextType.NONE
+                }
+            } catch (_: IndexNotReadyException) {
+                ContextType.NONE
+            }
         }
 
         return ContextType.NONE
@@ -56,7 +78,13 @@ object MyBatisContextAnalyzer {
     private fun isInMyBatisStatementTag(element: com.intellij.psi.PsiElement): Boolean {
         var tag: XmlTag? = PsiTreeUtil.getParentOfType(element, XmlTag::class.java)
         while (tag != null) {
-            if (tag.name.lowercase() in MYBATIS_STATEMENT_TAGS) return true
+            if (tag.name.lowercase() in MYBATIS_STATEMENT_TAGS) {
+                val mapper = tag.parentTag
+                return mapper?.name?.lowercase() == "mapper" &&
+                    mapper.parentTag == null &&
+                    !mapper.getAttributeValue("namespace").isNullOrBlank() &&
+                    !tag.getAttributeValue("id").isNullOrBlank()
+            }
             tag = tag.parentTag
         }
         return false

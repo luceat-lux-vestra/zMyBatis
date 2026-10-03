@@ -1,1 +1,3 @@
+<mapper namespace="fixture.QueryMapper">
 <select id="ping">SELECT 1</select>
+</mapper>

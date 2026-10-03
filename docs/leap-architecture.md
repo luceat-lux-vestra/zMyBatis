@@ -406,6 +406,8 @@ Thread ownership is explicit per boundary.
 - only enough source/context evidence to decide visibility/enabled state;
 - no source-graph construction, MyBatis preparation, datasource enumeration, or console creation.
 
+The shipping action now implements this narrow presentation boundary with local `MyBatisContextAnalyzer` evidence: XML statement, direct Java statement annotation, and provider-annotation contexts are visible/enabled; unrelated/missing contexts are hidden and Java annotation classification fails closed while indexes are unavailable. This is presentation gating only, not the Phase-5 orchestration cutover.
+
 ### Invocation capture / UI
 
 - capture editor/document/caret and display dialogs/popups on the EDT as required by IntelliJ;
