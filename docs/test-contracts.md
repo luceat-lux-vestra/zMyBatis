@@ -124,9 +124,9 @@ The automated session tests deliberately avoid pretending to emulate JetBrains D
 
 - JetBrains datasource UUID lookup against real IDE datasource objects, including duplicate display names and datasource rename;
 - missing/ambiguous datasource or schema resolution against a populated Database Tools model;
-- actual console recreation and schema switching across an IDE restart;
-- console disposal callbacks from the real Database Tools console implementation;
-- end-to-end confirmation that startup restoration never triggers statement execution;
+- actual deferred console acquisition and exact schema switching on the first explicit execution after an IDE restart;
+- console disposal callbacks from the real Database Tools console implementation, including confirmation that ephemeral REUSE disposal cannot delete v3 target identity;
+- end-to-end confirmation that startup target migration/pruning creates no console and never triggers statement execution;
 - end-to-end production source-adapter cutover and orchestration of the now-proven source-graph revalidation adapter at every required #66 asynchronous/pre-execution boundary.
 
 Those gaps are explicit so a green `Test` context is not misrepresented as evidence for behavior it does not execute.
