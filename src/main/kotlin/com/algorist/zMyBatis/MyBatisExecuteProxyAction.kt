@@ -178,8 +178,14 @@ open class MyBatisExecuteProxyAction : AnAction() {
                             "zMyBatis: persisted execution target is stale " +
                                 "(code=${storedTarget.failure.code}); requiring explicit re-selection"
                         )
-                        ensureConsole(e, project, mapperKey, sourceFileId, targetBridge, forceNew) {
-                                console, targetId ->
+                        ensureConsole(
+                            e,
+                            project,
+                            mapperKey,
+                            sourceFileId,
+                            targetBridge,
+                            forceNew,
+                        ) { console, targetId ->
                             proceedWithParamsAndExecute(
                                 e,
                                 project,
@@ -196,8 +202,14 @@ open class MyBatisExecuteProxyAction : AnAction() {
                     }
                     StoredExecutionTargetResolution.Missing -> {
                         LOG.info("zMyBatis: no persisted execution target for $mapperKey; showing chooser")
-                        ensureConsole(e, project, mapperKey, sourceFileId, targetBridge, forceNew) {
-                                console, targetId ->
+                        ensureConsole(
+                            e,
+                            project,
+                            mapperKey,
+                            sourceFileId,
+                            targetBridge,
+                            forceNew,
+                        ) { console, targetId ->
                             proceedWithParamsAndExecute(
                                 e,
                                 project,
@@ -338,7 +350,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         sourceFileId: SourceFileId,
         targetBridge: StoredExecutionTargetBridge,
         forceNew: Boolean,
-        onConsoleReady: (JdbcConsole, ExecutionTargetId?) -> Unit
+        onConsoleReady: (JdbcConsole, ExecutionTargetId?) -> Unit,
     ) {
         val cache = ConsoleCacheService.getInstance(project)
         if (!cache.beginSelection(fileKey)) {
