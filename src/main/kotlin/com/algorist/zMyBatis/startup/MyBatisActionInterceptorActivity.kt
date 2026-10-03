@@ -99,9 +99,9 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
         resolveSourceUrl: (String) -> String?,
         shouldStop: () -> Boolean,
     ) {
-        for (selection in targetStore.pruneAndLoadAll()) {
+        for ((association, _) in targetStore.pruneAndLoadAll()) {
             if (shouldStop()) return
-            val sourceFileId = selection.association.sourceFileId
+            val sourceFileId = association.sourceFileId
             val value = sourceFileId.value
             if (!value.startsWith("vfs:")) continue
 
