@@ -100,7 +100,7 @@ class PersistedExecutionTargetSelectionTest {
         val canonical = SourceFileId("vfs:file:///project/Mapper.xml")
 
         val migrated = requireNotNull(
-            ExecutionTargetSelectionPersistenceFormat.fromLegacyV2(session, canonical),
+            LegacyV2TargetSelectionMigration.convert(session, canonical),
         )
 
         assertEquals(canonical, migrated.association.sourceFileId)
@@ -108,9 +108,9 @@ class PersistedExecutionTargetSelectionTest {
         assertEquals("public", migrated.descriptor.targetId.schema.value)
         assertEquals("orders", migrated.descriptor.dataSourceDisplayName)
 
-        assertNull(ExecutionTargetSelectionPersistenceFormat.fromLegacyV2(session, null))
+        assertNull(LegacyV2TargetSelectionMigration.convert(session, null))
         assertNull(
-            ExecutionTargetSelectionPersistenceFormat.fromLegacyV2(
+            LegacyV2TargetSelectionMigration.convert(
                 session,
                 SourceFileId("vfs:file:///project/Other.xml"),
             ),
