@@ -54,7 +54,9 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
     ) {
         if (project.isDisposed || cache.isShuttingDown()) return
 
-        pruneMissingV3Sources(targetStore, resolveSourceUrl)
+        val shouldStop = { project.isDisposed || cache.isShuttingDown() }
+        pruneMissingV3Sources(targetStore, resolveSourceUrl, shouldStop)
+        if (shouldStop()) return
 
         val sessions = cache.pruneStaleIndex()
         if (sessions.isEmpty()) return
@@ -63,6 +65,7 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
             if (project.isDisposed || cache.isShuttingDown()) return
 
             val resolvedUrl = resolveSourceUrl(session.mapperKey)
+            if (shouldStop()) return
             if (resolvedUrl != session.mapperKey) {
                 LOG.info("zMyBatis: pruning v2 target selection whose source can no longer be proven")
                 cache.clearSession(session.mapperKey)
@@ -94,14 +97,18 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
     private fun pruneMissingV3Sources(
         targetStore: ExecutionTargetDescriptorStore,
         resolveSourceUrl: (String) -> String?,
+        shouldStop: () -> Boolean,
     ) {
         for (selection in targetStore.pruneAndLoadAll()) {
+            if (shouldStop()) return
             val sourceFileId = selection.association.sourceFileId
             val value = sourceFileId.value
             if (!value.startsWith("vfs:")) continue
 
             val expectedUrl = value.removePrefix("vfs:")
-            if (expectedUrl.isEmpty() || resolveSourceUrl(expectedUrl) != expectedUrl) {
+            val resolvedUrl = if (expectedUrl.isEmpty()) null else resolveSourceUrl(expectedUrl)
+            if (shouldStop()) return
+            if (expectedUrl.isEmpty() || resolvedUrl != expectedUrl) {
                 LOG.info("zMyBatis: pruning v3 target selection whose source can no longer be proven")
                 targetStore.remove(sourceFileId)
             }
