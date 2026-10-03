@@ -33,6 +33,13 @@ class LegacyActionTargetRevalidationContractTest {
             "stale persisted target must not use mapper-key cache reuse",
             action.contains("is StoredExecutionTargetResolution.Invalid -> null"),
         )
+        assertTrue(
+            "invalid persisted target must evict any previously cached resource",
+            action.contains(
+                "is StoredExecutionTargetResolution.Invalid -> {\n" +
+                    "                        cache.evict(mapperKey)",
+            ),
+        )
     }
 
     @Test
