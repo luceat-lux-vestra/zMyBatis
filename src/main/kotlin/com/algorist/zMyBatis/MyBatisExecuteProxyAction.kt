@@ -189,12 +189,17 @@ open class MyBatisExecuteProxyAction : AnAction() {
                         executeOnConsole(console, project, pureSql)
                     }
                 }
-            } catch (ex: Throwable) {
-                LOG.error("zMyBatis evaluation failed", ex)
+            } catch (ex: ProcessCanceledException) {
+                throw ex
+            } catch (ex: Exception) {
+                LOG.warn("zMyBatis evaluation failed (${ex::class.java.name})")
                 ApplicationManager.getApplication().invokeLater {
                     if (isProjectUnavailable(project)) return@invokeLater
                     Messages.showErrorDialog(project, "Error evaluating MyBatis SQL:\n${ex.message}", "zMyBatis Error")
                 }
+            } catch (fatal: Throwable) {
+                LOG.error("zMyBatis fatal evaluation failure", fatal)
+                throw fatal
             }
         }
     }
