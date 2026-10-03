@@ -109,6 +109,22 @@ class StoredExecutionTargetBridgeTest {
     }
 
     @Test
+    fun `ordinary target revalidation exception fails closed without pruning persisted target`() {
+        val source = SourceFileId("vfs:file:///project/Mapper.xml")
+        val currentSelection = selection(source, "ds-1", "public", "orders")
+        var removed: SourceFileId? = null
+        val bridge = StoredExecutionTargetBridge.forTest(
+            loadSelection = { currentSelection },
+            saveSelection = { error("unexpected save") },
+            removeSelection = { removed = it },
+            resolveDescriptor = { throw IllegalStateException("synthetic resolver failure") },
+        )
+
+        assertFalse(bridge.isCurrent(source, currentSelection.descriptor.targetId))
+        assertNull(removed)
+    }
+
+    @Test
     fun `remember identity persists stable datasource and explicit schema only`() {
         val source = SourceFileId("vfs:file:///project/Mapper.xml")
         var saved: PersistedExecutionTargetSelection? = null
