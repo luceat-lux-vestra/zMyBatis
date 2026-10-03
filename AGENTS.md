@@ -52,7 +52,7 @@ zMyBatis must not replace, wrap, unregister, reorder, or intercept DataGrip buil
 - Platform action IDs remain untouched.
 - `MyBatisActionInterceptorActivity` is target-persistence migration/cleanup infrastructure despite its historical name; it does not recreate consoles and is not a global action interceptor.
 - `MyBatisExecuteProxyAction.getActionUpdateThread()` is BGT.
-- Current `update()` unconditionally keeps the zMyBatis action enabled/visible. The product decision was frozen by #61 and implementation remains owned by #66; do not document the target as if it were current behavior.
+- `update()` consumes only the bounded local `MyBatisContextAnalyzer`: supported XML statement, direct Java statement annotation, and provider-annotation contexts are enabled/visible; unrelated or missing context is hidden, and Java annotation classification fails closed while indexes are unavailable. It must not perform SQL extraction, parameter analysis, datasource enumeration, persistence, or console work.
 - UI/console work belongs on the EDT where required; PSI reads obey IntelliJ read-action requirements; blocking work must not be moved onto the EDT.
 
 ## 4. IntelliJ / Database API compatibility
@@ -203,7 +203,7 @@ Bounded safety fixes to the current path and explicitly temporary migration brid
 Current known product gaps include, among others:
 
 - raw parameter/rendered-SQL INFO logging (#67);
-- current always-enabled action presentation and broader IDE orchestration implementation (policy frozen by #61; implementation owned by #66);
+- broader IDE orchestration/threading/cancellation implementation beyond the bounded context-correct action presentation gate (policy frozen by #61; implementation owned by #66);
 - compatibility-altered OGNL/unknown-tag/literal-rendering behavior that must not be described as stock MyBatis/JDBC parity (policy frozen by #61; implementation owned by #64);
 - error/degradation paths that still need typed failure outcomes (#64/#67);
 - DataGrip/runtime integration evidence that is not exercised by the deterministic IDEA Ultimate Plugin Verifier target (target-host policy frozen by #61; final evidence owned by #67).
