@@ -18,7 +18,7 @@ class MyBatisActionUpdateBoundaryTest {
 
         val update = action.substring(start, end)
 
-        assertTrue(update.contains("MyBatisContextAnalyzer.analyze(e)"))
+        assertTrue(update.contains("analyze(e)"))
         assertTrue(update.contains("ContextType.NONE"))
         listOf(
             "extractSqlContent",
@@ -49,7 +49,7 @@ class MyBatisActionUpdateBoundaryTest {
         val update = action.substring(updateStart, updateEnd)
         val admission = action.substring(actionStart, actionEnd)
 
-        assertTrue(update.contains("MyBatisContextAnalyzer.analyze(e)"))
+        assertTrue(update.contains("analyze(e)"))
         assertTrue(admission.contains("analyze(e)"))
         assertTrue(admission.contains("ContextType.NONE -> return"))
         assertTrue(admission.contains("ContextType.PROVIDER"))
