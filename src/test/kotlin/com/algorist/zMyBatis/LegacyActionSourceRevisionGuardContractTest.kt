@@ -8,15 +8,32 @@ import org.junit.Test
 class LegacyActionSourceRevisionGuardContractTest {
 
     @Test
-    fun `shipping action carries one source revision through parameter preview and execution boundaries`() {
+    fun `shipping action carries root and annotation dependency revisions through execution boundaries`() {
         val action = source(
             "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
         )
 
         assertTrue(
-            "action must capture the invocation source revision before legacy extraction",
+            "action must capture the root source revision before legacy extraction",
             action.contains("LegacyActionSourceRevisionGuard.capture(project, editor, psiFile)"),
         )
+        assertTrue(
+            "Java annotation execution must capture the constant dependency footprint",
+            action.contains("LegacyAnnotationDependencyRevisionGuard.capture("),
+        )
+        val dependencyCapture = action.indexOf("LegacyAnnotationDependencyRevisionGuard.capture(")
+        val annotationExtraction = action.indexOf("AnnotationSqlExtractor.extract(statementAnnotation)")
+        val immediateSourceCheck =
+            action.indexOf("if (!isSourceRevisionCurrent(project, sourceRevision)) return")
+        assertTrue(
+            "dependency revision capture must precede legacy annotation SQL extraction",
+            dependencyCapture >= 0 && annotationExtraction > dependencyCapture,
+        )
+        assertTrue(
+            "composed source revision must be revalidated immediately after extraction",
+            immediateSourceCheck > annotationExtraction,
+        )
+
         val proceed = action
             .substringAfter("private fun proceedWithParamsAndExecute(")
             .substringBefore("@Suppress(\"TooGenericExceptionCaught\", \"LongMethod\")")
@@ -35,9 +52,20 @@ class LegacyActionSourceRevisionGuardContractTest {
             ),
         )
         assertTrue(
-            "Database Tools execution must still include source revision validity",
-            action.contains(
-                "LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision) &&",
+            "Database Tools execution must include the composed root/dependency source check",
+            action.contains("isInvocationSourceCurrent(project, sourceRevision) &&"),
+        )
+        val sourceGuard = action
+            .substringAfter("private fun isInvocationSourceCurrent(")
+            .substringBefore("private fun isSourceRevisionCurrent(")
+        assertTrue(
+            sourceGuard.contains(
+                "LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision.root)",
+            ),
+        )
+        assertTrue(
+            sourceGuard.contains(
+                "LegacyAnnotationDependencyRevisionGuard.areCurrent(",
             ),
         )
     }
@@ -93,6 +121,30 @@ class LegacyActionSourceRevisionGuardContractTest {
                     "onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)",
                 ),
         )
+    }
+
+    @Test
+    fun `annotation dependency token retains revision metadata rather than platform objects`() {
+        val guard = source(
+            "src/main/kotlin/com/algorist/zMyBatis/LegacyAnnotationDependencyRevisionGuard.kt",
+        )
+        val revision = guard
+            .substringAfter("internal data class LegacyAnnotationDependencyRevision(")
+            .substringBefore(")")
+
+        assertTrue(revision.contains("sourceUrl: String"))
+        assertTrue(revision.contains("authority: LegacyAnnotationDependencyRevisionAuthority"))
+        assertTrue(revision.contains("modificationStamp: Long"))
+        assertTrue(!revision.contains("Editor"))
+        assertTrue(!revision.contains("Document"))
+        assertTrue(!revision.contains("Psi"))
+        assertTrue(!revision.contains("VirtualFile"))
+
+        val invocation = guard
+            .substringAfter("internal data class LegacyActionInvocationSourceRevision(")
+            .substringBefore(")")
+        assertTrue(invocation.contains("root: LegacyActionSourceRevision"))
+        assertTrue(invocation.contains("annotationDependencies: List<LegacyAnnotationDependencyRevision>"))
     }
 
     @Test

@@ -53,9 +53,9 @@ class LegacyActionTargetRevalidationContractTest {
             action.contains("targetBridge.isCurrent(sourceFileId, expectedTargetId)"),
         )
         assertTrue(
-            "adapter pre-execution callback must combine source and exact target validity",
+            "adapter pre-execution callback must combine composed source and exact target validity",
             action.contains(
-                "LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision) &&",
+                "isInvocationSourceCurrent(project, sourceRevision) &&",
             ),
         )
         assertTrue(

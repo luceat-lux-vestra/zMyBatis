@@ -1,12 +1,16 @@
 package com.algorist.zMyBatis
 
 import com.intellij.ide.highlighter.JavaFileType
+import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiArrayInitializerMemberValue
+import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiField
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiReferenceExpression
 import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
 
 class AnnotationSqlExtractorProjectFixtureTest : LightJavaCodeInsightFixtureTestCase() {
@@ -95,4 +99,178 @@ class AnnotationSqlExtractorProjectFixtureTest : LightJavaCodeInsightFixtureTest
             AnnotationSqlExtractor.extract(activeAnnotation)
         )
     }
+
+    fun testLegacyDependencyGuardInvalidatesCommittedCrossFileConstantEditThenRevert() {
+        myFixture.addClass(
+            """
+            package org.apache.ibatis.annotations;
+            public @interface Select { String[] value(); }
+            """.trimIndent()
+        )
+        val constantsFile = myFixture.addFileToProject(
+            "fixture/SqlConstants.java",
+            """
+            package fixture;
+            public final class SqlConstants {
+                public static final String QUERY = "SELECT saved";
+            }
+            """.trimIndent(),
+        ) as PsiJavaFile
+        val documentManager = PsiDocumentManager.getInstance(project)
+        val constantsDocument = documentManager.getDocument(constantsFile)
+            ?: throw AssertionError("constant source Document must be available")
+        documentManager.commitDocument(constantsDocument)
+
+        val mapperFile = myFixture.configureByText(
+            JavaFileType.INSTANCE,
+            """
+            package fixture;
+            import org.apache.ibatis.annotations.Select;
+            class UserMapper {
+                @Select(SqlConstants.QUERY)
+                Object find() { return null; }
+            }
+            """.trimIndent(),
+        ) as PsiJavaFile
+        val annotation = mapperFile.classes.single()
+            .findMethodsByName("find", false)
+            .single()
+            .getAnnotation("org.apache.ibatis.annotations.Select")
+        assertNotNull(annotation)
+
+        val captured = LegacyAnnotationDependencyRevisionGuard.capture(project, annotation)
+        assertTrue(captured is LegacyAnnotationDependencyRevisionCaptureResult.Captured)
+        val revisions =
+            (captured as LegacyAnnotationDependencyRevisionCaptureResult.Captured).revisions
+        assertEquals(1, revisions.size)
+        assertEquals(LegacyAnnotationDependencyRevisionAuthority.DOCUMENT, revisions.single().authority)
+        assertTrue(LegacyAnnotationDependencyRevisionGuard.areCurrent(project, revisions))
+
+        val original = constantsDocument.text
+        WriteCommandAction.runWriteCommandAction(project) {
+            val start = constantsDocument.text.indexOf("SELECT saved")
+            constantsDocument.replaceString(start, start + "SELECT saved".length, "SELECT draft")
+        }
+        assertFalse(documentManager.isCommitted(constantsDocument))
+        assertFalse(LegacyAnnotationDependencyRevisionGuard.areCurrent(project, revisions))
+
+        WriteCommandAction.runWriteCommandAction(project) {
+            constantsDocument.setText(original)
+        }
+        assertEquals(original, constantsDocument.text)
+        assertFalse(
+            "edit-then-revert must not resurrect a captured dependency revision",
+            LegacyAnnotationDependencyRevisionGuard.areCurrent(project, revisions),
+        )
+    }
+
+    fun testLegacyDependencyGuardRejectsUncommittedCrossFileConstantAtCapture() {
+        myFixture.addClass(
+            """
+            package org.apache.ibatis.annotations;
+            public @interface Select { String[] value(); }
+            """.trimIndent()
+        )
+        val constantsFile = myFixture.addFileToProject(
+            "fixture/SqlConstants.java",
+            """
+            package fixture;
+            public final class SqlConstants {
+                public static final String QUERY = "SELECT saved";
+            }
+            """.trimIndent(),
+        ) as PsiJavaFile
+        val documentManager = PsiDocumentManager.getInstance(project)
+        val constantsDocument = documentManager.getDocument(constantsFile)
+            ?: throw AssertionError("constant source Document must be available")
+        documentManager.commitDocument(constantsDocument)
+
+        val mapperFile = myFixture.configureByText(
+            JavaFileType.INSTANCE,
+            """
+            package fixture;
+            import org.apache.ibatis.annotations.Select;
+            class UserMapper {
+                @Select(SqlConstants.QUERY)
+                Object find() { return null; }
+            }
+            """.trimIndent(),
+        ) as PsiJavaFile
+        val annotation = mapperFile.classes.single()
+            .findMethodsByName("find", false)
+            .single()
+            .getAnnotation("org.apache.ibatis.annotations.Select")
+        assertNotNull(annotation)
+
+        WriteCommandAction.runWriteCommandAction(project) {
+            val start = constantsDocument.text.indexOf("SELECT saved")
+            constantsDocument.replaceString(start, start + "SELECT saved".length, "SELECT draft")
+        }
+        assertFalse(documentManager.isCommitted(constantsDocument))
+
+        val captured = LegacyAnnotationDependencyRevisionGuard.capture(project, annotation)
+        assertTrue(captured is LegacyAnnotationDependencyRevisionCaptureResult.UncommittedSource)
+        assertEquals(
+            constantsFile.virtualFile.url,
+            (captured as LegacyAnnotationDependencyRevisionCaptureResult.UncommittedSource).sourceUrl,
+        )
+    }
+
+    fun testLegacyDependencyGuardKeepsLiteralAnnotationDependencyFree() {
+        myFixture.addClass(
+            """
+            package org.apache.ibatis.annotations;
+            public @interface Select { String[] value(); }
+            """.trimIndent()
+        )
+        val mapperFile = myFixture.configureByText(
+            JavaFileType.INSTANCE,
+            """
+            package fixture;
+            import org.apache.ibatis.annotations.Select;
+            class UserMapper {
+                @Select("SELECT 1")
+                Object find() { return null; }
+            }
+            """.trimIndent(),
+        ) as PsiJavaFile
+        val annotation = mapperFile.classes.single()
+            .findMethodsByName("find", false)
+            .single()
+            .getAnnotation("org.apache.ibatis.annotations.Select")
+
+        val captured = LegacyAnnotationDependencyRevisionGuard.capture(project, annotation)
+        assertTrue(captured is LegacyAnnotationDependencyRevisionCaptureResult.Captured)
+        assertTrue(
+            (captured as LegacyAnnotationDependencyRevisionCaptureResult.Captured).revisions.isEmpty(),
+        )
+    }
+
+    fun testLegacyDependencyGuardVfsAuthorityInvalidatesOnRevisionChangeOrDocumentTakeover() {
+        val virtualFile = myFixture.tempDirFixture.createFile(
+            "fixture/VfsDependency.java",
+            "class VfsDependency { static final String QUERY = \"SELECT 1\"; }",
+        )
+        assertNull(
+            "fixture must begin without a cached Document to exercise VFS authority",
+            FileDocumentManager.getInstance().getCachedDocument(virtualFile),
+        )
+
+        val captured =
+            LegacyAnnotationDependencyRevisionGuard.captureSourceRevision(project, virtualFile)
+        assertTrue(captured is LegacyAnnotationDependencyRevisionCaptureResult.Captured)
+        val revisions =
+            (captured as LegacyAnnotationDependencyRevisionCaptureResult.Captured).revisions
+        assertEquals(LegacyAnnotationDependencyRevisionAuthority.VFS, revisions.single().authority)
+        assertTrue(LegacyAnnotationDependencyRevisionGuard.areCurrent(project, revisions))
+
+        WriteCommandAction.runWriteCommandAction(project) {
+            VfsUtil.saveText(
+                virtualFile,
+                "class VfsDependency { static final String QUERY = \"SELECT 2\"; }",
+            )
+        }
+        assertFalse(LegacyAnnotationDependencyRevisionGuard.areCurrent(project, revisions))
+    }
+
 }
