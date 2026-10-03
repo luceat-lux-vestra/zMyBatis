@@ -53,7 +53,7 @@ class LegacyActionSourceRevisionGuardContractTest {
                 "@Suppress(\"UsePropertyAccessSyntax\", \"TooGenericExceptionCaught\"",
             )
 
-        val initialCheck = executeSql.indexOf("if (!preExecutionCheck()) return")
+        val initialCheck = executeSql.indexOf("if (!preExecutionCheck()) {")
         val documentAccess = executeSql.indexOf("val consoleDoc = console.document")
         assertTrue(initialCheck >= 0)
         assertTrue(documentAccess > initialCheck)
@@ -61,7 +61,7 @@ class LegacyActionSourceRevisionGuardContractTest {
         val retry = executeSql
             .substringAfter("ApplicationManager.getApplication().invokeLater({")
             .substringBefore("}, ModalityState.any())")
-        val retryCheck = retry.indexOf("if (!preExecutionCheck()) return@invokeLater")
+        val retryCheck = retry.indexOf("if (!preExecutionCheck()) {")
         val retryEditorLookup = retry.indexOf("EditorFactory.getInstance().getEditors")
         assertTrue(retryCheck >= 0)
         assertTrue(retryEditorLookup > retryCheck)
@@ -71,7 +71,7 @@ class LegacyActionSourceRevisionGuardContractTest {
             .substringBefore(
                 "@Suppress(\"UsePropertyAccessSyntax\")\n    private fun restoreConsoleDocument",
             )
-        val initialPerformCheck = perform.indexOf("if (!preExecutionCheck()) return")
+        val initialPerformCheck = perform.indexOf("if (!preExecutionCheck()) {")
         val performDocumentAccess = perform.indexOf("val consoleDoc = console.document")
         val nativeQuery = perform.indexOf("JdbcConsoleProvider.doRunQueryInConsole")
         val finalCheck = perform.lastIndexOf("if (!preExecutionCheck()) {")
