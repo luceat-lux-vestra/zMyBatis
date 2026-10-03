@@ -69,7 +69,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         }
     }
 
-    @Suppress("ReturnCount")
+    @Suppress("ReturnCount", "TooGenericExceptionCaught")
     private fun runMyBatisQuery(e: AnActionEvent, context: MyBatisContextAnalyzer.ContextType) {
         try {
             val project = e.project ?: return
@@ -145,9 +145,12 @@ open class MyBatisExecuteProxyAction : AnAction() {
             }
         } catch (ex: ProcessCanceledException) {
             throw ex
-        } catch (ex: Throwable) {
-            LOG.error("zMyBatis runMyBatisQuery failed", ex)
+        } catch (ex: Exception) {
+            LOG.warn("zMyBatis runMyBatisQuery failed (${ex::class.java.name})")
             Messages.showErrorDialog(e.project, "Error preparing MyBatis query:\n${ex.message}", "zMyBatis Error")
+        } catch (fatal: Throwable) {
+            LOG.error("zMyBatis fatal runMyBatisQuery failure", fatal)
+            throw fatal
         }
     }
 
@@ -323,9 +326,13 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 } catch (ex: ProcessCanceledException) {
                     cache.endSelection(fileKey)
                     throw ex
-                } catch (ex: Throwable) {
+                } catch (ex: Exception) {
                     cache.endSelection(fileKey)
-                    LOG.error("zMyBatis: failed to show datasource chooser for $fileKey", ex)
+                    LOG.warn("zMyBatis: failed to show datasource chooser for $fileKey (${ex::class.java.name})")
+                } catch (fatal: Throwable) {
+                    cache.endSelection(fileKey)
+                    LOG.error("zMyBatis: fatal datasource chooser failure for $fileKey", fatal)
+                    throw fatal
                 }
             }, ModalityState.any())
         } catch (ex: ProcessCanceledException) {
