@@ -242,6 +242,11 @@ open class MyBatisExecuteProxyAction : AnAction() {
                     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
                     override fun actionPerformed(ignored: AnActionEvent) {
                         LOG.info("zMyBatis: Default schema selected for DS: ${ds.name}")
+                        StoredExecutionTargetBridge.forProject(project).remember(
+                            sourceFileId = sourceFileId,
+                            dataSource = ds,
+                            schemaName = null,
+                        )
                         cache.endSelection(fileKey)
                         buildAndDeliverConsole(
                             project,
@@ -250,7 +255,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
                             fileKey,
                             sourceFileId,
                             forceNew,
-                            true,
                             onConsoleReady,
                         )
                     }
@@ -264,6 +268,11 @@ open class MyBatisExecuteProxyAction : AnAction() {
                             override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
                             override fun actionPerformed(ignored: AnActionEvent) {
                                 LOG.info("zMyBatis: Schema selected: ${schema.name} for DS: ${ds.name}")
+                                StoredExecutionTargetBridge.forProject(project).remember(
+                                    sourceFileId = sourceFileId,
+                                    dataSource = ds,
+                                    schemaName = schema.name,
+                                )
                                 cache.endSelection(fileKey)
                                 buildAndDeliverConsole(
                                     project,
@@ -272,7 +281,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                     fileKey,
                                     sourceFileId,
                                     forceNew,
-                                    true,
                                     onConsoleReady,
                                 )
                             }
@@ -326,7 +334,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
         fileKey: String,
         sourceFileId: SourceFileId,
         forceNew: Boolean,
-        rememberSelection: Boolean,
         onConsoleReady: (JdbcConsole) -> Unit
     ) {
         var console: JdbcConsole? = null
@@ -357,16 +364,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
             }
 
             val schemaName = schema?.name
-            if (rememberSelection) {
-                val persisted = StoredExecutionTargetBridge.forProject(project).remember(
-                    sourceFileId = sourceFileId,
-                    dataSource = ds,
-                    schemaName = schemaName,
-                )
-                if (!persisted) {
-                    LOG.info("zMyBatis: selected target has no stable restart identity")
-                }
-            }
 
             if (!forceNew) {
                 cache.putEphemeral(
