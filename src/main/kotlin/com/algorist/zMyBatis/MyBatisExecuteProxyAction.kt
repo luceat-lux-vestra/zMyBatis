@@ -116,9 +116,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                 ds = storedTarget.dataSource,
                                 schema = storedTarget.schema,
                                 fileKey = mapperKey,
-                                sourceFileId = sourceFileId,
                                 forceNew = forceNew,
-                                rememberSelection = false,
                             ) { console ->
                                 proceedWithParamsAndExecute(
                                     e,
