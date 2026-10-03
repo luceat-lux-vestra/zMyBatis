@@ -176,7 +176,15 @@ open class MyBatisExecuteProxyAction : AnAction() {
                     StoredExecutionTargetResolution.Missing -> {
                         LOG.info("zMyBatis: no persisted execution target for $mapperKey; showing chooser")
                         ensureConsole(e, project, mapperKey, sourceFileId, targetBridge, forceNew) { console ->
-                            proceedWithParamsAndExecute(e, project, sqlContent, context, console, statementKey)
+                            proceedWithParamsAndExecute(
+                                e,
+                                project,
+                                sqlContent,
+                                context,
+                                console,
+                                statementKey,
+                                sourceRevision,
+                            )
                         }
                     }
                 }
