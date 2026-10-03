@@ -103,7 +103,9 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 LOG.info("zMyBatis: reusing cached console for $mapperKey")
                 proceedWithParamsAndExecute(e, project, sqlContent, context, cachedConsole, statementKey)
             } else {
-                when (val storedTarget = StoredExecutionTargetBridge.forProject(project).resolve(sourceFileId)) {
+                if (project.isDisposed || cache.isShuttingDown()) return
+                val targetBridge = StoredExecutionTargetBridge.forProject(project)
+                when (val storedTarget = targetBridge.resolve(sourceFileId)) {
                     is StoredExecutionTargetResolution.Success -> {
                         if (!cache.beginSelection(mapperKey)) {
                             LOG.info("zMyBatis: console acquisition already in progress for $mapperKey")
@@ -136,13 +138,13 @@ open class MyBatisExecuteProxyAction : AnAction() {
                             "zMyBatis: persisted execution target is stale " +
                                 "(code=${storedTarget.failure.code}); requiring explicit re-selection"
                         )
-                        ensureConsole(e, project, mapperKey, sourceFileId, forceNew) { console ->
+                        ensureConsole(e, project, mapperKey, sourceFileId, targetBridge, forceNew) { console ->
                             proceedWithParamsAndExecute(e, project, sqlContent, context, console, statementKey)
                         }
                     }
                     StoredExecutionTargetResolution.Missing -> {
                         LOG.info("zMyBatis: no persisted execution target for $mapperKey; showing chooser")
-                        ensureConsole(e, project, mapperKey, sourceFileId, forceNew) { console ->
+                        ensureConsole(e, project, mapperKey, sourceFileId, targetBridge, forceNew) { console ->
                             proceedWithParamsAndExecute(e, project, sqlContent, context, console, statementKey)
                         }
                     }
@@ -210,6 +212,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         project: com.intellij.openapi.project.Project,
         fileKey: String,
         sourceFileId: SourceFileId,
+        targetBridge: StoredExecutionTargetBridge,
         forceNew: Boolean,
         onConsoleReady: (JdbcConsole) -> Unit
     ) {
@@ -241,7 +244,8 @@ open class MyBatisExecuteProxyAction : AnAction() {
                     override fun actionPerformed(ignored: AnActionEvent) {
                         LOG.info("zMyBatis: Default schema selected for DS: ${ds.name}")
                         try {
-                            StoredExecutionTargetBridge.forProject(project).remember(
+                            if (project.isDisposed || cache.isShuttingDown()) return
+                            targetBridge.remember(
                                 sourceFileId = sourceFileId,
                                 dataSource = ds,
                                 schemaName = null,
@@ -269,7 +273,8 @@ open class MyBatisExecuteProxyAction : AnAction() {
                             override fun actionPerformed(ignored: AnActionEvent) {
                                 LOG.info("zMyBatis: Schema selected: ${schema.name} for DS: ${ds.name}")
                                 try {
-                                    StoredExecutionTargetBridge.forProject(project).remember(
+                                    if (project.isDisposed || cache.isShuttingDown()) return
+                                    targetBridge.remember(
                                         sourceFileId = sourceFileId,
                                         dataSource = ds,
                                         schemaName = schema.name,
@@ -317,11 +322,17 @@ open class MyBatisExecuteProxyAction : AnAction() {
                         }
                     })
                     popup.showInBestPositionFor(originalEvent.dataContext)
+                } catch (ex: ProcessCanceledException) {
+                    cache.endSelection(fileKey)
+                    throw ex
                 } catch (ex: Throwable) {
                     cache.endSelection(fileKey)
                     LOG.error("zMyBatis: failed to show datasource chooser for $fileKey", ex)
                 }
             }, ModalityState.any())
+        } catch (ex: ProcessCanceledException) {
+            cache.endSelection(fileKey)
+            throw ex
         } catch (ex: Throwable) {
             cache.endSelection(fileKey)
             throw ex
