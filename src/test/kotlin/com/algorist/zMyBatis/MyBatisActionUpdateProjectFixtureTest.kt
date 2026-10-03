@@ -48,6 +48,20 @@ class MyBatisActionUpdateProjectFixtureTest : LightJavaCodeInsightFixtureTestCas
         assertNotApplicable(updatePresentation(myFixture.editor, ordinaryXml))
     }
 
+    fun testMapperLikeXmlWithoutNamespaceIsHidden() {
+        val mapperLikeXml = myFixture.configureByText(
+            XmlFileType.INSTANCE,
+            """
+            <mapper>
+              <select id="find">SELECT 1</select>
+            </mapper>
+            """.trimIndent()
+        )
+
+        moveCaretTo(mapperLikeXml, myFixture.editor, "SELECT 1")
+        assertNotApplicable(updatePresentation(myFixture.editor, mapperLikeXml))
+    }
+
     fun testDirectJavaStatementAnnotationIsVisible() {
         addStatementAnnotation("Select")
         val mapper = myFixture.configureByText(
