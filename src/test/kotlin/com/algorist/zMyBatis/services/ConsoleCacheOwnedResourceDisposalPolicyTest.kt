@@ -73,6 +73,27 @@ class ConsoleCacheOwnedResourceDisposalPolicyTest {
     }
 
     @Test
+    fun `same cleanup failure instance is not self suppressed and cleanup continues`() {
+        val shared = IllegalStateException("shared")
+        val attempted = mutableListOf<String>()
+
+        val thrown = captureFailure {
+            disposeOwnedResourcesPreservingFailureSemantics(
+                resources = listOf("a", "b", "tail"),
+                isDisposed = { false },
+                disposeResource = {
+                    attempted += it
+                    if (it != "tail") throw shared
+                },
+            )
+        }
+
+        assertSame(shared, thrown)
+        assertEquals(listOf("a", "b", "tail"), attempted)
+        assertEquals(0, shared.suppressed.size)
+    }
+
+    @Test
     fun `fatal cleanup failure outranks an earlier ordinary failure and keeps cleaning`() {
         val ordinary = IllegalStateException("ordinary")
         val fatal = AssertionError("fatal")
