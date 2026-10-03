@@ -26,7 +26,7 @@ Key current ownership areas:
 - source/context extraction: `AnnotationSqlExtractor`, `MyBatisContextAnalyzer`;
 - parameters: `ParameterExtractor`, `JsonParameterParser`, parameter UI/history;
 - dynamic SQL/rendering: `MyBatisEvaluator`, `SqlFormatter`, preview;
-- execution/DataGrip integration: `MyBatisExecuteProxyAction`;
+- execution/DataGrip integration: `MyBatisExecuteProxyAction` orchestration plus low-level `DatabaseToolsConsoleAdapter` console mechanics;
 - target persistence/resource lifecycle: `ExecutionTargetDescriptorStore`, `StoredExecutionTargetBridge`, migration-only `LegacyV2ConsoleSessionMigrationStore`, persistence-neutral `ConsoleCacheService` live-resource lifecycle, and action-time console acquisition;
 - settings: `ZMyBatisSettings`, configurable UI.
 
@@ -192,7 +192,7 @@ In particular, the target deliberately replaces or removes the current:
 - regex/keyword parameter extraction as caller-input authority;
 - dialog-owned parameter semantics and raw-string history identity;
 - global/regex/literal/error-string `MyBatisEvaluator` behavior;
-- remaining migration-only v2/legacy `ConsoleCacheService` surface and console mechanics still embedded in the shipping god action;
+- migration-only v2 compatibility plus legacy chooser/evaluator/orchestration still embedded in the shipping god action; low-level console mechanics are isolated behind `DatabaseToolsConsoleAdapter`;
 - execution-time formatting mutation;
 - safety semantics controlled by Strict OGNL / Ignore Unknown Tags switches.
 
