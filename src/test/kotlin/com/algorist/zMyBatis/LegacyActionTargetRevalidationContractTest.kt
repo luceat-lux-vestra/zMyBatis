@@ -98,7 +98,10 @@ class LegacyActionTargetRevalidationContractTest {
             .substringAfter("fun isCurrent(")
             .substringBefore("internal fun rememberIdentity(")
 
-        assertTrue(revalidation.contains("selection.descriptor.targetId != expectedTargetId"))
+        assertTrue(
+            "target-id equality must short-circuit before live resolution",
+            revalidation.contains("selection.descriptor.targetId == expectedTargetId &&"),
+        )
         assertTrue(revalidation.contains("resolveDescriptor(selection.descriptor)"))
         assertTrue(revalidation.contains("resolved.resolvedTarget.targetId == expectedTargetId"))
         assertTrue(revalidation.contains("catch (_: Exception)"))
