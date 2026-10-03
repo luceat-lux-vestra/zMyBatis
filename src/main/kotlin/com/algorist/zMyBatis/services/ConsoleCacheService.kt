@@ -8,6 +8,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.project.ProjectManagerListener
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.util.CheckedDisposable
 import com.intellij.openapi.util.Disposer
 import java.util.concurrent.ConcurrentHashMap
@@ -134,10 +135,20 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
                     }
                 }
             }
-        } catch (ex: Throwable) {
-            LOG.warn("zMyBatis: failed to register console sentinel for $mapperKey", ex)
-            if (!sentinel.isDisposed) Disposer.dispose(sentinel)
+        } catch (ex: ProcessCanceledException) {
+            disposeSentinelAfterRegistrationFailure(sentinel, ex)
+            throw ex
+        } catch (ex: Exception) {
+            LOG.warn(
+                "zMyBatis: failed to register console sentinel for $mapperKey " +
+                    "(type=${ex.javaClass.name})"
+            )
+            disposeSentinelAfterRegistrationFailure(sentinel, ex)
             return false
+        } catch (fatal: Throwable) {
+            LOG.error("zMyBatis: fatal console sentinel registration failure for $mapperKey", fatal)
+            disposeSentinelAfterRegistrationFailure(sentinel, fatal)
+            throw fatal
         }
 
         val accepted = synchronized(lifecycleLock) {
@@ -157,6 +168,45 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
 
         LOG.info("zMyBatis: ephemeral console cached for $mapperKey")
         return true
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun disposeSentinelAfterRegistrationFailure(
+        sentinel: CheckedDisposable,
+        primaryFailure: Throwable,
+    ) {
+        if (sentinel.isDisposed) return
+
+        try {
+            Disposer.dispose(sentinel)
+        } catch (cleanupFailure: ProcessCanceledException) {
+            preservePrimaryOrRethrowCleanup(primaryFailure, cleanupFailure)
+        } catch (cleanupFailure: Exception) {
+            if (primaryFailure is ProcessCanceledException || primaryFailure !is Exception) {
+                primaryFailure.addSuppressed(cleanupFailure)
+            } else {
+                primaryFailure.addSuppressed(cleanupFailure)
+                LOG.warn(
+                    "zMyBatis: failed to dispose rejected console sentinel " +
+                        "(type=${cleanupFailure.javaClass.name})"
+                )
+            }
+        } catch (cleanupFatal: Throwable) {
+            preservePrimaryOrRethrowCleanup(primaryFailure, cleanupFatal)
+        }
+    }
+
+    private fun preservePrimaryOrRethrowCleanup(
+        primaryFailure: Throwable,
+        cleanupFailure: Throwable,
+    ) {
+        if (primaryFailure is ProcessCanceledException || primaryFailure !is Exception) {
+            primaryFailure.addSuppressed(cleanupFailure)
+            return
+        }
+
+        cleanupFailure.addSuppressed(primaryFailure)
+        throw cleanupFailure
     }
 
     /**
