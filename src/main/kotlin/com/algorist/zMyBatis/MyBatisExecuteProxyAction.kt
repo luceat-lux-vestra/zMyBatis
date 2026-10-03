@@ -240,20 +240,23 @@ open class MyBatisExecuteProxyAction : AnAction() {
                     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
                     override fun actionPerformed(ignored: AnActionEvent) {
                         LOG.info("zMyBatis: Default schema selected for DS: ${ds.name}")
-                        StoredExecutionTargetBridge.forProject(project).remember(
-                            sourceFileId = sourceFileId,
-                            dataSource = ds,
-                            schemaName = null,
-                        )
-                        cache.endSelection(fileKey)
-                        buildAndDeliverConsole(
-                            project,
-                            ds,
-                            null,
-                            fileKey,
-                            forceNew,
-                            onConsoleReady,
-                        )
+                        try {
+                            StoredExecutionTargetBridge.forProject(project).remember(
+                                sourceFileId = sourceFileId,
+                                dataSource = ds,
+                                schemaName = null,
+                            )
+                            buildAndDeliverConsole(
+                                project,
+                                ds,
+                                null,
+                                fileKey,
+                                forceNew,
+                                onConsoleReady,
+                            )
+                        } finally {
+                            cache.endSelection(fileKey)
+                        }
                     }
                 })
                 dsGroup.addSeparator()
@@ -265,20 +268,23 @@ open class MyBatisExecuteProxyAction : AnAction() {
                             override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
                             override fun actionPerformed(ignored: AnActionEvent) {
                                 LOG.info("zMyBatis: Schema selected: ${schema.name} for DS: ${ds.name}")
-                                StoredExecutionTargetBridge.forProject(project).remember(
-                                    sourceFileId = sourceFileId,
-                                    dataSource = ds,
-                                    schemaName = schema.name,
-                                )
-                                cache.endSelection(fileKey)
-                                buildAndDeliverConsole(
-                                    project,
-                                    ds,
-                                    schema,
-                                    fileKey,
-                                    forceNew,
-                                    onConsoleReady,
-                                )
+                                try {
+                                    StoredExecutionTargetBridge.forProject(project).remember(
+                                        sourceFileId = sourceFileId,
+                                        dataSource = ds,
+                                        schemaName = schema.name,
+                                    )
+                                    buildAndDeliverConsole(
+                                        project,
+                                        ds,
+                                        schema,
+                                        fileKey,
+                                        forceNew,
+                                        onConsoleReady,
+                                    )
+                                } finally {
+                                    cache.endSelection(fileKey)
+                                }
                             }
                         })
                     }
