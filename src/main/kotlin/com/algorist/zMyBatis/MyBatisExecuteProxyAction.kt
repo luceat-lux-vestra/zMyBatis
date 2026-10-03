@@ -346,12 +346,10 @@ open class MyBatisExecuteProxyAction : AnAction() {
             }
 
             val schemaName = schema?.name
-            val dataSourceId = ConsoleCacheService.stableDataSourceId(ds)
             if (rememberSelection) {
                 val persisted = StoredExecutionTargetBridge.forProject(project).remember(
                     sourceFileId = sourceFileId,
-                    stableDataSourceId = dataSourceId,
-                    dataSourceDisplayName = ds.name,
+                    dataSource = ds,
                     schemaName = schemaName,
                 )
                 if (!persisted) {
@@ -381,8 +379,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
             console = null
             LOG.info(
                 "zMyBatis: session prepared for $fileKey " +
-                    "(ds=${ds.name}, dsId=${dataSourceId ?: "<unpersisted>"}, " +
-                    "schema=${schemaName ?: "<default>"})"
+                    "(ds=${ds.name}, schema=${schemaName ?: "<default>"})"
             )
         } catch (ex: Throwable) {
             console?.let { Disposer.dispose(it) }
