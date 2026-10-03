@@ -4,6 +4,7 @@ package com.algorist.zMyBatis
 
 import com.algorist.zMyBatis.settings.ZMyBatisSettings
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.progress.ProcessCanceledException
 import org.apache.ibatis.builder.BuilderException
 import org.apache.ibatis.ognl.OgnlContext
 import org.apache.ibatis.ognl.OgnlRuntime
@@ -126,7 +127,9 @@ object MyBatisEvaluator {
 
             pureSql.trim()
 
-        } catch (e: Throwable) {
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: Exception) {
             // ── Strict OGNL Mode ──────────────────────────────────────────
             // BuilderException wraps OgnlException when an OGNL expression fails.
             // Strict ON  → rethrow so the caller shows an error dialog immediately.
