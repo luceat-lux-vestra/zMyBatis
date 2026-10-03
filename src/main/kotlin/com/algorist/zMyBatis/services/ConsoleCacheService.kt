@@ -57,12 +57,20 @@ private fun combineResourceDisposalFailure(
     val nextIsStrong = nextFailure is ProcessCanceledException || nextFailure !is Exception
 
     return if (!primaryIsStrong && nextIsStrong) {
-        nextFailure.addSuppressed(primaryFailure)
+        addSuppressedIfDistinct(nextFailure, primaryFailure)
         nextFailure
     } else {
-        primaryFailure.addSuppressed(nextFailure)
+        addSuppressedIfDistinct(primaryFailure, nextFailure)
         primaryFailure
     }
+}
+
+private fun addSuppressedIfDistinct(
+    primaryFailure: Throwable,
+    suppressedFailure: Throwable,
+) {
+    if (primaryFailure === suppressedFailure) return
+    primaryFailure.addSuppressed(suppressedFailure)
 }
 
 @Service(Service.Level.PROJECT)
