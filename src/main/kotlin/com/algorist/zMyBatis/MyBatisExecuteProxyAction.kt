@@ -4,38 +4,30 @@ package com.algorist.zMyBatis
 
 import com.algorist.zMyBatis.MyBatisContextAnalyzer.analyze
 import com.algorist.zMyBatis.core.source.SourceFileId
+import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAcquisitionFailure
+import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAdapter
+import com.algorist.zMyBatis.execution.DatabaseToolsSqlExecutionFailure
 import com.algorist.zMyBatis.execution.StoredExecutionTargetBridge
 import com.algorist.zMyBatis.execution.StoredExecutionTargetResolution
 import com.algorist.zMyBatis.services.ConsoleCacheService
 import com.algorist.zMyBatis.settings.ConsoleSessionPolicy
 import com.algorist.zMyBatis.settings.ZMyBatisSettings
 import com.intellij.database.console.JdbcConsole
-import com.intellij.database.console.JdbcConsoleProvider
 import com.intellij.database.model.DasNamespace
 import com.intellij.database.psi.DbDataSource
 import com.intellij.database.psi.DbPsiFacade
-import com.intellij.database.settings.DatabaseSettings
 import com.intellij.database.util.DasUtil
-import com.intellij.database.util.ObjectPath
-import com.intellij.database.util.SearchPath
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.editor.EditorFactory
-import com.intellij.openapi.editor.ex.EditorEx
-import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.popup.JBPopupListener
 import com.intellij.openapi.ui.popup.LightweightWindowEvent
-import com.intellij.openapi.util.Disposer
-import com.intellij.openapi.util.TextRange
-import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.util.PsiTreeUtil
@@ -113,7 +105,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                         }
                         try {
                             LOG.info("zMyBatis: resolved persisted execution target for $mapperKey")
-                            buildAndDeliverConsole(
+                            acquireAndDeliverConsole(
                                 project = project,
                                 ds = storedTarget.dataSource,
                                 schema = storedTarget.schema,
@@ -250,7 +242,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                 dataSource = ds,
                                 schemaName = null,
                             )
-                            buildAndDeliverConsole(
+                            acquireAndDeliverConsole(
                                 project,
                                 ds,
                                 null,
@@ -279,7 +271,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                         dataSource = ds,
                                         schemaName = schema.name,
                                     )
-                                    buildAndDeliverConsole(
+                                    acquireAndDeliverConsole(
                                         project,
                                         ds,
                                         schema,
@@ -339,200 +331,86 @@ open class MyBatisExecuteProxyAction : AnAction() {
         }
     }
 
-    @Suppress("TooGenericExceptionCaught")
-    private fun buildAndDeliverConsole(
+    private fun acquireAndDeliverConsole(
         project: com.intellij.openapi.project.Project,
         ds: DbDataSource,
         schema: DasNamespace?,
         fileKey: String,
         forceNew: Boolean,
-        onConsoleReady: (JdbcConsole) -> Unit
+        onConsoleReady: (JdbcConsole) -> Unit,
     ) {
-        var console: JdbcConsole? = null
-        try {
-            if (isProjectUnavailable(project)) return
-            val cache = ConsoleCacheService.getInstance(project)
-            val sqlFileType = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
-                .getFileTypeByExtension("sql")
-            val consoleName = fileKey.substringAfterLast('/').substringAfterLast('\\') + " - zMyBatis"
-            val lightFile = com.intellij.testFramework.LightVirtualFile(consoleName, sqlFileType, "")
-
-            console = JdbcConsole.newConsole(project)
-                .fromDataSource(ds)
-                .forFile(lightFile)
-                .build()
-            LOG.info("zMyBatis: console created for ${ds.name} (name=$consoleName)")
-
-            if (schema != null && !switchSchemaOnConsole(console, schema)) {
-                Messages.showErrorDialog(
-                    project,
-                    "Could not switch database console to schema '${schema.name}'.\n" +
-                        "The query was not executed because using the default schema would be unsafe.",
-                    "zMyBatis: Schema Switch Failed"
-                )
-                Disposer.dispose(console)
-                console = null
-                return
-            }
-
-            val schemaName = schema?.name
-
-            if (!forceNew) {
-                cache.putEphemeral(
-                    mapperKey = fileKey,
-                    console = console,
-                )
-                if (cache.get(fileKey) !== console) {
-                    LOG.warn("zMyBatis: console was not live after cache registration for $fileKey — skipping query")
-                    Disposer.dispose(console)
-                    console = null
-                    return
-                }
-            }
-
-            if (isProjectUnavailable(project)) {
-                Disposer.dispose(console)
-                console = null
-                return
-            }
-            onConsoleReady(console)
-            console = null
-            LOG.info(
-                "zMyBatis: session prepared for $fileKey " +
-                    "(ds=${ds.name}, schema=${schemaName ?: "<default>"})"
-            )
-        } catch (ex: ProcessCanceledException) {
-            console?.let { Disposer.dispose(it) }
-            throw ex
-        } catch (ex: Throwable) {
-            console?.let { Disposer.dispose(it) }
-            LOG.error("zMyBatis: failed to create console for ${ds.name}", ex)
-            if (!isProjectUnavailable(project)) {
-                Messages.showErrorDialog(
-                    project,
-                    "Could not create database console for ${ds.name}.\n${ex.message}",
-                    "zMyBatis Error"
-                )
-            }
-        }
-    }
-
-    private fun switchSchemaOnConsole(console: JdbcConsole, schema: DasNamespace): Boolean =
-        try {
-            val kind = DasUtil.getKind(schema)
-            val path = ObjectPath.create(schema.name, kind)
-            console.switchSchema(SearchPath.of(path), false)
-            LOG.info("zMyBatis: schema '${schema.name}' (kind=$kind) switched on console")
-            true
-        } catch (ex: ProcessCanceledException) {
-            throw ex
-        } catch (ex: Throwable) {
-            LOG.warn("zMyBatis: failed to switch schema '${schema.name}'", ex)
-            false
-        }
-
-    @Suppress("TooGenericExceptionCaught")
-    private fun executeOnConsole(
-        console: JdbcConsole,
-        project: com.intellij.openapi.project.Project,
-        pureSql: String
-    ) {
-        if (isProjectUnavailable(project)) return
-        if (pureSql.isBlank()) {
-            LOG.warn("zMyBatis: pureSql is blank, skipping execution")
-            return
-        }
-
-        val consoleDoc = console.document
-        val consolePsiFile = console.file
-        val existingEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
-            .firstOrNull { it is EditorEx } as? EditorEx
-
-        if (existingEditor == null) {
-            LOG.info("zMyBatis: no existing editor for console '${console.title}', attempting to open...")
-            val vFile = consolePsiFile.virtualFile
-            if (vFile != null) {
-                FileEditorManager.getInstance(project).openFile(vFile, true)
-                ApplicationManager.getApplication().invokeLater({
-                    if (isProjectUnavailable(project)) return@invokeLater
-                    val retryEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
-                        .firstOrNull { it is EditorEx } as? EditorEx
-                    if (retryEditor != null) {
-                        performExecution(console, project, pureSql, retryEditor)
-                    } else {
-                        LOG.warn("zMyBatis: editor still null after opening for '${console.title}'")
-                        Messages.showErrorDialog(project, "Cannot find editor for console '${console.title}'.", "zMyBatis Error")
+        DatabaseToolsConsoleAdapter.getInstance(project).acquireAndDeliverConsole(
+            dataSource = ds,
+            schema = schema,
+            resourceKey = fileKey,
+            forceNew = forceNew,
+            onConsoleReady = onConsoleReady,
+            onFailure = { failure ->
+                when (failure) {
+                    is DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed -> {
+                        Messages.showErrorDialog(
+                            project,
+                            "Could not switch database console to schema '${failure.schemaName}'.\n" +
+                                "The query was not executed because using the default schema would be unsafe.",
+                            "zMyBatis: Schema Switch Failed",
+                        )
                     }
-                }, ModalityState.any())
-            } else {
-                LOG.warn("zMyBatis: console virtual file is null")
-            }
-        } else {
-            performExecution(console, project, pureSql, existingEditor)
-        }
+                    is DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed -> {
+                        if (!isProjectUnavailable(project)) {
+                            Messages.showErrorDialog(
+                                project,
+                                "Could not create database console for ${failure.dataSourceName}.\n${failure.detail}",
+                                "zMyBatis Error",
+                            )
+                        }
+                    }
+                }
+            },
+        )
     }
 
     @Suppress("UsePropertyAccessSyntax")
-    private fun performExecution(
+    private fun executeOnConsole(
         console: JdbcConsole,
         project: com.intellij.openapi.project.Project,
         pureSql: String,
-        consoleEditor: EditorEx
     ) {
-        if (isProjectUnavailable(project)) return
-        val consoleDoc = console.document
-        val consolePsiFile = console.file
-        val originalText = consoleDoc.text
-
-        try {
-            consoleEditor.contentComponent.requestFocusInWindow()
-
-            WriteCommandAction.runWriteCommandAction(project, "zMyBatis: inject SQL", null, {
-                consoleDoc.setText(pureSql)
-                consoleEditor.selectionModel.setSelection(0, pureSql.length)
-                consoleEditor.caretModel.moveToOffset(0)
-                PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
-            })
-
-            val fullRange = TextRange(0, consoleDoc.textLength)
-            val info = JdbcConsoleProvider.findScriptModelNoInject(
-                project, consolePsiFile, consoleEditor,
-                fullRange, DatabaseSettings.getDefaultExecOption()
-            )
-            if (info == null) {
-                LOG.warn("zMyBatis: findScriptModelNoInject returned null (SQL length=${pureSql.length})")
-                WriteCommandAction.runWriteCommandAction(project) {
-                    consoleDoc.setText(originalText)
-                    PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
+        DatabaseToolsConsoleAdapter.getInstance(project).executeSql(
+            console = console,
+            sql = pureSql,
+            onExecuted = {
+                if (ZMyBatisSettings.getInstance().copyToClipboard) {
+                    CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
                 }
-                Messages.showErrorDialog(project, "Failed to parse SQL for execution.", "zMyBatis Error")
-                return
-            }
-            if (isProjectUnavailable(project)) return
-            LOG.info("zMyBatis: executing on console '${console.title}'")
-            JdbcConsoleProvider.doRunQueryInConsole(console, info)
-
-            if (ZMyBatisSettings.getInstance().copyToClipboard) {
-                CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
-            }
-        } catch (ex: Throwable) {
-            LOG.error("zMyBatis: execution failed", ex)
-            try {
-                WriteCommandAction.runWriteCommandAction(project) {
-                    consoleDoc.setText(originalText)
-                    PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
+            },
+            onFailure = { failure ->
+                when (failure) {
+                    is DatabaseToolsSqlExecutionFailure.EditorUnavailable -> {
+                        Messages.showErrorDialog(
+                            project,
+                            "Cannot find editor for console '${failure.consoleTitle}'.",
+                            "zMyBatis Error",
+                        )
+                    }
+                    DatabaseToolsSqlExecutionFailure.ScriptModelUnavailable -> {
+                        Messages.showErrorDialog(
+                            project,
+                            "Failed to parse SQL for execution.",
+                            "zMyBatis Error",
+                        )
+                    }
+                    is DatabaseToolsSqlExecutionFailure.ExecutionFailed -> {
+                        if (!isProjectUnavailable(project)) {
+                            Messages.showErrorDialog(
+                                project,
+                                "Failed to execute SQL:\n${failure.detail}",
+                                "zMyBatis: Execution Error",
+                            )
+                        }
+                    }
                 }
-            } catch (restoreEx: Throwable) {
-                LOG.warn("zMyBatis: failed to restore console document: ${restoreEx.message}")
-            }
-            if (!isProjectUnavailable(project)) {
-                Messages.showErrorDialog(
-                    project,
-                    "Failed to execute SQL:\n${ex.message ?: ex.javaClass.simpleName}",
-                    "zMyBatis: Execution Error"
-                )
-            }
-        }
+            },
+        )
     }
 
     @Suppress("ReturnCount")

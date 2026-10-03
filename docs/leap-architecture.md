@@ -31,7 +31,7 @@ The target is driven by these invariants:
 
 ### `MyBatisExecuteProxyAction`
 
-Current responsibilities include context detection, source extraction, statement/history identity, parameter prompting/history, evaluation dispatch, formatting/preview, datasource/schema selection, console creation/reuse, console-document mutation, query invocation, clipboard, and error UI.
+Current responsibilities include context detection, source extraction, statement/history identity, parameter prompting/history, evaluation dispatch, formatting/preview, datasource/schema selection, console reuse/acquisition orchestration, clipboard, and error UI. Low-level console creation, schema switching, editor acquisition, console-document mutation, script-model construction, and native query invocation are isolated behind `DatabaseToolsConsoleAdapter`.
 
 **Disposition:** replace the orchestration body. The final action is a thin IDE adapter over one application use case.
 
@@ -535,10 +535,10 @@ Implementation is incremental for reviewability, but the target is a replacement
 
 ### Phase 4 — target/session adapter
 
-Current progress: v3 target descriptors are persisted independently; provable v2 records migrate to v3; startup eager console recreation is removed; the shipping action performs exact target re-resolution and deferred console acquisition through a migration bridge.
+Current progress: v3 target descriptors are persisted independently; provable v2 records migrate to v3; startup eager console recreation is removed; the shipping action performs exact target re-resolution and deferred console acquisition through a migration bridge; low-level Database Tools console creation/schema/editor/document/script-model/query mechanics are isolated behind `DatabaseToolsConsoleAdapter`.
 
 Remaining:
-- finish isolating Database Tools console mechanics from the legacy action;
+- continue reducing legacy action resource/orchestration ownership without crossing #258's production cutover gate;
 - retire the migration-only v2 reader/cleanup path when the supported upgrade window permits;
 - keep console/resource policy independent from persisted target identity.
 
