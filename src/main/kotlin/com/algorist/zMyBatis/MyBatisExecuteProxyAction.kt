@@ -29,6 +29,7 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.popup.JBPopupListener
 import com.intellij.openapi.ui.popup.LightweightWindowEvent
+import com.intellij.psi.PsiAnnotation
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.util.PsiTreeUtil
@@ -77,7 +78,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
             if (isProjectUnavailable(project)) return
             val editor = e.getData(CommonDataKeys.EDITOR) ?: return
             val psiFile = e.getData(CommonDataKeys.PSI_FILE) ?: return
-            val sourceRevision = when (
+            val rootSourceRevision = when (
                 val capture = LegacyActionSourceRevisionGuard.capture(project, editor, psiFile)
             ) {
                 is LegacyActionSourceRevisionCaptureResult.Captured -> capture.revision
@@ -103,6 +104,41 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 LOG.warn("zMyBatis: extractSqlContent returned null. Context: $context")
                 return
             }
+
+            val annotationDependencies =
+                if (context == MyBatisContextAnalyzer.ContextType.ANNOTATION) {
+                    when (
+                        val capture = LegacyAnnotationDependencyRevisionGuard.capture(
+                            project,
+                            findCurrentStatementAnnotation(editor, psiFile),
+                        )
+                    ) {
+                        is LegacyAnnotationDependencyRevisionCaptureResult.Captured ->
+                            capture.revisions
+                        is LegacyAnnotationDependencyRevisionCaptureResult.UncommittedSource -> {
+                            showAnnotationDependencyRevisionRefusal(
+                                project,
+                                "A referenced annotation SQL constant has uncommitted editor changes. " +
+                                    "Wait for IDE source synchronization and run zMyBatis again.",
+                            )
+                            return
+                        }
+                        LegacyAnnotationDependencyRevisionCaptureResult.SourceUnavailable -> {
+                            showAnnotationDependencyRevisionRefusal(
+                                project,
+                                "A referenced annotation SQL constant source is no longer available. " +
+                                    "Run zMyBatis again.",
+                            )
+                            return
+                        }
+                    }
+                } else {
+                    emptyList()
+                }
+            val sourceRevision = LegacyActionInvocationSourceRevision(
+                root = rootSourceRevision,
+                annotationDependencies = annotationDependencies,
+            )
             if (!isSourceRevisionCurrent(project, sourceRevision)) return
 
             val historyFileKey = psiFile.virtualFile?.path ?: psiFile.name
@@ -245,7 +281,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         context: MyBatisContextAnalyzer.ContextType,
         console: JdbcConsole,
         statementKey: String? = null,
-        sourceRevision: LegacyActionSourceRevision,
+        sourceRevision: LegacyActionInvocationSourceRevision,
         sourceFileId: SourceFileId,
         targetBridge: StoredExecutionTargetBridge,
         expectedTargetId: ExecutionTargetId?,
@@ -524,7 +560,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         console: JdbcConsole,
         project: com.intellij.openapi.project.Project,
         pureSql: String,
-        sourceRevision: LegacyActionSourceRevision,
+        sourceRevision: LegacyActionInvocationSourceRevision,
         sourceFileId: SourceFileId,
         targetBridge: StoredExecutionTargetBridge,
         expectedTargetId: ExecutionTargetId?,
@@ -533,7 +569,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
             console = console,
             sql = pureSql,
             preExecutionCheck = {
-                LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision) &&
+                isInvocationSourceCurrent(project, sourceRevision) &&
                     (expectedTargetId == null ||
                         targetBridge.isCurrent(sourceFileId, expectedTargetId))
             },
@@ -591,7 +627,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
 
     private fun isInvocationCurrent(
         project: com.intellij.openapi.project.Project,
-        sourceRevision: LegacyActionSourceRevision,
+        sourceRevision: LegacyActionInvocationSourceRevision,
         sourceFileId: SourceFileId,
         targetBridge: StoredExecutionTargetBridge,
         expectedTargetId: ExecutionTargetId?,
@@ -606,15 +642,27 @@ open class MyBatisExecuteProxyAction : AnAction() {
 
     private fun showInvocationInvalidated(
         project: com.intellij.openapi.project.Project,
-        sourceRevision: LegacyActionSourceRevision,
+        sourceRevision: LegacyActionInvocationSourceRevision,
         sourceFileId: SourceFileId,
         targetBridge: StoredExecutionTargetBridge,
         expectedTargetId: ExecutionTargetId?,
     ) {
-        if (!LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision)) {
+        if (!LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision.root)) {
             showSourceRevisionRefusal(
                 project,
                 "The mapper source changed while zMyBatis was preparing the query. " +
+                    "Run zMyBatis again from the current source.",
+            )
+            return
+        }
+        if (!LegacyAnnotationDependencyRevisionGuard.areCurrent(
+                project,
+                sourceRevision.annotationDependencies,
+            )
+        ) {
+            showAnnotationDependencyRevisionRefusal(
+                project,
+                "A referenced annotation SQL constant changed while zMyBatis was preparing the query. " +
                     "Run zMyBatis again from the current source.",
             )
             return
@@ -643,17 +691,49 @@ open class MyBatisExecuteProxyAction : AnAction() {
         )
     }
 
+    private fun isInvocationSourceCurrent(
+        project: com.intellij.openapi.project.Project,
+        sourceRevision: LegacyActionInvocationSourceRevision,
+    ): Boolean =
+        LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision.root) &&
+            LegacyAnnotationDependencyRevisionGuard.areCurrent(
+                project,
+                sourceRevision.annotationDependencies,
+            )
+
     private fun isSourceRevisionCurrent(
         project: com.intellij.openapi.project.Project,
-        sourceRevision: LegacyActionSourceRevision,
+        sourceRevision: LegacyActionInvocationSourceRevision,
     ): Boolean {
-        if (LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision)) return true
-        showSourceRevisionRefusal(
-            project,
-            "The mapper source changed while zMyBatis was preparing the query. " +
-                "Run zMyBatis again from the current source.",
-        )
-        return false
+        if (!LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision.root)) {
+            showSourceRevisionRefusal(
+                project,
+                "The mapper source changed while zMyBatis was preparing the query. " +
+                    "Run zMyBatis again from the current source.",
+            )
+            return false
+        }
+        if (!LegacyAnnotationDependencyRevisionGuard.areCurrent(
+                project,
+                sourceRevision.annotationDependencies,
+            )
+        ) {
+            showAnnotationDependencyRevisionRefusal(
+                project,
+                "A referenced annotation SQL constant changed while zMyBatis was preparing the query. " +
+                    "Run zMyBatis again from the current source.",
+            )
+            return false
+        }
+        return true
+    }
+
+    private fun showAnnotationDependencyRevisionRefusal(
+        project: com.intellij.openapi.project.Project,
+        message: String,
+    ) {
+        if (isProjectUnavailable(project)) return
+        Messages.showErrorDialog(project, message, "zMyBatis: Referenced Source Changed")
     }
 
     private fun showSourceRevisionRefusal(
@@ -662,6 +742,31 @@ open class MyBatisExecuteProxyAction : AnAction() {
     ) {
         if (isProjectUnavailable(project)) return
         Messages.showErrorDialog(project, message, "zMyBatis: Source Changed")
+    }
+
+    @Suppress("ReturnCount")
+    private fun findCurrentStatementAnnotation(
+        editor: Editor,
+        psiFile: PsiFile,
+    ): PsiAnnotation? {
+        val baseOffset = if (editor.selectionModel.hasSelection()) {
+            editor.selectionModel.selectionStart
+        } else {
+            editor.caretModel.offset
+        }
+        var offset = baseOffset
+        if (offset > 0 && offset == psiFile.textLength) offset--
+
+        var element = psiFile.findElementAt(offset)
+        if (element is com.intellij.psi.PsiWhiteSpace && offset > 0) {
+            element = psiFile.findElementAt(offset - 1)
+        }
+        if (element == null) return null
+
+        val method = PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
+        return method?.annotations?.firstOrNull {
+            it.qualifiedName in MyBatisContextAnalyzer.STATEMENT_ANNOTATIONS
+        }
     }
 
     @Suppress("ReturnCount")
@@ -686,13 +791,8 @@ open class MyBatisExecuteProxyAction : AnAction() {
 
         return when (context) {
             MyBatisContextAnalyzer.ContextType.XML -> findMyBatisStatementTag(element)?.text
-            MyBatisContextAnalyzer.ContextType.ANNOTATION -> {
-                val method = PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
-                val annotation = method?.annotations?.firstOrNull {
-                    it.qualifiedName in MyBatisContextAnalyzer.STATEMENT_ANNOTATIONS
-                }
-                AnnotationSqlExtractor.extract(annotation)
-            }
+            MyBatisContextAnalyzer.ContextType.ANNOTATION ->
+                AnnotationSqlExtractor.extract(findCurrentStatementAnnotation(editor, psiFile))
             else -> null
         }
     }
