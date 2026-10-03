@@ -398,6 +398,14 @@ open class MyBatisExecuteProxyAction : AnAction() {
             },
             onFailure = { failure ->
                 when (failure) {
+                    DatabaseToolsSqlExecutionFailure.ConsoleUnavailable -> {
+                        Messages.showErrorDialog(
+                            project,
+                            "The database console is no longer available.\n" +
+                                "Run zMyBatis again to acquire a fresh execution console.",
+                            "zMyBatis: Console Unavailable",
+                        )
+                    }
                     is DatabaseToolsSqlExecutionFailure.EditorUnavailable -> {
                         Messages.showErrorDialog(
                             project,
