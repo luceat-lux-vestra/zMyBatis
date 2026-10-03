@@ -164,10 +164,12 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
     fun executeSql(
         console: JdbcConsole,
         sql: String,
+        preExecutionCheck: () -> Boolean,
         onExecuted: () -> Unit,
         onFailure: (DatabaseToolsSqlExecutionFailure) -> Unit,
     ) {
         if (isProjectUnavailable()) return
+        if (!preExecutionCheck()) return
         if (Disposer.isDisposed(console)) {
             LOG.warn("zMyBatis: console unavailable before SQL execution")
             onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
@@ -190,6 +192,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 FileEditorManager.getInstance(project).openFile(vFile, true)
                 ApplicationManager.getApplication().invokeLater({
                     if (isProjectUnavailable()) return@invokeLater
+                    if (!preExecutionCheck()) return@invokeLater
                     if (Disposer.isDisposed(console)) {
                         LOG.warn("zMyBatis: console unavailable after editor-open scheduling")
                         onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
@@ -198,7 +201,14 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                     val retryEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
                         .firstOrNull { it is EditorEx && !it.isDisposed } as? EditorEx
                     if (retryEditor != null) {
-                        performExecution(console, sql, retryEditor, onExecuted, onFailure)
+                        performExecution(
+                            console,
+                            sql,
+                            retryEditor,
+                            preExecutionCheck,
+                            onExecuted,
+                            onFailure,
+                        )
                     } else {
                         LOG.warn("zMyBatis: editor still null after opening for '${console.title}'")
                         onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable(console.title))
@@ -208,7 +218,14 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 LOG.warn("zMyBatis: console virtual file is null")
             }
         } else {
-            performExecution(console, sql, existingEditor, onExecuted, onFailure)
+            performExecution(
+                console,
+                sql,
+                existingEditor,
+                preExecutionCheck,
+                onExecuted,
+                onFailure,
+            )
         }
     }
 
@@ -217,10 +234,12 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         console: JdbcConsole,
         sql: String,
         consoleEditor: EditorEx,
+        preExecutionCheck: () -> Boolean,
         onExecuted: () -> Unit,
         onFailure: (DatabaseToolsSqlExecutionFailure) -> Unit,
     ) {
         if (isProjectUnavailable()) return
+        if (!preExecutionCheck()) return
         if (Disposer.isDisposed(console)) {
             LOG.warn("zMyBatis: console unavailable before execution preparation")
             onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
@@ -262,6 +281,10 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             }
 
             if (isProjectUnavailable()) {
+                restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
+                return
+            }
+            if (!preExecutionCheck()) {
                 restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
                 return
             }
