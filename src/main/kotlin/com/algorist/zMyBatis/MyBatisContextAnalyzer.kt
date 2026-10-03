@@ -82,7 +82,8 @@ object MyBatisContextAnalyzer {
                 val mapper = tag.parentTag
                 return mapper?.name?.lowercase() == "mapper" &&
                     mapper.parentTag == null &&
-                    !mapper.getAttributeValue("namespace").isNullOrBlank()
+                    !mapper.getAttributeValue("namespace").isNullOrBlank() &&
+                    !tag.getAttributeValue("id").isNullOrBlank()
             }
             tag = tag.parentTag
         }
