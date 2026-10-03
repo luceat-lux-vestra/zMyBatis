@@ -51,7 +51,7 @@ object MyBatisContextAnalyzer {
         val offset = editor.caretModel.offset.coerceIn(0, psiFile.textLength - 1)
         val element = psiFile.findElementAt(offset) ?: return ContextType.NONE
 
-        if (psiFile is XmlFile && isInMyBatisStatementTag(element)) {
+        if (psiFile is XmlFile && isMyBatisMapperFile(psiFile) && isInMyBatisStatementTag(element)) {
             return ContextType.XML
         }
 
@@ -73,6 +73,11 @@ object MyBatisContextAnalyzer {
         }
 
         return ContextType.NONE
+    }
+
+    private fun isMyBatisMapperFile(psiFile: XmlFile): Boolean {
+        val root = psiFile.rootTag ?: return false
+        return root.name == "mapper" && !root.getAttributeValue("namespace").isNullOrBlank()
     }
 
     private fun isInMyBatisStatementTag(element: com.intellij.psi.PsiElement): Boolean {
