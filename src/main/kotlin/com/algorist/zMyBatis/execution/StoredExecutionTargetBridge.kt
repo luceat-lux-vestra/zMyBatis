@@ -58,6 +58,7 @@ internal class StoredExecutionTargetBridge private constructor(
         return when (val resolved = resolveDescriptor(selection.descriptor)) {
             is DatabaseToolsTargetResolution.Success ->
                 StoredExecutionTargetResolution.Success(
+                    targetId = selection.descriptor.targetId,
                     dataSource = resolved.dataSource,
                     schema = resolved.schema,
                 )
@@ -80,24 +81,59 @@ internal class StoredExecutionTargetBridge private constructor(
             schemaName = schemaName,
         )
 
+    fun rememberTarget(
+        sourceFileId: SourceFileId,
+        dataSource: DbDataSource,
+        schemaName: String?,
+    ): ExecutionTargetId? {
+        val targetId = targetIdOrNull(
+            stableDataSourceId = databaseToolsStableDataSourceId(dataSource),
+            schemaName = schemaName,
+        ) ?: run {
+            removeSelection(sourceFileId)
+            return null
+        }
+
+        saveSelection(
+            PersistedExecutionTargetSelection(
+                association = SourceTargetAssociation(sourceFileId, targetId),
+                descriptor = ExecutionTargetDescriptor(
+                    targetId = targetId,
+                    dataSourceDisplayName = dataSource.name.takeIf { it.isNotEmpty() },
+                ),
+            ),
+        )
+        return targetId
+    }
+
+    /**
+     * Non-mutating exact-target revalidation for an already-started invocation.
+     *
+     * A stale target is deliberately not removed here: pre-execution validation must not mutate
+     * persisted authority as a hidden side effect. The next ordinary resolve may prune it.
+     */
+    fun isCurrent(
+        sourceFileId: SourceFileId,
+        expectedTargetId: ExecutionTargetId,
+    ): Boolean {
+        val selection = loadSelection(sourceFileId) ?: return false
+        if (selection.descriptor.targetId != expectedTargetId) return false
+        return resolveDescriptor(selection.descriptor) is DatabaseToolsTargetResolution.Success
+    }
+
     internal fun rememberIdentity(
         sourceFileId: SourceFileId,
         stableDataSourceId: String?,
         dataSourceDisplayName: String,
         schemaName: String?,
     ): Boolean {
-        val dataSourceId = stableDataSourceId?.trim()?.takeIf { it.isNotEmpty() }
-        val explicitSchema = schemaName?.takeIf { it.isNotBlank() }
-        if (dataSourceId == null || explicitSchema == null) {
+        val targetId = targetIdOrNull(stableDataSourceId, schemaName)
+        if (targetId == null) {
             removeSelection(sourceFileId)
             return false
         }
 
         return try {
-            val targetId = ExecutionTargetId(
-                dataSourceId = StableDataSourceId(dataSourceId),
-                schema = ExplicitSchemaIdentity(explicitSchema),
-            )
             saveSelection(
                 PersistedExecutionTargetSelection(
                     association = SourceTargetAssociation(sourceFileId, targetId),
@@ -113,12 +149,29 @@ internal class StoredExecutionTargetBridge private constructor(
             false
         }
     }
+
+    private fun targetIdOrNull(
+        stableDataSourceId: String?,
+        schemaName: String?,
+    ): ExecutionTargetId? {
+        val dataSourceId = stableDataSourceId?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val explicitSchema = schemaName?.takeIf { it.isNotBlank() } ?: return null
+        return try {
+            ExecutionTargetId(
+                dataSourceId = StableDataSourceId(dataSourceId),
+                schema = ExplicitSchemaIdentity(explicitSchema),
+            )
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
 }
 
 internal sealed interface StoredExecutionTargetResolution {
     data object Missing : StoredExecutionTargetResolution
 
     data class Success(
+        val targetId: ExecutionTargetId,
         val dataSource: DbDataSource,
         val schema: DasNamespace,
     ) : StoredExecutionTargetResolution
