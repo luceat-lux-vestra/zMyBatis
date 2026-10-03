@@ -146,9 +146,10 @@ class ZMyBatisStarterDriverE2ETest {
                 openFile("Query.xml")
 
                 ideFrame {
-                    // Query.xml places the caret inside a real MyBatis statement. With no
-                    // datasource configured, the production action must stop before evaluation or
-                    // execution and expose its real fail-closed datasource refusal.
+                    // openFile starts at the document origin. Move through the real editor action
+                    // to the canonical mapper statement before invoking the context-gated plugin
+                    // action, then prove the production no-datasource refusal is still reached.
+                    invokeAction("EditorDown")
                     invokeAction("zMyBatis.Execute", now = false)
                     dialog(title = "zMyBatis: No Data Source") {
                         button("OK").click()
