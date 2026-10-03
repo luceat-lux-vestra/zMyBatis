@@ -18,7 +18,8 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
    - opens the project and waits for supported background-indicator readiness;
    - reaches the shipping `ZMyBatisSettings` application service over Driver JMX/RMI and asserts its typed production result.
 2. **Registered-action fail-closed path**
-   - opens the versioned `Query.xml` sample;
+   - opens the versioned canonical mapper `Query.xml` sample;
+   - moves the real editor caret into its supported statement context through the platform `EditorDown` action;
    - invokes the real `zMyBatis.Execute` action by its registered action ID;
    - with no datasource configured, requires the production action to reach its real `zMyBatis: No Data Source` refusal instead of evaluating or executing SQL.
 
