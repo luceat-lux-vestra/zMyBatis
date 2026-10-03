@@ -28,6 +28,27 @@ class DatabaseIdTest {
     }
 
     @Test
+    fun whitespaceJavaDatabaseIdRemainsExactAndUnproven() {
+        val variant = JavaAnnotationStatementVariant(
+            databaseId = " ",
+            statementKind = StatementKind.SELECT,
+            sqlSegments = listOf("SELECT 1"),
+        )
+
+        assertEquals(" ", variant.databaseId)
+
+        val validation = validateDatabaseIdAuthority(
+            declaredDatabaseIds = listOf(variant.databaseId!!),
+            effectiveDatabaseId = MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+        )
+        assertTrue(validation is DatabaseIdAuthorityValidation.MappingUnproven)
+        assertEquals(
+            listOf(" "),
+            (validation as DatabaseIdAuthorityValidation.MappingUnproven).declaredDatabaseIds,
+        )
+    }
+
+    @Test
     fun unknownAliasRemainsUnprovenUnderConventionalFallback() {
         val validation = validateDatabaseIdAuthority(
             declaredDatabaseIds = listOf("PostgreSQL", "pg"),
