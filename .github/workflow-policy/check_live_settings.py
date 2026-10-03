@@ -93,6 +93,59 @@ def manual_security_assertions(policy: dict[str, Any]) -> dict[str, Any]:
     return declaration
 
 
+def actions_event_policy_expectations(policy: dict[str, Any]) -> tuple[list[int], list[int]]:
+    active = policy.get("actionsEventPoliciesExpectedActiveIds")
+    retired = policy.get("retiredActionsEventPolicyIds")
+    if active != []:
+        raise ValueError(
+            f"{SECTION}.actionsEventPoliciesExpectedActiveIds must equal []; got {active!r}"
+        )
+    if retired != [5153]:
+        raise ValueError(
+            f"{SECTION}.retiredActionsEventPolicyIds must equal [5153]; got {retired!r}"
+        )
+    return active, retired
+
+
+def compare_actions_event_policies(
+    policy: dict[str, Any],
+    response: dict[str, Any],
+) -> list[str]:
+    failures: list[str] = []
+    active, retired = actions_event_policy_expectations(policy)
+    policies = response.get("policies")
+    total_count = response.get("total_count")
+    if not isinstance(policies, list):
+        return ["actions event-policy response.policies: missing or not a list"]
+    if total_count != len(policies):
+        failures.append(
+            f"actions event-policy total_count: expected {len(policies)}, got {total_count!r}"
+        )
+
+    ids: list[int] = []
+    for item in policies:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), int):
+            failures.append(f"actions event-policy response contains malformed entry: {item!r}")
+            continue
+        ids.append(item["id"])
+
+    if len(ids) != len(set(ids)):
+        failures.append("actions event-policy response contains duplicate policy ids")
+
+    observed = sorted(ids)
+    expected = sorted(active)
+    if observed != expected:
+        failures.append(
+            f"actions event-policy ids: expected {expected!r}, got {observed!r}"
+        )
+    for policy_id in retired:
+        if policy_id in ids:
+            failures.append(
+                f"retired Actions event policy {policy_id} still exists"
+            )
+    return failures
+
+
 def compare_fields(
     failures: list[str],
     prefix: str,
@@ -413,6 +466,7 @@ def main(argv: list[str]) -> int:
             raise ValueError("liveSettingsAudit.workflow must be a string")
         publication_expected = mapping(policy, "publicationTagRuleset")
         manual_security_assertions(policy)
+        actions_event_policy_expectations(policy)
     except (KeyError, ValueError) as exc:
         print(f"live-settings policy error: {exc}", file=sys.stderr)
         return 2
@@ -454,12 +508,19 @@ def main(argv: list[str]) -> int:
             f"{api}/repos/{repository}/rulesets/{publication_id}",
             token,
         )
+        actions_event_policies_json = api_get_object(
+            f"{api}/repos/{repository}/actions/policies",
+            token,
+        )
         failures = compare_live(
             policy,
             text,
             repo_json,
             ruleset_json,
             publication_json,
+        )
+        failures.extend(
+            compare_actions_event_policies(policy, actions_event_policies_json)
         )
     except (KeyError, ValueError, RuntimeError) as exc:
         print(f"live-settings audit failed closed: {exc}", file=sys.stderr)
