@@ -379,7 +379,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
             sql = pureSql,
             onExecuted = {
                 if (ZMyBatisSettings.getInstance().copyToClipboard) {
-                    CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
+                    CopyPasteManager.getInstance().contents = StringSelection(pureSql)
                 }
             },
             onFailure = { failure ->
