@@ -144,9 +144,8 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             if (shuttingDown || sentinel.isDisposed) {
                 false
             } else {
-                // A v3-backed console is only an ephemeral resource. Clear any obsolete v2
-                // migration record once acquisition succeeds; never create or mutate v3 here.
-                clearSessionLocked(mapperKey)
+                // Live console registration is resource lifecycle only. Persistence cleanup,
+                // including migration-only v2 state, remains startup migration ownership.
                 cache[mapperKey] = entry
                 true
             }
