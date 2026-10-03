@@ -253,7 +253,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
                             ds,
                             null,
                             fileKey,
-                            sourceFileId,
                             forceNew,
                             onConsoleReady,
                         )
@@ -279,7 +278,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                     ds,
                                     schema,
                                     fileKey,
-                                    sourceFileId,
                                     forceNew,
                                     onConsoleReady,
                                 )
@@ -332,7 +330,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
         ds: DbDataSource,
         schema: DasNamespace?,
         fileKey: String,
-        sourceFileId: SourceFileId,
         forceNew: Boolean,
         onConsoleReady: (JdbcConsole) -> Unit
     ) {
