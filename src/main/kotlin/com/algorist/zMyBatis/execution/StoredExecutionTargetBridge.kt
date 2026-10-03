@@ -87,7 +87,7 @@ internal class StoredExecutionTargetBridge private constructor(
         schemaName: String?,
     ): Boolean {
         val dataSourceId = stableDataSourceId?.trim()?.takeIf { it.isNotEmpty() }
-        val explicitSchema = schemaName?.trim()?.takeIf { it.isNotEmpty() }
+        val explicitSchema = schemaName?.takeIf { it.isNotBlank() }
         if (dataSourceId == null || explicitSchema == null) {
             removeSelection(sourceFileId)
             return false
