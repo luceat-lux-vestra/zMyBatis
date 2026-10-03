@@ -94,16 +94,21 @@ internal class StoredExecutionTargetBridge private constructor(
             return null
         }
 
-        saveSelection(
-            PersistedExecutionTargetSelection(
-                association = SourceTargetAssociation(sourceFileId, targetId),
-                descriptor = ExecutionTargetDescriptor(
-                    targetId = targetId,
-                    dataSourceDisplayName = dataSource.name.takeIf { it.isNotEmpty() },
+        return try {
+            saveSelection(
+                PersistedExecutionTargetSelection(
+                    association = SourceTargetAssociation(sourceFileId, targetId),
+                    descriptor = ExecutionTargetDescriptor(
+                        targetId = targetId,
+                        dataSourceDisplayName = dataSource.name.takeIf { it.isNotEmpty() },
+                    ),
                 ),
-            ),
-        )
-        return targetId
+            )
+            targetId
+        } catch (_: IllegalArgumentException) {
+            removeSelection(sourceFileId)
+            null
+        }
     }
 
     /**
