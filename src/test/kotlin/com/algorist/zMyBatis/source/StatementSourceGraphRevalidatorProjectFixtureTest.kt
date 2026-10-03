@@ -141,6 +141,47 @@ class StatementSourceGraphRevalidatorProjectFixtureTest : LightJavaCodeInsightFi
         )
     }
 
+    fun testDocumentAuthorityWithoutCachedDocumentFailsClosed() {
+        val content = "<mapper namespace=\"fixture.AuthorityMapper\"><select id=\"find\">SELECT 1</select></mapper>"
+        val virtualFile = myFixture.tempDirFixture.createFile("fixture/AuthorityMapper.xml", content)
+        val fileDocumentManager = FileDocumentManager.getInstance()
+        assertNull(fileDocumentManager.getCachedDocument(virtualFile))
+
+        val snapshot = SourceSnapshot(
+            fileId = SourceFileId("vfs:${virtualFile.url}"),
+            revision = SourceRevision("document:1"),
+            content = content,
+        )
+
+        val failure = failed(StatementSourceGraphRevalidator.revalidate(graph(snapshot)))
+        assertTrue(failure is SourceGraphRevalidationFailure.RevisionAuthorityUnavailable)
+        failure as SourceGraphRevalidationFailure.RevisionAuthorityUnavailable
+        assertEquals(snapshot.fileId, failure.sourceFileId)
+        assertEquals(snapshot.revision, failure.expectedRevision)
+        assertNull(
+            "revalidation must not load a document to recover missing document authority",
+            fileDocumentManager.getCachedDocument(virtualFile),
+        )
+    }
+
+    fun testDeletedCapturedSourceFailsClosed() {
+        val content = "<mapper namespace=\"fixture.DeleteMapper\"><select id=\"find\">SELECT 1</select></mapper>"
+        val virtualFile = myFixture.tempDirFixture.createFile("fixture/DeleteMapper.xml", content)
+        val snapshot = dependentSnapshot(virtualFile)
+        val requestor = this
+
+        WriteCommandAction.runWriteCommandAction(project) {
+            virtualFile.delete(requestor)
+        }
+
+        val failure = failed(StatementSourceGraphRevalidator.revalidate(graph(snapshot)))
+        assertEquals(snapshot.fileId, failure.sourceFileId)
+        assertTrue(
+            failure is SourceGraphRevalidationFailure.SourceMissing ||
+                failure is SourceGraphRevalidationFailure.InvalidSource,
+        )
+    }
+
     fun testUnsupportedIdentityAndRevisionFailTyped() {
         val unsupportedIdentity = SourceSnapshot(
             fileId = SourceFileId("memory:mapper"),
