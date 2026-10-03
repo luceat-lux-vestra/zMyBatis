@@ -70,6 +70,18 @@ internal class StoredExecutionTargetBridge private constructor(
 
     fun remember(
         sourceFileId: SourceFileId,
+        dataSource: DbDataSource,
+        schemaName: String?,
+    ): Boolean =
+        rememberIdentity(
+            sourceFileId = sourceFileId,
+            stableDataSourceId = databaseToolsStableDataSourceId(dataSource),
+            dataSourceDisplayName = dataSource.name,
+            schemaName = schemaName,
+        )
+
+    internal fun rememberIdentity(
+        sourceFileId: SourceFileId,
         stableDataSourceId: String?,
         dataSourceDisplayName: String,
         schemaName: String?,
