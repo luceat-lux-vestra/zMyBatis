@@ -97,6 +97,25 @@ class MyBatisActionInterceptorActivityLifecycleTest : BasePlatformTestCase() {
         assertNull(targetStore.load(sourceFileId))
     }
 
+    fun testShutdownDuringSourceLookupStopsV3Pruning() {
+        val sourceFileId = SourceFileId("vfs:file:///project/StillPersisted.xml")
+        val targetStore = ExecutionTargetDescriptorStore.getInstance(project)
+        saveV3(sourceFileId, "ds-1", "public", "orders")
+        val cache = newIsolatedCache()
+
+        MyBatisActionInterceptorActivity().migratePersistedSelections(
+            project = project,
+            cache = cache,
+            targetStore = targetStore,
+            resolveSourceUrl = {
+                cache.markShuttingDown()
+                null
+            },
+        )
+
+        assertNotNull(targetStore.load(sourceFileId))
+    }
+
     fun testShutdownGateLeavesMigrationStateUntouched() {
         val mapperKey = "file:///project/Closing.xml"
         seedV2(mapperKey, "ds-1", "orders", "public")
