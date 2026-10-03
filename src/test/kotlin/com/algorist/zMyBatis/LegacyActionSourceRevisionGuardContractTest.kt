@@ -21,6 +21,19 @@ class LegacyActionSourceRevisionGuardContractTest {
             "Java annotation execution must capture the constant dependency footprint",
             action.contains("LegacyAnnotationDependencyRevisionGuard.capture("),
         )
+        val dependencyCapture = action.indexOf("LegacyAnnotationDependencyRevisionGuard.capture(")
+        val annotationExtraction = action.indexOf("AnnotationSqlExtractor.extract(statementAnnotation)")
+        val immediateSourceCheck =
+            action.indexOf("if (!isSourceRevisionCurrent(project, sourceRevision)) return")
+        assertTrue(
+            "dependency revision capture must precede legacy annotation SQL extraction",
+            dependencyCapture >= 0 && annotationExtraction > dependencyCapture,
+        )
+        assertTrue(
+            "composed source revision must be revalidated immediately after extraction",
+            immediateSourceCheck > annotationExtraction,
+        )
+
         val proceed = action
             .substringAfter("private fun proceedWithParamsAndExecute(")
             .substringBefore("@Suppress(\"TooGenericExceptionCaught\", \"LongMethod\")")
