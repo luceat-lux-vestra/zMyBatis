@@ -111,6 +111,16 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         return result
     }
 
+    fun evict(mapperKey: String) {
+        val entry = synchronized(lifecycleLock) {
+            cache.remove(mapperKey)
+        } ?: return
+
+        if (!Disposer.isDisposed(entry.console)) {
+            Disposer.dispose(entry.console)
+        }
+    }
+
     internal fun beginSelection(mapperKey: String): Boolean = synchronized(lifecycleLock) {
         !shuttingDown && activeSelections.add(mapperKey)
     }
