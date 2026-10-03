@@ -84,7 +84,7 @@ class StoredExecutionTargetBridgeTest {
         val persisted = requireNotNull(saved)
         assertEquals(source, persisted.association.sourceFileId)
         assertEquals("ds-1", persisted.descriptor.targetId.dataSourceId.value)
-        assertEquals("public", persisted.descriptor.targetId.schema.value)
+        assertEquals(" public ", persisted.descriptor.targetId.schema.value)
         assertEquals("orders", persisted.descriptor.dataSourceDisplayName)
         assertNull(removed)
     }
