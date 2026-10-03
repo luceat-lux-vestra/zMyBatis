@@ -4,8 +4,9 @@ package com.algorist.zMyBatis
 
 import com.algorist.zMyBatis.MyBatisContextAnalyzer.analyze
 import com.algorist.zMyBatis.core.source.SourceFileId
+import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAcquisitionFailure
 import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAdapter
-import com.algorist.zMyBatis.execution.DatabaseToolsConsoleFailure
+import com.algorist.zMyBatis.execution.DatabaseToolsSqlExecutionFailure
 import com.algorist.zMyBatis.execution.StoredExecutionTargetBridge
 import com.algorist.zMyBatis.execution.StoredExecutionTargetResolution
 import com.algorist.zMyBatis.services.ConsoleCacheService
@@ -346,7 +347,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
             onConsoleReady = onConsoleReady,
             onFailure = { failure ->
                 when (failure) {
-                    is DatabaseToolsConsoleFailure.SchemaSwitchFailed -> {
+                    is DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed -> {
                         Messages.showErrorDialog(
                             project,
                             "Could not switch database console to schema '${failure.schemaName}'.\n" +
@@ -354,7 +355,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                             "zMyBatis: Schema Switch Failed",
                         )
                     }
-                    is DatabaseToolsConsoleFailure.ConsoleCreationFailed -> {
+                    is DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed -> {
                         if (!isProjectUnavailable(project)) {
                             Messages.showErrorDialog(
                                 project,
@@ -362,9 +363,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                 "zMyBatis Error",
                             )
                         }
-                    }
-                    else -> {
-                        LOG.warn("zMyBatis: unexpected console-acquisition failure: $failure")
                     }
                 }
             },
@@ -386,21 +384,21 @@ open class MyBatisExecuteProxyAction : AnAction() {
             },
             onFailure = { failure ->
                 when (failure) {
-                    is DatabaseToolsConsoleFailure.EditorUnavailable -> {
+                    is DatabaseToolsSqlExecutionFailure.EditorUnavailable -> {
                         Messages.showErrorDialog(
                             project,
                             "Cannot find editor for console '${failure.consoleTitle}'.",
                             "zMyBatis Error",
                         )
                     }
-                    DatabaseToolsConsoleFailure.ScriptModelUnavailable -> {
+                    DatabaseToolsSqlExecutionFailure.ScriptModelUnavailable -> {
                         Messages.showErrorDialog(
                             project,
                             "Failed to parse SQL for execution.",
                             "zMyBatis Error",
                         )
                     }
-                    is DatabaseToolsConsoleFailure.ExecutionFailed -> {
+                    is DatabaseToolsSqlExecutionFailure.ExecutionFailed -> {
                         if (!isProjectUnavailable(project)) {
                             Messages.showErrorDialog(
                                 project,
@@ -408,9 +406,6 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                 "zMyBatis: Execution Error",
                             )
                         }
-                    }
-                    else -> {
-                        LOG.warn("zMyBatis: unexpected SQL-execution failure: $failure")
                     }
                 }
             },
