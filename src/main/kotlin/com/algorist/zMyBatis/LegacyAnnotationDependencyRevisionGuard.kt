@@ -104,23 +104,23 @@ internal object LegacyAnnotationDependencyRevisionGuard {
 
         val fileDocumentManager = FileDocumentManager.getInstance()
         val psiDocumentManager = PsiDocumentManager.getInstance(project)
-        for (revision in revisions) {
-            val virtualFile = VirtualFileManager.getInstance().findFileByUrl(revision.sourceUrl)
+        for ((sourceUrl, authority, modificationStamp) in revisions) {
+            val virtualFile = VirtualFileManager.getInstance().findFileByUrl(sourceUrl)
                 ?: return false
-            if (!virtualFile.isValid || virtualFile.url != revision.sourceUrl) return false
+            if (!virtualFile.isValid || virtualFile.url != sourceUrl) return false
 
-            when (revision.authority) {
+            when (authority) {
                 LegacyAnnotationDependencyRevisionAuthority.DOCUMENT -> {
                     val document = fileDocumentManager.getCachedDocument(virtualFile)
                         ?: return false
                     if (!psiDocumentManager.isCommitted(document)) return false
-                    if (document.modificationStamp != revision.modificationStamp) return false
+                    if (document.modificationStamp != modificationStamp) return false
                 }
                 LegacyAnnotationDependencyRevisionAuthority.VFS -> {
                     // A later cached Document is a source-authority takeover. Even if its current
                     // text matches disk, force a new invocation to establish one coherent token.
                     if (fileDocumentManager.getCachedDocument(virtualFile) != null) return false
-                    if (virtualFile.modificationStamp != revision.modificationStamp) return false
+                    if (virtualFile.modificationStamp != modificationStamp) return false
                 }
             }
         }
