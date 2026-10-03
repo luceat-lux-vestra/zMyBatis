@@ -102,7 +102,9 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 )
                 if (cache.get(resourceKey, targetId) !== console) {
                     LOG.warn("zMyBatis: console was not live after cache registration for $resourceKey — skipping query")
-                    Disposer.dispose(console)
+                    if (!Disposer.isDisposed(console)) {
+                        Disposer.dispose(console)
+                    }
                     console = null
                     return
                 }
