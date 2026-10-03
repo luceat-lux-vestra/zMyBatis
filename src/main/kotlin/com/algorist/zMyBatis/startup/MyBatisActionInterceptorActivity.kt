@@ -1,20 +1,20 @@
 package com.algorist.zMyBatis.startup
 
+import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.services.ConsoleCacheService
-import com.algorist.zMyBatis.services.PersistedConsoleSession
-import com.intellij.database.console.JdbcConsole
-import com.intellij.database.util.DasUtil
-import com.intellij.database.util.ObjectPath
-import com.intellij.database.util.SearchPath
-import com.intellij.openapi.application.ApplicationManager
+import com.algorist.zMyBatis.services.ExecutionTargetDescriptorStore
+import com.algorist.zMyBatis.services.LegacyV2TargetSelectionMigration
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
-import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.VirtualFileManager
-import com.intellij.testFramework.LightVirtualFile
 
+/**
+ * Startup owns persistence migration/cleanup only.
+ *
+ * It deliberately does not create JdbcConsole resources. A console is acquired only from an
+ * explicit execution action after the persisted target has been re-resolved exactly.
+ */
 class MyBatisActionInterceptorActivity : ProjectActivity {
 
     companion object {
@@ -22,144 +22,89 @@ class MyBatisActionInterceptorActivity : ProjectActivity {
     }
 
     override suspend fun execute(project: Project) {
-        LOG.info("zMyBatis: startup activity running")
+        if (project.isDisposed) return
 
-        scheduleStartupRestore(
+        val cache = ConsoleCacheService.getInstance(project)
+        val targetStore = ExecutionTargetDescriptorStore.getInstance(project)
+        migratePersistedSelections(
             project = project,
-            cacheProvider = ConsoleCacheService::getInstance,
-            scheduler = { task, expired ->
-                ApplicationManager.getApplication().invokeLater(task) { expired() }
+            cache = cache,
+            targetStore = targetStore,
+            resolveSourceUrl = { url ->
+                VirtualFileManager.getInstance()
+                    .findFileByUrl(url)
+                    ?.takeIf { it.isValid }
+                    ?.url
             },
-            restore = ::restoreSessionsIntoCache
         )
     }
 
     /**
-     * Acquires the project service before crossing the asynchronous EDT boundary. The scheduled
-     * callback only retains that proven service instance; it never performs a new service lookup.
+     * Migrates v2 mapper-session identity to v3 source/target selection without constructing any
+     * Database Tools execution resource.
      *
-     * [scheduler] receives the same lifecycle predicate used by the callback so the platform can
-     * drop queued work after project close or plugin-unload disposal, while the callback also
-     * re-checks the predicate defensively if it has already been dequeued.
+     * v3 wins if an interrupted migration leaves both generations present. The migration therefore
+     * never overwrites an already valid v3 selection with older v2 state.
      */
-    internal fun scheduleStartupRestore(
-        project: Project,
-        cacheProvider: (Project) -> ConsoleCacheService,
-        scheduler: (Runnable, () -> Boolean) -> Unit,
-        restore: (Project, ConsoleCacheService) -> Unit
-    ) {
-        val cache = cacheProvider(project)
-        val expired = { project.isDisposed || cache.isShuttingDown() }
-        val task = Runnable {
-            if (!expired()) {
-                restore(project, cache)
-            }
-        }
-        scheduler(task, expired)
-    }
-
-    private fun restoreSessionsIntoCache(project: Project, cache: ConsoleCacheService) {
-        if (project.isDisposed || cache.isShuttingDown()) return
-        val sessions = cache.pruneStaleIndex()
-        if (sessions.isEmpty()) return
-        LOG.info("zMyBatis: restoring ${sessions.size} saved session(s) on startup")
-
-        val sqlFileType = FileTypeManager.getInstance().getFileTypeByExtension("sql")
-        for (session in sessions) {
-            if (project.isDisposed || cache.isShuttingDown()) return
-            restoreOneSession(project, cache, session, sqlFileType)
-        }
-    }
-
-    @Suppress("TooGenericExceptionCaught")
-    private fun restoreOneSession(
+    internal fun migratePersistedSelections(
         project: Project,
         cache: ConsoleCacheService,
-        session: PersistedConsoleSession,
-        sqlFileType: com.intellij.openapi.fileTypes.FileType
+        targetStore: ExecutionTargetDescriptorStore,
+        resolveSourceUrl: (String) -> String?,
     ) {
         if (project.isDisposed || cache.isShuttingDown()) return
-        val mapperKey = session.mapperKey
-        if (cache.get(mapperKey) != null) return
 
-        val mapperFile = VirtualFileManager.getInstance().findFileByUrl(mapperKey)
-        if (mapperFile == null || !mapperFile.isValid) {
-            LOG.info("zMyBatis: mapper '$mapperKey' no longer exists — removing stale session")
-            cache.clearSession(mapperKey)
-            return
-        }
+        pruneMissingV3Sources(targetStore, resolveSourceUrl)
 
-        val dataSource = cache.findDataSourceById(session.dataSourceId)
-        if (dataSource == null) {
-            LOG.info(
-                "zMyBatis: datasource '${session.dataSourceName}' (${session.dataSourceId}) " +
-                    "cannot be resolved exactly — removing stale session"
-            )
-            cache.clearSession(mapperKey)
-            return
-        }
-        if (dataSource.name != session.dataSourceName) {
-            LOG.info(
-                "zMyBatis: datasource '${session.dataSourceName}' was renamed to '${dataSource.name}'; " +
-                    "restoring by stable id ${session.dataSourceId}"
-            )
-        }
+        val sessions = cache.pruneStaleIndex()
+        if (sessions.isEmpty()) return
 
-        if (project.isDisposed || cache.isShuttingDown()) return
-        var console: JdbcConsole? = null
-        try {
-            val consoleName = mapperFile.name + " - zMyBatis"
-            val lightFile = LightVirtualFile(consoleName, sqlFileType, "")
-            console = JdbcConsole.newConsole(project)
-                .fromDataSource(dataSource)
-                .forFile(lightFile)
-                .build()
+        for (session in sessions) {
+            if (project.isDisposed || cache.isShuttingDown()) return
 
-            if (session.schemaName.isNotBlank()) {
-                val schemas = DasUtil.getSchemas(dataSource)
-                    .toList()
-                    .filter { it.name == session.schemaName }
-                if (schemas.size != 1) {
-                    LOG.warn(
-                        "zMyBatis: schema '${session.schemaName}' is ${if (schemas.isEmpty()) "missing" else "ambiguous"} " +
-                            "for datasource id ${session.dataSourceId} — removing stale session"
-                    )
-                    cache.clearSession(mapperKey)
-                    Disposer.dispose(console)
-                    return
+            val resolvedUrl = resolveSourceUrl(session.mapperKey)
+            if (resolvedUrl != session.mapperKey) {
+                LOG.info("zMyBatis: pruning v2 target selection whose source can no longer be proven")
+                cache.clearSession(session.mapperKey)
+                continue
+            }
+
+            val sourceFileId = try {
+                SourceFileId("vfs:$resolvedUrl")
+            } catch (_: IllegalArgumentException) {
+                cache.clearSession(session.mapperKey)
+                continue
+            }
+
+            if (targetStore.load(sourceFileId) == null) {
+                val migrated = LegacyV2TargetSelectionMigration.convert(session, sourceFileId)
+                if (migrated == null) {
+                    cache.clearSession(session.mapperKey)
+                    continue
                 }
-
-                val schema = schemas.single()
-                val kind = DasUtil.getKind(schema)
-                val path = ObjectPath.create(schema.name, kind)
-                console.switchSchema(SearchPath.of(path), false)
+                targetStore.save(migrated.association, migrated.descriptor)
             }
 
-            // Startup restoration only reconstructs console state. It never injects or executes SQL.
-            // put() owns the final lifecycle linearization: if shutdown won the race, it disposes
-            // this console and refuses registration/persistence.
-            cache.put(
-                mapperKey = mapperKey,
-                console = console,
-                dataSourceId = session.dataSourceId,
-                dataSourceName = dataSource.name,
-                schemaName = session.schemaName
-            )
-            if (cache.get(mapperKey) !== console) {
-                LOG.warn("zMyBatis: restored console was not live after cache registration for $mapperKey")
-                Disposer.dispose(console)
-                console = null
-                return
-            }
+            // Save/validate v3 first. If cleanup is interrupted, duplicate v2+v3 state is harmless
+            // and the next startup keeps v3 authoritative before removing v2 again.
+            cache.clearSession(session.mapperKey)
+        }
+    }
 
-            console = null // ownership transferred to the cache/platform lifecycle
-            LOG.info(
-                "zMyBatis: session restored for $mapperKey " +
-                    "(ds=${dataSource.name}, dsId=${session.dataSourceId}, schema=${session.schemaName})"
-            )
-        } catch (ex: Throwable) {
-            console?.let { Disposer.dispose(it) }
-            LOG.warn("zMyBatis: failed to restore session for $mapperKey; leaving it un-restored", ex)
+    private fun pruneMissingV3Sources(
+        targetStore: ExecutionTargetDescriptorStore,
+        resolveSourceUrl: (String) -> String?,
+    ) {
+        for (selection in targetStore.pruneAndLoadAll()) {
+            val sourceFileId = selection.association.sourceFileId
+            val value = sourceFileId.value
+            if (!value.startsWith("vfs:")) continue
+
+            val expectedUrl = value.removePrefix("vfs:")
+            if (expectedUrl.isEmpty() || resolveSourceUrl(expectedUrl) != expectedUrl) {
+                LOG.info("zMyBatis: pruning v3 target selection whose source can no longer be proven")
+                targetStore.remove(sourceFileId)
+            }
         }
     }
 }
