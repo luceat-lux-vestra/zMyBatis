@@ -79,7 +79,7 @@ internal object LegacyAnnotationDependencyRevisionGuard {
                 return LegacyAnnotationDependencyRevisionCaptureResult.SourceUnavailable
             }
 
-            when (val captured = captureSource(project, virtualFile)) {
+            when (val captured = captureSourceRevision(project, virtualFile)) {
                 is LegacyAnnotationDependencyRevisionCaptureResult.Captured -> {
                     captured.revisions.forEach { revision ->
                         revisionsByUrl[revision.sourceUrl] = revision
@@ -127,7 +127,7 @@ internal object LegacyAnnotationDependencyRevisionGuard {
         return true
     }
 
-    private fun captureSource(
+    internal fun captureSourceRevision(
         project: Project,
         virtualFile: VirtualFile,
     ): LegacyAnnotationDependencyRevisionCaptureResult {
