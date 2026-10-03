@@ -188,7 +188,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         }
     }
 
-    @Suppress("TooGenericExceptionCaught")
+    @Suppress("UsePropertyAccessSyntax", "TooGenericExceptionCaught")
     private fun performExecution(
         console: JdbcConsole,
         sql: String,
@@ -205,7 +205,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             consoleEditor.contentComponent.requestFocusInWindow()
 
             WriteCommandAction.runWriteCommandAction(project, "zMyBatis: Inject SQL", null, {
-                consoleDoc.text = sql
+                consoleDoc.setText(sql)
                 consoleEditor.selectionModel.setSelection(0, sql.length)
                 consoleEditor.caretModel.moveToOffset(0)
                 PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
@@ -246,12 +246,13 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         }
     }
 
+    @Suppress("UsePropertyAccessSyntax")
     private fun restoreConsoleDocument(
         consoleDoc: com.intellij.openapi.editor.Document,
         originalText: String,
     ) {
         WriteCommandAction.runWriteCommandAction(project) {
-            consoleDoc.text = originalText
+            consoleDoc.setText(originalText)
             PsiDocumentManager.getInstance(project).commitDocument(consoleDoc)
         }
     }
