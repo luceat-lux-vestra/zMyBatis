@@ -116,6 +116,27 @@ class MyBatisActionInterceptorActivityLifecycleTest : BasePlatformTestCase() {
         assertNotNull(targetStore.load(sourceFileId))
     }
 
+    fun testShutdownDuringV2SourceLookupLeavesMigrationStateUntouched() {
+        val mapperKey = "file:///project/ClosingDuringLookup.xml"
+        seedV2(mapperKey, "ds-1", "orders", "public")
+        val cache = newIsolatedCache()
+        val targetStore = ExecutionTargetDescriptorStore.getInstance(project)
+
+        MyBatisActionInterceptorActivity().migratePersistedSelections(
+            project = project,
+            cache = cache,
+            targetStore = targetStore,
+            resolveSourceUrl = {
+                cache.markShuttingDown()
+                it
+            },
+        )
+
+        assertNull(targetStore.load(SourceFileId("vfs:$mapperKey")))
+        assertNotNull(projectStore().getValue(V2_INDEX))
+        assertNotNull(projectStore().getValue(v2RecordKey(mapperKey)))
+    }
+
     fun testShutdownGateLeavesMigrationStateUntouched() {
         val mapperKey = "file:///project/Closing.xml"
         seedV2(mapperKey, "ds-1", "orders", "public")
