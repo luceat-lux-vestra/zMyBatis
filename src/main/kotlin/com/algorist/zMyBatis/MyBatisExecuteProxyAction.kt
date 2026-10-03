@@ -76,12 +76,33 @@ open class MyBatisExecuteProxyAction : AnAction() {
             if (isProjectUnavailable(project)) return
             val editor = e.getData(CommonDataKeys.EDITOR) ?: return
             val psiFile = e.getData(CommonDataKeys.PSI_FILE) ?: return
+            val sourceRevision = when (
+                val capture = LegacyActionSourceRevisionGuard.capture(project, editor, psiFile)
+            ) {
+                is LegacyActionSourceRevisionCaptureResult.Captured -> capture.revision
+                LegacyActionSourceRevisionCaptureResult.UncommittedSource -> {
+                    showSourceRevisionRefusal(
+                        project,
+                        "The mapper source has uncommitted editor changes. " +
+                            "Wait for IDE source synchronization and run zMyBatis again.",
+                    )
+                    return
+                }
+                LegacyActionSourceRevisionCaptureResult.SourceUnavailable -> {
+                    showSourceRevisionRefusal(
+                        project,
+                        "The mapper source is no longer available. Run zMyBatis again.",
+                    )
+                    return
+                }
+            }
 
             val sqlContent = extractSqlContent(context, editor, psiFile)
             if (sqlContent == null) {
                 LOG.warn("zMyBatis: extractSqlContent returned null. Context: $context")
                 return
             }
+            if (!isSourceRevisionCurrent(project, sourceRevision)) return
 
             val historyFileKey = psiFile.virtualFile?.path ?: psiFile.name
             val mapperKey = psiFile.viewProvider.virtualFile.url
@@ -94,7 +115,15 @@ open class MyBatisExecuteProxyAction : AnAction() {
 
             if (cachedConsole != null) {
                 LOG.info("zMyBatis: reusing cached console for $mapperKey")
-                proceedWithParamsAndExecute(e, project, sqlContent, context, cachedConsole, statementKey)
+                proceedWithParamsAndExecute(
+                    e,
+                    project,
+                    sqlContent,
+                    context,
+                    cachedConsole,
+                    statementKey,
+                    sourceRevision,
+                )
             } else {
                 if (project.isDisposed || cache.isShuttingDown()) return
                 val targetBridge = StoredExecutionTargetBridge.forProject(project)
@@ -120,6 +149,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                     context,
                                     console,
                                     statementKey,
+                                    sourceRevision,
                                 )
                             }
                         } finally {
@@ -132,7 +162,15 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                 "(code=${storedTarget.failure.code}); requiring explicit re-selection"
                         )
                         ensureConsole(e, project, mapperKey, sourceFileId, targetBridge, forceNew) { console ->
-                            proceedWithParamsAndExecute(e, project, sqlContent, context, console, statementKey)
+                            proceedWithParamsAndExecute(
+                                e,
+                                project,
+                                sqlContent,
+                                context,
+                                console,
+                                statementKey,
+                                sourceRevision,
+                            )
                         }
                     }
                     StoredExecutionTargetResolution.Missing -> {
@@ -161,14 +199,17 @@ open class MyBatisExecuteProxyAction : AnAction() {
         sqlContent: String,
         context: MyBatisContextAnalyzer.ContextType,
         console: JdbcConsole,
-        statementKey: String? = null
+        statementKey: String? = null,
+        sourceRevision: LegacyActionSourceRevision,
     ) {
         if (isProjectUnavailable(project)) return
+        if (!isSourceRevisionCurrent(project, sourceRevision)) return
         val paramValues = resolveParameters(project, sqlContent, statementKey)
         if (paramValues == null) {
             LOG.info("zMyBatis: resolveParameters returned null (user cancelled or failed)")
             return
         }
+        if (!isSourceRevisionCurrent(project, sourceRevision)) return
         LOG.info("zMyBatis: parameters resolved (count=${paramValues.size})")
 
         ApplicationManager.getApplication().executeOnPooledThread {
@@ -180,16 +221,18 @@ open class MyBatisExecuteProxyAction : AnAction() {
 
                 ApplicationManager.getApplication().invokeLater {
                     if (isProjectUnavailable(project)) return@invokeLater
+                    if (!isSourceRevisionCurrent(project, sourceRevision)) return@invokeLater
                     val pureSql = if (settings.autoFormatSql) SqlFormatter.format(project, rawSql) else rawSql
                     if (settings.sqlPreview) {
                         val dialog = SqlPreviewDialog(project, pureSql)
                         if (dialog.showAndGet()) {
-                            executeOnConsole(console, project, pureSql)
+                            if (!isSourceRevisionCurrent(project, sourceRevision)) return@invokeLater
+                            executeOnConsole(console, project, pureSql, sourceRevision)
                         } else {
                             LOG.info("zMyBatis: user cancelled from SQL preview dialog")
                         }
                     } else {
-                        executeOnConsole(console, project, pureSql)
+                        executeOnConsole(console, project, pureSql, sourceRevision)
                     }
                 }
             } catch (ex: ProcessCanceledException) {
@@ -387,10 +430,12 @@ open class MyBatisExecuteProxyAction : AnAction() {
         console: JdbcConsole,
         project: com.intellij.openapi.project.Project,
         pureSql: String,
+        sourceRevision: LegacyActionSourceRevision,
     ) {
         DatabaseToolsConsoleAdapter.getInstance(project).executeSql(
             console = console,
             sql = pureSql,
+            preExecutionCheck = { isSourceRevisionCurrent(project, sourceRevision) },
             onExecuted = {
                 if (ZMyBatisSettings.getInstance().copyToClipboard) {
                     CopyPasteManager.getInstance().setContents(StringSelection(pureSql))
@@ -432,6 +477,27 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 }
             },
         )
+    }
+
+    private fun isSourceRevisionCurrent(
+        project: com.intellij.openapi.project.Project,
+        sourceRevision: LegacyActionSourceRevision,
+    ): Boolean {
+        if (LegacyActionSourceRevisionGuard.isCurrent(project, sourceRevision)) return true
+        showSourceRevisionRefusal(
+            project,
+            "The mapper source changed while zMyBatis was preparing the query. " +
+                "Run zMyBatis again from the current source.",
+        )
+        return false
+    }
+
+    private fun showSourceRevisionRefusal(
+        project: com.intellij.openapi.project.Project,
+        message: String,
+    ) {
+        if (isProjectUnavailable(project)) return
+        Messages.showErrorDialog(project, message, "zMyBatis: Source Changed")
     }
 
     @Suppress("ReturnCount")
