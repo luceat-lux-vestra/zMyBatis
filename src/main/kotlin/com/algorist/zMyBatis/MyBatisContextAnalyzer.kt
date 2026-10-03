@@ -85,7 +85,9 @@ object MyBatisContextAnalyzer {
         while (tag != null) {
             if (tag.name.lowercase() in MYBATIS_STATEMENT_TAGS) {
                 val mapper = tag.parentTag
-                return mapper?.name?.lowercase() == "mapper" && mapper.parentTag == null
+                return mapper?.name?.lowercase() == "mapper" &&
+                    mapper.parentTag == null &&
+                    !mapper.getAttributeValue("namespace").isNullOrBlank()
             }
             tag = tag.parentTag
         }
