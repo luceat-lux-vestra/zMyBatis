@@ -72,7 +72,7 @@ Hardening #57 established the stable datasource/schema safety baseline, and #260
 
 - persistence is project-scoped; active state does not use `project.basePath.hashCode()` as a project namespace;
 - v3 persists canonical source association separately from target identity;
-- target identity is stable IDE datasource UUID + exact explicit named schema; datasource display name is presentation-only;
+- restart restoration uses a stable IDE datasource UUID as part of target identity, paired with the exact explicit named schema; under v3 this restores target authority for action-time resolution, not a live console, and datasource display name is presentation-only;
 - `Use Default Schema` and datasources without a stable UUID remain in-process only and cannot leave an older restart target behind;
 - malformed, interrupted, index-mismatched, orphan, or source-stale persisted state fails closed;
 - legacy application-global hash/name records remain deliberately unread because their original ownership cannot be proven safely;
