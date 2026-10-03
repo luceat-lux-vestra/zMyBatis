@@ -35,6 +35,27 @@ class MyBatisActionUpdateBoundaryTest {
     }
 
     @Test
+    fun `update and execution admission share the same context classifier`() {
+        val action = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt")
+
+        val updateStart = action.indexOf("override fun update(e: AnActionEvent)")
+        val updateEnd = action.indexOf("private fun isProjectUnavailable", updateStart)
+        val actionStart = action.indexOf("override fun actionPerformed(e: AnActionEvent)")
+        val actionEnd = action.indexOf("private fun runMyBatisQuery", actionStart)
+
+        assertTrue(updateStart >= 0 && updateEnd > updateStart)
+        assertTrue(actionStart >= 0 && actionEnd > actionStart)
+
+        val update = action.substring(updateStart, updateEnd)
+        val admission = action.substring(actionStart, actionEnd)
+
+        assertTrue(update.contains("MyBatisContextAnalyzer.analyze(e)"))
+        assertTrue(admission.contains("analyze(e)"))
+        assertTrue(admission.contains("ContextType.NONE -> return"))
+        assertTrue(admission.contains("ContextType.PROVIDER"))
+    }
+
+    @Test
     fun `java update classification fails closed while indexes are unavailable`() {
         val analyzer = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisContextAnalyzer.kt")
 
