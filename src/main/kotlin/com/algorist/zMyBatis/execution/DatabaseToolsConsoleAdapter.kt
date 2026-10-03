@@ -1,5 +1,3 @@
-@file:Suppress("DialogTitleCapitalization")
-
 package com.algorist.zMyBatis.execution
 
 import com.algorist.zMyBatis.services.ConsoleCacheService
@@ -190,7 +188,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         }
     }
 
-    @Suppress("UsePropertyAccessSyntax", "TooGenericExceptionCaught")
+    @Suppress("UsePropertyAccessSyntax", "TooGenericExceptionCaught", "DialogTitleCapitalization")
     private fun performExecution(
         console: JdbcConsole,
         sql: String,
