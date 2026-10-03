@@ -44,6 +44,21 @@ class ConsoleCacheOwnedResourceDisposalContractTest {
     }
 
     @Test
+    fun `adapter cache rejection avoids double disposal after shutdown race`() {
+        val adapter = Files.readString(
+            repositoryRoot().resolve(
+                "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt",
+            ),
+        )
+        val registrationCheck = adapter
+            .substringAfter("if (cache.get(resourceKey, targetId) !== console) {")
+            .substringBefore("console = null")
+
+        assertTrue(registrationCheck.contains("if (!Disposer.isDisposed(console)) {"))
+        assertTrue(registrationCheck.contains("Disposer.dispose(console)"))
+    }
+
+    @Test
     fun `detached console cleanup uses fail safe policy and stale sentinel is identity safe`() {
         val source = serviceSource()
 
