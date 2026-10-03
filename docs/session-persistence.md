@@ -38,14 +38,16 @@ Those records remain intentionally **unmigrated and unread**. A hash collision o
 
 On an explicit zMyBatis execution action:
 
-- an existing live console may be reused under the `REUSE` policy;
+- v3 target authority is resolved before REUSE lookup;
+- a REUSE cache entry carries the optional immutable `ExecutionTargetId` captured at console acquisition and is returned only when it matches the current persisted exact target id;
 - otherwise the v3 descriptor is resolved to exactly one live datasource and exactly one named schema through the maintained Database Tools target resolver;
-- missing or ambiguous datasource/schema resolution invalidates the stored selection and requires explicit user re-selection;
+- missing or ambiguous datasource/schema resolution invalidates the stored selection and requires explicit user re-selection instead of falling through to a mapper-key-only cached console;
+- a persisted exact target is re-resolved after user/background/delayed editor boundaries and immediately before the guarded native query path;
 - only after exact resolution does zMyBatis create a console and switch it to the proven schema;
 - `NEW_EACH` creates a fresh console for the action but uses the same v3 target authority;
 - explicit named datasource/schema selection updates v3 independently of console registration.
 
-Live console caching is therefore an ephemeral optimization, not persistence authority. Closing or disposing a REUSE console does **not** delete the v3 target selection; the next explicit action re-resolves the descriptor and acquires a fresh resource.
+Live console caching is therefore an ephemeral optimization, not persistence authority. Closing or disposing a REUSE console does **not** delete the v3 target selection; the next explicit action re-resolves the descriptor and acquires a fresh resource. Default-schema and stable-id-unavailable targets remain deliberate in-process-only legacy cases with null persisted target identity; this bounded guard does not claim restart or exact persisted-target evidence for them.
 
 The old v2 reader/cleanup path remains only as bounded migration compatibility in `LegacyV2ConsoleSessionMigrationStore`. `ConsoleCacheService` now owns only live console/selection/shutdown lifecycle and contains no v2/v3 persistence store. The v2 writer is retired, and startup explicitly composes the lifecycle transition gate with the migration store so v2 cleanup cannot race past shutdown. New v3 target identity is never created or deleted merely because a console is registered or disposed.
 
