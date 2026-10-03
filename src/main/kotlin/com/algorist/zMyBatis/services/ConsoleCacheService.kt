@@ -1,5 +1,6 @@
 package com.algorist.zMyBatis.services
 
+import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.intellij.database.console.JdbcConsole
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -21,6 +22,11 @@ import java.util.concurrent.ConcurrentHashMap
  * storage surface: registering, observing, or disposing a live console cannot create, mutate, or
  * delete v2/v3 target persistence.
  */
+internal fun consoleCacheTargetIdentityMatches(
+    cachedTargetId: ExecutionTargetId?,
+    expectedTargetId: ExecutionTargetId?,
+): Boolean = cachedTargetId == expectedTargetId
+
 @Service(Service.Level.PROJECT)
 class ConsoleCacheService(private val project: Project) : com.intellij.openapi.Disposable {
 
@@ -33,6 +39,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     private class Entry(
         val console: JdbcConsole,
         val sentinel: CheckedDisposable,
+        val targetId: ExecutionTargetId?,
     )
 
     private val cache = ConcurrentHashMap<String, Entry>()
@@ -69,15 +76,54 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
      * Returns a live cached console only while the project session lifecycle is active.
      * Ephemeral console disposal affects only the in-memory cache.
      */
-    fun get(mapperKey: String): JdbcConsole? = synchronized(lifecycleLock) {
-        if (shuttingDown) return@synchronized null
-        val entry = cache[mapperKey] ?: return@synchronized null
-        if (!entry.sentinel.isDisposed) return@synchronized entry.console
+    fun get(mapperKey: String): JdbcConsole? = get(mapperKey, expectedTargetId = null)
 
-        if (cache.remove(mapperKey, entry)) {
-            LOG.info("zMyBatis: disposed ephemeral console observed for $mapperKey")
+    /**
+     * Returns a cached console only when its immutable target identity matches the invocation.
+     *
+     * A null identity is deliberate legacy in-process state (default schema or unavailable stable
+     * datasource id). It never matches a persisted exact target id.
+     */
+    fun get(
+        mapperKey: String,
+        expectedTargetId: ExecutionTargetId?,
+    ): JdbcConsole? {
+        var rejectedEntry: Entry? = null
+        val result = synchronized(lifecycleLock) {
+            if (shuttingDown) return@synchronized null
+            val entry = cache[mapperKey] ?: return@synchronized null
+            if (entry.sentinel.isDisposed) {
+                if (cache.remove(mapperKey, entry)) {
+                    LOG.info("zMyBatis: disposed ephemeral console observed for $mapperKey")
+                }
+                return@synchronized null
+            }
+            if (!consoleCacheTargetIdentityMatches(entry.targetId, expectedTargetId)) {
+                if (cache.remove(mapperKey, entry)) {
+                    rejectedEntry = entry
+                    LOG.info("zMyBatis: cached console target no longer matches invocation — evicting")
+                }
+                return@synchronized null
+            }
+            entry.console
         }
-        null
+
+        rejectedEntry?.console?.let { staleConsole ->
+            if (!Disposer.isDisposed(staleConsole)) {
+                Disposer.dispose(staleConsole)
+            }
+        }
+        return result
+    }
+
+    fun evict(mapperKey: String) {
+        val entry = synchronized(lifecycleLock) {
+            cache.remove(mapperKey)
+        } ?: return
+
+        if (!Disposer.isDisposed(entry.console)) {
+            Disposer.dispose(entry.console)
+        }
     }
 
     internal fun beginSelection(mapperKey: String): Boolean = synchronized(lifecycleLock) {
@@ -112,11 +158,13 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     fun putEphemeral(
         mapperKey: String,
         console: JdbcConsole,
-    ): Boolean = registerConsole(mapperKey, console)
+        targetId: ExecutionTargetId? = null,
+    ): Boolean = registerConsole(mapperKey, console, targetId)
 
     private fun registerConsole(
         mapperKey: String,
         console: JdbcConsole,
+        targetId: ExecutionTargetId?,
     ): Boolean {
         val sentinel = Disposer.newCheckedDisposable(console)
         if (sentinel.isDisposed) {
@@ -124,7 +172,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             return false
         }
 
-        val entry = Entry(console, sentinel)
+        val entry = Entry(console, sentinel, targetId)
         try {
             Disposer.register(sentinel) {
                 synchronized(lifecycleLock) {

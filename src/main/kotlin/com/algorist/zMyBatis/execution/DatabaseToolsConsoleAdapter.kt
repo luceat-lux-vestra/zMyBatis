@@ -92,13 +92,15 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             }
 
             val schemaName = schema?.name
+            val targetId = databaseToolsExecutionTargetId(dataSource, schema)
 
             if (!forceNew) {
                 cache.putEphemeral(
                     mapperKey = resourceKey,
                     console = console,
+                    targetId = targetId,
                 )
-                if (cache.get(resourceKey) !== console) {
+                if (cache.get(resourceKey, targetId) !== console) {
                     LOG.warn("zMyBatis: console was not live after cache registration for $resourceKey — skipping query")
                     Disposer.dispose(console)
                     console = null

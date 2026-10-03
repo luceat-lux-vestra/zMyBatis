@@ -1,5 +1,8 @@
 package com.algorist.zMyBatis.services
 
+import com.algorist.zMyBatis.core.execution.ExecutionTargetId
+import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
+import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
@@ -14,6 +17,20 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         cache.endSelection(mapperKey)
         assertTrue(cache.beginSelection(mapperKey))
         cache.endSelection(mapperKey)
+    }
+
+    fun testCacheTargetIdentityPolicyRejectsCrossTargetAndNullMismatch() {
+        val targetA = targetId("ds-a", "public")
+        val targetB = targetId("ds-b", "public")
+
+        assertTrue(consoleCacheTargetIdentityMatches(targetA, targetA))
+        assertFalse(consoleCacheTargetIdentityMatches(targetA, targetB))
+        assertFalse(consoleCacheTargetIdentityMatches(targetA, null))
+        assertFalse(consoleCacheTargetIdentityMatches(null, targetA))
+        assertTrue(
+            "null-to-null is the deliberate legacy in-process path only",
+            consoleCacheTargetIdentityMatches(null, null),
+        )
     }
 
     fun testShutdownGateRejectsNewSelection() {
@@ -53,6 +70,15 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         assertFalse(completed)
         assertFalse(transitionRan)
     }
+
+    private fun targetId(
+        dataSourceId: String,
+        schema: String,
+    ): ExecutionTargetId =
+        ExecutionTargetId(
+            StableDataSourceId(dataSourceId),
+            ExplicitSchemaIdentity(schema),
+        )
 
     private fun newIsolatedCache(): ConsoleCacheService =
         ConsoleCacheService(project).also { Disposer.register(testRootDisposable, it) }

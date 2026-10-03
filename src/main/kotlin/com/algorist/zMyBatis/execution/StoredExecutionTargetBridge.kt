@@ -11,6 +11,7 @@ import com.algorist.zMyBatis.services.ExecutionTargetDescriptorStore
 import com.algorist.zMyBatis.services.PersistedExecutionTargetSelection
 import com.intellij.database.model.DasNamespace
 import com.intellij.database.psi.DbDataSource
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 
 /**
@@ -58,6 +59,7 @@ internal class StoredExecutionTargetBridge private constructor(
         return when (val resolved = resolveDescriptor(selection.descriptor)) {
             is DatabaseToolsTargetResolution.Success ->
                 StoredExecutionTargetResolution.Success(
+                    targetId = selection.descriptor.targetId,
                     dataSource = resolved.dataSource,
                     schema = resolved.schema,
                 )
@@ -68,17 +70,60 @@ internal class StoredExecutionTargetBridge private constructor(
         }
     }
 
-    fun remember(
+    fun rememberTarget(
         sourceFileId: SourceFileId,
         dataSource: DbDataSource,
         schemaName: String?,
-    ): Boolean =
-        rememberIdentity(
-            sourceFileId = sourceFileId,
+    ): ExecutionTargetId? {
+        val targetId = targetIdOrNull(
             stableDataSourceId = databaseToolsStableDataSourceId(dataSource),
-            dataSourceDisplayName = dataSource.name,
             schemaName = schemaName,
-        )
+        ) ?: run {
+            removeSelection(sourceFileId)
+            return null
+        }
+
+        return try {
+            saveSelection(
+                PersistedExecutionTargetSelection(
+                    association = SourceTargetAssociation(sourceFileId, targetId),
+                    descriptor = ExecutionTargetDescriptor(
+                        targetId = targetId,
+                        dataSourceDisplayName = dataSource.name.takeIf { it.isNotEmpty() },
+                    ),
+                ),
+            )
+            targetId
+        } catch (_: IllegalArgumentException) {
+            removeSelection(sourceFileId)
+            null
+        }
+    }
+
+    /**
+     * Non-mutating exact-target revalidation for an already-started invocation.
+     *
+     * A stale target is deliberately not removed here: pre-execution validation must not mutate
+     * persisted authority as a hidden side effect. The next ordinary resolve may prune it.
+     */
+    fun isCurrent(
+        sourceFileId: SourceFileId,
+        expectedTargetId: ExecutionTargetId,
+    ): Boolean {
+        val selection = loadSelection(sourceFileId) ?: return false
+        return selection.descriptor.targetId == expectedTargetId &&
+            try {
+                when (val resolved = resolveDescriptor(selection.descriptor)) {
+                    is DatabaseToolsTargetResolution.Success ->
+                        resolved.resolvedTarget.targetId == expectedTargetId
+                    is DatabaseToolsTargetResolution.Failed -> false
+                }
+            } catch (ex: ProcessCanceledException) {
+                throw ex
+            } catch (_: Exception) {
+                false
+            }
+    }
 
     internal fun rememberIdentity(
         sourceFileId: SourceFileId,
@@ -86,18 +131,13 @@ internal class StoredExecutionTargetBridge private constructor(
         dataSourceDisplayName: String,
         schemaName: String?,
     ): Boolean {
-        val dataSourceId = stableDataSourceId?.trim()?.takeIf { it.isNotEmpty() }
-        val explicitSchema = schemaName?.takeIf { it.isNotBlank() }
-        if (dataSourceId == null || explicitSchema == null) {
+        val targetId = targetIdOrNull(stableDataSourceId, schemaName)
+        if (targetId == null) {
             removeSelection(sourceFileId)
             return false
         }
 
         return try {
-            val targetId = ExecutionTargetId(
-                dataSourceId = StableDataSourceId(dataSourceId),
-                schema = ExplicitSchemaIdentity(explicitSchema),
-            )
             saveSelection(
                 PersistedExecutionTargetSelection(
                     association = SourceTargetAssociation(sourceFileId, targetId),
@@ -113,12 +153,29 @@ internal class StoredExecutionTargetBridge private constructor(
             false
         }
     }
+
+    private fun targetIdOrNull(
+        stableDataSourceId: String?,
+        schemaName: String?,
+    ): ExecutionTargetId? {
+        val dataSourceId = stableDataSourceId?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val explicitSchema = schemaName?.takeIf { it.isNotBlank() } ?: return null
+        return try {
+            ExecutionTargetId(
+                dataSourceId = StableDataSourceId(dataSourceId),
+                schema = ExplicitSchemaIdentity(explicitSchema),
+            )
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
 }
 
 internal sealed interface StoredExecutionTargetResolution {
     data object Missing : StoredExecutionTargetResolution
 
     data class Success(
+        val targetId: ExecutionTargetId,
         val dataSource: DbDataSource,
         val schema: DasNamespace,
     ) : StoredExecutionTargetResolution
