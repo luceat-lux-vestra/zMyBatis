@@ -70,18 +70,6 @@ internal class StoredExecutionTargetBridge private constructor(
         }
     }
 
-    fun remember(
-        sourceFileId: SourceFileId,
-        dataSource: DbDataSource,
-        schemaName: String?,
-    ): Boolean =
-        rememberIdentity(
-            sourceFileId = sourceFileId,
-            stableDataSourceId = databaseToolsStableDataSourceId(dataSource),
-            dataSourceDisplayName = dataSource.name,
-            schemaName = schemaName,
-        )
-
     fun rememberTarget(
         sourceFileId: SourceFileId,
         dataSource: DbDataSource,
@@ -123,18 +111,18 @@ internal class StoredExecutionTargetBridge private constructor(
         expectedTargetId: ExecutionTargetId,
     ): Boolean {
         val selection = loadSelection(sourceFileId) ?: return false
-        if (selection.descriptor.targetId != expectedTargetId) return false
-        return try {
-            when (val resolved = resolveDescriptor(selection.descriptor)) {
-                is DatabaseToolsTargetResolution.Success ->
-                    resolved.resolvedTarget.targetId == expectedTargetId
-                is DatabaseToolsTargetResolution.Failed -> false
+        return selection.descriptor.targetId == expectedTargetId &&
+            try {
+                when (val resolved = resolveDescriptor(selection.descriptor)) {
+                    is DatabaseToolsTargetResolution.Success ->
+                        resolved.resolvedTarget.targetId == expectedTargetId
+                    is DatabaseToolsTargetResolution.Failed -> false
+                }
+            } catch (ex: ProcessCanceledException) {
+                throw ex
+            } catch (_: Exception) {
+                false
             }
-        } catch (ex: ProcessCanceledException) {
-            throw ex
-        } catch (_: Exception) {
-            false
-        }
     }
 
     internal fun rememberIdentity(
