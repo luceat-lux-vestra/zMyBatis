@@ -17,21 +17,21 @@ class LegacyActionSourceRevisionGuardContractTest {
             "action must capture the invocation source revision before legacy extraction",
             action.contains("LegacyActionSourceRevisionGuard.capture(project, editor, psiFile)"),
         )
+        val proceed = action
+            .substringAfter("private fun proceedWithParamsAndExecute(")
+            .substringBefore("@Suppress(\"TooGenericExceptionCaught\", \"LongMethod\")")
         assertTrue(
-            "action must reject source drift after parameter collection",
-            action.contains("if (!isSourceRevisionCurrent(project, sourceRevision)) return"),
+            "parameter/EDT/preview boundaries must use the composed invocation guard",
+            Regex("""isInvocationCurrent\(""").findAll(proceed).count() >= 4,
         )
+
+        val invocationGuard = action
+            .substringAfter("private fun isInvocationCurrent(")
+            .substringBefore("private fun showInvocationInvalidated(")
         assertTrue(
-            "EDT continuation must reject source drift before preview/execution",
-            action.contains(
-                "if (!isSourceRevisionCurrent(project, sourceRevision)) return@invokeLater",
-            ),
-        )
-        assertTrue(
-            "preview confirmation must re-check source revision before execution",
-            action.contains(
-                "if (!isSourceRevisionCurrent(project, sourceRevision)) return@invokeLater\n" +
-                    "                            executeOnConsole(console, project, pureSql, sourceRevision)",
+            "the composed invocation guard must retain source revision authority",
+            invocationGuard.contains(
+                "if (!isSourceRevisionCurrent(project, sourceRevision)) return false",
             ),
         )
         assertTrue(
