@@ -43,6 +43,8 @@ object MyBatisContextAnalyzer {
         if (project.isDisposed) return ContextType.NONE
 
         val editor: Editor = e.getData(CommonDataKeys.EDITOR) ?: return ContextType.NONE
+        if (editor.isDisposed) return ContextType.NONE
+
         val psiFile: PsiFile = e.getData(CommonDataKeys.PSI_FILE) ?: return ContextType.NONE
         if (!psiFile.isValid || psiFile.textLength == 0) return ContextType.NONE
 
@@ -76,7 +78,10 @@ object MyBatisContextAnalyzer {
     private fun isInMyBatisStatementTag(element: com.intellij.psi.PsiElement): Boolean {
         var tag: XmlTag? = PsiTreeUtil.getParentOfType(element, XmlTag::class.java)
         while (tag != null) {
-            if (tag.name.lowercase() in MYBATIS_STATEMENT_TAGS) return true
+            if (tag.name.lowercase() in MYBATIS_STATEMENT_TAGS) {
+                val mapper = tag.parentTag
+                return mapper?.name?.lowercase() == "mapper" && mapper.parentTag == null
+            }
             tag = tag.parentTag
         }
         return false
