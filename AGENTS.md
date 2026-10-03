@@ -41,9 +41,11 @@ These are **current-state ownership descriptions**, not target component boundar
 - Unsupported or ambiguous source/input/evaluation behavior must not silently become plausible executable SQL. The stronger typed-failure architecture is owned by Leap #60/#64/#67.
 - Preview and execution must not silently diverge. Full Database Tools click-through fidelity remains a platform/integration evidence gap documented in `docs/test-contracts.md`.
 
-### Known current privacy/diagnostic defect
+### Privacy/logging hardened baseline
 
-Current `MyBatisExecuteProxyAction` still emits raw parameter values and rendered SQL at INFO level. That is a known defect tracked by Leap #60/#67, **not** an accepted logging policy and not evidence that the privacy boundary is already satisfied. New code must not add or widen sensitive-value logging. A narrow hardening fix may remove this leakage before Leap cutover without preserving the legacy action architecture.
+PR #117 removed the known INFO-level leakage of raw parameter values, extracted/dialog values, and rendered SQL from the shipping action. Current normal logging retains only non-sensitive metadata such as parameter counts and SQL length. `SensitiveLoggingContractTest` guards the known direct-interpolation regression patterns across production Kotlin logging call sites.
+
+This is a bounded source-level regression guard, not semantic taint analysis or proof that every possible future alias/sink is safe. New code must not log raw parameter/input values, remembered values, raw `${}` content, rendered/materialized SQL, credentials, or equivalent sensitive source-derived content. This hardening does **not** validate or preserve the legacy action/evaluator architecture; #67 continues to own the final privacy/diagnostic evidence.
 
 ## 3. DataGrip action and IDE boundary
 
