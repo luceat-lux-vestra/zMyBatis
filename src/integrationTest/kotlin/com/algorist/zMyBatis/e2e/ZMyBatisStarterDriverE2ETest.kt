@@ -273,7 +273,109 @@ class ZMyBatisStarterDriverE2ETest {
 
     private fun writeH2DataSourceFixture(projectDir: Path) {
         val ideaDir = Files.createDirectories(projectDir.resolve(".idea"))
-        val projectFileDirMacro = $"$ProjectFileDir$"
+        val projectFileDirMacro = buildString { append('
+        Files.writeString(
+            ideaDir.resolve("dataSources.xml"),
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project version="4">
+              <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
+                <data-source source="LOCAL" name="zMyBatis E2E" uuid="$E2E_DATA_SOURCE_UUID">
+                  <driver-ref>h2.unified</driver-ref>
+                  <synchronize>true</synchronize>
+                  <jdbc-driver>org.h2.Driver</jdbc-driver>
+                  <jdbc-url>jdbc:h2:mem:zmybatis_e2e;DB_CLOSE_DELAY=-1</jdbc-url>
+                  <working-dir>$projectFileDirMacro</working-dir>
+                </data-source>
+              </component>
+            </project>
+            """.trimIndent(),
+        )
+        Files.writeString(
+            ideaDir.resolve("dataSources.local.xml"),
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project version="4">
+              <component name="dataSourceStorageLocal">
+                <data-source name="zMyBatis E2E" uuid="$E2E_DATA_SOURCE_UUID">
+                  <user-name>sa</user-name>
+                </data-source>
+              </component>
+            </project>
+            """.trimIndent(),
+        )
+    }
+
+    private fun copySampleProject(destination: Path): Path {
+        require(Files.isDirectory(sampleProject)) { "Missing versioned E2E sample project: $sampleProject" }
+
+        Files.walk(sampleProject).use { paths ->
+            paths.forEach { source ->
+                val relative = sampleProject.relativize(source)
+                val target = destination.resolve(relative.toString())
+                if (Files.isDirectory(source)) {
+                    Files.createDirectories(target)
+                } else {
+                    target.parent?.let(Files::createDirectories)
+                    Files.copy(source, target)
+                }
+            }
+        }
+        return destination
+    }
+}
+); append("ProjectFileDir"); append('
+        Files.writeString(
+            ideaDir.resolve("dataSources.xml"),
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project version="4">
+              <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
+                <data-source source="LOCAL" name="zMyBatis E2E" uuid="$E2E_DATA_SOURCE_UUID">
+                  <driver-ref>h2.unified</driver-ref>
+                  <synchronize>true</synchronize>
+                  <jdbc-driver>org.h2.Driver</jdbc-driver>
+                  <jdbc-url>jdbc:h2:mem:zmybatis_e2e;DB_CLOSE_DELAY=-1</jdbc-url>
+                  <working-dir>$projectFileDirMacro</working-dir>
+                </data-source>
+              </component>
+            </project>
+            """.trimIndent(),
+        )
+        Files.writeString(
+            ideaDir.resolve("dataSources.local.xml"),
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project version="4">
+              <component name="dataSourceStorageLocal">
+                <data-source name="zMyBatis E2E" uuid="$E2E_DATA_SOURCE_UUID">
+                  <user-name>sa</user-name>
+                </data-source>
+              </component>
+            </project>
+            """.trimIndent(),
+        )
+    }
+
+    private fun copySampleProject(destination: Path): Path {
+        require(Files.isDirectory(sampleProject)) { "Missing versioned E2E sample project: $sampleProject" }
+
+        Files.walk(sampleProject).use { paths ->
+            paths.forEach { source ->
+                val relative = sampleProject.relativize(source)
+                val target = destination.resolve(relative.toString())
+                if (Files.isDirectory(source)) {
+                    Files.createDirectories(target)
+                } else {
+                    target.parent?.let(Files::createDirectories)
+                    Files.copy(source, target)
+                }
+            }
+        }
+        return destination
+    }
+}
+) }
         Files.writeString(
             ideaDir.resolve("dataSources.xml"),
             """
