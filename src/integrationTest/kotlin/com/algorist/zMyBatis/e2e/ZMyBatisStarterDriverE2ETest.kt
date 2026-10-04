@@ -39,6 +39,7 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import kotlin.io.path.Path as pathOf
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -169,7 +170,10 @@ class ZMyBatisStarterDriverE2ETest {
         val h2Jar = Path.of(H2Driver::class.java.protectionDomain.codeSource.location.toURI())
         writeH2DataSourceFixture(projectDir)
 
-        starterContext("action-real-database", projectDir, additionalIdeClasspath = h2Jar)
+        val context = starterContext("action-real-database", projectDir)
+        writeH2DatabaseToolsDriverFixture(context.paths.configDir, h2Jar)
+
+        context
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
@@ -260,22 +264,43 @@ class ZMyBatisStarterDriverE2ETest {
     private fun starterContext(
         testName: String,
         projectDir: Path,
-        additionalIdeClasspath: Path? = null,
     ) =
         Starter.newContext(
             testName,
             TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(projectDir)).useRelease(IDE_RELEASE),
         ).apply {
-            additionalIdeClasspath?.let { classpath ->
-                applyVMOptionsPatch {
-                    addSystemProperty("idea.additional.classpath", classpath)
-                }
-            }
             System.getenv("LICENSE_KEY")
                 ?.takeIf { it.isNotBlank() }
                 ?.let { setLicense(it) }
             PluginConfigurator(this).installPluginFromPath(pluginArchive)
         }
+
+    private fun writeH2DatabaseToolsDriverFixture(configDir: Path, h2Jar: Path) {
+        // Database Tools does not use the IDE process classpath as its JDBC driver library.
+        // Seed the Starter config exactly as a user-supplied local Driver Files JAR so the
+        // native Database Tools driver classloader owns the real H2 connection.
+        val driverDir = Files.createDirectories(configDir.resolve("jdbc-drivers"))
+        val driverJar = driverDir.resolve(h2Jar.fileName)
+        Files.copy(h2Jar, driverJar, StandardCopyOption.REPLACE_EXISTING)
+
+        val optionsDir = Files.createDirectories(configDir.resolve("options"))
+        Files.writeString(
+            optionsDir.resolve("databaseDrivers.xml"),
+            """
+            <application>
+              <component name="LocalDatabaseDriverManager" version="201">
+                <driver id="h2.unified">
+                  <artifact use="false" />
+                  <option name="auto-sync" value="true" />
+                  <library>
+                    <url>${driverJar.toUri().toASCIIString()}</url>
+                  </library>
+                </driver>
+              </component>
+            </application>
+            """.trimIndent(),
+        )
+    }
 
     private fun writeH2DataSourceFixture(projectDir: Path) {
         val ideaDir = Files.createDirectories(projectDir.resolve(".idea"))
