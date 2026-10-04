@@ -224,6 +224,37 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
         )
     }
 
+    fun testExecutionEvaluationStructuredNavigationStillResolvesSupportedScalars() {
+        val result = MyBatisEvaluator.evaluateForExecution(
+            "SELECT #{user.id}, #{items[0]}",
+            mapOf(
+                "user" to mapOf("id" to 11),
+                "items" to listOf(22),
+            ),
+        )
+
+        assertEquals(
+            LegacyExecutionEvaluationResult.Evaluated("SELECT 11, 22"),
+            result,
+        )
+    }
+
+    fun testExecutionEvaluationLegacyDateAndTemporalScalarsRemainEvaluated() {
+        val timestamp = java.sql.Timestamp.valueOf("2026-01-02 03:04:05")
+        val date = java.time.LocalDate.of(2026, 1, 2)
+        val result = MyBatisEvaluator.evaluateForExecution(
+            "SELECT #{timestamp}, #{date}",
+            mapOf("timestamp" to timestamp, "date" to date),
+        )
+
+        assertEquals(
+            LegacyExecutionEvaluationResult.Evaluated(
+                "SELECT '2026-01-02 03:04:05.0', '2026-01-02'",
+            ),
+            result,
+        )
+    }
+
     fun testDirectCustomObjectRetainsLegacyToStringCompatibility() {
         val opaque = object {
             override fun toString(): String = "legacy-object"
