@@ -53,6 +53,8 @@ The current object mixes MyBatis `XMLScriptBuilder`, global OGNL accessor mutati
 
 **Disposition:** replace completely. No global OGNL mutation, no authoritative unknown-tag stripping, no error-as-SQL, no evaluator-owned guessed literalization.
 
+Until that replacement is permitted by #258, the legacy shipping adapter has bounded refusal guards: evaluator exceptions and direct unsupported List/Map/other-object literalization do not become execution candidates. Direct `evaluate(...)` compatibility strings remain characterization only; these guards do not turn the legacy scalar literalizer into the target materialization architecture.
+
 ### `SqlFormatter`
 
 Formatting currently feeds the string that is later executed.
