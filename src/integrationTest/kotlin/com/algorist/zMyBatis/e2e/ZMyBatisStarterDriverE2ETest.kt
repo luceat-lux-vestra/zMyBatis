@@ -191,9 +191,14 @@ class ZMyBatisStarterDriverE2ETest {
                 ui.popup().list().clickItem("zMyBatis E2E", fullMatch = false)
 
                 waitFor("zMyBatis datasource schema chooser", timeout = 30.seconds) {
-                    ui.popups().list().size >= 2
+                    ui.popups().list().any { popup ->
+                        runCatching { popup.list().items.contains("Use Default Schema") }.getOrDefault(false)
+                    }
                 }
-                ui.popups().list().last().list().clickItem("Use Default Schema", fullMatch = true)
+                val schemaPopup = ui.popups().list().first { popup ->
+                    runCatching { popup.list().items.contains("Use Default Schema") }.getOrDefault(false)
+                }
+                schemaPopup.list().clickItem("Use Default Schema", fullMatch = true)
 
                 ui.dialog(title = "Enter MyBatis Parameters") {
                     textField().text = "7"
