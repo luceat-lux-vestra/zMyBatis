@@ -30,4 +30,4 @@
 - Copy to Clipboard: auto-copy the final resolved SQL to clipboard after execution (enabled by default)
 - Console Session Policy: choose between reusing an existing DB console or opening a new one per execution
 - Strict OGNL Mode: optional strict mode that surfaces recognized OGNL evaluation errors immediately (disabled by default)
-- Ignore Unknown Tags: optional pre-stripping of unrecognised/custom XML tags to allow parsing to continue (disabled by default); this is compatibility-altered behavior, not stock MyBatis semantics
+- Ignore Unknown Tags: direct legacy-evaluator compatibility pre-stripping only (disabled by default); shipping execution ignores this switch and fails closed on unknown tags
