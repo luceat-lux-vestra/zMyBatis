@@ -50,7 +50,14 @@ class StarterDatabaseE2EIsolationContractTest {
             e2e.contains("LocalDataSourceManager") || e2e.contains("LocalDataSourceFactoryRemote"),
         )
         assertTrue(
-            "H2 must enter only the Starter IDE process classpath, not the plugin artifact",
+            "H2 must be registered as a local Database Tools driver library in Starter config",
+            e2e.contains("databaseDrivers.xml") &&
+                e2e.contains("LocalDatabaseDriverManager") &&
+                e2e.contains("<artifact use=\"false\" />") &&
+                e2e.contains("configDir.resolve(\"jdbc-drivers\")"),
+        )
+        assertFalse(
+            "H2 must not rely on the IDE process classpath instead of Database Tools driver isolation",
             e2e.contains("idea.additional.classpath"),
         )
     }
