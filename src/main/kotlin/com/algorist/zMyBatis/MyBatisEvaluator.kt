@@ -21,6 +21,19 @@ internal sealed interface LegacyExecutionEvaluationResult {
     data class Failed(val cause: Exception) : LegacyExecutionEvaluationResult
 }
 
+internal enum class LegacyUnsupportedLiteralKind {
+    LIST,
+    MAP,
+    OBJECT,
+}
+
+internal class LegacyUnsupportedExecutionLiteralException(
+    val kind: LegacyUnsupportedLiteralKind,
+) : Exception(
+    "Unsupported direct parameter value for legacy execution: ${kind.name.lowercase()}. " +
+        "Use MyBatis property/iteration syntax or execute reviewed SQL manually.",
+)
+
 object MyBatisEvaluator {
 
     /**
@@ -76,7 +89,13 @@ object MyBatisEvaluator {
         params: Map<String, Any?>,
     ): LegacyExecutionEvaluationResult =
         try {
-            LegacyExecutionEvaluationResult.Evaluated(evaluateInternal(xmlContent, params))
+            LegacyExecutionEvaluationResult.Evaluated(
+                evaluateInternal(
+                    xmlContent,
+                    params,
+                    failClosedUnsupportedLiteralization = true,
+                ),
+            )
         } catch (e: ProcessCanceledException) {
             throw e
         } catch (e: Exception) {
@@ -92,7 +111,11 @@ object MyBatisEvaluator {
         val strictOgnl = settings?.strictOgnlMode ?: false
 
         return try {
-            evaluateInternal(xmlContent, params)
+            evaluateInternal(
+                xmlContent,
+                params,
+                failClosedUnsupportedLiteralization = false,
+            )
         } catch (e: ProcessCanceledException) {
             throw e
         } catch (e: Exception) {
@@ -105,7 +128,11 @@ object MyBatisEvaluator {
     }
 
     @Suppress("NestedBlockDepth")
-    private fun evaluateInternal(xmlContent: String, params: Map<String, Any?>): String {
+    private fun evaluateInternal(
+        xmlContent: String,
+        params: Map<String, Any?>,
+        failClosedUnsupportedLiteralization: Boolean,
+    ): String {
         val settings = ApplicationManager.getApplication()
             ?.getService(ZMyBatisSettings::class.java)
         val ignoreUnknown = settings?.ignoreUnknownTags ?: false
@@ -156,7 +183,7 @@ object MyBatisEvaluator {
             } else {
                 resolveProperty(params, propName)
             }
-            val literalValue = convertToLiteral(value)
+            val literalValue = convertToLiteral(value, failClosedUnsupportedLiteralization)
             pureSql = pureSql.replaceFirst(Regex("\\?"), Matcher.quoteReplacement(literalValue))
         }
 
@@ -287,7 +314,10 @@ object MyBatisEvaluator {
         }
     }
 
-    private fun convertToLiteral(value: Any?): String {
+    private fun convertToLiteral(
+        value: Any?,
+        failClosedUnsupportedLiteralization: Boolean,
+    ): String {
         return when (value) {
             null -> "NULL"
             is Number -> value.toString()
@@ -301,9 +331,24 @@ object MyBatisEvaluator {
                 }
             }
             is Temporal -> "'$value'"
-            is List<*> -> "/*[ERROR: List — use <foreach>]*/NULL"
-            is Map<*, *> -> "/*[ERROR: Object — use dot notation e.g. #{user.name}]*/NULL"
-            else -> "'${value.toString().replace("'", "''")}'"
+            is List<*> -> {
+                if (failClosedUnsupportedLiteralization) {
+                    throw LegacyUnsupportedExecutionLiteralException(LegacyUnsupportedLiteralKind.LIST)
+                }
+                "/*[ERROR: List — use <foreach>]*/NULL"
+            }
+            is Map<*, *> -> {
+                if (failClosedUnsupportedLiteralization) {
+                    throw LegacyUnsupportedExecutionLiteralException(LegacyUnsupportedLiteralKind.MAP)
+                }
+                "/*[ERROR: Object — use dot notation e.g. #{user.name}]*/NULL"
+            }
+            else -> {
+                if (failClosedUnsupportedLiteralization) {
+                    throw LegacyUnsupportedExecutionLiteralException(LegacyUnsupportedLiteralKind.OBJECT)
+                }
+                "'${value.toString().replace("'", "''")}'"
+            }
         }
     }
 }
