@@ -34,7 +34,7 @@
   <li>Supports scalar and structured JSON input needed by supported navigation and <code>foreach</code> shapes</li>
   <li>Supports nested objects and arrays for dot/index navigation</li>
   <li>Validates structured JSON input before evaluation</li>
-  <li>Direct collection/object <code>#{}</code> placeholders are not claimed as supported literal-binding semantics; collections are intended for supported navigation/<code>foreach</code> use</li>
+  <li>Direct collection/object <code>#{}</code> placeholders are refused by the shipping execution path instead of executing marker-bearing <code>NULL</code> or guessed object text; structured values are intended for supported navigation/<code>foreach</code> use</li>
 </ul>
 
 <h3>Data Source and Schema Selection</h3>
