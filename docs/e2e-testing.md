@@ -18,7 +18,7 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
    - opens the project and waits for supported background-indicator readiness;
    - reaches the shipping `ZMyBatisSettings` application service over Driver JMX/RMI and asserts its typed production result.
 2. **Registered-action / real Database Tools golden path**
-   - starts the exact packaged plugin in a real IDE process with an integration-test-only H2 JDBC fixture available to that IDE JVM;
+   - starts the exact packaged plugin in a real IDE process with an integration-test-only H2 JDBC fixture registered as a local Database Tools driver;
    - prepares a real project-level Database Tools datasource through the IDE-supported `.idea/dataSources.xml` persistence boundary rather than a test adapter or internal Driver stub;
    - opens the canonical mapper and invokes the registered `zMyBatis.Execute` action;
    - selects the datasource/default-schema through the shipping chooser;
@@ -30,7 +30,7 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
    - invokes the real production action from the supported statement context;
    - requires the production `zMyBatis: No Data Source` refusal instead of parameter evaluation or execution.
 
-No production method exists solely for this harness. H2 is an `integrationTestImplementation` fixture only and is injected into the Starter IDE bootstrap classpath for this scenario; it is not a shipped plugin dependency. The datasource itself is loaded from project `.idea/dataSources.xml` plus local datasource state, while Driver interacts only with the shipping zMyBatis service/action and visible product UI. The golden path therefore does not depend on internal Database Tools datasource-construction classes or their plugin-module classloaders.
+No production method exists solely for this harness. H2 is an `integrationTestImplementation` fixture only; before IDE startup, the test copies its JAR into that Starter run's isolated IDE config and records it as a local Driver Files library in `options/databaseDrivers.xml`. It is neither placed on `idea.additional.classpath` nor added to the shipped plugin dependency graph. The datasource itself is loaded from project `.idea/dataSources.xml` plus local datasource state, while Driver interacts only with the shipping zMyBatis service/action and visible product UI. The golden path therefore exercises Database Tools' own JDBC driver classloader instead of an internal datasource-construction stub or production E2E hook.
 
 ## Local execution
 
@@ -49,7 +49,7 @@ The first local run can download IDE/Starter artifacts. Semantic correctness of 
 - each test receives a fresh JUnit temporary directory;
 - the checked-in `src/integrationTest/testProject` sample is copied into that directory before IDE startup, so IDE metadata cannot mutate the repository fixture or a later scenario;
 - each scenario starts and closes its own IDE process through `runIdeWithDriver().useDriverAndCloseIde`;
-- the database golden path generates project-local `.idea/dataSources.xml` / `dataSources.local.xml` only inside that test's temporary project, and uses an in-memory H2 datasource as deterministic process-test infrastructure; its JDBC jar is supplied to the IDE with `idea.additional.classpath`, while the exact normal plugin ZIP remains unchanged;
+- the database golden path generates project-local `.idea/dataSources.xml` / `dataSources.local.xml` only inside that test's temporary project, and uses an in-memory H2 datasource as deterministic process-test infrastructure; its JDBC JAR is copied only into the isolated Starter IDE config and registered as a local Database Tools driver library, while the exact normal plugin ZIP remains unchanged;
 - datasource choice, parameter input, preview confirmation, and result-table observation use maintained Driver component APIs rather than screen coordinates or correctness sleeps;
 - readiness uses Driver `waitForIndicators` / bounded component waits, not correctness sleeps;
 - Starter's `CIServer` integration is overridden so IDE-side exceptions/freezes reported by Starter fail the JUnit process instead of producing a false green;
