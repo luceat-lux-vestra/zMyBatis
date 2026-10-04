@@ -65,6 +65,8 @@ Current positive evidence remains useful as regression/falsification evidence du
 
 While the legacy shipping action remains authoritative under #258, XML statements containing a real `<include>` dependency are refused before extraction/evaluation/target work. The legacy evaluator does not own authoritative mapper-fragment resolution, and `Ignore Unknown Tags` must not turn an unresolved include into partial executable-looking SQL. This temporary refusal is not a change to the Leap v1 `<sql>/<include>` support target above; final support still requires the #62/#64 source-graph and MyBatis preparation path.
 
+The same temporary fail-closed rule now applies to legacy bound-value fallback shapes: direct `MyBatisEvaluator.evaluate(...)` compatibility may still expose List/Map marker-bearing `NULL` or arbitrary-object `toString()` rendering for characterization, but the shipping action's `evaluateForExecution(...)` path refuses those unsupported values before formatting, preview, console mutation, or native query execution. This does not make the remaining scalar legacy literalizer JDBC/TypeHandler-equivalent and does not authorize any #258 production cutover.
+
 ## 4. Source authority and canonical identity
 
 ### Active editor
