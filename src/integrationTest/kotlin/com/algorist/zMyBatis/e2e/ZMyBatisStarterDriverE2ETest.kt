@@ -320,7 +320,7 @@ class ZMyBatisStarterDriverE2ETest {
                   <driver-ref>h2.unified</driver-ref>
                   <synchronize>true</synchronize>
                   <jdbc-driver>org.h2.Driver</jdbc-driver>
-                  <jdbc-url>jdbc:h2:mem:zmybatis_e2e;DB_CLOSE_DELAY=-1</jdbc-url>
+                  <jdbc-url>jdbc:h2:mem:zmybatis_e2e;DB_CLOSE_DELAY=-1;USER=sa;PASSWORD=</jdbc-url>
                   <working-dir>$projectFileDirMacro</working-dir>
                 </data-source>
               </component>
@@ -334,7 +334,7 @@ class ZMyBatisStarterDriverE2ETest {
             <project version="4">
               <component name="dataSourceStorageLocal">
                 <data-source name="zMyBatis E2E" uuid="$E2E_DATA_SOURCE_UUID">
-                  <user-name>sa</user-name>
+                  <auth-provider>no-auth</auth-provider>
                 </data-source>
               </component>
             </project>
