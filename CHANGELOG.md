@@ -29,5 +29,6 @@
 - Auto-format SQL: reformat resolved SQL using IntelliJ's built-in SQL code-style settings before execution or preview
 - Copy to Clipboard: auto-copy the final resolved SQL to clipboard after execution (enabled by default)
 - Console Session Policy: choose between reusing an existing DB console or opening a new one per execution
-- Strict OGNL Mode: optional strict mode that surfaces recognized OGNL evaluation errors immediately (disabled by default)
+- Strict OGNL Mode: optional direct legacy-evaluator diagnostic compatibility for recognized OGNL failures (disabled by default); shipping execution fails closed independently
+- Legacy evaluator map navigation no longer installs a process-global custom OGNL accessor; qualified nested map/list access uses stock MyBatis behavior
 - Ignore Unknown Tags: direct legacy-evaluator compatibility pre-stripping only (disabled by default); shipping execution ignores this switch and fails closed on unknown tags
