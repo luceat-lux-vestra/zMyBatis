@@ -16,6 +16,11 @@ import java.time.temporal.Temporal
 import java.util.Date
 import java.util.regex.Matcher
 
+internal sealed interface LegacyExecutionEvaluationResult {
+    data class Evaluated(val sql: String) : LegacyExecutionEvaluationResult
+    data class Failed(val cause: Exception) : LegacyExecutionEvaluationResult
+}
+
 object MyBatisEvaluator {
 
     /**
@@ -65,85 +70,107 @@ object MyBatisEvaluator {
         OgnlRuntime.setPropertyAccessor(LinkedHashMap::class.java, mapAccessor)
     }
 
-    @Suppress("TooGenericExceptionCaught", "NestedBlockDepth")
-    fun evaluate(xmlContent: String, params: Map<String, Any?>): String {
-        // Settings may be unavailable in unit-test environments where ApplicationManager
-        // is not initialised.  Fall back to safe defaults (all options OFF) in that case.
-        val settings = ApplicationManager.getApplication()
-            ?.getService(ZMyBatisSettings::class.java)
-        val ignoreUnknown = settings?.ignoreUnknownTags ?: false
-        val strictOgnl    = settings?.strictOgnlMode    ?: false
-
-        return try {
-            var cleanedXml = xmlContent
-                .replace(Regex("<\\?xml.*\\?>", RegexOption.IGNORE_CASE), "")
-                .replace(Regex("<!DOCTYPE[^>]*>", RegexOption.IGNORE_CASE), "")
-                .trim()
-
-            // ── Ignore Unknown Tags ───────────────────────────────────────
-            // Strip unrecognised element tags BEFORE handing XML to XMLScriptBuilder.
-            // XMLScriptBuilder throws BuilderException("Unknown element <X>") for any
-            // tag not in its nodeHandlerMap.  When this option is ON we pre-remove those
-            // tags (preserving their text content) so parsing can continue.
-            if (ignoreUnknown) {
-                cleanedXml = stripUnknownTags(cleanedXml)
-            }
-
-            cleanedXml = sanitizeOgnlExpressions(cleanedXml)
-            val scriptXml = "<root>$cleanedXml</root>"
-
-            val configuration = Configuration()
-            val parser = XPathParser(scriptXml, false, configuration.variables, null)
-            val rootNode = parser.evalNode("/root")
-
-            var contextNode = rootNode
-            val children = rootNode.children
-            val firstElement = children?.firstOrNull {
-                it.node.nodeType == org.w3c.dom.Node.ELEMENT_NODE
-            }
-            val statementTags = setOf("select", "insert", "update", "delete", "script")
-            if (firstElement != null && firstElement.name.lowercase() in statementTags) {
-                contextNode = firstElement
-            }
-
-            val builder = XMLScriptBuilder(configuration, contextNode)
-            val sqlSource = builder.parseScriptNode()
-            val boundSql = sqlSource.getBoundSql(params)
-
-            var pureSql = boundSql.sql
-                .replace("\n", " ")
-                .replace(Regex("\\s+"), " ")
-
-            for (mapping in boundSql.parameterMappings) {
-                val propName = mapping.property
-                val value = if (boundSql.hasAdditionalParameter(propName)) {
-                    boundSql.getAdditionalParameter(propName)
-                } else {
-                    resolveProperty(params, propName)
-                }
-                val literalValue = convertToLiteral(value)
-                pureSql = pureSql.replaceFirst(Regex("\\?"), Matcher.quoteReplacement(literalValue))
-            }
-
-            pureSql.trim()
-
+    @Suppress("TooGenericExceptionCaught")
+    internal fun evaluateForExecution(
+        xmlContent: String,
+        params: Map<String, Any?>,
+    ): LegacyExecutionEvaluationResult =
+        try {
+            LegacyExecutionEvaluationResult.Evaluated(evaluateInternal(xmlContent, params))
         } catch (e: ProcessCanceledException) {
             throw e
         } catch (e: Exception) {
-            // ── Strict OGNL Mode ──────────────────────────────────────────
-            // BuilderException wraps OgnlException when an OGNL expression fails.
-            // Strict ON  → rethrow so the caller shows an error dialog immediately.
-            // Strict OFF → fall through to the error-comment SQL (existing behaviour).
+            LegacyExecutionEvaluationResult.Failed(e)
+        }
+
+    @Suppress("TooGenericExceptionCaught")
+    fun evaluate(xmlContent: String, params: Map<String, Any?>): String {
+        // Settings may be unavailable in unit-test environments where ApplicationManager
+        // is not initialised. Fall back to safe defaults (all options OFF) in that case.
+        val settings = ApplicationManager.getApplication()
+            ?.getService(ZMyBatisSettings::class.java)
+        val strictOgnl = settings?.strictOgnlMode ?: false
+
+        return try {
+            evaluateInternal(xmlContent, params)
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: Exception) {
+            // Strict ON rethrows only failures classified by the legacy OGNL helper.
+            // Strict OFF preserves the direct-call compatibility error-comment representation.
             if (strictOgnl && isOgnlError(e)) throw e
 
-            listOf(
-                "-- [MyBatis Plugin Error]",
-                "-- Message: ${e.message}",
-                "-- Cause: ${e.cause}",
-                "-- Input: $xmlContent"
-            ).joinToString("\n")
+            legacyErrorSql(xmlContent, e)
         }
     }
+
+    @Suppress("NestedBlockDepth")
+    private fun evaluateInternal(xmlContent: String, params: Map<String, Any?>): String {
+        val settings = ApplicationManager.getApplication()
+            ?.getService(ZMyBatisSettings::class.java)
+        val ignoreUnknown = settings?.ignoreUnknownTags ?: false
+
+        var cleanedXml = xmlContent
+            .replace(Regex("<\\?xml.*\\?>", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("<!DOCTYPE[^>]*>", RegexOption.IGNORE_CASE), "")
+            .trim()
+
+        // ── Ignore Unknown Tags ───────────────────────────────────────
+        // Strip unrecognised element tags BEFORE handing XML to XMLScriptBuilder.
+        // XMLScriptBuilder throws BuilderException("Unknown element <X>") for any
+        // tag not in its nodeHandlerMap.  When this option is ON we pre-remove those
+        // tags (preserving their text content) so parsing can continue.
+        if (ignoreUnknown) {
+            cleanedXml = stripUnknownTags(cleanedXml)
+        }
+
+        cleanedXml = sanitizeOgnlExpressions(cleanedXml)
+        val scriptXml = "<root>$cleanedXml</root>"
+
+        val configuration = Configuration()
+        val parser = XPathParser(scriptXml, false, configuration.variables, null)
+        val rootNode = parser.evalNode("/root")
+
+        var contextNode = rootNode
+        val children = rootNode.children
+        val firstElement = children?.firstOrNull {
+            it.node.nodeType == org.w3c.dom.Node.ELEMENT_NODE
+        }
+        val statementTags = setOf("select", "insert", "update", "delete", "script")
+        if (firstElement != null && firstElement.name.lowercase() in statementTags) {
+            contextNode = firstElement
+        }
+
+        val builder = XMLScriptBuilder(configuration, contextNode)
+        val sqlSource = builder.parseScriptNode()
+        val boundSql = sqlSource.getBoundSql(params)
+
+        var pureSql = boundSql.sql
+            .replace("\n", " ")
+            .replace(Regex("\\s+"), " ")
+
+        for (mapping in boundSql.parameterMappings) {
+            val propName = mapping.property
+            val value = if (boundSql.hasAdditionalParameter(propName)) {
+                boundSql.getAdditionalParameter(propName)
+            } else {
+                resolveProperty(params, propName)
+            }
+            val literalValue = convertToLiteral(value)
+            pureSql = pureSql.replaceFirst(Regex("\\?"), Matcher.quoteReplacement(literalValue))
+        }
+
+        pureSql.trim()
+
+    }
+
+    private fun legacyErrorSql(xmlContent: String, error: Exception): String =
+        listOf(
+            "-- [MyBatis Plugin Error]",
+            "-- Message: ${error.message}",
+            "-- Cause: ${error.cause}",
+            "-- Input: $xmlContent",
+        ).joinToString("\n")
 
     // ── Strict OGNL helper ────────────────────────────────────────────────
 
