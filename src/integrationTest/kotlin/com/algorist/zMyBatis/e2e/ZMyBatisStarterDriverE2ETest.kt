@@ -12,7 +12,6 @@ import com.intellij.driver.sdk.ui.components.elements.button
 import com.intellij.driver.sdk.ui.components.elements.dialog
 import com.intellij.driver.sdk.ui.components.elements.list
 import com.intellij.driver.sdk.ui.components.elements.popup
-import com.intellij.driver.sdk.ui.components.elements.popups
 import com.intellij.driver.sdk.ui.components.elements.textField
 import com.intellij.driver.sdk.ui.components.elements.waitForNoOpenedDialogs
 import com.intellij.driver.sdk.ui.ui
@@ -190,15 +189,14 @@ class ZMyBatisStarterDriverE2ETest {
                 }
                 ui.popup().list().clickItem("zMyBatis E2E", fullMatch = false)
 
+                val schemaList =
+                    ui.list(
+                        "//div[@class='MyList' and contains(@visible_text, 'Use Default Schema')]",
+                    )
                 waitFor("zMyBatis datasource schema chooser", timeout = 30.seconds) {
-                    ui.popups().list().any { popup ->
-                        runCatching { popup.list().items.contains("Use Default Schema") }.getOrDefault(false)
-                    }
+                    runCatching { schemaList.items.contains("Use Default Schema") }.getOrDefault(false)
                 }
-                val schemaPopup = ui.popups().list().first { popup ->
-                    runCatching { popup.list().items.contains("Use Default Schema") }.getOrDefault(false)
-                }
-                schemaPopup.list().clickItem("Use Default Schema", fullMatch = true)
+                schemaList.clickItem("Use Default Schema", fullMatch = true)
 
                 ui.dialog(title = "Enter MyBatis Parameters") {
                     textField().text = "7"
@@ -275,7 +273,7 @@ class ZMyBatisStarterDriverE2ETest {
 
     private fun writeH2DataSourceFixture(projectDir: Path) {
         val ideaDir = Files.createDirectories(projectDir.resolve(".idea"))
-        val projectFileDirMacro = "\$ProjectFileDir\$"
+        val projectFileDirMacro = $"$ProjectFileDir$"
         Files.writeString(
             ideaDir.resolve("dataSources.xml"),
             """
