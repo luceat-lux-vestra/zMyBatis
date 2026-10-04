@@ -53,13 +53,13 @@ interface ZMyBatisSettingsRemote {
     fun setSqlPreview(value: Boolean)
 }
 
-@Remote("com.intellij.database.dataSource.LocalDataSource", plugin = "com.intellij.database/intellij.database.core")
+@Remote("com.intellij.database.dataSource.LocalDataSource", plugin = "com.intellij.database/intellij.database.core.impl")
 interface LocalDataSourceRemote {
     fun getName(): String
     fun setUsername(username: String)
 }
 
-@Remote("com.intellij.database.dataSource.LocalDataSource", plugin = "com.intellij.database/intellij.database.core")
+@Remote("com.intellij.database.dataSource.LocalDataSource", plugin = "com.intellij.database/intellij.database.core.impl")
 interface LocalDataSourceFactoryRemote {
     fun create(
         name: String,
@@ -69,12 +69,12 @@ interface LocalDataSourceFactoryRemote {
     ): LocalDataSourceRemote
 }
 
-@Remote("com.intellij.database.dataSource.LocalDataSourceManager", plugin = "com.intellij.database/intellij.database.core")
+@Remote("com.intellij.database.dataSource.LocalDataSourceManager", plugin = "com.intellij.database/intellij.database.core.impl")
 interface LocalDataSourceManagerRemote {
     fun addDataSource(dataSource: LocalDataSourceRemote)
 }
 
-@Remote("com.intellij.database.dataSource.LocalDataSourceManager", plugin = "com.intellij.database/intellij.database.core")
+@Remote("com.intellij.database.dataSource.LocalDataSourceManager", plugin = "com.intellij.database/intellij.database.core.impl")
 interface LocalDataSourceManagerFactoryRemote {
     fun getInstance(project: Project): LocalDataSourceManagerRemote
 }
