@@ -8,22 +8,29 @@ The target proof path is:
 
 This layer complements, rather than replaces, core/unit tests and IntelliJ project fixtures. Detailed semantic edge cases remain at the lowest test layer that can prove them reliably.
 
-## Maintained bootstrap scenarios
+## Maintained process scenarios
 
-`ZMyBatisStarterDriverE2ETest` currently establishes two small process-level scenarios against the maintained IntelliJ IDEA Ultimate target:
+`ZMyBatisStarterDriverE2ETest` maintains three process-level scenarios against the maintained IntelliJ IDEA Ultimate target:
 
 1. **Packaged-plugin / production-service happy path**
    - installs the exact `buildPlugin` archive into a separate IDE process;
    - copies the versioned sample project into a fresh temporary directory;
    - opens the project and waits for supported background-indicator readiness;
    - reaches the shipping `ZMyBatisSettings` application service over Driver JMX/RMI and asserts its typed production result.
-2. **Registered-action fail-closed path**
-   - opens the versioned canonical mapper `Query.xml` sample;
-   - moves the real editor caret into its supported statement context through the platform `EditorDown` action;
-   - invokes the real `zMyBatis.Execute` action by its registered action ID;
-   - with no datasource configured, requires the production action to reach its real `zMyBatis: No Data Source` refusal instead of evaluating or executing SQL.
+2. **Registered-action / real Database Tools golden path**
+   - starts the exact packaged plugin in a real IDE process with an integration-test-only H2 JDBC fixture available to that IDE JVM;
+   - registers a real project `LocalDataSource` through Database Tools rather than substituting an adapter fake;
+   - opens the canonical mapper and invokes the registered `zMyBatis.Execute` action;
+   - selects the datasource/default-schema through the shipping chooser;
+   - enters a scalar through the real `ParameterInputDialog`;
+   - observes the real `SqlPreviewDialog` and requires the user-visible SQL to contain the resolved value;
+   - clicks `Execute` and waits for a real Database Tools `TableResultView` cell containing the expected H2 result.
+3. **Registered-action fail-closed path**
+   - opens the same mapper fixture in a fresh IDE process without any datasource;
+   - invokes the real production action from the supported statement context;
+   - requires the production `zMyBatis: No Data Source` refusal instead of parameter evaluation or execution.
 
-No production method exists solely for this harness. The Driver service stub names the shipping production class by FQN and the action scenario invokes the registered production action.
+No production method exists solely for this harness. H2 is an `integrationTestImplementation` fixture only and is injected into the Starter IDE bootstrap classpath for this scenario; it is not a shipped plugin dependency. Driver stubs name shipping/Database Tools classes by FQN and the user journey still traverses the registered production action and real product UI.
 
 ## Local execution
 
@@ -42,7 +49,9 @@ The first local run can download IDE/Starter artifacts. Semantic correctness of 
 - each test receives a fresh JUnit temporary directory;
 - the checked-in `src/integrationTest/testProject` sample is copied into that directory before IDE startup, so IDE metadata cannot mutate the repository fixture or a later scenario;
 - each scenario starts and closes its own IDE process through `runIdeWithDriver().useDriverAndCloseIde`;
-- readiness uses Driver `waitForIndicators`, not correctness sleeps;
+- the database golden path uses an in-memory H2 datasource only as deterministic process-test infrastructure; its JDBC jar is supplied to the IDE with `idea.additional.classpath`, while the exact normal plugin ZIP remains unchanged;
+- datasource choice, parameter input, preview confirmation, and result-table observation use maintained Driver component APIs rather than screen coordinates or correctness sleeps;
+- readiness uses Driver `waitForIndicators` / bounded component waits, not correctness sleeps;
 - Starter's `CIServer` integration is overridden so IDE-side exceptions/freezes reported by Starter fail the JUnit process instead of producing a false green;
 - IDE startup failure, Driver communication loss, assertion failure, or process failure therefore fails the task.
 
@@ -78,4 +87,4 @@ Pure value objects, deterministic source-graph algorithms, isolated parser seman
 
 Do not move stable semantic matrices into this suite merely to label them E2E. Prefer Driver API/service interaction to Swing traversal. UI interaction is used only when registration or visible product behavior is itself the claim.
 
-Architecture Leap continues to add representative production-wired scenarios as #62-#66 boundaries become authoritative. The harness remains repository-wide after Leap and is extended according to the applicability rule above.
+The maintained H2 golden path proves one representative installed-plugin user journey through the current shipping action and native Database Tools query/result UI. It does **not** prove every DBMS/dialect, every datasource/schema identity case, DataGrip parity, console disposal/reuse lifecycle, or the final Leap execution architecture. Those remain explicit #67 compatibility/lifecycle obligations. Architecture Leap continues to add representative production-wired scenarios as #62-#66 boundaries become authoritative. The harness remains repository-wide after Leap and is extended according to the applicability rule above.
