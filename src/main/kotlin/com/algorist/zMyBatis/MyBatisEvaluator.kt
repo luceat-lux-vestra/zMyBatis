@@ -6,9 +6,6 @@ import com.algorist.zMyBatis.settings.ZMyBatisSettings
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import org.apache.ibatis.builder.BuilderException
-import org.apache.ibatis.ognl.OgnlContext
-import org.apache.ibatis.ognl.OgnlRuntime
-import org.apache.ibatis.ognl.PropertyAccessor
 import org.apache.ibatis.parsing.XPathParser
 import org.apache.ibatis.scripting.xmltags.XMLScriptBuilder
 import org.apache.ibatis.session.Configuration
@@ -49,39 +46,6 @@ object MyBatisEvaluator {
 
     /** Tags that wrap the whole statement — never treated as unknown. */
     private val WRAPPER_TAGS = setOf("select", "insert", "update", "delete", "script", "root")
-
-    init {
-        val mapAccessor = object : PropertyAccessor {
-            override fun getProperty(context: OgnlContext, target: Any, name: Any): Any? {
-                val map = target as Map<*, *>
-                return when (val key = name.toString()) {
-                    "size" -> map.size
-                    "keys", "keySet" -> map.keys
-                    "values" -> map.values
-                    "isEmpty" -> map.isEmpty()
-                    else -> {
-                        // Direct lookup first
-                        val direct = map[key]
-                        if (direct != null || map.containsKey(key)) return direct
-                        // Nested: search inside nested Map values
-                        for ((_, v) in map) {
-                            if (v is Map<*, *> && v.containsKey(key)) {
-                                return v[key]
-                            }
-                        }
-                        null
-                    }
-                }
-            }
-            override fun setProperty(context: OgnlContext, target: Any, name: Any, value: Any?) {
-                @Suppress("UNCHECKED_CAST")
-                (target as MutableMap<Any, Any?>)[name.toString()] = value
-            }
-            override fun getSourceAccessor(c: OgnlContext, t: Any, i: Any): String? = null
-            override fun getSourceSetter(c: OgnlContext, t: Any, i: Any): String? = null
-        }
-        OgnlRuntime.setPropertyAccessor(LinkedHashMap::class.java, mapAccessor)
-    }
 
     @Suppress("TooGenericExceptionCaught")
     internal fun evaluateForExecution(
