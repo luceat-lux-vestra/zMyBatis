@@ -93,6 +93,7 @@ object MyBatisEvaluator {
                 evaluateInternal(
                     xmlContent,
                     params,
+                    allowUnknownTagCompatibility = false,
                     failClosedUnsupportedLiteralization = true,
                 ),
             )
@@ -109,11 +110,13 @@ object MyBatisEvaluator {
         val settings = ApplicationManager.getApplication()
             ?.getService(ZMyBatisSettings::class.java)
         val strictOgnl = settings?.strictOgnlMode ?: false
+        val ignoreUnknownTags = settings?.ignoreUnknownTags ?: false
 
         return try {
             evaluateInternal(
                 xmlContent,
                 params,
+                allowUnknownTagCompatibility = ignoreUnknownTags,
                 failClosedUnsupportedLiteralization = false,
             )
         } catch (e: ProcessCanceledException) {
@@ -131,12 +134,9 @@ object MyBatisEvaluator {
     private fun evaluateInternal(
         xmlContent: String,
         params: Map<String, Any?>,
+        allowUnknownTagCompatibility: Boolean,
         failClosedUnsupportedLiteralization: Boolean,
     ): String {
-        val settings = ApplicationManager.getApplication()
-            ?.getService(ZMyBatisSettings::class.java)
-        val ignoreUnknown = settings?.ignoreUnknownTags ?: false
-
         var cleanedXml = xmlContent
             .replace(Regex("<\\?xml.*\\?>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<!DOCTYPE[^>]*>", RegexOption.IGNORE_CASE), "")
@@ -147,7 +147,7 @@ object MyBatisEvaluator {
         // XMLScriptBuilder throws BuilderException("Unknown element <X>") for any
         // tag not in its nodeHandlerMap.  When this option is ON we pre-remove those
         // tags (preserving their text content) so parsing can continue.
-        if (ignoreUnknown) {
+        if (allowUnknownTagCompatibility) {
             cleanedXml = stripUnknownTags(cleanedXml)
         }
 

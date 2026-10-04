@@ -112,6 +112,46 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
         }
     }
 
+    fun testExecutionEvaluationUnknownTagFailsClosedWithCompatibilitySettingOn() {
+        settings.ignoreUnknownTags = true
+        val xml = """
+            <select>
+            SELECT * FROM users
+            <where>
+                <custom-filter>AND active = 1</custom-filter>
+            </where>
+            </select>
+        """.trimIndent()
+
+        val shipping = MyBatisEvaluator.evaluateForExecution(xml, emptyMap())
+
+        assertTrue(
+            "shipping execution must ignore compatibility stripping and fail closed: <$shipping>",
+            shipping is LegacyExecutionEvaluationResult.Failed,
+        )
+        assertEquals(
+            "SELECT * FROM users WHERE active = 1",
+            MyBatisEvaluator.evaluate(xml, emptyMap()),
+        )
+    }
+
+    fun testExecutionEvaluationSupportedDynamicTagStillEvaluatesWithCompatibilitySettingOn() {
+        settings.ignoreUnknownTags = true
+        val xml = """
+            <select>
+            SELECT * FROM users
+            <where>
+                <if test="active">AND active = 1</if>
+            </where>
+            </select>
+        """.trimIndent()
+
+        assertEquals(
+            LegacyExecutionEvaluationResult.Evaluated("SELECT * FROM users WHERE active = 1"),
+            MyBatisEvaluator.evaluateForExecution(xml, mapOf("active" to true)),
+        )
+    }
+
     fun testExecutionEvaluationUnknownTagFailsClosedInsteadOfReturningCompatibilitySql() {
         val xml = """
             <select>

@@ -59,13 +59,15 @@ Known replacement targets include:
 - `MyBatisEvaluator` global OGNL mutation, regex transformations, literal rendering, and error-as-SQL behavior;
 - v2 persisted-record/live-console-cache lifecycle coupling and startup eager console recreation;
 - execution-time formatting mutation;
-- `Strict OGNL Mode` retained only as direct-evaluator diagnostic compatibility while shipping evaluation failures fail closed; `Ignore Unknown Tags` remains legacy executable-path safety debt.
+- `Strict OGNL Mode` and `Ignore Unknown Tags` are retained only as direct legacy-evaluator compatibility; shipping evaluation fails closed independently of both switches.
 
 Current positive evidence remains useful as regression/falsification evidence during migration, but it does not dictate the target class or package design.
 
 While the legacy shipping action remains authoritative under #258, XML statements containing a real `<include>` dependency are refused before extraction/evaluation/target work. The legacy evaluator does not own authoritative mapper-fragment resolution, and `Ignore Unknown Tags` must not turn an unresolved include into partial executable-looking SQL. This temporary refusal is not a change to the Leap v1 `<sql>/<include>` support target above; final support still requires the #62/#64 source-graph and MyBatis preparation path.
 
 The same temporary fail-closed rule now applies to legacy bound-value fallback shapes: direct `MyBatisEvaluator.evaluate(...)` compatibility may still expose List/Map marker-bearing `NULL` or arbitrary-object `toString()` rendering for characterization, but the shipping action's `evaluateForExecution(...)` path refuses those unsupported values before formatting, preview, console mutation, or native query execution. This does not make the remaining scalar legacy literalizer JDBC/TypeHandler-equivalent and does not authorize any #258 production cutover.
+
+Unknown-tag compatibility is likewise isolated from shipping evaluation: direct `evaluate(...)` may still honor `Ignore Unknown Tags` for characterization, but `evaluateForExecution(...)` explicitly disables regex stripping and treats unknown elements as non-executable evaluation failures. This is a temporary legacy safety guard, not the #62/#64 source/preparation architecture.
 
 ## 4. Source authority and canonical identity
 
