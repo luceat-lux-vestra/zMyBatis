@@ -160,8 +160,7 @@ object MyBatisEvaluator {
             pureSql = pureSql.replaceFirst(Regex("\\?"), Matcher.quoteReplacement(literalValue))
         }
 
-        pureSql.trim()
-
+        return pureSql.trim()
     }
 
     private fun legacyErrorSql(xmlContent: String, error: Exception): String =
