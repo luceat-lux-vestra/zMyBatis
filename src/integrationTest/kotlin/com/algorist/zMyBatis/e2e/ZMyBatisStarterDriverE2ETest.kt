@@ -196,7 +196,7 @@ class ZMyBatisStarterDriverE2ETest {
 
                 val schemaLists =
                     ui.xx(
-                        "//div[@class='HeavyWeightWindow']//div[contains(@classhierarchy, 'javax.swing.JList')]",
+                        "//div[@class='HeavyWeightWindow']//div[@class='MyList']",
                         JListUiComponent::class.java,
                     )
                 waitFor("zMyBatis datasource schema chooser", timeout = 30.seconds) {
