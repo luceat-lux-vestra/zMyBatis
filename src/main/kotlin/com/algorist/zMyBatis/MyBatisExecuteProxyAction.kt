@@ -348,7 +348,27 @@ open class MyBatisExecuteProxyAction : AnAction() {
         ApplicationManager.getApplication().executeOnPooledThread {
             if (isProjectUnavailable(project)) return@executeOnPooledThread
             try {
-                val rawSql = MyBatisEvaluator.evaluate(wrapForEvaluator(sqlContent, context), paramValues)
+                val rawSql = when (
+                    val evaluation = MyBatisEvaluator.evaluateForExecution(
+                        wrapForEvaluator(sqlContent, context),
+                        paramValues,
+                    )
+                ) {
+                    is LegacyExecutionEvaluationResult.Evaluated -> evaluation.sql
+                    is LegacyExecutionEvaluationResult.Failed -> {
+                        val failure = evaluation.cause
+                        LOG.warn("zMyBatis evaluation refused (${failure::class.java.name})")
+                        ApplicationManager.getApplication().invokeLater {
+                            if (isProjectUnavailable(project)) return@invokeLater
+                            Messages.showErrorDialog(
+                                project,
+                                "Error evaluating MyBatis SQL:\n${failure.message}",
+                                "zMyBatis Error",
+                            )
+                        }
+                        return@executeOnPooledThread
+                    }
+                }
                 LOG.info("zMyBatis: SQL evaluated (length=${rawSql.length})")
                 val settings = ZMyBatisSettings.getInstance()
 
