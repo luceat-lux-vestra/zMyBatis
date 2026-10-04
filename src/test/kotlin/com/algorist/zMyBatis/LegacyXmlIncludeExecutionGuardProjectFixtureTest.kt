@@ -8,7 +8,7 @@ import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
 class LegacyXmlIncludeExecutionGuardProjectFixtureTest : LightJavaCodeInsightFixtureTestCase() {
 
     fun testNestedIncludeDependencyIsDetectedFromRealXmlPsi() {
-        val mapper = myFixture.configureByText(
+        myFixture.configureByText(
             XmlFileType.INSTANCE,
             """
             <mapper namespace="fixture.Mapper">
@@ -25,13 +25,13 @@ class LegacyXmlIncludeExecutionGuardProjectFixtureTest : LightJavaCodeInsightFix
 
         assertTrue(
             LegacyXmlIncludeExecutionGuard.containsIncludeDependency(
-                statementTag(mapper.text, "find"),
+                statementTag("find"),
             ),
         )
     }
 
     fun testIncludeLookingCommentAndCdataDoNotTriggerRefusal() {
-        val mapper = myFixture.configureByText(
+        myFixture.configureByText(
             XmlFileType.INSTANCE,
             """
             <mapper namespace="fixture.Mapper">
@@ -46,13 +46,13 @@ class LegacyXmlIncludeExecutionGuardProjectFixtureTest : LightJavaCodeInsightFix
 
         assertFalse(
             LegacyXmlIncludeExecutionGuard.containsIncludeDependency(
-                statementTag(mapper.text, "find"),
+                statementTag("find"),
             ),
         )
     }
 
     fun testSiblingSqlFragmentDoesNotTriggerStatementRefusalWithoutInclude() {
-        val mapper = myFixture.configureByText(
+        myFixture.configureByText(
             XmlFileType.INSTANCE,
             """
             <mapper namespace="fixture.Mapper">
@@ -64,15 +64,12 @@ class LegacyXmlIncludeExecutionGuardProjectFixtureTest : LightJavaCodeInsightFix
 
         assertFalse(
             LegacyXmlIncludeExecutionGuard.containsIncludeDependency(
-                statementTag(mapper.text, "find"),
+                statementTag("find"),
             ),
         )
     }
 
-    private fun statementTag(
-        @Suppress("UNUSED_PARAMETER") sourceText: String,
-        id: String,
-    ): XmlTag =
+    private fun statementTag(id: String): XmlTag =
         PsiTreeUtil.findChildrenOfType(myFixture.file, XmlTag::class.java)
             .single { it.localName == "select" && it.getAttributeValue("id") == id }
 }
