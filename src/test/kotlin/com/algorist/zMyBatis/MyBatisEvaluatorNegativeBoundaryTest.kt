@@ -170,6 +170,71 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
         )
     }
 
+    fun testExecutionEvaluationDirectListFailsClosedBeforeCompatibilityMarker() {
+        val result = MyBatisEvaluator.evaluateForExecution(
+            "SELECT #{items}",
+            mapOf("items" to listOf(1, 2)),
+        )
+
+        assertUnsupportedExecutionLiteral(result, LegacyUnsupportedLiteralKind.LIST)
+    }
+
+    fun testExecutionEvaluationDirectMapFailsClosedBeforeCompatibilityMarker() {
+        val result = MyBatisEvaluator.evaluateForExecution(
+            "SELECT #{user}",
+            mapOf("user" to mapOf("id" to 1)),
+        )
+
+        assertUnsupportedExecutionLiteral(result, LegacyUnsupportedLiteralKind.MAP)
+    }
+
+    fun testExecutionEvaluationDirectArrayAndCustomObjectFailClosedBeforeToStringFallback() {
+        val opaque = object {
+            override fun toString(): String = "sensitive-object-text"
+        }
+        val values = listOf(
+            arrayOf(1, 2) to LegacyUnsupportedLiteralKind.OBJECT,
+            opaque to LegacyUnsupportedLiteralKind.OBJECT,
+        )
+
+        for ((value, expectedKind) in values) {
+            val result = MyBatisEvaluator.evaluateForExecution(
+                "SELECT #{value}",
+                mapOf("value" to value),
+            )
+
+            assertUnsupportedExecutionLiteral(result, expectedKind)
+            val cause = (result as LegacyExecutionEvaluationResult.Failed).cause
+            assertFalse(
+                "failure diagnostic must not expose unsupported value text",
+                cause.message.orEmpty().contains("sensitive-object-text"),
+            )
+        }
+    }
+
+    fun testExecutionEvaluationBoundScalarRemainsEvaluated() {
+        val result = MyBatisEvaluator.evaluateForExecution(
+            "SELECT #{id}, #{name}, #{enabled}",
+            mapOf("id" to 7, "name" to "A", "enabled" to true),
+        )
+
+        assertEquals(
+            LegacyExecutionEvaluationResult.Evaluated("SELECT 7, 'A', 1"),
+            result,
+        )
+    }
+
+    fun testDirectCustomObjectRetainsLegacyToStringCompatibility() {
+        val opaque = object {
+            override fun toString(): String = "legacy-object"
+        }
+
+        assertEquals(
+            "SELECT 'legacy-object'",
+            MyBatisEvaluator.evaluate("SELECT #{value}", mapOf("value" to opaque)),
+        )
+    }
+
     fun testUnsupportedDirectListRemainsExecutableLookingSqlStringWithNullMarker() {
         assertEquals(
             "SELECT /*[ERROR: List — use <foreach>]*/NULL",
@@ -188,6 +253,25 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
 
         assertTrue("actual result: <$result>", result.startsWith("-- [MyBatis Plugin Error]"))
         assertTrue("actual result: <$result>", result.contains("-- Input:"))
+    }
+
+    private fun assertUnsupportedExecutionLiteral(
+        result: LegacyExecutionEvaluationResult,
+        expectedKind: LegacyUnsupportedLiteralKind,
+    ) {
+        assertTrue(
+            "shipping execution result must be non-executable: <$result>",
+            result is LegacyExecutionEvaluationResult.Failed,
+        )
+        val cause = (result as LegacyExecutionEvaluationResult.Failed).cause
+        assertTrue(
+            "failure must identify unsupported legacy literalization: <${cause::class.java.name}>",
+            cause is LegacyUnsupportedExecutionLiteralException,
+        )
+        assertEquals(
+            expectedKind,
+            (cause as LegacyUnsupportedExecutionLiteralException).kind,
+        )
     }
 
     private fun ognlCoercionFailureXml(): String = """
