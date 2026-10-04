@@ -59,7 +59,7 @@ Known replacement targets include:
 - `MyBatisEvaluator` global OGNL mutation, regex transformations, literal rendering, and error-as-SQL behavior;
 - v2 persisted-record/live-console-cache lifecycle coupling and startup eager console recreation;
 - execution-time formatting mutation;
-- `Strict OGNL Mode` / `Ignore Unknown Tags` as execution-safety switches.
+- `Strict OGNL Mode` retained only as direct-evaluator diagnostic compatibility while shipping evaluation failures fail closed; `Ignore Unknown Tags` remains legacy executable-path safety debt.
 
 Current positive evidence remains useful as regression/falsification evidence during migration, but it does not dictate the target class or package design.
 
