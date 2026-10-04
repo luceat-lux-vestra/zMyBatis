@@ -268,7 +268,7 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
         val xml = """
             <select>
             SELECT 1
-            <if test="user.profile.active">, 2</if>
+            <if test="user.profile.active"> + 1</if>
             </select>
         """.trimIndent()
         val params = mapOf(
@@ -278,7 +278,7 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
         )
 
         assertEquals(
-            LegacyExecutionEvaluationResult.Evaluated("SELECT 1 , 2"),
+            LegacyExecutionEvaluationResult.Evaluated("SELECT 1 + 1"),
             MyBatisEvaluator.evaluateForExecution(xml, params),
         )
     }
@@ -287,7 +287,7 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
         val xml = """
             <select>
             SELECT 1
-            <if test="user.active">, 2</if>
+            <if test="user.active"> + 1</if>
             </select>
         """.trimIndent()
         val params = mapOf(
