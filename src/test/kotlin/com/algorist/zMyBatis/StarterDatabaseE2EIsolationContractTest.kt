@@ -34,10 +34,20 @@ class StarterDatabaseE2EIsolationContractTest {
         assertTrue(e2e.contains("Enter MyBatis Parameters"))
         assertTrue(e2e.contains("zMyBatis — SQL Preview"))
         assertTrue(e2e.contains("com.intellij.database.run.ui.table.TableResultView"))
-        assertTrue(e2e.contains("LocalDataSourceManager"))
         assertTrue(
-            "Driver Database Tools stubs must resolve through the non-embedded database core module",
-            e2e.contains("plugin = \"com.intellij.database/intellij.database.core.impl\""),
+            "golden path must prepare a real project-level Database Tools datasource",
+            e2e.contains("dataSources.xml") &&
+                e2e.contains("DataSourceManagerImpl") &&
+                e2e.contains("<driver-ref>h2.unified</driver-ref>"),
+        )
+        assertTrue(
+            "project-local Database Tools credentials must be isolated from the shared datasource descriptor",
+            e2e.contains("dataSources.local.xml") &&
+                e2e.contains("<user-name>sa</user-name>"),
+        )
+        assertFalse(
+            "E2E must not depend on internal Database Tools LocalDataSource Driver stubs",
+            e2e.contains("LocalDataSourceManager") || e2e.contains("LocalDataSourceFactoryRemote"),
         )
         assertTrue(
             "H2 must enter only the Starter IDE process classpath, not the plugin artifact",
