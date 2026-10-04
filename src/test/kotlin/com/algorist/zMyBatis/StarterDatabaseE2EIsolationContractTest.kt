@@ -41,9 +41,10 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("<driver-ref>h2.unified</driver-ref>"),
         )
         assertTrue(
-            "project-local Database Tools credentials must be isolated from the shared datasource descriptor",
+            "project-local H2 fixture must connect without interactive Password Safe credentials",
             e2e.contains("dataSources.local.xml") &&
-                e2e.contains("<user-name>sa</user-name>"),
+                e2e.contains(";USER=sa;PASSWORD=") &&
+                e2e.contains("<auth-provider>no-auth</auth-provider>"),
         )
         assertFalse(
             "E2E must not depend on internal Database Tools LocalDataSource Driver stubs",
