@@ -52,7 +52,7 @@
 <p>The final SQL is injected into a JetBrains Database Tools JDBC console for execution. zMyBatis does not claim that its current automated tests prove every native result-grid, history, export, explain, editor, or restart interaction; those remain explicit platform/integration evidence boundaries where applicable.</p>
 
 <h2>Current Semantic Boundary</h2>
-<p>The current implementation combines MyBatis parsing with zMyBatis-owned parameter extraction, compatibility transformations, OGNL behavior, and literal rendering. Do not interpret this plugin as a drop-in reproduction of an application's MyBatis/JDBC runtime, custom TypeHandlers, provider methods, or every dialect-specific binding rule.</p>
+<p>The current implementation combines MyBatis parsing with zMyBatis-owned parameter extraction, compatibility transformations, OGNL source sanitization, and literal rendering. Legacy execution no longer installs a process-global custom OGNL map accessor; qualified nested map/list navigation is delegated to stock MyBatis OGNL. Do not interpret this plugin as a drop-in reproduction of an application's MyBatis/JDBC runtime, custom TypeHandlers, provider methods, or every dialect-specific binding rule.</p>
 <p>The authoritative Leap capability/safety policy, including explicit unsupported/degraded behavior and downstream proof obligations, is documented in <a href="https://github.com/luceat-lux-vestra/zMyBatis/blob/main/docs/product-contract.md">docs/product-contract.md</a>.</p>
 
 <h2>Current Safety Limitations</h2>
