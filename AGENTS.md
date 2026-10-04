@@ -19,7 +19,7 @@ The current execution path is broadly:
 5. resolve datasource + explicit schema and reuse/create a JDBC console;
 6. execute only after the explicit zMyBatis action.
 
-Using MyBatis internally does **not** by itself prove stock MyBatis/JDBC parity. zMyBatis currently owns parameter discovery, OGNL/property-access behavior, unknown-tag compatibility handling, and literal rendering. Product/fidelity decisions and unsupported/degraded cases are owned by Leap #60. Track #61 completed the product-policy freeze; downstream implementation and evidence remain owned by #62–#67.
+Using MyBatis internally does **not** by itself prove stock MyBatis/JDBC parity. zMyBatis currently owns parameter discovery, OGNL source sanitization, direct unknown-tag compatibility handling, and literal rendering; legacy execution must not install process-global OGNL accessors and qualified nested map/list lookup is delegated to stock MyBatis. Product/fidelity decisions and unsupported/degraded cases are owned by Leap #60. Track #61 completed the product-policy freeze; downstream implementation and evidence remain owned by #62–#67.
 
 Key current ownership areas:
 
