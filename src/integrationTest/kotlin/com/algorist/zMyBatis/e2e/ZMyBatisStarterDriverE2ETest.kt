@@ -190,7 +190,7 @@ class ZMyBatisStarterDriverE2ETest {
                     ui.popups().list().isNotEmpty()
                 }
                 val dataSourceList = ui.popup().list()
-                dataSourceList.selectItem("zMyBatis E2E", fullMatch = false)
+                dataSourceList.clickItem("zMyBatis E2E", fullMatch = false)
                 dataSourceList.setFocus()
                 dataSourceList.keyboard { right() }
 
