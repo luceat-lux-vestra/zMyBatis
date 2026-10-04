@@ -38,7 +38,7 @@ class LegacyLiteralizationExecutionGuardContractTest {
         )
         val literalizer = evaluator
             .substringAfter("private fun convertToLiteral(")
-            .substringBefore("\n    }\n}", startIndex = 0)
+            .substringBefore("\n    }\n}")
 
         val listBranch = literalizer
             .substringAfter("is List<*> -> {")
