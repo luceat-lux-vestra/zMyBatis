@@ -273,7 +273,7 @@ class ZMyBatisStarterDriverE2ETest {
 
     private fun writeH2DataSourceFixture(projectDir: Path) {
         val ideaDir = Files.createDirectories(projectDir.resolve(".idea"))
-        val projectFileDirMacro = buildString { append('
+        val projectFileDirMacro = 36.toChar().toString() + "ProjectFileDir" + 36.toChar()
         Files.writeString(
             ideaDir.resolve("dataSources.xml"),
             """
