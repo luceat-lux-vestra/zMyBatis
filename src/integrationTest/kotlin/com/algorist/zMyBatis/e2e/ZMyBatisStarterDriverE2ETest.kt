@@ -1,11 +1,8 @@
 package com.algorist.zMyBatis.e2e
 
 import com.intellij.driver.client.Remote
-import com.intellij.driver.client.utility
-import com.intellij.driver.sdk.Project
 import com.intellij.driver.sdk.invokeAction
 import com.intellij.driver.sdk.openFile
-import com.intellij.driver.sdk.singleProject
 import com.intellij.driver.sdk.ui.Finder
 import com.intellij.driver.sdk.ui.components.ComponentData
 import com.intellij.driver.sdk.ui.components.UiComponent
@@ -53,32 +50,6 @@ interface ZMyBatisSettingsRemote {
     fun setSqlPreview(value: Boolean)
 }
 
-@Remote("com.intellij.database.dataSource.LocalDataSource", plugin = "com.intellij.database/intellij.database.core.impl")
-interface LocalDataSourceRemote {
-    fun getName(): String
-    fun setUsername(username: String)
-}
-
-@Remote("com.intellij.database.dataSource.LocalDataSource", plugin = "com.intellij.database/intellij.database.core.impl")
-interface LocalDataSourceFactoryRemote {
-    fun create(
-        name: String,
-        driverClass: String,
-        url: String,
-        uniqueName: String,
-    ): LocalDataSourceRemote
-}
-
-@Remote("com.intellij.database.dataSource.LocalDataSourceManager", plugin = "com.intellij.database/intellij.database.core.impl")
-interface LocalDataSourceManagerRemote {
-    fun addDataSource(dataSource: LocalDataSourceRemote)
-}
-
-@Remote("com.intellij.database.dataSource.LocalDataSourceManager", plugin = "com.intellij.database/intellij.database.core.impl")
-interface LocalDataSourceManagerFactoryRemote {
-    fun getInstance(project: Project): LocalDataSourceManagerRemote
-}
-
 @Remote("javax.swing.text.JTextComponent")
 interface JTextComponentRemote {
     fun getText(): String
@@ -96,6 +67,7 @@ class ZMyBatisStarterDriverE2ETest {
 
     companion object {
         private const val IDE_RELEASE = "2026.2"
+        private const val E2E_DATA_SOURCE_UUID = "4c6e150e-3d84-4a71-9d85-0a6d05d42e01"
         private const val KNOWN_ISLANDS_ISSUE = "IJPL-222870"
         private const val ISLANDS_FAILURE_PREFIX = "Theme Islands Dark refers to unknown color scheme"
         private const val ISLANDS_FAILURE_STACK =
@@ -195,22 +167,12 @@ class ZMyBatisStarterDriverE2ETest {
     fun registeredActionExecutesParameterizedQueryThroughRealDatabaseTools(@TempDir tempDir: Path) {
         val projectDir = copySampleProject(tempDir.resolve("action-database-project"))
         val h2Jar = Path.of(H2Driver::class.java.protectionDomain.codeSource.location.toURI())
+        writeH2DataSourceFixture(projectDir)
 
         starterContext("action-real-database", projectDir, additionalIdeClasspath = h2Jar)
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
-
-                val dataSource = utility<LocalDataSourceFactoryRemote>().create(
-                    "zMyBatis E2E",
-                    "org.h2.Driver",
-                    "jdbc:h2:mem:zmybatis_e2e;DB_CLOSE_DELAY=-1",
-                    "zmybatis-e2e",
-                )
-                dataSource.setUsername("sa")
-                utility<LocalDataSourceManagerFactoryRemote>()
-                    .getInstance(singleProject())
-                    .addDataSource(dataSource)
 
                 service(ZMyBatisSettingsRemote::class).apply {
                     setAutoFormatSql(false)
@@ -305,6 +267,40 @@ class ZMyBatisStarterDriverE2ETest {
                 ?.let { setLicense(it) }
             PluginConfigurator(this).installPluginFromPath(pluginArchive)
         }
+
+    private fun writeH2DataSourceFixture(projectDir: Path) {
+        val ideaDir = Files.createDirectories(projectDir.resolve(".idea"))
+        Files.writeString(
+            ideaDir.resolve("dataSources.xml"),
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project version="4">
+              <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
+                <data-source source="LOCAL" name="zMyBatis E2E" uuid="$E2E_DATA_SOURCE_UUID">
+                  <driver-ref>h2.unified</driver-ref>
+                  <synchronize>true</synchronize>
+                  <jdbc-driver>org.h2.Driver</jdbc-driver>
+                  <jdbc-url>jdbc:h2:mem:zmybatis_e2e;DB_CLOSE_DELAY=-1</jdbc-url>
+                  <working-dir>$ProjectFileDir$</working-dir>
+                </data-source>
+              </component>
+            </project>
+            """.trimIndent(),
+        )
+        Files.writeString(
+            ideaDir.resolve("dataSources.local.xml"),
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project version="4">
+              <component name="dataSourceStorageLocal">
+                <data-source name="zMyBatis E2E" uuid="$E2E_DATA_SOURCE_UUID">
+                  <user-name>sa</user-name>
+                </data-source>
+              </component>
+            </project>
+            """.trimIndent(),
+        )
+    }
 
     private fun copySampleProject(destination: Path): Path {
         require(Files.isDirectory(sampleProject)) { "Missing versioned E2E sample project: $sampleProject" }
