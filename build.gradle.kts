@@ -98,6 +98,9 @@ dependencies {
     // This dependency is intentional even though project source does not import coroutines:
     // removing it fails Starter E2E with NoClassDefFoundError for kotlinx/coroutines/SupervisorKt.
     integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
+    // Process-E2E fixture only. The jar is injected into the Starter IDE JVM via
+    // idea.additional.classpath; it is never part of the shipped plugin artifact.
+    integrationTestImplementation("com.h2database:h2:2.2.224")
     // JetBrains Starter's CommonScope loads kotlinx.coroutines.SupervisorKt at runtime, but
     // the Starter test framework does not supply coroutines transitively on this configuration.
     // Keep this explicit runtime prerequisite; removing it fails Starter / Driver E2E.
