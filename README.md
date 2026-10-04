@@ -74,7 +74,7 @@
   <tr><td></td><td>Console Session Policy</td><td>REUSE (default) — reuse existing live console per mapper file / NEW_EACH — create a new console for each execution</td></tr>
   <tr><td><b>Parameter Dialog</b></td><td>Remember Last Inputs</td><td>Pre-fill the parameter dialog with last-used values per current statement key</td></tr>
   <tr><td></td><td>Empty Input Handling</td><td>NULL (default) — blank fields bind as SQL NULL / EMPTY_STRING — blank fields bind as empty string</td></tr>
-  <tr><td><b>Parsing Engine</b></td><td>Strict OGNL Mode</td><td>Propagate recognized OGNL evaluation failures instead of converting them to the current error-comment form</td></tr>
+  <tr><td><b>Parsing Engine</b></td><td>Strict OGNL Mode</td><td>Legacy direct-evaluator diagnostic compatibility only; shipping execution refuses evaluation failures before preview/execution regardless of this switch</td></tr>
   <tr><td></td><td>Ignore Unknown Tags</td><td>Strip unrecognised/custom XML tags before parsing while preserving inner content; this is compatibility-altered behavior, not stock MyBatis semantics</td></tr>
 </table>
 

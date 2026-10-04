@@ -19,7 +19,7 @@ import com.intellij.util.xmlb.XmlSerializerUtil
  *  - [autoFormatSql]         : Reformat the resolved SQL before executing/previewing.
  *  - [consoleSessionPolicy]  : Whether to reuse an existing console or always open a new one.
  *  - [copyToClipboard]       : Copy the resolved SQL to clipboard after execution.
- *  - [strictOgnlMode]        : Whether OGNL evaluation errors are propagated or converted to plugin-error text.
+ *  - [strictOgnlMode]        : Direct legacy-evaluator diagnostic compatibility only; shipping execution fails closed.
  *  - [ignoreUnknownTags]     : Strip unrecognised XML tags before parsing instead of throwing an error.
  */
 @Service(Service.Level.APP)

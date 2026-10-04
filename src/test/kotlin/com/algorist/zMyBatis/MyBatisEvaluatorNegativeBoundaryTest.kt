@@ -112,6 +112,64 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
         }
     }
 
+    fun testExecutionEvaluationUnknownTagFailsClosedInsteadOfReturningCompatibilitySql() {
+        val xml = """
+            <select>
+            SELECT * FROM users
+            <where>
+                <custom-filter>AND active = 1</custom-filter>
+            </where>
+            </select>
+        """.trimIndent()
+
+        val result = MyBatisEvaluator.evaluateForExecution(xml, emptyMap())
+
+        assertTrue(
+            "shipping execution result must be non-executable: <$result>",
+            result is LegacyExecutionEvaluationResult.Failed,
+        )
+    }
+
+    fun testExecutionEvaluationClassifiedOgnlFailureFailsClosedWithStrictModeOff() {
+        val result = MyBatisEvaluator.evaluateForExecution(
+            classifiedOgnlFailureXml(),
+            mapOf("kind" to "B"),
+        )
+
+        assertTrue(
+            "shipping execution result must be non-executable: <$result>",
+            result is LegacyExecutionEvaluationResult.Failed,
+        )
+    }
+
+    fun testExecutionEvaluationMalformedXmlFailsClosed() {
+        val xml = """
+            <select>
+            SELECT <if test="id != null">id FROM users
+            </select>
+        """.trimIndent()
+
+        val result = MyBatisEvaluator.evaluateForExecution(xml, mapOf("id" to 1))
+
+        assertTrue(
+            "shipping execution result must be non-executable: <$result>",
+            result is LegacyExecutionEvaluationResult.Failed,
+        )
+    }
+
+    fun testExecutionEvaluationSuccessfulSqlRemainsExplicitlyEvaluated() {
+        val result = MyBatisEvaluator.evaluateForExecution("SELECT 1", emptyMap())
+
+        assertTrue(
+            "successful execution result must carry SQL: <$result>",
+            result is LegacyExecutionEvaluationResult.Evaluated,
+        )
+        assertEquals(
+            "SELECT 1",
+            (result as LegacyExecutionEvaluationResult.Evaluated).sql,
+        )
+    }
+
     fun testUnsupportedDirectListRemainsExecutableLookingSqlStringWithNullMarker() {
         assertEquals(
             "SELECT /*[ERROR: List — use <foreach>]*/NULL",

@@ -91,10 +91,10 @@ class ZMyBatisConfigurable : BoundConfigurable("zMyBatis") {
                         setter = { settings.strictOgnlMode = it }
                     )
                 contextHelp(
-                    "ON  — OGNL evaluation errors are propagated immediately.\n" +
-                    "      Use this to catch type mismatches or typos in test= expressions.\n" +
-                    "OFF — (default) OGNL evaluation errors are converted to the current\n" +
-                    "      zMyBatis plugin-error text representation instead of being propagated."
+                    "Legacy direct-evaluator diagnostic compatibility only.\n" +
+                    "Shipping execution always refuses evaluation failures before preview/execution.\n" +
+                    "ON  — recognized OGNL failures are propagated to direct legacy callers.\n" +
+                    "OFF — (default) direct legacy callers retain the plugin-error text form."
                 )
             }
             row {
