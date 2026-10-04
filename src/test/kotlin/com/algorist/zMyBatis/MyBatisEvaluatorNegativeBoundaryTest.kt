@@ -264,6 +264,44 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
         )
     }
 
+    fun testExecutionEvaluationQualifiedNestedOgnlUsesStockMapNavigation() {
+        val xml = """
+            <select>
+            SELECT 1
+            <if test="user.profile.active">, 2</if>
+            </select>
+        """.trimIndent()
+        val params = mapOf(
+            "user" to linkedMapOf(
+                "profile" to linkedMapOf("active" to true),
+            ),
+        )
+
+        assertEquals(
+            LegacyExecutionEvaluationResult.Evaluated("SELECT 1 , 2"),
+            MyBatisEvaluator.evaluateForExecution(xml, params),
+        )
+    }
+
+    fun testExecutionEvaluationDoesNotSearchNestedMapsForMissingOgnlProperty() {
+        val xml = """
+            <select>
+            SELECT 1
+            <if test="user.active">, 2</if>
+            </select>
+        """.trimIndent()
+        val params = mapOf(
+            "user" to linkedMapOf(
+                "profile" to linkedMapOf("active" to true),
+            ),
+        )
+
+        assertEquals(
+            LegacyExecutionEvaluationResult.Evaluated("SELECT 1"),
+            MyBatisEvaluator.evaluateForExecution(xml, params),
+        )
+    }
+
     fun testExecutionEvaluationStructuredNavigationStillResolvesSupportedScalars() {
         val result = MyBatisEvaluator.evaluateForExecution(
             "SELECT #{user.id}, #{items[0]}",
