@@ -196,7 +196,7 @@ In particular, the target deliberately replaces or removes the current:
 - global/regex/literal/error-string `MyBatisEvaluator` behavior;
 - migration-only v2 compatibility plus legacy chooser/evaluator/orchestration still embedded in the shipping god action; low-level console mechanics are isolated behind `DatabaseToolsConsoleAdapter`;
 - execution-time formatting mutation;
-- safety semantics controlled by Strict OGNL / Ignore Unknown Tags switches.
+- direct legacy-evaluator compatibility behavior controlled by Strict OGNL / Ignore Unknown Tags switches; shipping execution must fail closed independently of both switches.
 
 The target physical dependency graph is a DAG: root IntelliJ plugin -> `:core`, root IntelliJ plugin -> `:mybatis-engine`, and `:mybatis-engine` -> both `:core` and MyBatis; `:core` remains free of IntelliJ/Database Tools/MyBatis dependencies. The current repository now includes both `:core` and `:mybatis-engine` in `settings.gradle.kts`; the root module consumes both, and CI runs the module checks explicitly. This realizes the physical split defined by #101 while downstream #64 work continues to replace the legacy evaluator/materialization path. The core/platform dependency direction must not invert.
 
