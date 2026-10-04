@@ -8,7 +8,6 @@ import com.intellij.driver.sdk.ui.components.ComponentData
 import com.intellij.driver.sdk.ui.components.UiComponent
 import com.intellij.driver.sdk.ui.components.common.ideFrame
 import com.intellij.driver.sdk.ui.components.elements.accessibleTable
-import com.intellij.driver.sdk.ui.components.elements.JListUiComponent
 import com.intellij.driver.sdk.ui.components.elements.button
 import com.intellij.driver.sdk.ui.components.elements.dialog
 import com.intellij.driver.sdk.ui.components.elements.list
@@ -192,22 +191,12 @@ class ZMyBatisStarterDriverE2ETest {
                 val dataSourceList = ui.popup().list()
                 dataSourceList.clickItem("zMyBatis E2E", fullMatch = false)
                 dataSourceList.setFocus()
-                dataSourceList.keyboard { right() }
-
-                val schemaLists =
-                    ui.xx(
-                        "//div[@class='HeavyWeightWindow']//div[@class='MyList']",
-                        JListUiComponent::class.java,
-                    )
-                waitFor("zMyBatis datasource schema chooser", timeout = 30.seconds) {
-                    schemaLists.list().any { list ->
-                        runCatching { list.items.contains("Use Default Schema") }.getOrDefault(false)
-                    }
+                dataSourceList.keyboard {
+                    // The datasource row is an action group. Opening it selects its first enabled
+                    // child, which is the production "Use Default Schema" action.
+                    right()
+                    enter()
                 }
-                val schemaList = schemaLists.list().first { list ->
-                    runCatching { list.items.contains("Use Default Schema") }.getOrDefault(false)
-                }
-                schemaList.clickItem("Use Default Schema", fullMatch = true)
 
                 ui.dialog(title = "Enter MyBatis Parameters") {
                     textField().text = "7"
