@@ -69,7 +69,7 @@ The shipping legacy action now resolves a stored v3 target exactly on a live-con
 
 ### Settings
 
-`strictOgnlMode` and `ignoreUnknownTags` currently influence whether unsafe compatibility behavior occurs on the executable path. `rememberLastInputs` defaults on.
+The shipping legacy action now refuses ordinary evaluator failures before preview/execution regardless of `strictOgnlMode`; that switch remains only direct-evaluator diagnostic compatibility. `ignoreUnknownTags` can still alter executable legacy semantics, and `rememberLastInputs` defaults on.
 
 **Disposition:** safety is not configurable. Remove or repurpose those compatibility switches; remembered inputs default off until the new #63 retention contract is complete.
 
