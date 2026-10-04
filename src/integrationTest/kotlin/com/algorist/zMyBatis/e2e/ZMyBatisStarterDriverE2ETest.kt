@@ -189,7 +189,7 @@ class ZMyBatisStarterDriverE2ETest {
                 waitFor("zMyBatis datasource chooser", timeout = 30.seconds) {
                     ui.popups().list().isNotEmpty()
                 }
-                ui.popup().list().clickItem("zMyBatis E2E", fullMatch = false)
+                ui.popup().list().hoverItem("zMyBatis E2E", fullMatch = false)
 
                 val schemaLists =
                     ui.xx(
