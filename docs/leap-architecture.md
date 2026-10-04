@@ -49,7 +49,7 @@ Lexical heuristics currently become caller-input authority, the Swing dialog own
 
 ### `MyBatisEvaluator`
 
-The current object mixes MyBatis `XMLScriptBuilder`, global OGNL accessor mutation, regex source rewriting, custom nested-map lookup, settings, literal rendering, and SQL-shaped error output.
+The current object still mixes MyBatis `XMLScriptBuilder`, regex source/OGNL rewriting, settings, literal rendering, and SQL-shaped direct-call compatibility. The previous process-global OGNL accessor mutation and custom nested-map fallback lookup have been removed from the shipping legacy evaluator; qualified map/list navigation now uses stock MyBatis OGNL.
 
 **Disposition:** replace completely. No global OGNL mutation, no authoritative unknown-tag stripping, no error-as-SQL, no evaluator-owned guessed literalization.
 
