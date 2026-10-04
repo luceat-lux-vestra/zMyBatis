@@ -37,7 +37,7 @@ class StarterDatabaseE2EIsolationContractTest {
         assertTrue(e2e.contains("LocalDataSourceManager"))
         assertTrue(
             "Driver Database Tools stubs must resolve through the non-embedded database core module",
-            e2e.contains("plugin = \"com.intellij.database/intellij.database.core\""),
+            e2e.contains("plugin = \"com.intellij.database/intellij.database.core.impl\""),
         )
         assertTrue(
             "H2 must enter only the Starter IDE process classpath, not the plugin artifact",
