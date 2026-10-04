@@ -63,6 +63,8 @@ Known replacement targets include:
 
 Current positive evidence remains useful as regression/falsification evidence during migration, but it does not dictate the target class or package design.
 
+While the legacy shipping action remains authoritative under #258, XML statements containing a real `<include>` dependency are refused before extraction/evaluation/target work. The legacy evaluator does not own authoritative mapper-fragment resolution, and `Ignore Unknown Tags` must not turn an unresolved include into partial executable-looking SQL. This temporary refusal is not a change to the Leap v1 `<sql>/<include>` support target above; final support still requires the #62/#64 source-graph and MyBatis preparation path.
+
 ## 4. Source authority and canonical identity
 
 ### Active editor

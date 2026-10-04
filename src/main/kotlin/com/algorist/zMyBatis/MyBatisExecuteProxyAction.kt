@@ -99,6 +99,24 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 }
             }
 
+            val statementXmlTag =
+                if (context == MyBatisContextAnalyzer.ContextType.XML) {
+                    findCurrentXmlStatementTag(editor, psiFile)
+                        ?: run {
+                            LOG.warn("zMyBatis: XML statement unavailable after context analysis")
+                            return
+                        }
+                } else {
+                    null
+                }
+            if (
+                statementXmlTag != null &&
+                LegacyXmlIncludeExecutionGuard.containsIncludeDependency(statementXmlTag)
+            ) {
+                showXmlIncludeDependencyRefusal(project)
+                return
+            }
+
             val statementAnnotation =
                 if (context == MyBatisContextAnalyzer.ContextType.ANNOTATION) {
                     findCurrentStatementAnnotation(editor, psiFile)
@@ -145,10 +163,10 @@ open class MyBatisExecuteProxyAction : AnAction() {
             )
 
             val sqlContent =
-                if (statementAnnotation != null) {
-                    AnnotationSqlExtractor.extract(statementAnnotation)
-                } else {
-                    extractSqlContent(context, editor, psiFile)
+                when {
+                    statementAnnotation != null -> AnnotationSqlExtractor.extract(statementAnnotation)
+                    statementXmlTag != null -> statementXmlTag.text
+                    else -> extractSqlContent(context, editor, psiFile)
                 }
             if (sqlContent == null) {
                 LOG.warn("zMyBatis: extractSqlContent returned null. Context: $context")
@@ -745,6 +763,19 @@ open class MyBatisExecuteProxyAction : AnAction() {
         return true
     }
 
+    private fun showXmlIncludeDependencyRefusal(
+        project: com.intellij.openapi.project.Project,
+    ) {
+        if (isProjectUnavailable(project)) return
+        Messages.showErrorDialog(
+            project,
+            "This XML statement depends on <sql>/<include> mapper fragments. " +
+                "The current zMyBatis execution path cannot resolve those dependencies " +
+                "authoritatively, so execution was refused instead of producing partial SQL.",
+            "zMyBatis: Mapper Dependency Not Executable",
+        )
+    }
+
     private fun showAnnotationDependencyRevisionRefusal(
         project: com.intellij.openapi.project.Project,
         message: String,
@@ -761,11 +792,10 @@ open class MyBatisExecuteProxyAction : AnAction() {
         Messages.showErrorDialog(project, message, "zMyBatis: Source Changed")
     }
 
-    @Suppress("ReturnCount")
-    private fun findCurrentStatementAnnotation(
+    private fun findCurrentSourceElement(
         editor: Editor,
         psiFile: PsiFile,
-    ): PsiAnnotation? {
+    ): com.intellij.psi.PsiElement? {
         val baseOffset = if (editor.selectionModel.hasSelection()) {
             editor.selectionModel.selectionStart
         } else {
@@ -778,34 +808,32 @@ open class MyBatisExecuteProxyAction : AnAction() {
         if (element is com.intellij.psi.PsiWhiteSpace && offset > 0) {
             element = psiFile.findElementAt(offset - 1)
         }
-        if (element == null) return null
+        return element
+    }
 
+    private fun findCurrentXmlStatementTag(
+        editor: Editor,
+        psiFile: PsiFile,
+    ): XmlTag? =
+        findCurrentSourceElement(editor, psiFile)?.let(::findMyBatisStatementTag)
+
+    private fun findCurrentStatementAnnotation(
+        editor: Editor,
+        psiFile: PsiFile,
+    ): PsiAnnotation? {
+        val element = findCurrentSourceElement(editor, psiFile) ?: return null
         val method = PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
         return method?.annotations?.firstOrNull {
             it.qualifiedName in MyBatisContextAnalyzer.STATEMENT_ANNOTATIONS
         }
     }
 
-    @Suppress("ReturnCount")
     private fun extractSqlContent(
         context: MyBatisContextAnalyzer.ContextType,
         editor: Editor,
         psiFile: PsiFile
     ): String? {
-        val baseOffset = if (editor.selectionModel.hasSelection()) {
-            editor.selectionModel.selectionStart
-        } else {
-            editor.caretModel.offset
-        }
-        var offset = baseOffset
-        if (offset > 0 && offset == psiFile.textLength) offset--
-
-        var element = psiFile.findElementAt(offset)
-        if (element is com.intellij.psi.PsiWhiteSpace && offset > 0) {
-            element = psiFile.findElementAt(offset - 1)
-        }
-        if (element == null) return null
-
+        val element = findCurrentSourceElement(editor, psiFile) ?: return null
         return when (context) {
             MyBatisContextAnalyzer.ContextType.XML -> findMyBatisStatementTag(element)?.text
             MyBatisContextAnalyzer.ContextType.ANNOTATION ->
