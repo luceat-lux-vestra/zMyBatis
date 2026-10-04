@@ -219,13 +219,15 @@ class ZMyBatisStarterDriverE2ETest {
                     // Driver resolves the component lazily from content(). Its default component
                     // lookup is only 15s, so let the outer 2-minute readiness loop own retries
                     // while Database Tools creates and attaches the native result grid.
-                    runCatching {
+                    try {
                         ui.accessibleTable {
                             byType("com.intellij.database.run.ui.table.TableResultView")
                         }.content().values.any { row ->
                             row.values.any { cell -> cell.trim() == "7" }
                         }
-                    }.getOrDefault(false)
+                    } catch (_: com.intellij.driver.sdk.WaitForException) {
+                        false
+                    }
                 }
                 ui.waitForNoOpenedDialogs()
             }
