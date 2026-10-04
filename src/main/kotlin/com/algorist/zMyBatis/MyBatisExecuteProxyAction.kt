@@ -792,11 +792,10 @@ open class MyBatisExecuteProxyAction : AnAction() {
         Messages.showErrorDialog(project, message, "zMyBatis: Source Changed")
     }
 
-    @Suppress("ReturnCount")
-    private fun findCurrentXmlStatementTag(
+    private fun findCurrentSourceElement(
         editor: Editor,
         psiFile: PsiFile,
-    ): XmlTag? {
+    ): com.intellij.psi.PsiElement? {
         val baseOffset = if (editor.selectionModel.hasSelection()) {
             editor.selectionModel.selectionStart
         } else {
@@ -809,54 +808,32 @@ open class MyBatisExecuteProxyAction : AnAction() {
         if (element is com.intellij.psi.PsiWhiteSpace && offset > 0) {
             element = psiFile.findElementAt(offset - 1)
         }
-        return element?.let(::findMyBatisStatementTag)
+        return element
     }
 
-    @Suppress("ReturnCount")
+    private fun findCurrentXmlStatementTag(
+        editor: Editor,
+        psiFile: PsiFile,
+    ): XmlTag? =
+        findCurrentSourceElement(editor, psiFile)?.let(::findMyBatisStatementTag)
+
     private fun findCurrentStatementAnnotation(
         editor: Editor,
         psiFile: PsiFile,
     ): PsiAnnotation? {
-        val baseOffset = if (editor.selectionModel.hasSelection()) {
-            editor.selectionModel.selectionStart
-        } else {
-            editor.caretModel.offset
-        }
-        var offset = baseOffset
-        if (offset > 0 && offset == psiFile.textLength) offset--
-
-        var element = psiFile.findElementAt(offset)
-        if (element is com.intellij.psi.PsiWhiteSpace && offset > 0) {
-            element = psiFile.findElementAt(offset - 1)
-        }
-        if (element == null) return null
-
+        val element = findCurrentSourceElement(editor, psiFile) ?: return null
         val method = PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
         return method?.annotations?.firstOrNull {
             it.qualifiedName in MyBatisContextAnalyzer.STATEMENT_ANNOTATIONS
         }
     }
 
-    @Suppress("ReturnCount")
     private fun extractSqlContent(
         context: MyBatisContextAnalyzer.ContextType,
         editor: Editor,
         psiFile: PsiFile
     ): String? {
-        val baseOffset = if (editor.selectionModel.hasSelection()) {
-            editor.selectionModel.selectionStart
-        } else {
-            editor.caretModel.offset
-        }
-        var offset = baseOffset
-        if (offset > 0 && offset == psiFile.textLength) offset--
-
-        var element = psiFile.findElementAt(offset)
-        if (element is com.intellij.psi.PsiWhiteSpace && offset > 0) {
-            element = psiFile.findElementAt(offset - 1)
-        }
-        if (element == null) return null
-
+        val element = findCurrentSourceElement(editor, psiFile) ?: return null
         return when (context) {
             MyBatisContextAnalyzer.ContextType.XML -> findMyBatisStatementTag(element)?.text
             MyBatisContextAnalyzer.ContextType.ANNOTATION ->
