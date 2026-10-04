@@ -6,6 +6,9 @@ import com.intellij.driver.sdk.Project
 import com.intellij.driver.sdk.invokeAction
 import com.intellij.driver.sdk.openFile
 import com.intellij.driver.sdk.singleProject
+import com.intellij.driver.sdk.ui.Finder
+import com.intellij.driver.sdk.ui.components.ComponentData
+import com.intellij.driver.sdk.ui.components.UiComponent
 import com.intellij.driver.sdk.ui.components.common.ideFrame
 import com.intellij.driver.sdk.ui.components.elements.accessibleTable
 import com.intellij.driver.sdk.ui.components.elements.button
@@ -13,9 +16,9 @@ import com.intellij.driver.sdk.ui.components.elements.dialog
 import com.intellij.driver.sdk.ui.components.elements.list
 import com.intellij.driver.sdk.ui.components.elements.popup
 import com.intellij.driver.sdk.ui.components.elements.popups
-import com.intellij.driver.sdk.ui.components.elements.textComponent
 import com.intellij.driver.sdk.ui.components.elements.textField
 import com.intellij.driver.sdk.ui.components.elements.waitForNoOpenedDialogs
+import com.intellij.driver.sdk.ui.ui
 import com.intellij.driver.sdk.waitFor
 import com.intellij.driver.sdk.waitForIndicators
 import com.intellij.ide.starter.ci.CIServer
@@ -75,6 +78,19 @@ interface LocalDataSourceManagerRemote {
 interface LocalDataSourceManagerFactoryRemote {
     fun getInstance(project: Project): LocalDataSourceManagerRemote
 }
+
+@Remote("javax.swing.text.JTextComponent")
+interface JTextComponentRemote {
+    fun getText(): String
+}
+
+private class JTextAreaUi(data: ComponentData) : UiComponent(data) {
+    val text: String
+        get() = driver.cast(component, JTextComponentRemote::class).getText()
+}
+
+private fun Finder.textArea(): JTextAreaUi =
+    x("//div[@class='JBTextArea']", JTextAreaUi::class.java)
 
 class ZMyBatisStarterDriverE2ETest {
 
@@ -217,13 +233,13 @@ class ZMyBatisStarterDriverE2ETest {
                 }
                 ui.popups().list().last().list().clickItem("Use Default Schema", fullMatch = true)
 
-                dialog(title = "Enter MyBatis Parameters") {
+                ui.dialog(title = "Enter MyBatis Parameters") {
                     textField().text = "7"
                     button("OK").click()
                 }
 
-                dialog(title = "zMyBatis — SQL Preview") {
-                    val previewSql = textComponent().text
+                ui.dialog(title = "zMyBatis — SQL Preview") {
+                    val previewSql = textArea().text
                     assertTrue(
                         previewSql.contains("SELECT 7 AS RESULT_VALUE"),
                         "shipping preview must expose the resolved parameterized SQL, got: <$previewSql>",
@@ -231,13 +247,18 @@ class ZMyBatisStarterDriverE2ETest {
                     button("Execute").click()
                 }
 
-                val resultTable = accessibleTable {
+                val resultTable = ui.accessibleTable {
                     byType("com.intellij.database.run.ui.table.TableResultView")
                 }
-                resultTable.findCell(timeout = 2.minutes) { cell ->
-                    cell.trim() == "7"
+                waitFor(
+                    message = "Database Tools result grid contains the executed value",
+                    timeout = 2.minutes,
+                ) {
+                    resultTable.content().values.any { row ->
+                        row.values.any { cell -> cell.trim() == "7" }
+                    }
                 }
-                waitForNoOpenedDialogs()
+                ui.waitForNoOpenedDialogs()
             }
     }
 
