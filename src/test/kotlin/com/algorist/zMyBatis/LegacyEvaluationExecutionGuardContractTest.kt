@@ -38,9 +38,10 @@ class LegacyEvaluationExecutionGuardContractTest {
             "ordinary evaluation refusal must remain non-fatal",
             refused.contains("LOG.warn(\"zMyBatis evaluation refused ("),
         )
+        val refusalLog = refused.lineSequence().first { it.contains("LOG.warn(") }
         assertFalse(
             "source-derived failure message must not be written to logs",
-            refused.contains("LOG.warn(\"zMyBatis evaluation refused (${failure.message}"),
+            refusalLog.contains("failure.message"),
         )
     }
 
