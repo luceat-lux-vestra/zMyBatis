@@ -77,6 +77,22 @@ jobs:
           set -o pipefail
           ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_25_X64 integrationTest --stacktrace 2>&1 | tee e2e.log
 
+      - name: Surface real-database IDE diagnostics
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          mapfile -t logs < <(find out/ide-tests/tests -type f -path '*/action-real-database/log/idea.log' -print 2>/dev/null)
+          if [[ ${#logs[@]} -eq 0 ]]; then
+            echo "::warning::No action-real-database idea.log found"
+            exit 0
+          fi
+
+          for log in "${logs[@]}"; do
+            echo "===== $log ====="
+            grep -E -i 'zMyBatis|com[.]algorist[.]zMyBatis|org[.]h2|jdbc:h2|SQLException|SQLState|JDBC|JdbcConsole|DatabaseDriver|DataSource|connection|driver' "$log" | tail -n 600 || true
+          done
+
       - name: Upload E2E artifact identity
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
