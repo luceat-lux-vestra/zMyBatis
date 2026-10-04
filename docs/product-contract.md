@@ -56,7 +56,7 @@ Known replacement targets include:
 - regex/keyword-based `ParameterExtractor` as caller-input authority;
 - `ParameterInputDialog` semantic/type/history ownership;
 - raw-string `ParameterHistoryService` identity/persistence;
-- `MyBatisEvaluator` global OGNL mutation, regex transformations, literal rendering, and error-as-SQL behavior;
+- `MyBatisEvaluator` regex OGNL/source transformations, literal rendering, and retained direct-call error-as-SQL compatibility; the previous process-global custom map accessor mutation has been removed from the shipping legacy evaluator;
 - v2 persisted-record/live-console-cache lifecycle coupling and startup eager console recreation;
 - execution-time formatting mutation;
 - `Strict OGNL Mode` and `Ignore Unknown Tags` are retained only as direct legacy-evaluator compatibility; shipping evaluation fails closed independently of both switches.
@@ -68,6 +68,8 @@ While the legacy shipping action remains authoritative under #258, XML statement
 The same temporary fail-closed rule now applies to legacy bound-value fallback shapes: direct `MyBatisEvaluator.evaluate(...)` compatibility may still expose List/Map marker-bearing `NULL` or arbitrary-object `toString()` rendering for characterization, but the shipping action's `evaluateForExecution(...)` path refuses those unsupported values before formatting, preview, console mutation, or native query execution. This does not make the remaining scalar legacy literalizer JDBC/TypeHandler-equivalent and does not authorize any #258 production cutover.
 
 Unknown-tag compatibility is likewise isolated from shipping evaluation: direct `evaluate(...)` may still honor `Ignore Unknown Tags` for characterization, but `evaluateForExecution(...)` explicitly disables regex stripping and treats unknown elements as non-executable evaluation failures. This is a temporary legacy safety guard, not the #62/#64 source/preparation architecture.
+
+Legacy OGNL map navigation no longer installs a process-global `PropertyAccessor` for `LinkedHashMap`. Qualified nested map/list paths are delegated to stock MyBatis OGNL; missing properties are not resolved by scanning unrelated nested Maps. This removes an application-global semantic side effect without authorizing any #258 production cutover.
 
 ## 4. Source authority and canonical identity
 
