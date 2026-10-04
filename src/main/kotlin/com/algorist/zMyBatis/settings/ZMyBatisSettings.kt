@@ -20,7 +20,7 @@ import com.intellij.util.xmlb.XmlSerializerUtil
  *  - [consoleSessionPolicy]  : Whether to reuse an existing console or always open a new one.
  *  - [copyToClipboard]       : Copy the resolved SQL to clipboard after execution.
  *  - [strictOgnlMode]        : Direct legacy-evaluator diagnostic compatibility only; shipping execution fails closed.
- *  - [ignoreUnknownTags]     : Strip unrecognised XML tags before parsing instead of throwing an error.
+ *  - [ignoreUnknownTags]     : Direct legacy-evaluator compatibility only; shipping execution fails closed.
  */
 @Service(Service.Level.APP)
 @State(
