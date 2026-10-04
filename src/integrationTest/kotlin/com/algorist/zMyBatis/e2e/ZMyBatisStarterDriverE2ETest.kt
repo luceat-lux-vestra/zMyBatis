@@ -1,12 +1,22 @@
 package com.algorist.zMyBatis.e2e
 
 import com.intellij.driver.client.Remote
+import com.intellij.driver.client.utility
+import com.intellij.driver.sdk.Project
 import com.intellij.driver.sdk.invokeAction
 import com.intellij.driver.sdk.openFile
+import com.intellij.driver.sdk.singleProject
 import com.intellij.driver.sdk.ui.components.common.ideFrame
+import com.intellij.driver.sdk.ui.components.elements.accessibleTable
 import com.intellij.driver.sdk.ui.components.elements.button
 import com.intellij.driver.sdk.ui.components.elements.dialog
+import com.intellij.driver.sdk.ui.components.elements.list
+import com.intellij.driver.sdk.ui.components.elements.popup
+import com.intellij.driver.sdk.ui.components.elements.popups
+import com.intellij.driver.sdk.ui.components.elements.textComponent
+import com.intellij.driver.sdk.ui.components.elements.textField
 import com.intellij.driver.sdk.ui.components.elements.waitForNoOpenedDialogs
+import com.intellij.driver.sdk.waitFor
 import com.intellij.driver.sdk.waitForIndicators
 import com.intellij.ide.starter.ci.CIServer
 import com.intellij.ide.starter.ci.NoCIServer
@@ -24,16 +34,46 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.junit.jupiter.api.io.TempDir
+import org.h2.Driver as H2Driver
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.Path as pathOf
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 @Remote("com.algorist.zMyBatis.settings.ZMyBatisSettings", plugin = "com.algorist.zMyBatis")
 interface ZMyBatisSettingsRemote {
     fun getAutoFormatSql(): Boolean
+    fun setAutoFormatSql(value: Boolean)
+    fun setSqlPreview(value: Boolean)
+}
+
+@Remote("com.intellij.database.dataSource.LocalDataSource", plugin = "com.intellij.database")
+interface LocalDataSourceRemote {
+    fun getName(): String
+    fun setUsername(username: String)
+}
+
+@Remote("com.intellij.database.dataSource.LocalDataSource", plugin = "com.intellij.database")
+interface LocalDataSourceFactoryRemote {
+    fun create(
+        name: String,
+        driverClass: String,
+        url: String,
+        uniqueName: String,
+    ): LocalDataSourceRemote
+}
+
+@Remote("com.intellij.database.dataSource.LocalDataSourceManager", plugin = "com.intellij.database")
+interface LocalDataSourceManagerRemote {
+    fun addDataSource(dataSource: LocalDataSourceRemote)
+}
+
+@Remote("com.intellij.database.dataSource.LocalDataSourceManager", plugin = "com.intellij.database")
+interface LocalDataSourceManagerFactoryRemote {
+    fun getInstance(project: Project): LocalDataSourceManagerRemote
 }
 
 class ZMyBatisStarterDriverE2ETest {
@@ -136,6 +176,72 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     @Test
+    fun registeredActionExecutesParameterizedQueryThroughRealDatabaseTools(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-database-project"))
+        val h2Jar = Path.of(H2Driver::class.java.protectionDomain.codeSource.location.toURI())
+
+        starterContext("action-real-database", projectDir, additionalIdeClasspath = h2Jar)
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                val dataSource = utility<LocalDataSourceFactoryRemote>().create(
+                    "zMyBatis E2E",
+                    "org.h2.Driver",
+                    "jdbc:h2:mem:zmybatis_e2e;DB_CLOSE_DELAY=-1",
+                    "zmybatis-e2e",
+                )
+                dataSource.setUsername("sa")
+                utility<LocalDataSourceManagerFactoryRemote>()
+                    .getInstance(singleProject())
+                    .addDataSource(dataSource)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(true)
+                }
+
+                openFile("Query.xml")
+                ideFrame {
+                    invokeAction("EditorDown")
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("zMyBatis datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                ui.popup().list().clickItem("zMyBatis E2E", fullMatch = false)
+
+                waitFor("zMyBatis datasource schema chooser", timeout = 30.seconds) {
+                    ui.popups().list().size >= 2
+                }
+                ui.popups().list().last().list().clickItem("Use Default Schema", fullMatch = true)
+
+                dialog(title = "Enter MyBatis Parameters") {
+                    textField().text = "7"
+                    button("OK").click()
+                }
+
+                dialog(title = "zMyBatis — SQL Preview") {
+                    val previewSql = textComponent().text
+                    assertTrue(
+                        previewSql.contains("SELECT 7 AS RESULT_VALUE"),
+                        "shipping preview must expose the resolved parameterized SQL, got: <$previewSql>",
+                    )
+                    button("Execute").click()
+                }
+
+                val resultTable = accessibleTable {
+                    byType("com.intellij.database.run.ui.table.TableResultView")
+                }
+                resultTable.findCell(timeout = 2.minutes) { cell ->
+                    cell.trim() == "7"
+                }
+                waitForNoOpenedDialogs()
+            }
+    }
+
+    @Test
     fun registeredActionReachesProductionFailClosedPath(@TempDir tempDir: Path) {
         val projectDir = copySampleProject(tempDir.resolve("action-project"))
 
@@ -159,11 +265,20 @@ class ZMyBatisStarterDriverE2ETest {
             }
     }
 
-    private fun starterContext(testName: String, projectDir: Path) =
+    private fun starterContext(
+        testName: String,
+        projectDir: Path,
+        additionalIdeClasspath: Path? = null,
+    ) =
         Starter.newContext(
             testName,
             TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(projectDir)).useRelease(IDE_RELEASE),
         ).apply {
+            additionalIdeClasspath?.let { classpath ->
+                applyVMOptionsPatch {
+                    addSystemProperty("idea.additional.classpath", classpath)
+                }
+            }
             System.getenv("LICENSE_KEY")
                 ?.takeIf { it.isNotBlank() }
                 ?.let { setLicense(it) }
