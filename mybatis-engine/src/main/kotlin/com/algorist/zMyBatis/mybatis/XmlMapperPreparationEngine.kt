@@ -678,17 +678,17 @@ object XmlMapperPreparationEngine {
                 ),
             )
         val values = mutableListOf<Any?>()
-        for (alias in directAliases) {
-            if (!namedValues.containsKey(alias.name)) {
+        for ((name) in directAliases) {
+            if (!namedValues.containsKey(name)) {
                 return XmlParameterPayload.Failed(
                     PreparationFailure(
                         PreparationFailureKind.BINDING_RESOLUTION,
                         MAPPING_ALIAS_UNRESOLVED,
-                        alias.name,
+                        name,
                     ),
                 )
             }
-            values += namedValues[alias.name]
+            values += namedValues[name]
         }
         val parameterObject = values.firstOrNull()
         if (values.any { it != parameterObject }) {
