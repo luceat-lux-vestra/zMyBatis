@@ -211,6 +211,45 @@ class XmlMapperNamedMapPropertyPreparationTest {
     }
 
     @Test
+    fun extraForgedNamedMapPropertyFailsPreparationInvariant() {
+        val fixture = fixture(
+            "SELECT * FROM users WHERE id = #{payload.id}",
+            alias = "payload",
+        )
+        val original = contract(fixture)
+        val requirement = original.requirements.single()
+        val forgedRequirement = requirement.copy(
+            provenance = InputProvenance(
+                requirement.provenance.evidence +
+                    InputEvidence.NamedMapProperty(
+                        parameterIndex = 0,
+                        alias = "payload",
+                        mappingProperty = "payload.other",
+                        key = "other",
+                        ruleId = "mybatis-3.5.19-default-parameter-handler-named-map-property",
+                    ),
+            ),
+        )
+        val forged = ParameterContract(
+            statementId = original.statementId,
+            requirements = listOf(forgedRequirement),
+            aliases = original.aliases,
+            internalBindings = original.internalBindings,
+            blockingProblems = original.blockingProblems,
+            sourceRevisions = original.sourceRevisions,
+        )
+
+        val failure = prepare(
+            fixture,
+            forged,
+            mapValue("id" to InputValue.IntegerValue(BigInteger.ONE)),
+        ) as PreparationResult.Failed
+
+        assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, failure.failure.kind)
+        assertEquals("xml-preparation-named-map-contract-invalid", failure.failure.code)
+    }
+
+    @Test
     fun directParameterObjectMapRegressionRemainsSeparate() {
         val fixture = fixture(
             "SELECT * FROM users WHERE id = #{id}",
