@@ -31,6 +31,9 @@ object XmlMapperMethodParameterContractFactory {
         "mybatis-3.5.19-default-parameter-handler-type-handler-fallback"
     private const val PARAMETER_OBJECT_PROPERTY_RULE =
         "mybatis-3.5.19-default-parameter-handler-meta-object-property"
+    private const val NAMED_MAP_PROPERTY_RULE =
+        "mybatis-3.5.19-default-parameter-handler-named-map-property"
+    private val simpleIdentifier = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val PARAMETER_OBJECT_TYPE_HANDLER_TYPES = setOf(
         "boolean",
         "byte",
@@ -131,7 +134,7 @@ object XmlMapperMethodParameterContractFactory {
                 ?.evidence
                 ?.filterIsInstance<InputEvidence.Placeholder>()
                 .orEmpty()
-            val root = placeholders.map { it.expression }.distinct().singleOrNull()
+            val mappingProperty = placeholders.map { it.expression }.distinct().singleOrNull()
                 ?: run {
                     problems += authorityProblem
                     return@forEach
@@ -141,8 +144,10 @@ object XmlMapperMethodParameterContractFactory {
                     problems += authorityProblem
                     return@forEach
                 }
+            val namedMapPath = parseNamedMapProperty(mappingProperty)
+            val authorityRoot = namedMapPath?.alias ?: mappingProperty
 
-            val explicitCandidates = parametersByExplicitAlias[root].orEmpty()
+            val explicitCandidates = parametersByExplicitAlias[authorityRoot].orEmpty()
             when {
                 explicitCandidates.size > 1 -> {
                     val evidence = buildList {
@@ -160,73 +165,110 @@ object XmlMapperMethodParameterContractFactory {
                 }
                 explicitCandidates.size == 1 -> {
                     val parameter = explicitCandidates.single()
-                    resolvedByParameter.getOrPut(parameter.index) { mutableListOf() } += ResolvedUse(
-                        parameter = parameter,
-                        root = root,
-                        kind = kind,
-                        aliasKind = InputAliasKind.EXPLICIT_PARAM,
-                        placeholders = placeholders,
-                        generatedAlias = null,
-                    )
+                    if (namedMapPath != null) {
+                        if (kind != InputKind.BOUND || !isSupportedStringScalarMap(parameter)) {
+                            problems += authorityProblem
+                        } else {
+                            resolvedByParameter.getOrPut(parameter.index) { mutableListOf() } += ResolvedUse(
+                                parameter = parameter,
+                                root = authorityRoot,
+                                kind = kind,
+                                aliasKind = InputAliasKind.EXPLICIT_PARAM,
+                                placeholders = placeholders,
+                                generatedAlias = null,
+                                namedMapProperty = InputEvidence.NamedMapProperty(
+                                    parameterIndex = parameter.index,
+                                    alias = authorityRoot,
+                                    mappingProperty = mappingProperty,
+                                    key = namedMapPath.key,
+                                    ruleId = NAMED_MAP_PROPERTY_RULE,
+                                ),
+                            )
+                        }
+                    } else {
+                        resolvedByParameter.getOrPut(parameter.index) { mutableListOf() } += ResolvedUse(
+                            parameter = parameter,
+                            root = authorityRoot,
+                            kind = kind,
+                            aliasKind = InputAliasKind.EXPLICIT_PARAM,
+                            placeholders = placeholders,
+                            generatedAlias = null,
+                        )
+                    }
                 }
-                parametersByGenericAlias[root] != null -> {
-                    val parameter = parametersByGenericAlias.getValue(root)
-                    resolvedByParameter.getOrPut(parameter.index) { mutableListOf() } += ResolvedUse(
-                        parameter = parameter,
-                        root = root,
-                        kind = kind,
-                        aliasKind = InputAliasKind.GENERIC_PARAM,
-                        placeholders = placeholders,
-                        generatedAlias = InputEvidence.GeneratedAlias(
-                            parameterIndex = parameter.index,
-                            alias = root,
-                            ruleId = GENERIC_ALIAS_RULE,
-                        ),
-                    )
+                parametersByGenericAlias[authorityRoot] != null -> {
+                    val parameter = parametersByGenericAlias.getValue(authorityRoot)
+                    if (namedMapPath != null && (kind != InputKind.BOUND || !isSupportedStringScalarMap(parameter))) {
+                        problems += authorityProblem
+                    } else {
+                        resolvedByParameter.getOrPut(parameter.index) { mutableListOf() } += ResolvedUse(
+                            parameter = parameter,
+                            root = authorityRoot,
+                            kind = kind,
+                            aliasKind = InputAliasKind.GENERIC_PARAM,
+                            placeholders = placeholders,
+                            generatedAlias = InputEvidence.GeneratedAlias(
+                                parameterIndex = parameter.index,
+                                alias = authorityRoot,
+                                ruleId = GENERIC_ALIAS_RULE,
+                            ),
+                            namedMapProperty = namedMapPath?.let { path ->
+                                InputEvidence.NamedMapProperty(
+                                    parameterIndex = parameter.index,
+                                    alias = authorityRoot,
+                                    mappingProperty = mappingProperty,
+                                    key = path.key,
+                                    ruleId = NAMED_MAP_PROPERTY_RULE,
+                                )
+                            },
+                        )
+                    }
                 }
-                parametersByCollectionShortcutAlias[root] != null -> {
-                    val shortcut = parametersByCollectionShortcutAlias.getValue(root)
+                parametersByCollectionShortcutAlias[mappingProperty] != null -> {
+                    val shortcut = parametersByCollectionShortcutAlias.getValue(mappingProperty)
                     resolvedByParameter.getOrPut(shortcut.parameter.index) { mutableListOf() } += ResolvedUse(
                         parameter = shortcut.parameter,
-                        root = root,
+                        root = mappingProperty,
                         kind = kind,
                         aliasKind = shortcut.aliasKind,
                         placeholders = placeholders,
                         generatedAlias = InputEvidence.GeneratedAlias(
                             parameterIndex = shortcut.parameter.index,
-                            alias = root,
+                            alias = mappingProperty,
                             ruleId = COLLECTION_SHORTCUT_RULE,
                         ),
                     )
                 }
-                parameterObjectFallback != null && kind == InputKind.BOUND -> {
+                parameterObjectFallback != null &&
+                    kind == InputKind.BOUND &&
+                    isSimpleMappingProperty(mappingProperty) -> {
                     resolvedByParameter.getOrPut(parameterObjectFallback.index) { mutableListOf() } += ResolvedUse(
                         parameter = parameterObjectFallback,
-                        root = root,
+                        root = mappingProperty,
                         kind = kind,
                         aliasKind = InputAliasKind.PARAMETER_OBJECT,
                         placeholders = placeholders,
                         generatedAlias = null,
                         parameterObjectFallback = InputEvidence.ParameterObjectFallback(
                             parameterIndex = parameterObjectFallback.index,
-                            mappingProperty = root,
+                            mappingProperty = mappingProperty,
                             ruleId = PARAMETER_OBJECT_FALLBACK_RULE,
                         ),
                     )
                 }
                 parameterObjectProperty != null &&
                     kind == InputKind.BOUND &&
-                    isSimpleMappingProperty(root) -> {
+                    isSimpleMappingProperty(mappingProperty) -> {
                     resolvedByParameter.getOrPut(parameterObjectProperty.index) { mutableListOf() } += ResolvedUse(
                         parameter = parameterObjectProperty,
-                        root = root,
+                        root = mappingProperty,
                         kind = kind,
                         aliasKind = InputAliasKind.PARAMETER_OBJECT,
                         placeholders = placeholders,
                         generatedAlias = null,
                         parameterObjectProperty = InputEvidence.ParameterObjectProperty(
                             parameterIndex = parameterObjectProperty.index,
-                            mappingProperty = root,
+                            mappingProperty = mappingProperty,
                             ruleId = PARAMETER_OBJECT_PROPERTY_RULE,
                         ),
                     )
@@ -247,12 +289,14 @@ object XmlMapperMethodParameterContractFactory {
             val generatedEvidence = uses.mapNotNull { it.generatedAlias }.distinct()
             val parameterObjectFallbackEvidence = uses.mapNotNull { it.parameterObjectFallback }.distinct()
             val parameterObjectPropertyEvidence = uses.mapNotNull { it.parameterObjectProperty }.distinct()
+            val namedMapPropertyEvidence = uses.mapNotNull { it.namedMapProperty }.distinct()
             val placeholderEvidence = uses.flatMap { it.placeholders }
             val provenance = InputProvenance(
                 mapperEvidence +
                     generatedEvidence +
                     parameterObjectFallbackEvidence +
                     parameterObjectPropertyEvidence +
+                    namedMapPropertyEvidence +
                     placeholderEvidence,
             )
 
@@ -364,21 +408,28 @@ object XmlMapperMethodParameterContractFactory {
         if (parameters.size != 1) return null
         val parameter = parameters.single()
         if (parameter.myBatisParamAlias != null) return null
+        return parameter.takeIf(::isSupportedStringScalarMap)
+    }
 
+    private fun isSupportedStringScalarMap(parameter: JavaMethodParameterMetadata): Boolean {
         val canonical = parameter.typeIdentity.value.trim()
-        if (!canonical.startsWith("java.util.Map<") || !canonical.endsWith(">")) return null
+        if (!canonical.startsWith("java.util.Map<") || !canonical.endsWith(">")) return false
         val arguments = canonical
             .substringAfter('<')
             .dropLast(1)
             .split(',')
             .map(String::trim)
-        if (arguments.size != 2) return null
-        if (arguments[0] != "java.lang.String") return null
+        if (arguments.size != 2 || arguments[0] != "java.lang.String") return false
         val valueType = arguments[1]
-        if ('<' in valueType || '>' in valueType || valueType !in PARAMETER_OBJECT_MAP_VALUE_TYPES) {
-            return null
-        }
-        return parameter
+        return '<' !in valueType &&
+            '>' !in valueType &&
+            valueType in PARAMETER_OBJECT_MAP_VALUE_TYPES
+    }
+
+    private fun parseNamedMapProperty(property: String): NamedMapPropertyPath? {
+        val parts = property.split('.')
+        if (parts.size != 2 || parts.any { !simpleIdentifier.matches(it) }) return null
+        return NamedMapPropertyPath(parts[0], parts[1])
     }
 
     private fun isSimpleMappingProperty(property: String): Boolean =
@@ -469,6 +520,11 @@ object XmlMapperMethodParameterContractFactory {
         val aliasKind: InputAliasKind,
     )
 
+    private data class NamedMapPropertyPath(
+        val alias: String,
+        val key: String,
+    )
+
     private data class ResolvedUse(
         val parameter: JavaMethodParameterMetadata,
         val root: String,
@@ -478,5 +534,6 @@ object XmlMapperMethodParameterContractFactory {
         val generatedAlias: InputEvidence.GeneratedAlias?,
         val parameterObjectFallback: InputEvidence.ParameterObjectFallback? = null,
         val parameterObjectProperty: InputEvidence.ParameterObjectProperty? = null,
+        val namedMapProperty: InputEvidence.NamedMapProperty? = null,
     )
 }

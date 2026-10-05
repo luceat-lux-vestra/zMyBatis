@@ -62,15 +62,36 @@ class XmlStatementParameterContractFactoryRefusalTest {
     }
 
     @Test
-    fun dottedOrComplexPlaceholderExpressionFailsClosed() {
-        val dotted = XmlStatementParameterContractFactory.build(
+    fun oneLevelDottedBoundPathRetainsSourceProvenanceWithoutInventingCallerAuthority() {
+        val contract = XmlStatementParameterContractFactory.build(
             graph(body = "select * from users where id = #{user.id}"),
         )
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertEquals(
+            listOf("xml-caller-input-authority-unproven"),
+            contract.blockingProblems.map { it.code },
+        )
+        assertEquals(InputContractProblemKind.UNKNOWN, contract.blockingProblems.single().kind)
+        val placeholder = contract.blockingProblems.single().provenance
+            ?.evidence
+            ?.filterIsInstance<InputEvidence.Placeholder>()
+            ?.single()
+        assertEquals("user.id", placeholder?.expression)
+        assertEquals(InputKind.BOUND, placeholder?.kind)
+    }
+
+    @Test
+    fun indexedAndDeepPlaceholderExpressionsRemainUnsupported() {
         val indexed = XmlStatementParameterContractFactory.build(
             graph(body = "select * from users where name = #{users[0]}"),
         )
+        val deep = XmlStatementParameterContractFactory.build(
+            graph(body = "select * from users where id = #{payload.user.id}"),
+        )
 
-        listOf(dotted, indexed).forEach { contract ->
+        listOf(indexed, deep).forEach { contract ->
             assertTrue(contract.isPreparationBlocked)
             assertTrue(contract.requirements.isEmpty())
             assertEquals(

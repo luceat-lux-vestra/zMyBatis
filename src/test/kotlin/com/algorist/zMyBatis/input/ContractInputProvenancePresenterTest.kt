@@ -117,6 +117,32 @@ class ContractInputProvenancePresenterTest {
     }
 
     @Test
+    fun `named Map property lookup stays explicit without inventing source location`() {
+        val provenance = InputProvenance(
+            listOf(
+                InputEvidence.NamedMapProperty(
+                    parameterIndex = 0,
+                    alias = "payload",
+                    mappingProperty = "payload.id",
+                    key = "id",
+                    ruleId = "mybatis-3.5.19-default-parameter-handler-named-map-property",
+                ),
+            ),
+        )
+
+        val presentation = ContractInputProvenancePresenter.present(provenance)
+
+        assertEquals(
+            "named Map property payload.id (mybatis-3.5.19-default-parameter-handler-named-map-property)",
+            presentation.details,
+        )
+        assertFalse(
+            "semantic named-Map evidence must not fabricate a source location",
+            presentation.details.contains(" @ "),
+        )
+    }
+
+    @Test
     fun `parameter object property lookup stays explicit without inventing source location`() {
         val provenance = InputProvenance(
             listOf(

@@ -50,10 +50,18 @@ object XmlMapperPreparationEngine {
         "xml-preparation-parameter-object-contract-invalid"
     private const val PARAMETER_OBJECT_PROPERTY_MISSING =
         "xml-preparation-parameter-object-property-missing"
+    private const val NAMED_MAP_CONTRACT_INVALID =
+        "xml-preparation-named-map-contract-invalid"
+    private const val NAMED_MAP_PROPERTY_MISSING =
+        "xml-preparation-named-map-property-missing"
     private const val PARAMETER_OBJECT_FALLBACK_RULE =
         "mybatis-3.5.19-default-parameter-handler-type-handler-fallback"
     private const val PARAMETER_OBJECT_PROPERTY_RULE =
         "mybatis-3.5.19-default-parameter-handler-meta-object-property"
+    private const val NAMED_MAP_PROPERTY_RULE =
+        "mybatis-3.5.19-default-parameter-handler-named-map-property"
+    private const val GENERIC_ALIAS_RULE =
+        "mybatis-3.5.19-param-name-resolver-generic"
     private const val MAPPING_PROPERTY_MISSING = "xml-preparation-mapping-property-missing"
     private const val MAPPING_PROPERTY_NESTED = "xml-preparation-nested-mapping-unsupported"
     private const val MAPPING_ALIAS_UNRESOLVED = "xml-preparation-mapping-alias-unresolved"
@@ -81,6 +89,7 @@ object XmlMapperPreparationEngine {
     private val safeMapperDoctype = Regex(
         """(?is)<!DOCTYPE\s+mapper\s+PUBLIC\s+["']-//mybatis\.org//DTD Mapper 3\.0//EN["']\s+["']https?://mybatis\.org/dtd/mybatis-3-mapper\.dtd["']\s*>""",
     )
+    private val simpleIdentifier = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val parameterObjectMapValueTypes = setOf(
         "java.lang.Boolean",
         "java.lang.Byte",
@@ -128,7 +137,8 @@ object XmlMapperPreparationEngine {
             .filter { requirement ->
                 requirement.expectedType.shape == InputShape.MAP &&
                     requirement.provenance.evidence.any {
-                        it is InputEvidence.ParameterObjectProperty
+                        it is InputEvidence.ParameterObjectProperty ||
+                            it is InputEvidence.NamedMapProperty
                     }
             }
             .mapTo(linkedSetOf()) { it.id }
@@ -475,7 +485,26 @@ object XmlMapperPreparationEngine {
         val mapRequirements = request.parameterContract.requirements.filter {
             it.expectedType.shape == InputShape.MAP
         }
-        if (mapRequirements.isNotEmpty() && parameterObjectAliases.isEmpty()) {
+        val namedMapRequirementIds = linkedSetOf<InputRequirementId>()
+        for (requirement in mapRequirements) {
+            val namedEvidence = requirement.provenance.evidence
+                .filterIsInstance<InputEvidence.NamedMapProperty>()
+            if (namedEvidence.isNotEmpty()) {
+                if (!namedMapContractIsCoherent(request, requirement, namedEvidence)) {
+                    return PreparationFailure(
+                        PreparationFailureKind.PREPARATION_INVARIANT,
+                        NAMED_MAP_CONTRACT_INVALID,
+                    )
+                }
+                namedMapRequirementIds += requirement.id
+            }
+        }
+        if (
+            mapRequirements.any { requirement ->
+                requirement.id !in namedMapRequirementIds &&
+                    parameterObjectAliases.none { it.requirementId == requirement.id }
+            }
+        ) {
             return PreparationFailure(
                 PreparationFailureKind.UNSUPPORTED_BINDING_VALUE,
                 BOUND_SHAPE_UNSUPPORTED,
@@ -596,7 +625,8 @@ object XmlMapperPreparationEngine {
                         MAPPING_PROPERTY_MISSING,
                     ),
                 )
-            if ('.' in property) {
+            val namedMapPath = parseNamedMapProperty(property)
+            if ('.' in property && namedMapPath == null) {
                 return XmlBindingCapture.Failed(
                     PreparationFailure(
                         PreparationFailureKind.UNSUPPORTED_SEMANTIC,
@@ -606,7 +636,8 @@ object XmlMapperPreparationEngine {
                 )
             }
 
-            val aliasCandidates = aliasesByName[property].orEmpty()
+            val lookupAlias = namedMapPath?.alias ?: property
+            val aliasCandidates = aliasesByName[lookupAlias].orEmpty()
             if (aliasCandidates.size != 1) {
                 return XmlBindingCapture.Failed(
                     PreparationFailure(
@@ -634,7 +665,58 @@ object XmlMapperPreparationEngine {
                     ),
                 )
             }
-            val runtimeValue = if (alias.kind == InputAliasKind.PARAMETER_OBJECT) {
+            val runtimeValue = if (namedMapPath != null) {
+                if (alias.kind !in setOf(InputAliasKind.EXPLICIT_PARAM, InputAliasKind.GENERIC_PARAM)) {
+                    return XmlBindingCapture.Failed(
+                        PreparationFailure(
+                            PreparationFailureKind.PREPARATION_INVARIANT,
+                            NAMED_MAP_CONTRACT_INVALID,
+                            property,
+                        ),
+                    )
+                }
+                val namedEvidence = requirement.provenance.evidence
+                    .filterIsInstance<InputEvidence.NamedMapProperty>()
+                    .singleOrNull { it.mappingProperty == property }
+                    ?: return XmlBindingCapture.Failed(
+                        PreparationFailure(
+                            PreparationFailureKind.PREPARATION_INVARIANT,
+                            NAMED_MAP_CONTRACT_INVALID,
+                            property,
+                        ),
+                    )
+                if (
+                    namedEvidence.alias != namedMapPath.alias ||
+                    namedEvidence.key != namedMapPath.key ||
+                    namedEvidence.ruleId != NAMED_MAP_PROPERTY_RULE
+                ) {
+                    return XmlBindingCapture.Failed(
+                        PreparationFailure(
+                            PreparationFailureKind.PREPARATION_INVARIANT,
+                            NAMED_MAP_CONTRACT_INVALID,
+                            property,
+                        ),
+                    )
+                }
+                val parameterMap = parameterPayload.namedValues[namedMapPath.alias] as? Map<*, *>
+                    ?: return XmlBindingCapture.Failed(
+                        PreparationFailure(
+                            PreparationFailureKind.PREPARATION_INVARIANT,
+                            NAMED_MAP_CONTRACT_INVALID,
+                            property,
+                        ),
+                    )
+                if (!parameterMap.containsKey(namedMapPath.key)) {
+                    return XmlBindingCapture.Failed(
+                        PreparationFailure(
+                            PreparationFailureKind.BINDING_RESOLUTION,
+                            NAMED_MAP_PROPERTY_MISSING,
+                            property,
+                        ),
+                    )
+                }
+                parameterMap[namedMapPath.key]
+            } else if (alias.kind == InputAliasKind.PARAMETER_OBJECT) {
                 if (parameterPayload.directRequirementId != requirement.id) {
                     return XmlBindingCapture.Failed(
                         PreparationFailure(
@@ -781,6 +863,84 @@ object XmlMapperPreparationEngine {
             )
         }
         return XmlBindingCapture.Ready(bindings)
+    }
+
+    private fun namedMapContractIsCoherent(
+        request: MyBatisPreparationRequest,
+        requirement: com.algorist.zMyBatis.core.input.InputRequirement,
+        evidence: List<InputEvidence.NamedMapProperty>,
+    ): Boolean {
+        if (!isSupportedStringScalarMap(requirement)) return false
+        if (
+            requirement.provenance.evidence.any {
+                it is InputEvidence.ParameterObjectFallback ||
+                    it is InputEvidence.ParameterObjectProperty
+            }
+        ) {
+            return false
+        }
+
+        val parameterIndex = requirement.provenance.evidence
+            .filterIsInstance<InputEvidence.MapperMethodParameter>()
+            .map { it.index }
+            .distinct()
+            .singleOrNull()
+            ?: return false
+        val aliases = request.parameterContract.aliases.filter { it.requirementId == requirement.id }
+        if (
+            aliases.isEmpty() ||
+            aliases.any { it.kind !in setOf(InputAliasKind.EXPLICIT_PARAM, InputAliasKind.GENERIC_PARAM) }
+        ) {
+            return false
+        }
+
+        if (
+            evidence.any { named ->
+                named.parameterIndex != parameterIndex ||
+                    named.ruleId != NAMED_MAP_PROPERTY_RULE ||
+                    parseNamedMapProperty(named.mappingProperty) != NamedMapPropertyPath(named.alias, named.key)
+            }
+        ) {
+            return false
+        }
+        val boundProperties = requirement.provenance.evidence
+            .filterIsInstance<InputEvidence.Placeholder>()
+            .filter { it.kind == InputKind.BOUND }
+            .mapTo(linkedSetOf()) { it.expression }
+        val namedProperties = evidence.mapTo(linkedSetOf()) { it.mappingProperty }
+        if (boundProperties != namedProperties) return false
+
+        val evidenceAliases = evidence.mapTo(linkedSetOf()) { it.alias }
+        val aliasesMatchEvidence = aliases.mapTo(linkedSetOf()) { it.name } == evidenceAliases
+
+        return aliasesMatchEvidence && aliases.all { alias ->
+            when (alias.kind) {
+                InputAliasKind.EXPLICIT_PARAM ->
+                    requirement.provenance.evidence
+                        .filterIsInstance<InputEvidence.ExplicitParamAlias>()
+                        .any { it.parameterIndex == parameterIndex && it.alias == alias.name }
+                InputAliasKind.GENERIC_PARAM ->
+                    requirement.provenance.evidence
+                        .filterIsInstance<InputEvidence.GeneratedAlias>()
+                        .any {
+                            it.parameterIndex == parameterIndex &&
+                                it.alias == alias.name &&
+                                it.ruleId == GENERIC_ALIAS_RULE
+                        }
+                else -> false
+            }
+        }
+    }
+
+    private data class NamedMapPropertyPath(
+        val alias: String,
+        val key: String,
+    )
+
+    private fun parseNamedMapProperty(property: String): NamedMapPropertyPath? {
+        val parts = property.split('.')
+        if (parts.size != 2 || parts.any { !simpleIdentifier.matches(it) }) return null
+        return NamedMapPropertyPath(parts[0], parts[1])
     }
 
     private fun isSupportedStringScalarMap(

@@ -33,6 +33,7 @@ object XmlStatementParameterContractFactory {
     private const val UNSAFE_DTD_PROBLEM = "xml-parameter-contract-unsafe-dtd"
 
     private val simpleRoot = Regex("[A-Za-z_][A-Za-z0-9_]*")
+    private val simpleNamedProperty = Regex("[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*")
     private val reservedInternalRoots = setOf("_parameter", "_databaseId")
 
     fun build(graph: StatementSourceGraph): ParameterContract {
@@ -118,7 +119,7 @@ object XmlStatementParameterContractFactory {
             val kinds = uses.mapTo(linkedSetOf()) { it.kind }
 
             when {
-                root in reservedInternalRoots -> InputContractProblem(
+                root.substringBefore('.') in reservedInternalRoots -> InputContractProblem(
                     kind = InputContractProblemKind.UNSUPPORTED,
                     code = RESERVED_ROOT_PROBLEM,
                     requirementId = null,
@@ -304,7 +305,10 @@ object XmlStatementParameterContractFactory {
                 } else {
                     payload
                 }
-                if (expression.isEmpty() || !simpleRoot.matches(expression)) {
+                val supportedExpression =
+                    simpleRoot.matches(expression) ||
+                        (kind == InputKind.BOUND && simpleNamedProperty.matches(expression))
+                if (expression.isEmpty() || !supportedExpression) {
                     failures += PlaceholderFailure(
                         kind = kind,
                         expression = expression.takeIf(String::isNotEmpty),
