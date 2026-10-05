@@ -27,6 +27,29 @@ object XmlMapperMethodParameterContractFactory {
         "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
     private const val PARAMETER_OBJECT_FALLBACK_RULE =
         "mybatis-3.5.19-default-parameter-handler-type-handler-fallback"
+    private val PARAMETER_OBJECT_TYPE_HANDLER_TYPES = setOf(
+        "boolean",
+        "byte",
+        "short",
+        "int",
+        "long",
+        "float",
+        "double",
+        "java.lang.Boolean",
+        "java.lang.Byte",
+        "java.lang.Short",
+        "java.lang.Integer",
+        "java.lang.Long",
+        "java.lang.Float",
+        "java.lang.Double",
+        "java.lang.String",
+        "java.math.BigInteger",
+        "java.math.BigDecimal",
+        "java.time.Instant",
+        "java.time.LocalDate",
+        "java.time.LocalDateTime",
+        "java.time.LocalTime",
+    )
 
     fun build(
         graph: StatementSourceGraph,
@@ -285,8 +308,10 @@ object XmlMapperMethodParameterContractFactory {
         val parameter = parameters.single()
         if (parameter.myBatisParamAlias != null) return null
         val expected = JavaParameterTypeContract.expectedType(parameter.typeIdentity, InputKind.BOUND)
+        val rawType = parameter.typeIdentity.value.substringBefore('<').trim()
         return parameter.takeIf {
-            expected.shape == InputShape.SCALAR || expected.shape == InputShape.TEMPORAL
+            (expected.shape == InputShape.SCALAR || expected.shape == InputShape.TEMPORAL) &&
+                rawType in PARAMETER_OBJECT_TYPE_HANDLER_TYPES
         }
     }
 
