@@ -891,7 +891,13 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 "(count=${extracted.params.size}, objectCount=${extracted.objectParams.size})"
         )
         if (extracted.params.isEmpty()) return emptyMap()
-        val dialog = ParameterInputDialog(project, extracted.params, extracted.objectParams, statementKey)
+        val dialog = ParameterInputDialog(
+            project,
+            extracted.params,
+            extracted.objectParams,
+            statementKey,
+            extracted.rawInterpolationParams,
+        )
         if (!dialog.showAndGet()) return null
         val values = dialog.getValues()
         LOG.info("zMyBatis: parameter values collected (count=${values.size})")
