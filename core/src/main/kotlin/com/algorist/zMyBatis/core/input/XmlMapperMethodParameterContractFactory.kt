@@ -187,7 +187,7 @@ object XmlMapperMethodParameterContractFactory {
                         placeholders = placeholders,
                         generatedAlias = null,
                         parameterObjectFallback = InputEvidence.ParameterObjectFallback(
-                            parameterIndex = parameter.index,
+                            parameterIndex = parameterObjectFallback.index,
                             mappingProperty = root,
                             ruleId = PARAMETER_OBJECT_FALLBACK_RULE,
                         ),
