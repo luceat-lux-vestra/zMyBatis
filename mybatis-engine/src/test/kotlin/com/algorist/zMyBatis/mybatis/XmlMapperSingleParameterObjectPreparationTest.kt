@@ -4,10 +4,14 @@ import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputAliasKind
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
+import com.algorist.zMyBatis.core.input.InputEvidence
+import com.algorist.zMyBatis.core.input.InputProvenance
 import com.algorist.zMyBatis.core.input.InputValue
+import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
 import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
+import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationResult
 import com.algorist.zMyBatis.core.preparation.XmlMapperPreparationSource
@@ -88,6 +92,47 @@ class XmlMapperSingleParameterObjectPreparationTest {
         )
     }
 
+    @Test
+    fun mismatchedParameterObjectFallbackIndexFailsClosedBeforeMyBatisPreparation() {
+        val fixture = fixture(
+            "SELECT * FROM users WHERE id = #{arbitrary}",
+            "long",
+            "id",
+        )
+        val original = contract(fixture)
+        val alias = original.aliases.single()
+        val tamperedAlias = alias.copy(
+            provenance = InputProvenance(
+                alias.provenance.evidence.map { evidence ->
+                    if (evidence is InputEvidence.ParameterObjectFallback) {
+                        evidence.copy(parameterIndex = 1)
+                    } else {
+                        evidence
+                    }
+                },
+            ),
+        )
+        val tamperedContract = ParameterContract(
+            statementId = original.statementId,
+            requirements = original.requirements,
+            aliases = listOf(tamperedAlias),
+            internalBindings = original.internalBindings,
+            blockingProblems = original.blockingProblems,
+            sourceRevisions = original.sourceRevisions,
+        )
+
+        val failure = (
+            prepare(
+                fixture,
+                tamperedContract,
+                InputValue.IntegerValue(BigInteger.valueOf(42)),
+            ) as PreparationResult.Failed
+            ).failure
+
+        assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, failure.kind)
+        assertEquals("xml-preparation-parameter-object-contract-invalid", failure.code)
+    }
+
     private fun prepareSuccess(
         fixture: Fixture,
         value: InputValue,
@@ -103,8 +148,13 @@ class XmlMapperSingleParameterObjectPreparationTest {
     private fun prepare(
         fixture: Fixture,
         value: InputValue,
+    ): PreparationResult = prepare(fixture, contract(fixture), value)
+
+    private fun prepare(
+        fixture: Fixture,
+        contract: ParameterContract,
+        value: InputValue,
     ): PreparationResult {
-        val contract = contract(fixture)
         check(!contract.isPreparationBlocked) {
             "fixture contract unexpectedly blocked: \${contract.blockingProblems.map { it.code }}"
         }
