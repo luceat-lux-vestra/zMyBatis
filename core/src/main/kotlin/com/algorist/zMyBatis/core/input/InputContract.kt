@@ -394,6 +394,7 @@ private fun sourceEvidenceOf(evidence: InputEvidence): SourceEvidence? = when (e
     is InputEvidence.ExplicitParamAlias -> evidence.source
     is InputEvidence.GeneratedAlias -> null
     is InputEvidence.ParameterObjectFallback -> null
+    is InputEvidence.ParameterObjectProperty -> null
     is InputEvidence.Placeholder -> evidence.source
     is InputEvidence.OgnlExpression -> evidence.source
     is InputEvidence.ForeachCollection -> evidence.source
