@@ -171,6 +171,41 @@ class ParameterExtractorTest {
     }
 
     @Test
+    fun `extractResult bound-only parameter is retainable evidence`() {
+        val result = ParameterExtractor.extractResult("SELECT * FROM users WHERE id = #{id}")
+
+        assertEquals(listOf("id"), result.params)
+        assertTrue(result.rawInterpolationParams.isEmpty())
+    }
+
+    @Test
+    fun `extractResult raw interpolation marks caller root`() {
+        val result = ParameterExtractor.extractResult("SELECT * FROM users ORDER BY \${column}")
+
+        assertEquals(listOf("column"), result.params)
+        assertEquals(setOf("column"), result.rawInterpolationParams)
+    }
+
+    @Test
+    fun `extractResult raw property path marks only root`() {
+        val result = ParameterExtractor.extractResult("SELECT * FROM users ORDER BY \${sort.column}")
+
+        assertEquals(listOf("sort"), result.params)
+        assertEquals(setOf("sort"), result.objectParams)
+        assertEquals(setOf("sort"), result.rawInterpolationParams)
+    }
+
+    @Test
+    fun `extractResult mixed raw and bound use makes shared root non-retainable`() {
+        val result = ParameterExtractor.extractResult(
+            "SELECT * FROM users WHERE id = #{shared} ORDER BY \${shared}",
+        )
+
+        assertEquals(listOf("shared"), result.params)
+        assertEquals(setOf("shared"), result.rawInterpolationParams)
+    }
+
+    @Test
     fun `extractResult mixed object and scalar params classified correctly`() {
         val xml = """
             <if test="user.name != null">
