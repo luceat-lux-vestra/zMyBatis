@@ -179,9 +179,8 @@ object XmlMapperMethodParameterContractFactory {
                     )
                 }
                 parameterObjectFallback != null && kind == InputKind.BOUND -> {
-                    val parameter = parameterObjectFallback
-                    resolvedByParameter.getOrPut(parameter.index) { mutableListOf() } += ResolvedUse(
-                        parameter = parameter,
+                    resolvedByParameter.getOrPut(parameterObjectFallback.index) { mutableListOf() } += ResolvedUse(
+                        parameter = parameterObjectFallback,
                         root = root,
                         kind = kind,
                         aliasKind = InputAliasKind.PARAMETER_OBJECT,
