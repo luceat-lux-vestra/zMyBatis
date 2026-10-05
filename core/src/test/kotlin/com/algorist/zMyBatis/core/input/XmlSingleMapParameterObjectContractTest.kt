@@ -115,6 +115,7 @@ class XmlSingleMapParameterObjectContractTest {
         val unsupportedTypes = listOf(
             "java.util.Map",
             "java.util.Map<java.lang.Long,java.lang.Long>",
+            "java.util.Map<java.lang.String,long>",
             "java.util.Map<java.lang.String,java.util.UUID>",
             "java.util.Map<java.lang.String,java.util.List<java.lang.Long>>",
             "java.util.Map<java.lang.String,fixture.CustomValue>",
