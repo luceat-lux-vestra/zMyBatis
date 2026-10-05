@@ -285,6 +285,60 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
         )
     }
 
+    fun testExecutionEvaluationMissingFlatBoundParameterFailsClosed() {
+        val result = MyBatisEvaluator.evaluateForExecution(
+            "SELECT #{missing}",
+            emptyMap(),
+        )
+
+        assertMissingExecutionParameter(result, "missing")
+        assertEquals(
+            "SELECT NULL",
+            MyBatisEvaluator.evaluate("SELECT #{missing}", emptyMap()),
+        )
+    }
+
+    fun testExecutionEvaluationMissingNestedAndIndexedBoundParametersFailClosed() {
+        val cases = listOf(
+            Triple(
+                "SELECT #{user.profile.id}",
+                mapOf<String, Any?>("user" to mapOf("profile" to emptyMap<String, Any?>())),
+                "user.profile.id",
+            ),
+            Triple(
+                "SELECT #{items[1].id}",
+                mapOf<String, Any?>("items" to listOf(mapOf("id" to 7))),
+                "items[1].id",
+            ),
+        )
+
+        for ((sql, params, property) in cases) {
+            assertMissingExecutionParameter(
+                MyBatisEvaluator.evaluateForExecution(sql, params),
+                property,
+            )
+            assertEquals(
+                "SELECT NULL",
+                MyBatisEvaluator.evaluate(sql, params),
+            )
+        }
+    }
+
+    fun testExecutionEvaluationExplicitNullRemainsDistinctFromMissing() {
+        val cases = listOf(
+            "SELECT #{value}" to mapOf<String, Any?>("value" to null),
+            "SELECT #{user.name}" to mapOf<String, Any?>("user" to mapOf("name" to null)),
+            "SELECT #{items[0]}" to mapOf<String, Any?>("items" to listOf(null)),
+        )
+
+        for ((sql, params) in cases) {
+            assertEquals(
+                LegacyExecutionEvaluationResult.Evaluated("SELECT NULL"),
+                MyBatisEvaluator.evaluateForExecution(sql, params),
+            )
+        }
+    }
+
     fun testExecutionEvaluationQualifiedNestedOgnlUsesStockMapNavigation() {
         val xml = """
             <select>
@@ -383,6 +437,29 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
 
         assertTrue("actual result: <$result>", result.startsWith("-- [MyBatis Plugin Error]"))
         assertTrue("actual result: <$result>", result.contains("-- Input:"))
+    }
+
+    private fun assertMissingExecutionParameter(
+        result: LegacyExecutionEvaluationResult,
+        expectedProperty: String,
+    ) {
+        assertTrue(
+            "shipping execution result must be non-executable: <$result>",
+            result is LegacyExecutionEvaluationResult.Failed,
+        )
+        val cause = (result as LegacyExecutionEvaluationResult.Failed).cause
+        assertTrue(
+            "failure must identify missing bound parameter: <${cause::class.java.name}>",
+            cause is LegacyMissingExecutionParameterException,
+        )
+        assertEquals(
+            expectedProperty,
+            (cause as LegacyMissingExecutionParameterException).property,
+        )
+        assertFalse(
+            "failure diagnostic must not expose a parameter value",
+            cause.message.orEmpty().contains("null", ignoreCase = true),
+        )
     }
 
     private fun assertUnsupportedExecutionLiteral(
