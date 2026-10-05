@@ -543,7 +543,7 @@ class XmlMapperMethodParameterContractFactoryTest {
     }
 
     @Test
-    fun sourceNameWithoutExplicitParamRemainsBlocked() {
+    fun sourceNameWithoutExplicitParamUsesParameterObjectFallbackNotSourceNameAuthority() {
         val graph = graph("select * from users where id = #{id}")
         val mapper = mapper(
             graph,
@@ -552,12 +552,27 @@ class XmlMapperMethodParameterContractFactoryTest {
 
         val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
 
-        assertTrue(contract.isPreparationBlocked)
-        assertTrue(contract.requirements.isEmpty())
-        assertTrue(contract.aliases.isEmpty())
-        assertEquals(
-            listOf("xml-caller-input-authority-unproven"),
-            contract.blockingProblems.map { it.code },
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        val alias = contract.aliases.single()
+        assertEquals("id", alias.name)
+        assertEquals(InputAliasKind.PARAMETER_OBJECT, alias.kind)
+        assertEquals(requirement.id, alias.requirementId)
+        assertTrue(
+            alias.provenance.evidence.none {
+                it is InputEvidence.ExplicitParamAlias || it is InputEvidence.GeneratedAlias
+            },
+        )
+        val fallback = alias.provenance.evidence
+            .filterIsInstance<InputEvidence.ParameterObjectFallback>()
+            .single()
+        assertEquals(0, fallback.parameterIndex)
+        assertEquals("id", fallback.mappingProperty)
+        assertTrue(
+            requirement.provenance.evidence.any {
+                it is InputEvidence.MapperMethodParameter &&
+                    it.sourceName == "id"
+            },
         )
     }
 
