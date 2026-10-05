@@ -58,6 +58,7 @@ object MyBatisEvaluator {
                     xmlContent,
                     params,
                     allowUnknownTagCompatibility = false,
+                    allowOgnlPlaceholderCompatibility = false,
                     failClosedUnsupportedLiteralization = true,
                 ),
             )
@@ -81,6 +82,7 @@ object MyBatisEvaluator {
                 xmlContent,
                 params,
                 allowUnknownTagCompatibility = ignoreUnknownTags,
+                allowOgnlPlaceholderCompatibility = true,
                 failClosedUnsupportedLiteralization = false,
             )
         } catch (e: ProcessCanceledException) {
@@ -99,6 +101,7 @@ object MyBatisEvaluator {
         xmlContent: String,
         params: Map<String, Any?>,
         allowUnknownTagCompatibility: Boolean,
+        allowOgnlPlaceholderCompatibility: Boolean,
         failClosedUnsupportedLiteralization: Boolean,
     ): String {
         var cleanedXml = xmlContent
@@ -115,7 +118,9 @@ object MyBatisEvaluator {
             cleanedXml = stripUnknownTags(cleanedXml)
         }
 
-        cleanedXml = sanitizeOgnlExpressions(cleanedXml)
+        if (allowOgnlPlaceholderCompatibility) {
+            cleanedXml = sanitizeOgnlExpressions(cleanedXml)
+        }
         val scriptXml = "<root>$cleanedXml</root>"
 
         val configuration = Configuration()
