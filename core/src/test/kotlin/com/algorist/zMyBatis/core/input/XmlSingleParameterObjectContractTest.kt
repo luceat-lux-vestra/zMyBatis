@@ -132,7 +132,7 @@ class XmlSingleParameterObjectContractTest {
 
         val map = build(
             graph("select * from users where id = #{value}"),
-            listOf(parameter(0, "java.util.Map<java.lang.String,java.lang.Long>", "payload", null)),
+            listOf(parameter(0, "java.util.Map", "payload", null)),
         )
         assertTrue(map.isPreparationBlocked)
         assertTrue(map.aliases.none { it.kind == InputAliasKind.PARAMETER_OBJECT })
