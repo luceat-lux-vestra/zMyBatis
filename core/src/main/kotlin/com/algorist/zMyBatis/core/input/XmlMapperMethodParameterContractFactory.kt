@@ -12,7 +12,9 @@ import com.algorist.zMyBatis.core.source.XmlStatementId
  * the corresponding MyBatis input authority. Explicit @Param aliases are always considered. Generic
  * paramN aliases are considered only when the complete MyBatis primary-name set is statically known.
  * A sole unannotated scalar/temporal parameter may additionally use the stock MyBatis whole-parameter
- * TypeHandler fallback without pretending the XML mapping property is a Java parameter name.
+ * TypeHandler fallback without pretending the XML mapping property is a Java parameter name. A sole
+ * unannotated Map<String, V> may use stock MyBatis parameter-object property lookup only when V is
+ * one maintained scalar/temporal type.
  */
 object XmlMapperMethodParameterContractFactory {
     private const val CALLER_AUTHORITY_PROBLEM = "xml-caller-input-authority-unproven"
@@ -27,6 +29,8 @@ object XmlMapperMethodParameterContractFactory {
         "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
     private const val PARAMETER_OBJECT_FALLBACK_RULE =
         "mybatis-3.5.19-default-parameter-handler-type-handler-fallback"
+    private const val PARAMETER_OBJECT_PROPERTY_RULE =
+        "mybatis-3.5.19-default-parameter-handler-meta-object-property"
     private val PARAMETER_OBJECT_TYPE_HANDLER_TYPES = setOf(
         "boolean",
         "byte",
@@ -99,6 +103,7 @@ object XmlMapperMethodParameterContractFactory {
         val parametersByGenericAlias = genericAliases(mapperMethod.parameters, parametersByExplicitAlias)
         val parametersByCollectionShortcutAlias = collectionShortcutAliases(mapperMethod.parameters)
         val parameterObjectFallback = singleParameterObjectFallback(mapperMethod.parameters)
+        val parameterObjectProperty = singleMapParameterObjectProperty(mapperMethod.parameters)
 
         val problems = baseline.blockingProblems
             .filterNot { it.code == CALLER_AUTHORITY_PROBLEM }
@@ -193,6 +198,23 @@ object XmlMapperMethodParameterContractFactory {
                         ),
                     )
                 }
+                parameterObjectProperty != null &&
+                    kind == InputKind.BOUND &&
+                    isSimpleMappingProperty(root) -> {
+                    resolvedByParameter.getOrPut(parameterObjectProperty.index) { mutableListOf() } += ResolvedUse(
+                        parameter = parameterObjectProperty,
+                        root = root,
+                        kind = kind,
+                        aliasKind = InputAliasKind.PARAMETER_OBJECT,
+                        placeholders = placeholders,
+                        generatedAlias = null,
+                        parameterObjectProperty = InputEvidence.ParameterObjectProperty(
+                            parameterIndex = parameterObjectProperty.index,
+                            mappingProperty = root,
+                            ruleId = PARAMETER_OBJECT_PROPERTY_RULE,
+                        ),
+                    )
+                }
                 else -> problems += authorityProblem
             }
         }
@@ -207,10 +229,15 @@ object XmlMapperMethodParameterContractFactory {
             val kinds = uses.mapTo(linkedSetOf()) { it.kind }
             val mapperEvidence = mapperEvidence(parameter, mapperSource)
             val generatedEvidence = uses.mapNotNull { it.generatedAlias }.distinct()
-            val parameterObjectEvidence = uses.mapNotNull { it.parameterObjectFallback }.distinct()
+            val parameterObjectFallbackEvidence = uses.mapNotNull { it.parameterObjectFallback }.distinct()
+            val parameterObjectPropertyEvidence = uses.mapNotNull { it.parameterObjectProperty }.distinct()
             val placeholderEvidence = uses.flatMap { it.placeholders }
             val provenance = InputProvenance(
-                mapperEvidence + generatedEvidence + parameterObjectEvidence + placeholderEvidence,
+                mapperEvidence +
+                    generatedEvidence +
+                    parameterObjectFallbackEvidence +
+                    parameterObjectPropertyEvidence +
+                    placeholderEvidence,
             )
 
             if (kinds.size != 1) {
@@ -241,6 +268,7 @@ object XmlMapperMethodParameterContractFactory {
                         addAll(mapperEvidence)
                         use.generatedAlias?.let(::add)
                         use.parameterObjectFallback?.let(::add)
+                        use.parameterObjectProperty?.let(::add)
                     }
                     aliases += InputAlias(
                         name = use.root,
@@ -313,6 +341,33 @@ object XmlMapperMethodParameterContractFactory {
                 rawType in PARAMETER_OBJECT_TYPE_HANDLER_TYPES
         }
     }
+
+    private fun singleMapParameterObjectProperty(
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaMethodParameterMetadata? {
+        if (parameters.size != 1) return null
+        val parameter = parameters.single()
+        if (parameter.myBatisParamAlias != null) return null
+
+        val canonical = parameter.typeIdentity.value.trim()
+        if (!canonical.startsWith("java.util.Map<") || !canonical.endsWith(">")) return null
+        val arguments = canonical
+            .substringAfter('<')
+            .dropLast(1)
+            .split(',')
+            .map(String::trim)
+        if (arguments.size != 2) return null
+        if (arguments[0] != "java.lang.String") return null
+        val valueType = arguments[1]
+        if ('<' in valueType || '>' in valueType || valueType !in PARAMETER_OBJECT_TYPE_HANDLER_TYPES) {
+            return null
+        }
+        return parameter
+    }
+
+    private fun isSimpleMappingProperty(property: String): Boolean =
+        property.isNotBlank() &&
+            property.none { it == '.' || it == '[' || it == ']' }
 
     private fun collectionShortcutAliases(
         parameters: List<JavaMethodParameterMetadata>,
@@ -406,5 +461,6 @@ object XmlMapperMethodParameterContractFactory {
         val placeholders: List<InputEvidence.Placeholder>,
         val generatedAlias: InputEvidence.GeneratedAlias?,
         val parameterObjectFallback: InputEvidence.ParameterObjectFallback? = null,
+        val parameterObjectProperty: InputEvidence.ParameterObjectProperty? = null,
     )
 }
