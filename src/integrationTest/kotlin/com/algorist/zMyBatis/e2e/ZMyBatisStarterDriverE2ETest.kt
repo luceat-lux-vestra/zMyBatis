@@ -238,6 +238,85 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     @Test
+    fun registeredRawInterpolationForcesPreviewWhenSettingDisabled(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-raw-confirmation-project"))
+        val rawToken = buildString {
+            append(36.toChar())
+            append("{value}")
+        }
+        Files.writeString(
+            projectDir.resolve("Query.xml"),
+            """
+            <mapper namespace="fixture.QueryMapper">
+            <select id="ping">SELECT $rawToken AS RESULT_VALUE</select>
+            </mapper>
+            """.trimIndent(),
+        )
+
+        val h2Jar = Path.of(H2Driver::class.java.protectionDomain.codeSource.location.toURI())
+        writeH2DataSourceFixture(projectDir)
+
+        val context = starterContext("action-raw-confirmation", projectDir)
+        writeH2DatabaseToolsDriverFixture(context.paths.configDir, h2Jar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                openFile("Query.xml")
+                ideFrame {
+                    invokeAction("EditorDown")
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("zMyBatis datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem("zMyBatis E2E", fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard {
+                    right()
+                    enter()
+                }
+
+                ui.dialog(title = "Enter MyBatis Parameters") {
+                    textField().text = "7"
+                    button("OK").click()
+                }
+
+                ui.dialog(title = "zMyBatis — SQL Preview") {
+                    val previewSql = textArea().text
+                    assertTrue(
+                        previewSql.contains("SELECT 7 AS RESULT_VALUE"),
+                        "raw interpolation must force final-SQL preview even when sqlPreview=false, got: <$previewSql>",
+                    )
+                    button("Cancel").click()
+                }
+                ui.waitForNoOpenedDialogs()
+
+                val resultGridOpened = try {
+                    ui.accessibleTable {
+                        byType("com.intellij.database.run.ui.table.TableResultView")
+                    }.content()
+                    true
+                } catch (_: com.intellij.driver.sdk.WaitForException) {
+                    false
+                }
+                assertFalse(
+                    resultGridOpened,
+                    "cancelling the mandatory raw-interpolation preview must not execute the query",
+                )
+            }
+    }
+
+    @Test
     fun registeredActionReachesProductionFailClosedPath(@TempDir tempDir: Path) {
         val projectDir = copySampleProject(tempDir.resolve("action-project"))
 
