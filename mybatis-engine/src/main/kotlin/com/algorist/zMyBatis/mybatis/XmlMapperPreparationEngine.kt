@@ -438,15 +438,31 @@ object XmlMapperPreparationEngine {
         if (parameterObjectAliases.isNotEmpty()) {
             val requirements = request.parameterContract.requirements
             val directRequirement = requirements.singleOrNull()
+            val directParameterIndex = directRequirement
+                ?.provenance
+                ?.evidence
+                ?.filterIsInstance<InputEvidence.MapperMethodParameter>()
+                ?.map { it.index }
+                ?.distinct()
+                ?.singleOrNull()
+            val aliasFallbacks = parameterObjectAliases.map { alias ->
+                alias to alias.provenance.evidence
+                    .filterIsInstance<InputEvidence.ParameterObjectFallback>()
+                    .singleOrNull()
+            }
             val coherent =
                 directRequirement != null &&
+                    directParameterIndex != null &&
                     request.parameterContract.aliases.all { it.kind == InputAliasKind.PARAMETER_OBJECT } &&
                     parameterObjectAliases.all { it.requirementId == directRequirement.id } &&
-                    parameterObjectAliases.all { alias ->
-                        alias.provenance.evidence
-                            .filterIsInstance<InputEvidence.ParameterObjectFallback>()
-                            .any { it.mappingProperty == alias.name }
-                    }
+                    aliasFallbacks.all { (alias, fallback) ->
+                        fallback != null &&
+                            fallback.parameterIndex == directParameterIndex &&
+                            fallback.mappingProperty == alias.name
+                    } &&
+                    directRequirement.provenance.evidence
+                        .filterIsInstance<InputEvidence.ParameterObjectFallback>()
+                        .toSet() == aliasFallbacks.mapNotNull { (_, fallback) -> fallback }.toSet()
             if (!coherent) {
                 return PreparationFailure(
                     PreparationFailureKind.PREPARATION_INVARIANT,
