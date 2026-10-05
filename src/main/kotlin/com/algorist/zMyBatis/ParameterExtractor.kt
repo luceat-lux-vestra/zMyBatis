@@ -25,7 +25,7 @@ object ParameterExtractor {
     fun extract(xmlContent: String): List<String> = extractResult(xmlContent).params
 
     /**
-     * Full extraction: returns both the parameter list and the set of object-accessed parameters.
+     * Full extraction: returns caller roots plus object-access and raw-retention evidence.
      */
     fun extractResult(xmlContent: String): ExtractionResult {
         val params = mutableSetOf<String>()
