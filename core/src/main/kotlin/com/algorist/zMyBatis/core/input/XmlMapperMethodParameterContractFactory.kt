@@ -12,7 +12,9 @@ import com.algorist.zMyBatis.core.source.XmlStatementId
  * the corresponding MyBatis input authority. Explicit @Param aliases are always considered. Generic
  * paramN aliases are considered only when the complete MyBatis primary-name set is statically known.
  * A sole unannotated scalar/temporal parameter may additionally use the stock MyBatis whole-parameter
- * TypeHandler fallback without pretending the XML mapping property is a Java parameter name.
+ * TypeHandler fallback. A sole unannotated Map<String, supported-scalar-or-temporal> may instead use
+ * stock parameter-object property lookup. Neither path pretends the XML mapping property is a Java
+ * parameter name.
  */
 object XmlMapperMethodParameterContractFactory {
     private const val CALLER_AUTHORITY_PROBLEM = "xml-caller-input-authority-unproven"
@@ -27,29 +29,8 @@ object XmlMapperMethodParameterContractFactory {
         "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
     private const val PARAMETER_OBJECT_FALLBACK_RULE =
         "mybatis-3.5.19-default-parameter-handler-type-handler-fallback"
-    private val PARAMETER_OBJECT_TYPE_HANDLER_TYPES = setOf(
-        "boolean",
-        "byte",
-        "short",
-        "int",
-        "long",
-        "float",
-        "double",
-        "java.lang.Boolean",
-        "java.lang.Byte",
-        "java.lang.Short",
-        "java.lang.Integer",
-        "java.lang.Long",
-        "java.lang.Float",
-        "java.lang.Double",
-        "java.lang.String",
-        "java.math.BigInteger",
-        "java.math.BigDecimal",
-        "java.time.Instant",
-        "java.time.LocalDate",
-        "java.time.LocalDateTime",
-        "java.time.LocalTime",
-    )
+    private const val PARAMETER_OBJECT_PROPERTY_LOOKUP_RULE =
+        "mybatis-3.5.19-default-parameter-handler-meta-object-property-lookup"
 
     fun build(
         graph: StatementSourceGraph,
@@ -99,6 +80,7 @@ object XmlMapperMethodParameterContractFactory {
         val parametersByGenericAlias = genericAliases(mapperMethod.parameters, parametersByExplicitAlias)
         val parametersByCollectionShortcutAlias = collectionShortcutAliases(mapperMethod.parameters)
         val parameterObjectFallback = singleParameterObjectFallback(mapperMethod.parameters)
+        val parameterObjectPropertyLookup = singleParameterObjectPropertyLookup(mapperMethod.parameters)
 
         val problems = baseline.blockingProblems
             .filterNot { it.code == CALLER_AUTHORITY_PROBLEM }
@@ -193,6 +175,22 @@ object XmlMapperMethodParameterContractFactory {
                         ),
                     )
                 }
+                parameterObjectPropertyLookup != null && kind == InputKind.BOUND -> {
+                    resolvedByParameter.getOrPut(parameterObjectPropertyLookup.index) { mutableListOf() } +=
+                        ResolvedUse(
+                            parameter = parameterObjectPropertyLookup,
+                            root = root,
+                            kind = kind,
+                            aliasKind = InputAliasKind.PARAMETER_OBJECT,
+                            placeholders = placeholders,
+                            generatedAlias = null,
+                            parameterObjectPropertyLookup = InputEvidence.ParameterObjectPropertyLookup(
+                                parameterIndex = parameterObjectPropertyLookup.index,
+                                mappingProperty = root,
+                                ruleId = PARAMETER_OBJECT_PROPERTY_LOOKUP_RULE,
+                            ),
+                        )
+                }
                 else -> problems += authorityProblem
             }
         }
@@ -208,9 +206,15 @@ object XmlMapperMethodParameterContractFactory {
             val mapperEvidence = mapperEvidence(parameter, mapperSource)
             val generatedEvidence = uses.mapNotNull { it.generatedAlias }.distinct()
             val parameterObjectEvidence = uses.mapNotNull { it.parameterObjectFallback }.distinct()
+            val parameterObjectPropertyEvidence =
+                uses.mapNotNull { it.parameterObjectPropertyLookup }.distinct()
             val placeholderEvidence = uses.flatMap { it.placeholders }
             val provenance = InputProvenance(
-                mapperEvidence + generatedEvidence + parameterObjectEvidence + placeholderEvidence,
+                mapperEvidence +
+                    generatedEvidence +
+                    parameterObjectEvidence +
+                    parameterObjectPropertyEvidence +
+                    placeholderEvidence,
             )
 
             if (kinds.size != 1) {
@@ -241,6 +245,7 @@ object XmlMapperMethodParameterContractFactory {
                         addAll(mapperEvidence)
                         use.generatedAlias?.let(::add)
                         use.parameterObjectFallback?.let(::add)
+                        use.parameterObjectPropertyLookup?.let(::add)
                     }
                     aliases += InputAlias(
                         name = use.root,
@@ -307,10 +312,20 @@ object XmlMapperMethodParameterContractFactory {
         val parameter = parameters.single()
         if (parameter.myBatisParamAlias != null) return null
         val expected = JavaParameterTypeContract.expectedType(parameter.typeIdentity, InputKind.BOUND)
-        val rawType = parameter.typeIdentity.value.substringBefore('<').trim()
         return parameter.takeIf {
             (expected.shape == InputShape.SCALAR || expected.shape == InputShape.TEMPORAL) &&
-                rawType in PARAMETER_OBJECT_TYPE_HANDLER_TYPES
+                JavaParameterTypeContract.supportsStockParameterObjectTypeHandler(parameter.typeIdentity)
+        }
+    }
+
+    private fun singleParameterObjectPropertyLookup(
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaMethodParameterMetadata? {
+        if (parameters.size != 1) return null
+        val parameter = parameters.single()
+        if (parameter.myBatisParamAlias != null) return null
+        return parameter.takeIf {
+            JavaParameterTypeContract.stringKeyedMapValueType(parameter.typeIdentity) != null
         }
     }
 
@@ -406,5 +421,6 @@ object XmlMapperMethodParameterContractFactory {
         val placeholders: List<InputEvidence.Placeholder>,
         val generatedAlias: InputEvidence.GeneratedAlias?,
         val parameterObjectFallback: InputEvidence.ParameterObjectFallback? = null,
+        val parameterObjectPropertyLookup: InputEvidence.ParameterObjectPropertyLookup? = null,
     )
 }
