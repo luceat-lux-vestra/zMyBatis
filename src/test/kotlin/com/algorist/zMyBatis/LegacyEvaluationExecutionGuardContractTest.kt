@@ -64,6 +64,10 @@ class LegacyEvaluationExecutionGuardContractTest {
             "evaluated.requiresRawInterpolationConfirmation",
             previewPolicy,
         )
+        val mutationConfirmation = worker.indexOf(
+            "requiresMutationConfirmation",
+            rawConfirmation,
+        )
         val guardedPreview = worker.indexOf("if (requiresSqlPreview)", previewPolicy)
         val previewDialog = worker.indexOf("SqlPreviewDialog(project, pureSql)", guardedPreview)
         val cancelBranch = worker.indexOf(
@@ -78,7 +82,11 @@ class LegacyEvaluationExecutionGuardContractTest {
         assertTrue("preview policy must be explicit", previewPolicy > pureSql)
         assertTrue("user preview setting must participate in policy", userSetting > previewPolicy)
         assertTrue("raw confirmation metadata must participate in policy", rawConfirmation > userSetting)
-        assertTrue("preview branch must be guarded by combined policy", guardedPreview > rawConfirmation)
+        assertTrue(
+            "mutation declaration policy must participate in preview policy",
+            mutationConfirmation > rawConfirmation,
+        )
+        assertTrue("preview branch must be guarded by combined policy", guardedPreview > mutationConfirmation)
         assertTrue("preview must receive the final pureSql", previewDialog > guardedPreview)
         assertTrue("cancel must remain inside the preview branch", cancelBranch > previewDialog)
         assertTrue("non-preview execution must remain a separate else branch", directExecution > cancelBranch)
@@ -86,10 +94,12 @@ class LegacyEvaluationExecutionGuardContractTest {
 
         val previewPolicySource = worker.substring(previewPolicy, guardedPreview)
         assertTrue(
-            "raw interpolation must force preview even when the user setting is false",
-            previewPolicySource.contains(
-                "settings.sqlPreview || evaluated.requiresRawInterpolationConfirmation",
-            ),
+            "raw interpolation must remain part of mandatory preview policy",
+            previewPolicySource.contains("evaluated.requiresRawInterpolationConfirmation"),
+        )
+        assertTrue(
+            "mutation declarations must force preview independently of the user setting",
+            previewPolicySource.contains("requiresMutationConfirmation"),
         )
     }
 
