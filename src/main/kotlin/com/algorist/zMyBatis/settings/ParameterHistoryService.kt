@@ -13,7 +13,11 @@ import com.intellij.openapi.components.service
  *
  * Key   : Mapper statement ID, composed as "{filePath}::{statementId}" (e.g.
  *         "/src/mapper/UserMapper.xml::selectById")
- *         For annotation-based mappers: "{filePath}::{className}#{methodName}"
+ *         For annotation-based mappers:
+ *         "{filePath}::{qualifiedMapperType}#{methodName}({orderedParameterTypes})".
+ *
+ *         Legacy name-only Java keys are intentionally not used as fallback because they
+ *         cannot distinguish overloaded mapper methods safely.
  *
  * Value : A flat map of { paramName -> rawInputText }.
  *         Stored as raw text (as the user typed), not parsed values,
