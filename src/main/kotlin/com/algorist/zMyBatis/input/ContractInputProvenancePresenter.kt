@@ -45,6 +45,8 @@ internal object ContractInputProvenancePresenter {
             }
             is InputEvidence.ExplicitParamAlias -> "@Param(\"${evidence.alias}\")"
             is InputEvidence.GeneratedAlias -> "generated alias ${evidence.alias} (${evidence.ruleId})"
+            is InputEvidence.ParameterObjectFallback ->
+                "parameter-object mapping ${evidence.mappingProperty} (${evidence.ruleId})"
             is InputEvidence.Placeholder -> "${evidence.kind}: ${evidence.expression}"
             is InputEvidence.OgnlExpression -> "OGNL: ${evidence.expression}"
             is InputEvidence.ForeachCollection -> "foreach collection: ${evidence.expression}"
@@ -62,6 +64,7 @@ internal object ContractInputProvenancePresenter {
         is InputEvidence.MapperMethodParameter -> evidence.source
         is InputEvidence.ExplicitParamAlias -> evidence.source
         is InputEvidence.GeneratedAlias -> null
+        is InputEvidence.ParameterObjectFallback -> null
         is InputEvidence.Placeholder -> evidence.source
         is InputEvidence.OgnlExpression -> evidence.source
         is InputEvidence.ForeachCollection -> evidence.source
