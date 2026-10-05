@@ -14,7 +14,11 @@ import java.util.Date
 import java.util.regex.Matcher
 
 internal sealed interface LegacyExecutionEvaluationResult {
-    data class Evaluated(val sql: String) : LegacyExecutionEvaluationResult
+    data class Evaluated(
+        val sql: String,
+        val requiresRawInterpolationConfirmation: Boolean = false,
+    ) : LegacyExecutionEvaluationResult
+
     data class Failed(val cause: Exception) : LegacyExecutionEvaluationResult
 }
 
@@ -57,6 +61,7 @@ object MyBatisEvaluator {
 
     /** Tags that wrap the whole statement — never treated as unknown. */
     private val WRAPPER_TAGS = setOf("select", "insert", "update", "delete", "script", "root")
+    private val RAW_INTERPOLATION_CANDIDATE = Regex("""\$\{[^}]+}""")
 
     @Suppress("TooGenericExceptionCaught")
     internal fun evaluateForExecution(
@@ -65,7 +70,7 @@ object MyBatisEvaluator {
     ): LegacyExecutionEvaluationResult =
         try {
             LegacyExecutionEvaluationResult.Evaluated(
-                evaluateInternal(
+                sql = evaluateInternal(
                     xmlContent,
                     params,
                     allowUnknownTagCompatibility = false,
@@ -73,6 +78,7 @@ object MyBatisEvaluator {
                     failClosedMissingBoundParameter = true,
                     failClosedUnsupportedLiteralization = true,
                 ),
+                requiresRawInterpolationConfirmation = containsRawInterpolationCandidate(xmlContent),
             )
         } catch (e: ProcessCanceledException) {
             throw e
@@ -315,6 +321,9 @@ object MyBatisEvaluator {
 
         return LegacyPropertyResolution.Found(current)
     }
+
+    private fun containsRawInterpolationCandidate(xmlContent: String): Boolean =
+        RAW_INTERPOLATION_CANDIDATE.containsMatchIn(xmlContent)
 
     private fun sanitizeOgnlExpressions(xml: String): String {
         val pattern = Regex("(test|when|value)\\s*=\\s*(\"[^\"]*\"|'[^']*')")
