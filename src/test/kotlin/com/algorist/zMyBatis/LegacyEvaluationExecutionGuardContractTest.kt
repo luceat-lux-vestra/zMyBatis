@@ -46,7 +46,34 @@ class LegacyEvaluationExecutionGuardContractTest {
     }
 
     @Test
-    fun `raw interpolation confirmation cannot be disabled by preview setting`() {
+    fun `shipping action derives mutation confirmation from current declaration evidence`() {
+        val action = source(
+            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
+        )
+        val policyCapture = action
+            .substringAfter("val requiresMutationConfirmation =")
+            .substringBefore("val annotationDependencies =")
+
+        assertTrue(
+            "XML statement tag must feed the mutation confirmation policy",
+            policyCapture.contains("xmlTagName = statementXmlTag?.name"),
+        )
+        assertTrue(
+            "Java statement annotation must feed the mutation confirmation policy",
+            policyCapture.contains("annotationQualifiedName = statementAnnotation?.qualifiedName"),
+        )
+
+        val executionSignature = action
+            .substringAfter("private fun proceedWithParamsAndExecute(")
+            .substringBefore(") {")
+        assertTrue(
+            "captured mutation policy must be an explicit invocation input",
+            executionSignature.contains("requiresMutationConfirmation: Boolean"),
+        )
+    }
+
+    @Test
+    fun `mandatory confirmation requirements cannot be disabled by preview setting`() {
         val action = source(
             "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
         )
