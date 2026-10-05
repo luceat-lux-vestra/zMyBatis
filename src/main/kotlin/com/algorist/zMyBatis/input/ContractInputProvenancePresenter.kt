@@ -49,6 +49,8 @@ internal object ContractInputProvenancePresenter {
                 "parameter-object mapping ${evidence.mappingProperty} (${evidence.ruleId})"
             is InputEvidence.ParameterObjectProperty ->
                 "parameter-object property ${evidence.mappingProperty} (${evidence.ruleId})"
+            is InputEvidence.NamedMapProperty ->
+                "named Map property ${evidence.mappingProperty} (${evidence.ruleId})"
             is InputEvidence.Placeholder -> "${evidence.kind}: ${evidence.expression}"
             is InputEvidence.OgnlExpression -> "OGNL: ${evidence.expression}"
             is InputEvidence.ForeachCollection -> "foreach collection: ${evidence.expression}"
@@ -68,6 +70,7 @@ internal object ContractInputProvenancePresenter {
         is InputEvidence.GeneratedAlias -> null
         is InputEvidence.ParameterObjectFallback -> null
         is InputEvidence.ParameterObjectProperty -> null
+        is InputEvidence.NamedMapProperty -> null
         is InputEvidence.Placeholder -> evidence.source
         is InputEvidence.OgnlExpression -> evidence.source
         is InputEvidence.ForeachCollection -> evidence.source
