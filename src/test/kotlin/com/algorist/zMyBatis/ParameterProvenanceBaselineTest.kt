@@ -40,51 +40,7 @@ class ParameterProvenanceBaselineTest {
     @Test
     fun `hash and dollar placeholders share discovery roots but raw retention evidence differs`() {
         val bound = ParameterExtractor.extractResult("SELECT #{value}")
-        val raw = ParameterExtractor.extractResult("SELECT ${'
-
-    @Test
-    fun `quoted and commented placeholders remain lexical false positives`() {
-        val xml = """
-            SELECT '#{quotedFake}' AS sample
-            -- ${'$'}{commentFake}
-            /* #{blockFake} */
-            FROM dual
-        """.trimIndent()
-
-        val result = ParameterExtractor.extractResult(xml)
-
-        assertEquals(listOf("blockFake", "commentFake", "quotedFake"), result.params)
-        assertTrue(result.objectParams.isEmpty())
-    }
-
-    @Test
-    fun `malformed placeholders without a closing brace are not discovered`() {
-        val result = ParameterExtractor.extractResult(
-            "SELECT #{broken, ${'$'}{alsoBroken"
-        )
-
-        assertTrue(result.params.isEmpty())
-        assertTrue(result.objectParams.isEmpty())
-    }
-
-    @Test
-    fun `large repeated source fixture is deterministic and deduplicated`() {
-        val xml = buildString {
-            repeat(1_000) { index ->
-                append("#{p${index % 100}.value} ")
-            }
-        }
-        val expected = (0 until 100).map { "p$it" }.sorted()
-
-        val first = ParameterExtractor.extractResult(xml)
-        val second = ParameterExtractor.extractResult(xml)
-
-        assertEquals(expected, first.params)
-        assertEquals(expected.toSet(), first.objectParams)
-        assertEquals(first, second)
-    }
-}
-}{value}")
+        val raw = ParameterExtractor.extractResult("SELECT ${'$'}{value}")
 
         assertEquals(bound.params, raw.params)
         assertEquals(bound.objectParams, raw.objectParams)
