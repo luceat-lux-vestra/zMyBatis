@@ -117,6 +117,45 @@ class ContractInputProvenancePresenterTest {
     }
 
     @Test
+    fun `parameter object property lookup stays explicit without inventing source location`() {
+        val provenance = InputProvenance(
+            listOf(
+                InputEvidence.ParameterObjectProperty(
+                    parameterIndex = 0,
+                    mappingProperty = "id",
+                    ruleId = "mybatis-3.5.19-default-parameter-handler-meta-object-property",
+                ),
+                InputEvidence.MapperMethodParameter(
+                    index = 0,
+                    sourceName = "payload",
+                    typeIdentity = JavaTypeIdentity(
+                        "java.util.Map<java.lang.String,java.lang.Long>",
+                    ),
+                    source = source(10, 20),
+                ),
+            ),
+        )
+
+        val presentation = ContractInputProvenancePresenter.present(provenance)
+
+        assertEquals(
+            "mapper parameter #0 (payload): java.util.Map<java.lang.String,java.lang.Long> " +
+                "@ src/example/Mapper.java[10,20) (+1 more)",
+            presentation.summary,
+        )
+        assertTrue(
+            presentation.details.startsWith(
+                "parameter-object property id " +
+                    "(mybatis-3.5.19-default-parameter-handler-meta-object-property); ",
+            ),
+        )
+        assertFalse(
+            "semantic property evidence must not fabricate a source location",
+            presentation.details.substringBefore(";").contains(" @ "),
+        )
+    }
+
+    @Test
     fun `missing source range renders file identity without inventing an offset`() {
         val provenance = InputProvenance(
             listOf(
