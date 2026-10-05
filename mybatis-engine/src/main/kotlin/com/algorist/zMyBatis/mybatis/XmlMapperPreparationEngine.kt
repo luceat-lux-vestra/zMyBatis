@@ -48,6 +48,12 @@ object XmlMapperPreparationEngine {
     private const val ALIAS_KIND_UNSUPPORTED = "xml-preparation-alias-kind-unsupported"
     private const val PARAMETER_OBJECT_CONTRACT_INVALID =
         "xml-preparation-parameter-object-contract-invalid"
+    private const val PARAMETER_OBJECT_PROPERTY_MISSING =
+        "xml-preparation-parameter-object-property-missing"
+    private const val PARAMETER_OBJECT_FALLBACK_RULE =
+        "mybatis-3.5.19-default-parameter-handler-type-handler-fallback"
+    private const val PARAMETER_OBJECT_PROPERTY_RULE =
+        "mybatis-3.5.19-default-parameter-handler-meta-object-property"
     private const val MAPPING_PROPERTY_MISSING = "xml-preparation-mapping-property-missing"
     private const val MAPPING_PROPERTY_NESTED = "xml-preparation-nested-mapping-unsupported"
     private const val MAPPING_ALIAS_UNRESOLVED = "xml-preparation-mapping-alias-unresolved"
@@ -74,6 +80,22 @@ object XmlMapperPreparationEngine {
     )
     private val safeMapperDoctype = Regex(
         """(?is)<!DOCTYPE\s+mapper\s+PUBLIC\s+["']-//mybatis\.org//DTD Mapper 3\.0//EN["']\s+["']https?://mybatis\.org/dtd/mybatis-3-mapper\.dtd["']\s*>""",
+    )
+    private val parameterObjectMapValueTypes = setOf(
+        "java.lang.Boolean",
+        "java.lang.Byte",
+        "java.lang.Short",
+        "java.lang.Integer",
+        "java.lang.Long",
+        "java.lang.Float",
+        "java.lang.Double",
+        "java.lang.String",
+        "java.math.BigInteger",
+        "java.math.BigDecimal",
+        "java.time.Instant",
+        "java.time.LocalDate",
+        "java.time.LocalDateTime",
+        "java.time.LocalTime",
     )
     private val platformLoader = ClassLoader.getPlatformClassLoader()
     private val isolatedRuntime: IsolatedRuntime by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -102,7 +124,18 @@ object XmlMapperPreparationEngine {
 
         inputContractFailure(request)?.let { return PreparationResult.Failed(it) }
 
-        val parameterValuesResult = MyBatisValueConversion.parameterValues(request)
+        val typedMapRequirementIds = request.parameterContract.requirements
+            .filter { requirement ->
+                requirement.expectedType.shape == InputShape.MAP &&
+                    requirement.provenance.evidence.any {
+                        it is InputEvidence.ParameterObjectProperty
+                    }
+            }
+            .mapTo(linkedSetOf()) { it.id }
+        val parameterValuesResult = MyBatisValueConversion.parameterValues(
+            request,
+            typedStructuredRequirementIds = typedMapRequirementIds,
+        )
         if (parameterValuesResult is MyBatisValueConversion.ParameterValuesResult.Failed) {
             return PreparationResult.Failed(parameterValuesResult.failure)
         }
@@ -410,7 +443,11 @@ object XmlMapperPreparationEngine {
         }
         if (
             request.parameterContract.requirements.any {
-                it.expectedType.shape !in setOf(InputShape.SCALAR, InputShape.TEMPORAL)
+                it.expectedType.shape !in setOf(
+                    InputShape.SCALAR,
+                    InputShape.TEMPORAL,
+                    InputShape.MAP,
+                )
             }
         ) {
             return PreparationFailure(
@@ -435,6 +472,15 @@ object XmlMapperPreparationEngine {
         val parameterObjectAliases = request.parameterContract.aliases.filter {
             it.kind == InputAliasKind.PARAMETER_OBJECT
         }
+        val mapRequirements = request.parameterContract.requirements.filter {
+            it.expectedType.shape == InputShape.MAP
+        }
+        if (mapRequirements.isNotEmpty() && parameterObjectAliases.isEmpty()) {
+            return PreparationFailure(
+                PreparationFailureKind.UNSUPPORTED_BINDING_VALUE,
+                BOUND_SHAPE_UNSUPPORTED,
+            )
+        }
         if (parameterObjectAliases.isNotEmpty()) {
             val requirements = request.parameterContract.requirements
             val directRequirement = requirements.singleOrNull()
@@ -450,20 +496,52 @@ object XmlMapperPreparationEngine {
                     .filterIsInstance<InputEvidence.ParameterObjectFallback>()
                     .singleOrNull()
             }
-            val coherent =
+            val aliasProperties = parameterObjectAliases.map { alias ->
+                alias to alias.provenance.evidence
+                    .filterIsInstance<InputEvidence.ParameterObjectProperty>()
+                    .singleOrNull()
+            }
+            val commonCoherence =
                 directRequirement != null &&
                     directParameterIndex != null &&
                     request.parameterContract.aliases.all { it.kind == InputAliasKind.PARAMETER_OBJECT } &&
-                    parameterObjectAliases.all { it.requirementId == directRequirement.id } &&
+                    parameterObjectAliases.all { it.requirementId == directRequirement.id }
+
+            val fallbackCoherence =
+                commonCoherence &&
+                    directRequirement!!.expectedType.shape in
+                    setOf(InputShape.SCALAR, InputShape.TEMPORAL) &&
+                    aliasProperties.all { (_, property) -> property == null } &&
                     aliasFallbacks.all { (alias, fallback) ->
                         fallback != null &&
                             fallback.parameterIndex == directParameterIndex &&
-                            fallback.mappingProperty == alias.name
+                            fallback.mappingProperty == alias.name &&
+                            fallback.ruleId == PARAMETER_OBJECT_FALLBACK_RULE
                     } &&
                     directRequirement.provenance.evidence
                         .filterIsInstance<InputEvidence.ParameterObjectFallback>()
-                        .toSet() == aliasFallbacks.mapNotNull { (_, fallback) -> fallback }.toSet()
-            if (!coherent) {
+                        .toSet() == aliasFallbacks.mapNotNull { (_, fallback) -> fallback }.toSet() &&
+                    directRequirement.provenance.evidence
+                        .none { it is InputEvidence.ParameterObjectProperty }
+
+            val propertyCoherence =
+                commonCoherence &&
+                    directRequirement!!.expectedType.shape == InputShape.MAP &&
+                    isSupportedStringScalarMap(directRequirement) &&
+                    aliasFallbacks.all { (_, fallback) -> fallback == null } &&
+                    aliasProperties.all { (alias, property) ->
+                        property != null &&
+                            property.parameterIndex == directParameterIndex &&
+                            property.mappingProperty == alias.name &&
+                            property.ruleId == PARAMETER_OBJECT_PROPERTY_RULE
+                    } &&
+                    directRequirement.provenance.evidence
+                        .filterIsInstance<InputEvidence.ParameterObjectProperty>()
+                        .toSet() == aliasProperties.mapNotNull { (_, property) -> property }.toSet() &&
+                    directRequirement.provenance.evidence
+                        .none { it is InputEvidence.ParameterObjectFallback }
+
+            if (!fallbackCoherence && !propertyCoherence) {
                 return PreparationFailure(
                     PreparationFailureKind.PREPARATION_INVARIANT,
                     PARAMETER_OBJECT_CONTRACT_INVALID,
@@ -566,7 +644,41 @@ object XmlMapperPreparationEngine {
                         ),
                     )
                 }
-                parameterPayload.parameterObject
+                val propertyEvidence = alias.provenance.evidence
+                    .filterIsInstance<InputEvidence.ParameterObjectProperty>()
+                val fallbackEvidence = alias.provenance.evidence
+                    .filterIsInstance<InputEvidence.ParameterObjectFallback>()
+                when {
+                    propertyEvidence.size == 1 && fallbackEvidence.isEmpty() -> {
+                        val parameterMap = parameterPayload.parameterObject as? Map<*, *>
+                            ?: return XmlBindingCapture.Failed(
+                                PreparationFailure(
+                                    PreparationFailureKind.PREPARATION_INVARIANT,
+                                    PARAMETER_OBJECT_CONTRACT_INVALID,
+                                    property,
+                                ),
+                            )
+                        if (!parameterMap.containsKey(property)) {
+                            return XmlBindingCapture.Failed(
+                                PreparationFailure(
+                                    PreparationFailureKind.BINDING_RESOLUTION,
+                                    PARAMETER_OBJECT_PROPERTY_MISSING,
+                                    property,
+                                ),
+                            )
+                        }
+                        parameterMap[property]
+                    }
+                    propertyEvidence.isEmpty() && fallbackEvidence.size == 1 ->
+                        parameterPayload.parameterObject
+                    else -> return XmlBindingCapture.Failed(
+                        PreparationFailure(
+                            PreparationFailureKind.PREPARATION_INVARIANT,
+                            PARAMETER_OBJECT_CONTRACT_INVALID,
+                            property,
+                        ),
+                    )
+                }
             } else {
                 if (!parameterPayload.namedValues.containsKey(property)) {
                     return XmlBindingCapture.Failed(
@@ -669,6 +781,23 @@ object XmlMapperPreparationEngine {
             )
         }
         return XmlBindingCapture.Ready(bindings)
+    }
+
+    private fun isSupportedStringScalarMap(
+        requirement: com.algorist.zMyBatis.core.input.InputRequirement,
+    ): Boolean {
+        val canonical = requirement.expectedType.javaTypeIdentity?.value?.trim() ?: return false
+        if (!canonical.startsWith("java.util.Map<") || !canonical.endsWith(">")) return false
+        val arguments = canonical
+            .substringAfter('<')
+            .dropLast(1)
+            .split(',')
+            .map(String::trim)
+        if (arguments.size != 2 || arguments[0] != "java.lang.String") return false
+        val valueType = arguments[1]
+        return '<' !in valueType &&
+            '>' !in valueType &&
+            valueType in parameterObjectMapValueTypes
     }
 
     private fun parameterPayload(
