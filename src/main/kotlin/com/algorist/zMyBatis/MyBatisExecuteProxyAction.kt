@@ -127,6 +127,11 @@ open class MyBatisExecuteProxyAction : AnAction() {
                 } else {
                     null
                 }
+            val requiresMutationConfirmation =
+                LegacyStatementConfirmationPolicy.requiresMutationConfirmation(
+                    xmlTagName = statementXmlTag?.name,
+                    annotationQualifiedName = statementAnnotation?.qualifiedName,
+                )
             val annotationDependencies =
                 if (statementAnnotation != null) {
                     when (
@@ -202,6 +207,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                     project,
                     sqlContent,
                     context,
+                    requiresMutationConfirmation,
                     cachedConsole,
                     statementKey,
                     sourceRevision,
@@ -231,6 +237,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                     project,
                                     sqlContent,
                                     context,
+                                    requiresMutationConfirmation,
                                     console,
                                     statementKey,
                                     sourceRevision,
@@ -262,6 +269,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                 project,
                                 sqlContent,
                                 context,
+                                requiresMutationConfirmation,
                                 console,
                                 statementKey,
                                 sourceRevision,
@@ -286,6 +294,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
                                 project,
                                 sqlContent,
                                 context,
+                                requiresMutationConfirmation,
                                 console,
                                 statementKey,
                                 sourceRevision,
@@ -314,6 +323,7 @@ open class MyBatisExecuteProxyAction : AnAction() {
         project: com.intellij.openapi.project.Project,
         sqlContent: String,
         context: MyBatisContextAnalyzer.ContextType,
+        requiresMutationConfirmation: Boolean,
         console: JdbcConsole,
         statementKey: String? = null,
         sourceRevision: LegacyActionInvocationSourceRevision,
@@ -385,7 +395,9 @@ open class MyBatisExecuteProxyAction : AnAction() {
                     ) return@invokeLater
                     val pureSql = if (settings.autoFormatSql) SqlFormatter.format(project, rawSql) else rawSql
                     val requiresSqlPreview =
-                        settings.sqlPreview || evaluated.requiresRawInterpolationConfirmation
+                        settings.sqlPreview ||
+                            evaluated.requiresRawInterpolationConfirmation ||
+                            requiresMutationConfirmation
                     if (requiresSqlPreview) {
                         val dialog = SqlPreviewDialog(project, pureSql)
                         if (dialog.showAndGet()) {
