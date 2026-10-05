@@ -54,10 +54,11 @@ class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase(
             it.parameterList.parameters.single().type.canonicalText == "int"
         }
         val stringMethod = overloads.single { it !== intMethod }
+        val intParameterType = intMethod.parameterList.parameters.single().type.canonicalText
+        val stringParameterType = stringMethod.parameterList.parameters.single().type.canonicalText
         assertFalse(
             "fixture must contain genuinely distinct mapper method signatures",
-            intMethod.parameterList.parameters.single().type.canonicalText ==
-                stringMethod.parameterList.parameters.single().type.canonicalText,
+            intParameterType == stringParameterType,
         )
 
         val action = MyBatisExecuteProxyAction()
@@ -84,11 +85,11 @@ class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase(
         assertEquals("SELECT * FROM users WHERE name = #{name}", stringSql)
 
         assertEquals(
-            "$fileKey::fixture.UserMapper#find(int)",
+            "$fileKey::fixture.UserMapper#find($intParameterType)",
             intKey,
         )
         assertEquals(
-            "$fileKey::fixture.UserMapper#find(java.lang.String)",
+            "$fileKey::fixture.UserMapper#find($stringParameterType)",
             stringKey,
         )
         assertFalse(
