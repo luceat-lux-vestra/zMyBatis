@@ -509,7 +509,7 @@ object XmlMapperPreparationEngine {
 
             val fallbackCoherence =
                 commonCoherence &&
-                    directRequirement!!.expectedType.shape in
+                    directRequirement.expectedType.shape in
                     setOf(InputShape.SCALAR, InputShape.TEMPORAL) &&
                     aliasProperties.all { (_, property) -> property == null } &&
                     aliasFallbacks.all { (alias, fallback) ->
@@ -526,7 +526,7 @@ object XmlMapperPreparationEngine {
 
             val propertyCoherence =
                 commonCoherence &&
-                    directRequirement!!.expectedType.shape == InputShape.MAP &&
+                    directRequirement.expectedType.shape == InputShape.MAP &&
                     isSupportedStringScalarMap(directRequirement) &&
                     aliasFallbacks.all { (_, fallback) -> fallback == null } &&
                     aliasProperties.all { (alias, property) ->
