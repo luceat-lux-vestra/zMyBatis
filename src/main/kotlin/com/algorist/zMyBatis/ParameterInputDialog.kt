@@ -39,6 +39,7 @@ class ParameterInputDialog(
     private val objectParams: Set<String> = emptySet(),
     /**
      * Unique key identifying the Mapper statement (e.g. "UserMapper.xml::selectById").
+     * Java annotation callers supply an overload-safe qualified mapper + method-signature key.
      * Used to persist and restore last-used parameter values.
      * Pass null to disable history for this dialog.
      */
