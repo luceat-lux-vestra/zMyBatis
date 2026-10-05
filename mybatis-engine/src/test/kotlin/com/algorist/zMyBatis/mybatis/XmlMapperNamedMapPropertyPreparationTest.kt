@@ -170,6 +170,47 @@ class XmlMapperNamedMapPropertyPreparationTest {
     }
 
     @Test
+    fun tamperedNamedMapPropertyPathFailsPreparationInvariant() {
+        val fixture = fixture(
+            "SELECT * FROM users WHERE id = #{payload.id}",
+            alias = "payload",
+        )
+        val original = contract(fixture)
+        val requirement = original.requirements.single()
+        val tamperedRequirement = requirement.copy(
+            provenance = InputProvenance(
+                requirement.provenance.evidence.map { evidence ->
+                    if (evidence is InputEvidence.NamedMapProperty) {
+                        evidence.copy(
+                            mappingProperty = "payload.other",
+                            key = "other",
+                        )
+                    } else {
+                        evidence
+                    }
+                },
+            ),
+        )
+        val tampered = ParameterContract(
+            statementId = original.statementId,
+            requirements = listOf(tamperedRequirement),
+            aliases = original.aliases,
+            internalBindings = original.internalBindings,
+            blockingProblems = original.blockingProblems,
+            sourceRevisions = original.sourceRevisions,
+        )
+
+        val failure = prepare(
+            fixture,
+            tampered,
+            mapValue("id" to InputValue.IntegerValue(BigInteger.ONE)),
+        ) as PreparationResult.Failed
+
+        assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, failure.failure.kind)
+        assertEquals("xml-preparation-named-map-contract-invalid", failure.failure.code)
+    }
+
+    @Test
     fun directParameterObjectMapRegressionRemainsSeparate() {
         val fixture = fixture(
             "SELECT * FROM users WHERE id = #{id}",
