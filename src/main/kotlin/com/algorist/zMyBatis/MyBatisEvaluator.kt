@@ -31,6 +31,17 @@ internal class LegacyUnsupportedExecutionLiteralException(
         "Use MyBatis property/iteration syntax or execute reviewed SQL manually.",
 )
 
+internal class LegacyMissingExecutionParameterException(
+    val property: String,
+) : Exception(
+    "Missing bound parameter for legacy execution: $property.",
+)
+
+private sealed interface LegacyPropertyResolution {
+    data class Found(val value: Any?) : LegacyPropertyResolution
+    data object Missing : LegacyPropertyResolution
+}
+
 object MyBatisEvaluator {
 
     /**
@@ -59,6 +70,7 @@ object MyBatisEvaluator {
                     params,
                     allowUnknownTagCompatibility = false,
                     allowOgnlPlaceholderCompatibility = false,
+                    failClosedMissingBoundParameter = true,
                     failClosedUnsupportedLiteralization = true,
                 ),
             )
@@ -83,6 +95,7 @@ object MyBatisEvaluator {
                 params,
                 allowUnknownTagCompatibility = ignoreUnknownTags,
                 allowOgnlPlaceholderCompatibility = true,
+                failClosedMissingBoundParameter = false,
                 failClosedUnsupportedLiteralization = false,
             )
         } catch (e: ProcessCanceledException) {
@@ -102,6 +115,7 @@ object MyBatisEvaluator {
         params: Map<String, Any?>,
         allowUnknownTagCompatibility: Boolean,
         allowOgnlPlaceholderCompatibility: Boolean,
+        failClosedMissingBoundParameter: Boolean,
         failClosedUnsupportedLiteralization: Boolean,
     ): String {
         var cleanedXml = xmlContent
@@ -147,10 +161,19 @@ object MyBatisEvaluator {
 
         for (mapping in boundSql.parameterMappings) {
             val propName = mapping.property
-            val value = if (boundSql.hasAdditionalParameter(propName)) {
-                boundSql.getAdditionalParameter(propName)
+            val resolution = if (boundSql.hasAdditionalParameter(propName)) {
+                LegacyPropertyResolution.Found(boundSql.getAdditionalParameter(propName))
             } else {
                 resolveProperty(params, propName)
+            }
+            val value = when (resolution) {
+                is LegacyPropertyResolution.Found -> resolution.value
+                LegacyPropertyResolution.Missing -> {
+                    if (failClosedMissingBoundParameter) {
+                        throw LegacyMissingExecutionParameterException(propName)
+                    }
+                    null
+                }
             }
             val literalValue = convertToLiteral(value, failClosedUnsupportedLiteralization)
             pureSql = pureSql.replaceFirst(Regex("\\?"), Matcher.quoteReplacement(literalValue))
@@ -231,19 +254,30 @@ object MyBatisEvaluator {
      *     (e.g. `"user.name"` → `params["user"]["name"]`,
      *     `"items[0].id"` → `params["items"][0]["id"]`).
      */
-    private fun resolveProperty(params: Map<String, Any?>, propName: String): Any? {
-        if (params.containsKey(propName)) return params[propName]
+    private fun resolveProperty(
+        params: Map<String, Any?>,
+        propName: String,
+    ): LegacyPropertyResolution {
+        if (params.containsKey(propName)) {
+            return LegacyPropertyResolution.Found(params[propName])
+        }
 
         var current: Any? = params
         for (segment in propName.split(".")) {
-            current = resolvePropertySegment(current, segment) ?: return null
+            when (val resolved = resolvePropertySegment(current, segment)) {
+                is LegacyPropertyResolution.Found -> current = resolved.value
+                LegacyPropertyResolution.Missing -> return LegacyPropertyResolution.Missing
+            }
         }
-        return current
+        return LegacyPropertyResolution.Found(current)
     }
 
-    private fun resolvePropertySegment(target: Any?, segment: String): Any? {
+    private fun resolvePropertySegment(
+        target: Any?,
+        segment: String,
+    ): LegacyPropertyResolution {
         if (target is Map<*, *> && target.containsKey(segment)) {
-            return target[segment]
+            return LegacyPropertyResolution.Found(target[segment])
         }
 
         var current = target
@@ -252,25 +286,34 @@ object MyBatisEvaluator {
         val propertyName = if (firstBracket >= 0) segment.substring(0, firstBracket) else segment
 
         if (propertyName.isNotEmpty()) {
-            current = (current as? Map<*, *>)?.get(propertyName) ?: return null
+            val map = current as? Map<*, *> ?: return LegacyPropertyResolution.Missing
+            if (!map.containsKey(propertyName)) return LegacyPropertyResolution.Missing
+            current = map[propertyName]
             cursor = propertyName.length
         }
 
         while (cursor < segment.length) {
-            if (segment[cursor] != '[') return null
+            if (segment[cursor] != '[') return LegacyPropertyResolution.Missing
             val close = segment.indexOf(']', cursor + 1)
-            if (close < 0) return null
-            val index = segment.substring(cursor + 1, close).toIntOrNull() ?: return null
-            if (index < 0) return null
+            if (close < 0) return LegacyPropertyResolution.Missing
+            val index = segment.substring(cursor + 1, close).toIntOrNull()
+                ?: return LegacyPropertyResolution.Missing
+            if (index < 0) return LegacyPropertyResolution.Missing
             current = when (current) {
-                is List<*> -> current.getOrNull(index)
-                is Array<*> -> current.getOrNull(index)
-                else -> return null
+                is List<*> -> {
+                    if (index !in current.indices) return LegacyPropertyResolution.Missing
+                    current[index]
+                }
+                is Array<*> -> {
+                    if (index !in current.indices) return LegacyPropertyResolution.Missing
+                    current[index]
+                }
+                else -> return LegacyPropertyResolution.Missing
             }
             cursor = close + 1
         }
 
-        return current
+        return LegacyPropertyResolution.Found(current)
     }
 
     private fun sanitizeOgnlExpressions(xml: String): String {
