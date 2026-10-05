@@ -46,6 +46,54 @@ class LegacyEvaluationExecutionGuardContractTest {
     }
 
     @Test
+    fun `raw interpolation confirmation cannot be disabled by preview setting`() {
+        val action = source(
+            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
+        )
+        val worker = action
+            .substringAfter("ApplicationManager.getApplication().executeOnPooledThread {")
+            .substringBefore("@Suppress(\"TooGenericExceptionCaught\", \"LongMethod\")")
+
+        val evaluatedResult = worker.indexOf(
+            "is LegacyExecutionEvaluationResult.Evaluated -> evaluation",
+        )
+        val pureSql = worker.indexOf("val pureSql =", evaluatedResult)
+        val previewPolicy = worker.indexOf("val requiresSqlPreview =", pureSql)
+        val userSetting = worker.indexOf("settings.sqlPreview", previewPolicy)
+        val rawConfirmation = worker.indexOf(
+            "evaluated.requiresRawInterpolationConfirmation",
+            previewPolicy,
+        )
+        val guardedPreview = worker.indexOf("if (requiresSqlPreview)", previewPolicy)
+        val previewDialog = worker.indexOf("SqlPreviewDialog(project, pureSql)", guardedPreview)
+        val cancelBranch = worker.indexOf(
+            "user cancelled from SQL preview dialog",
+            previewDialog,
+        )
+        val directExecution = worker.indexOf("} else {", cancelBranch)
+        val directExecuteCall = worker.indexOf("executeOnConsole(", directExecution)
+
+        assertTrue("successful evaluation metadata must be retained", evaluatedResult >= 0)
+        assertTrue("final SQL must be built before preview policy", pureSql > evaluatedResult)
+        assertTrue("preview policy must be explicit", previewPolicy > pureSql)
+        assertTrue("user preview setting must participate in policy", userSetting > previewPolicy)
+        assertTrue("raw confirmation metadata must participate in policy", rawConfirmation > userSetting)
+        assertTrue("preview branch must be guarded by combined policy", guardedPreview > rawConfirmation)
+        assertTrue("preview must receive the final pureSql", previewDialog > guardedPreview)
+        assertTrue("cancel must remain inside the preview branch", cancelBranch > previewDialog)
+        assertTrue("non-preview execution must remain a separate else branch", directExecution > cancelBranch)
+        assertTrue("direct execution may occur only after that else branch", directExecuteCall > directExecution)
+
+        val previewPolicySource = worker.substring(previewPolicy, guardedPreview)
+        assertTrue(
+            "raw interpolation must force preview even when the user setting is false",
+            previewPolicySource.contains(
+                "settings.sqlPreview || evaluated.requiresRawInterpolationConfirmation",
+            ),
+        )
+    }
+
+    @Test
     fun `execution evaluator rethrows cancellation and never converts fatal throwable to failure result`() {
         val evaluator = source(
             "src/main/kotlin/com/algorist/zMyBatis/MyBatisEvaluator.kt",
