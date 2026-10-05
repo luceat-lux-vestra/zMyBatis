@@ -139,6 +139,22 @@ class XmlSingleParameterObjectContractTest {
     }
 
     @Test
+    fun scalarWithoutStockMyBatisTypeHandlerDoesNotGainParameterObjectFallback() {
+        val contract = build(
+            graph("select * from users where id = #{value}"),
+            listOf(parameter(0, "java.util.UUID", "id", null)),
+        )
+
+        assertTrue(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        assertTrue(contract.aliases.none { it.kind == InputAliasKind.PARAMETER_OBJECT })
+        assertEquals(
+            "xml-caller-input-authority-unproven",
+            contract.blockingProblems.single().code,
+        )
+    }
+
+    @Test
     fun rawAndNestedUsesDoNotGainParameterObjectFallback() {
         val raw = build(
             graph("select * from " + rawToken("table")),
