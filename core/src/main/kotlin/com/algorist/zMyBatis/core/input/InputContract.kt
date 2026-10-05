@@ -132,6 +132,18 @@ sealed interface InputEvidence {
         }
     }
 
+    data class ParameterObjectFallback(
+        val parameterIndex: Int,
+        val mappingProperty: String,
+        val ruleId: String,
+    ) : InputEvidence {
+        init {
+            require(parameterIndex >= 0) { "parameter-object fallback index must not be negative" }
+            require(mappingProperty.isNotBlank()) { "parameter-object mapping property must not be blank" }
+            require(ruleId.isNotBlank()) { "parameter-object fallback rule id must not be blank" }
+        }
+    }
+
     data class Placeholder(
         val kind: InputKind,
         val expression: String,
@@ -222,6 +234,7 @@ enum class InputAliasKind {
     SOURCE_PARAMETER_NAME,
     GENERIC_PARAM,
     ARGUMENT,
+    PARAMETER_OBJECT,
     COLLECTION,
     LIST,
     ARRAY,
@@ -368,6 +381,7 @@ private fun sourceEvidenceOf(evidence: InputEvidence): SourceEvidence? = when (e
     is InputEvidence.MapperMethodParameter -> evidence.source
     is InputEvidence.ExplicitParamAlias -> evidence.source
     is InputEvidence.GeneratedAlias -> null
+    is InputEvidence.ParameterObjectFallback -> null
     is InputEvidence.Placeholder -> evidence.source
     is InputEvidence.OgnlExpression -> evidence.source
     is InputEvidence.ForeachCollection -> evidence.source
