@@ -144,6 +144,18 @@ sealed interface InputEvidence {
         }
     }
 
+    data class ParameterObjectProperty(
+        val parameterIndex: Int,
+        val mappingProperty: String,
+        val ruleId: String,
+    ) : InputEvidence {
+        init {
+            require(parameterIndex >= 0) { "parameter-object property index must not be negative" }
+            require(mappingProperty.isNotBlank()) { "parameter-object property must not be blank" }
+            require(ruleId.isNotBlank()) { "parameter-object property rule id must not be blank" }
+        }
+    }
+
     data class Placeholder(
         val kind: InputKind,
         val expression: String,
