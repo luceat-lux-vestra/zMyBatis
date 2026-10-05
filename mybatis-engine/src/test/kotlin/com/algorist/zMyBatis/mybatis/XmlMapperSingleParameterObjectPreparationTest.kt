@@ -127,7 +127,7 @@ class XmlMapperSingleParameterObjectPreparationTest {
                 tamperedContract,
                 InputValue.IntegerValue(BigInteger.valueOf(42)),
             ) as PreparationResult.Failed
-            ).failure
+        ).failure
 
         assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, failure.kind)
         assertEquals("xml-preparation-parameter-object-contract-invalid", failure.code)
