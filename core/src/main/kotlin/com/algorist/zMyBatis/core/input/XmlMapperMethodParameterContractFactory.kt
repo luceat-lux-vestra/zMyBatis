@@ -54,6 +54,22 @@ object XmlMapperMethodParameterContractFactory {
         "java.time.LocalDateTime",
         "java.time.LocalTime",
     )
+    private val PARAMETER_OBJECT_MAP_VALUE_TYPES = setOf(
+        "java.lang.Boolean",
+        "java.lang.Byte",
+        "java.lang.Short",
+        "java.lang.Integer",
+        "java.lang.Long",
+        "java.lang.Float",
+        "java.lang.Double",
+        "java.lang.String",
+        "java.math.BigInteger",
+        "java.math.BigDecimal",
+        "java.time.Instant",
+        "java.time.LocalDate",
+        "java.time.LocalDateTime",
+        "java.time.LocalTime",
+    )
 
     fun build(
         graph: StatementSourceGraph,
@@ -359,7 +375,7 @@ object XmlMapperMethodParameterContractFactory {
         if (arguments.size != 2) return null
         if (arguments[0] != "java.lang.String") return null
         val valueType = arguments[1]
-        if ('<' in valueType || '>' in valueType || valueType !in PARAMETER_OBJECT_TYPE_HANDLER_TYPES) {
+        if ('<' in valueType || '>' in valueType || valueType !in PARAMETER_OBJECT_MAP_VALUE_TYPES) {
             return null
         }
         return parameter
