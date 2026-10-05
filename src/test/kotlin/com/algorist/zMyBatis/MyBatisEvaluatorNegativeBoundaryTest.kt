@@ -152,6 +152,27 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
         )
     }
 
+    fun testExecutionEvaluationDoesNotSanitizeHashPlaceholderInsideOgnlAttribute() {
+        val xml = """
+            <select>
+                SELECT
+                <if test="#{test} == 1">id</if>
+                FROM customers
+            </select>
+        """.trimIndent()
+
+        val shipping = MyBatisEvaluator.evaluateForExecution(xml, mapOf("test" to 1))
+
+        assertTrue(
+            "shipping execution must not rewrite non-standard OGNL placeholder syntax: <$shipping>",
+            shipping is LegacyExecutionEvaluationResult.Failed,
+        )
+        assertEquals(
+            "SELECT id FROM customers",
+            MyBatisEvaluator.evaluate(xml, mapOf("test" to 1)),
+        )
+    }
+
     fun testExecutionEvaluationUnknownTagFailsClosedInsteadOfReturningCompatibilitySql() {
         val xml = """
             <select>
