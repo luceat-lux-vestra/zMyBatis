@@ -677,8 +677,7 @@ object XmlMapperPreparationEngine {
                 }
                 val namedEvidence = requirement.provenance.evidence
                     .filterIsInstance<InputEvidence.NamedMapProperty>()
-                    .filter { it.mappingProperty == property }
-                    .singleOrNull()
+                    .singleOrNull { it.mappingProperty == property }
                     ?: return XmlBindingCapture.Failed(
                         PreparationFailure(
                             PreparationFailureKind.PREPARATION_INVARIANT,
@@ -905,9 +904,9 @@ object XmlMapperPreparationEngine {
             return false
         }
         val evidenceAliases = evidence.mapTo(linkedSetOf()) { it.alias }
-        if (aliases.mapTo(linkedSetOf()) { it.name } != evidenceAliases) return false
+        val aliasesMatchEvidence = aliases.mapTo(linkedSetOf()) { it.name } == evidenceAliases
 
-        return aliases.all { alias ->
+        return aliasesMatchEvidence && aliases.all { alias ->
             when (alias.kind) {
                 InputAliasKind.EXPLICIT_PARAM ->
                     requirement.provenance.evidence
