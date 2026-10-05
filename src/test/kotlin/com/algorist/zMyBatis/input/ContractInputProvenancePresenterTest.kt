@@ -136,7 +136,10 @@ class ContractInputProvenancePresenterTest {
             "named Map property payload.id (mybatis-3.5.19-default-parameter-handler-named-map-property)",
             presentation.details,
         )
-        assertEquals(null, presentation.primarySource)
+        assertFalse(
+            "semantic named-Map evidence must not fabricate a source location",
+            presentation.details.contains(" @ "),
+        )
     }
 
     @Test
