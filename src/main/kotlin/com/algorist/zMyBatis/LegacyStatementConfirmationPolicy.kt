@@ -12,7 +12,11 @@ internal object LegacyStatementConfirmationPolicy {
     fun requiresMutationConfirmation(
         xmlTagName: String?,
         annotationQualifiedName: String?,
-    ): Boolean =
-        xmlTagName?.lowercase() in MUTATION_XML_TAGS ||
-            annotationQualifiedName in MUTATION_ANNOTATIONS
+    ): Boolean {
+        val xmlRequiresConfirmation =
+            xmlTagName?.lowercase()?.let(MUTATION_XML_TAGS::contains) ?: false
+        val annotationRequiresConfirmation =
+            annotationQualifiedName?.let(MUTATION_ANNOTATIONS::contains) ?: false
+        return xmlRequiresConfirmation || annotationRequiresConfirmation
+    }
 }
