@@ -156,6 +156,24 @@ sealed interface InputEvidence {
         }
     }
 
+    data class NamedMapProperty(
+        val parameterIndex: Int,
+        val alias: String,
+        val mappingProperty: String,
+        val key: String,
+        val ruleId: String,
+    ) : InputEvidence {
+        init {
+            require(parameterIndex >= 0) { "named Map property index must not be negative" }
+            require(alias.isNotBlank()) { "named Map alias must not be blank" }
+            require(key.isNotBlank()) { "named Map property key must not be blank" }
+            require(mappingProperty == "$alias.$key") {
+                "named Map mapping property must match alias and key"
+            }
+            require(ruleId.isNotBlank()) { "named Map property rule id must not be blank" }
+        }
+    }
+
     data class Placeholder(
         val kind: InputKind,
         val expression: String,
@@ -395,6 +413,7 @@ private fun sourceEvidenceOf(evidence: InputEvidence): SourceEvidence? = when (e
     is InputEvidence.GeneratedAlias -> null
     is InputEvidence.ParameterObjectFallback -> null
     is InputEvidence.ParameterObjectProperty -> null
+    is InputEvidence.NamedMapProperty -> null
     is InputEvidence.Placeholder -> evidence.source
     is InputEvidence.OgnlExpression -> evidence.source
     is InputEvidence.ForeachCollection -> evidence.source
