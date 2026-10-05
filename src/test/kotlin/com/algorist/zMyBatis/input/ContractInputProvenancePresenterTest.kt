@@ -81,6 +81,42 @@ class ContractInputProvenancePresenterTest {
     }
 
     @Test
+    fun `parameter object fallback stays explicit without inventing source location`() {
+        val provenance = InputProvenance(
+            listOf(
+                InputEvidence.ParameterObjectFallback(
+                    parameterIndex = 0,
+                    mappingProperty = "arbitrary",
+                    ruleId = "mybatis-3.5.19-default-parameter-handler-type-handler-fallback",
+                ),
+                InputEvidence.MapperMethodParameter(
+                    index = 0,
+                    sourceName = "id",
+                    typeIdentity = JavaTypeIdentity("long"),
+                    source = source(10, 20),
+                ),
+            ),
+        )
+
+        val presentation = ContractInputProvenancePresenter.present(provenance)
+
+        assertEquals(
+            "mapper parameter #0 (id): long @ src/example/Mapper.java[10,20) (+1 more)",
+            presentation.summary,
+        )
+        assertTrue(
+            presentation.details.startsWith(
+                "parameter-object mapping arbitrary " +
+                    "(mybatis-3.5.19-default-parameter-handler-type-handler-fallback); ",
+            ),
+        )
+        assertFalse(
+            "semantic fallback evidence must not fabricate a source location",
+            presentation.details.substringBefore(";").contains(" @ "),
+        )
+    }
+
+    @Test
     fun `missing source range renders file identity without inventing an offset`() {
         val provenance = InputProvenance(
             listOf(
