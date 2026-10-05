@@ -231,6 +231,40 @@ class MyBatisEvaluatorNegativeBoundaryTest : BasePlatformTestCase() {
         )
     }
 
+    fun testExecutionEvaluationRawInterpolationRequiresExplicitConfirmation() {
+        val rawToken = buildString {
+            append(36.toChar())
+            append("{raw}")
+        }
+        val result = MyBatisEvaluator.evaluateForExecution(
+            "SELECT $rawToken AS RESULT_VALUE",
+            mapOf("raw" to 7),
+        )
+
+        assertEquals(
+            LegacyExecutionEvaluationResult.Evaluated(
+                sql = "SELECT 7 AS RESULT_VALUE",
+                requiresRawInterpolationConfirmation = true,
+            ),
+            result,
+        )
+    }
+
+    fun testExecutionEvaluationBoundOnlyDoesNotRequireRawInterpolationConfirmation() {
+        val result = MyBatisEvaluator.evaluateForExecution(
+            "SELECT #{value} AS RESULT_VALUE",
+            mapOf("value" to 7),
+        )
+
+        assertEquals(
+            LegacyExecutionEvaluationResult.Evaluated(
+                sql = "SELECT 7 AS RESULT_VALUE",
+                requiresRawInterpolationConfirmation = false,
+            ),
+            result,
+        )
+    }
+
     fun testExecutionEvaluationDirectListFailsClosedBeforeCompatibilityMarker() {
         val result = MyBatisEvaluator.evaluateForExecution(
             "SELECT #{items}",
