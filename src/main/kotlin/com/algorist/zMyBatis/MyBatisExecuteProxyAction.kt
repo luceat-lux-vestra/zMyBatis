@@ -4,6 +4,8 @@ package com.algorist.zMyBatis
 
 import com.algorist.zMyBatis.MyBatisContextAnalyzer.analyze
 import com.algorist.zMyBatis.core.execution.ExecutionTargetId
+import com.algorist.zMyBatis.core.source.JavaTypeIdentity
+import com.algorist.zMyBatis.core.source.MethodSignature
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAcquisitionFailure
 import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAdapter
@@ -934,8 +936,16 @@ open class MyBatisExecuteProxyAction : AnAction() {
             MyBatisContextAnalyzer.ContextType.ANNOTATION -> {
                 val method = PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
                     ?: return fileKey
-                val className = method.containingClass?.name ?: ""
-                "$fileKey::$className#${method.name}"
+                val mapperType = method.containingClass?.qualifiedName
+                    ?: method.containingClass?.name
+                    ?: return fileKey
+                val signature = MethodSignature(
+                    method.name,
+                    method.parameterList.parameters.map { parameter ->
+                        JavaTypeIdentity(parameter.type.canonicalText)
+                    },
+                )
+                "$fileKey::$mapperType#$signature"
             }
             else -> fileKey
         }

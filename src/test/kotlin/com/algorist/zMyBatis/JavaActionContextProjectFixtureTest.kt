@@ -1,5 +1,6 @@
 package com.algorist.zMyBatis
 
+import com.algorist.zMyBatis.settings.ParameterHistoryService
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUiKind
@@ -19,7 +20,7 @@ import com.intellij.util.ThrowableRunnable
 
 class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase() {
 
-    fun testSavedJavaCaretUsesDistinctOverloadsWhileCurrentStatementKeyCollides() {
+    fun testSavedJavaCaretUsesDistinctOverloadHistoryKeys() {
         myFixture.addClass(
             """
             package org.apache.ibatis.annotations;
@@ -57,7 +58,7 @@ class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase(
         val stringParameterType = stringMethod.parameterList.parameters.single().type.canonicalText
         assertFalse(
             "fixture must contain genuinely distinct mapper method signatures",
-            intParameterType == stringParameterType
+            intParameterType == stringParameterType,
         )
 
         val action = MyBatisExecuteProxyAction()
@@ -84,14 +85,56 @@ class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase(
         assertEquals("SELECT * FROM users WHERE name = #{name}", stringSql)
 
         assertEquals(
-            "current action key omits the method signature, so overloads collide",
-            "$fileKey::UserMapper#find",
-            intKey
+            "$fileKey::fixture.UserMapper#find($intParameterType)",
+            intKey,
         )
         assertEquals(
-            "distinct overloads currently share one remembered-parameter statement key",
-            intKey,
-            stringKey
+            "$fileKey::fixture.UserMapper#find($stringParameterType)",
+            stringKey,
+        )
+        assertFalse(
+            "distinct overloads must never share one remembered-input statement key",
+            intKey == stringKey,
+        )
+
+        val history = ParameterHistoryService.getInstance(project)
+        val legacySharedKey = "$fileKey::UserMapper#find"
+        history.save(legacySharedKey, mapOf("legacy" to "ambiguous"))
+        history.save(intKey, mapOf("id" to "7"))
+        history.save(stringKey, mapOf("name" to "Ada"))
+
+        assertEquals(mapOf("id" to "7"), history.load(intKey))
+        assertEquals(mapOf("name" to "Ada"), history.load(stringKey))
+        assertEquals(
+            "legacy name-only history must remain separate and must not become an overload fallback",
+            mapOf("legacy" to "ambiguous"),
+            history.load(legacySharedKey),
+        )
+    }
+
+    fun testXmlStatementHistoryKeyRemainsFileAndStatementId() {
+        val mapperFile = myFixture.configureByText(
+            "UserMapper.xml",
+            """
+            <mapper namespace="fixture.UserMapper">
+              <select id="find">SELECT 1</select>
+            </mapper>
+            """.trimIndent(),
+        )
+        val action = MyBatisExecuteProxyAction()
+        val editor = myFixture.editor
+        val fileKey = "/fixture/UserMapper.xml"
+
+        moveCaretTo(mapperFile, editor, "<select id=\"find\">", "select")
+        assertEquals(
+            "$fileKey::find",
+            invokeExtractStatementKey(
+                action,
+                editor,
+                mapperFile,
+                fileKey,
+                MyBatisContextAnalyzer.ContextType.XML,
+            ),
         )
     }
 
@@ -349,7 +392,8 @@ class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase(
         action: MyBatisExecuteProxyAction,
         editor: Editor,
         psiFile: PsiFile,
-        fileKey: String
+        fileKey: String,
+        context: MyBatisContextAnalyzer.ContextType = MyBatisContextAnalyzer.ContextType.ANNOTATION,
     ): String {
         val method = MyBatisExecuteProxyAction::class.java.getDeclaredMethod(
             "extractStatementKey",
@@ -361,7 +405,7 @@ class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase(
         method.isAccessible = true
         return method.invoke(
             action,
-            MyBatisContextAnalyzer.ContextType.ANNOTATION,
+            context,
             editor,
             psiFile,
             fileKey
