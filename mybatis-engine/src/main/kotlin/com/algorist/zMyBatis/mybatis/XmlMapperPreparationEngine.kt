@@ -903,6 +903,13 @@ object XmlMapperPreparationEngine {
         ) {
             return false
         }
+        val boundProperties = requirement.provenance.evidence
+            .filterIsInstance<InputEvidence.Placeholder>()
+            .filter { it.kind == InputKind.BOUND }
+            .mapTo(linkedSetOf()) { it.expression }
+        val namedProperties = evidence.mapTo(linkedSetOf()) { it.mappingProperty }
+        if (boundProperties != namedProperties) return false
+
         val evidenceAliases = evidence.mapTo(linkedSetOf()) { it.alias }
         val aliasesMatchEvidence = aliases.mapTo(linkedSetOf()) { it.name } == evidenceAliases
 
