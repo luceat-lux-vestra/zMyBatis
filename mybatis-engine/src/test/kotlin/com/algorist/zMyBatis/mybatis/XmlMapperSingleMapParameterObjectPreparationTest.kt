@@ -6,7 +6,6 @@ import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputProvenance
-import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
@@ -58,11 +57,11 @@ class XmlMapperSingleMapParameterObjectPreparationTest {
         assertTrue(binding.metadata.typeHandlerIdentity.startsWith("org.apache.ibatis.type."))
         val alias = contract(fixture).aliases.single()
         assertEquals(InputAliasKind.PARAMETER_OBJECT, alias.kind)
-        assertTrue(
-            alias.provenance.evidence.single {
-                it is InputEvidence.ParameterObjectProperty
-            } is InputEvidence.ParameterObjectProperty,
-        )
+        val propertyEvidence = alias.provenance.evidence
+            .filterIsInstance<InputEvidence.ParameterObjectProperty>()
+            .single()
+        assertEquals(0, propertyEvidence.parameterIndex)
+        assertEquals("id", propertyEvidence.mappingProperty)
     }
 
     @Test
