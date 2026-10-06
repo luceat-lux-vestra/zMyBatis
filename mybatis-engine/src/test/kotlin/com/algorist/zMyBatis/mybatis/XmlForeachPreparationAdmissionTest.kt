@@ -5,6 +5,7 @@ import com.algorist.zMyBatis.core.input.InputContractProblem
 import com.algorist.zMyBatis.core.input.InputContractProblemKind
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputProvenance
+import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InternalBinding
 import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.input.ParameterContract
@@ -170,6 +171,41 @@ class XmlForeachPreparationAdmissionTest {
     }
 
     @Test
+    fun statementIdentityAndMapperTypeAuthorityCannotBeForged() {
+        val fixture = fixture(
+            """SELECT <foreach collection="ids" item="item">#{item}</foreach>""",
+            listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", "ids")),
+        )
+        val authentic = contract(fixture)
+        val wrongStatement = graph(
+            """SELECT <foreach collection="ids" item="item">#{item}</foreach>""",
+            XML_REVISION,
+            statementName = "other",
+        )
+
+        assertFailure(
+            XmlForeachPreparationAdmission.inspect(wrongStatement, authentic),
+            PreparationFailureKind.BINDING_RESOLUTION,
+            "xml-foreach-preparation-source-contract-mismatch",
+        )
+
+        val requirement = authentic.requirements.single()
+        val wrongShape = copyContract(
+            authentic,
+            requirements = listOf(
+                requirement.copy(
+                    expectedType = requirement.expectedType.copy(shape = InputShape.MAP),
+                ),
+            ),
+        )
+        assertFailure(
+            XmlForeachPreparationAdmission.inspect(fixture.graph, wrongShape),
+            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+            "xml-foreach-preparation-contract-unsupported",
+        )
+    }
+
+    @Test
     fun supportedAliasKindCannotBeForgedWithoutMatchingProvenance() {
         val fixture = fixture(
             """SELECT <foreach collection="ids" item="item">#{item}</foreach>""",
@@ -263,15 +299,16 @@ class XmlForeachPreparationAdmissionTest {
     private fun graph(
         body: String,
         revision: SourceRevision,
+        statementName: String = "find",
     ): StatementSourceGraph {
-        val statementId = XmlStatementId(XML_FILE, "example.Mapper", "find")
-        val declaration = "<select id=\"find\">$body</select>"
+        val statementId = XmlStatementId(XML_FILE, "example.Mapper", statementName)
+        val declaration = "<select id=\"$statementName\">$body</select>"
         val xml = """
             <mapper namespace="example.Mapper">
               $declaration
             </mapper>
         """.trimIndent()
-        val start = xml.indexOf("<select id=\"find\">")
+        val start = xml.indexOf("<select id=\"$statementName\">")
         val end = xml.indexOf('>', start) + 1
         return StatementSourceGraph(
             rootStatement = CapturedStatement(
