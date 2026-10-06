@@ -38,11 +38,14 @@ class ParameterProvenanceBaselineTest {
     }
 
     @Test
-    fun `hash and dollar placeholders share the current discovery path`() {
+    fun `hash and dollar placeholders share discovery roots but raw retention evidence differs`() {
         val bound = ParameterExtractor.extractResult("SELECT #{value}")
         val raw = ParameterExtractor.extractResult("SELECT ${'$'}{value}")
 
-        assertEquals(bound, raw)
+        assertEquals(bound.params, raw.params)
+        assertEquals(bound.objectParams, raw.objectParams)
+        assertTrue(bound.rawInterpolationParams.isEmpty())
+        assertEquals(setOf("value"), raw.rawInterpolationParams)
     }
 
     @Test

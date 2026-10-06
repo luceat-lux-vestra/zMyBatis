@@ -10,10 +10,13 @@ object ParameterExtractor {
      * @param params      All unique root parameter names found in the SQL/XML.
      * @param objectParams Subset of [params] that require structured input because they are accessed
      *                     through a property/index path (e.g. `user` in `#{user.name}` or `items[0]`).
+     * @param rawInterpolationParams Caller roots observed in direct `${...}` placeholders.
+     *                               This is retention-policy evidence only; it is not runtime authority.
      */
     data class ExtractionResult(
         val params: List<String>,
-        val objectParams: Set<String>
+        val objectParams: Set<String>,
+        val rawInterpolationParams: Set<String>,
     )
 
     /**
@@ -22,11 +25,12 @@ object ParameterExtractor {
     fun extract(xmlContent: String): List<String> = extractResult(xmlContent).params
 
     /**
-     * Full extraction: returns both the parameter list and the set of object-accessed parameters.
+     * Full extraction: returns caller roots plus object-access and raw-retention evidence.
      */
     fun extractResult(xmlContent: String): ExtractionResult {
         val params = mutableSetOf<String>()
         val objectParams = mutableSetOf<String>()   // root params requiring structured input
+        val rawInterpolationParams = mutableSetOf<String>()
         val boundVariables = mutableSetOf<String>()
 
         // 0a. Find <bind name="..."> variables to exclude them
@@ -65,14 +69,19 @@ object ParameterExtractor {
             }
         }
 
-        // 1. Extract #{param} and ${param}
-        val sqlParamMatcher = Pattern.compile("[#$]\\{\\s*([^},]+)[^}]*}").matcher(xmlContent)
+        // 1. Extract #{param} and ${param}. Raw interpolation classification here is used only
+        //    to prevent legacy remembered-input persistence from retaining raw SQL text.
+        val sqlParamMatcher = Pattern.compile("([#$])\\{\\s*([^},]+)[^}]*}").matcher(xmlContent)
         while (sqlParamMatcher.find()) {
-            val paramName = sqlParamMatcher.group(1).trim()
+            val marker = sqlParamMatcher.group(1)
+            val paramName = sqlParamMatcher.group(2).trim()
             // Strip nested property/index access: "user.id" -> "user", "items[0].id" -> "items"
             val rootName = rootName(paramName)
             if (isValidParam(rootName) && !boundVariables.contains(rootName)) {
                 params.add(rootName)
+                if (marker == "$") {
+                    rawInterpolationParams.add(rootName)
+                }
                 if (requiresStructuredInput(paramName)) {
                     objectParams.add(rootName)
                 }
@@ -92,7 +101,8 @@ object ParameterExtractor {
 
         return ExtractionResult(
             params = params.toList().sorted(),
-            objectParams = objectParams
+            objectParams = objectParams,
+            rawInterpolationParams = rawInterpolationParams,
         )
     }
 

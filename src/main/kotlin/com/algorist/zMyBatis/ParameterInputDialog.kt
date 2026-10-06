@@ -43,7 +43,9 @@ class ParameterInputDialog(
      * Used to persist and restore last-used parameter values.
      * Pass null to disable history for this dialog.
      */
-    private val statementKey: String? = null
+    private val statementKey: String? = null,
+    /** Caller roots observed in direct raw `${...}` interpolation. Never retained or restored. */
+    private val rawInterpolationParams: Set<String> = emptySet(),
 ) : DialogWrapper(project, true) {
 
     companion object {
@@ -78,10 +80,15 @@ class ParameterInputDialog(
     init {
         title = "Enter MyBatis Parameters"
         init()
-        // Pre-fill fields with last-used values if the setting is enabled
+        // Pre-fill only retainable fields. Also scrub raw values written by older legacy versions.
         if (statementKey != null && ZMyBatisSettings.getInstance().rememberLastInputs) {
-            val saved = ParameterHistoryService.getInstance(project).load(statementKey)
-            for ((name, raw) in saved) {
+            val history = ParameterHistoryService.getInstance(project)
+            val saved = history.load(statementKey)
+            val retainable = LegacyInputRetentionPolicy.retainableValues(saved, rawInterpolationParams)
+            if (retainable != saved) {
+                history.save(statementKey, retainable)
+            }
+            for ((name, raw) in retainable) {
                 simpleFields[name]?.text = raw
                 jsonFields[name]?.text = raw
             }
@@ -176,8 +183,9 @@ class ParameterInputDialog(
      *  - [EmptyInputPolicy.NULL]         → key is included with value `null`
      *  - [EmptyInputPolicy.EMPTY_STRING] → key is included with value `""`
      *
-     * After collecting values, the raw text of each field is persisted via
-     * [ParameterHistoryService] if [statementKey] is set and [ZMyBatisSettings.rememberLastInputs] is true.
+     * After collecting values, retainable raw text is persisted via [ParameterHistoryService] if
+     * [statementKey] is set and [ZMyBatisSettings.rememberLastInputs] is true. Roots observed in
+     * direct raw `${...}` interpolation are never retained.
      */
     fun getValues(): Map<String, Any?> {
         val result = LinkedHashMap<String, Any?>()
@@ -195,9 +203,13 @@ class ParameterInputDialog(
             result[name] = if (text.isEmpty()) emptyValue() else JsonParameterParser.parseValue(text)
         }
 
-        // Persist raw inputs for next invocation
+        // Persist only retainable inputs for next invocation.
         if (statementKey != null && ZMyBatisSettings.getInstance().rememberLastInputs) {
-            ParameterHistoryService.getInstance(project).save(statementKey, rawForHistory)
+            val retainable = LegacyInputRetentionPolicy.retainableValues(
+                rawForHistory,
+                rawInterpolationParams,
+            )
+            ParameterHistoryService.getInstance(project).save(statementKey, retainable)
         }
 
         return result
