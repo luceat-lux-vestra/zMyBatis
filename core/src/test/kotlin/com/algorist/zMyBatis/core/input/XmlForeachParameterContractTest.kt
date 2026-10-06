@@ -114,6 +114,46 @@ class XmlForeachParameterContractTest {
     }
 
     @Test
+    fun provenGenericParamAliasCanOwnForeachCollection() {
+        val graph = graph(
+            """
+            SELECT * FROM users WHERE id IN
+            <foreach collection="param2" item="id" separator=",">#{id}</foreach>
+            """.trimIndent(),
+        )
+        val mapper = mapper(
+            graph,
+            listOf(
+                parameter(0, "java.lang.String", "status", "status"),
+                parameter(1, "java.util.List<java.lang.Long>", "ids", "ids"),
+            ),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals("xml-java-param:1", requirement.id.value)
+        assertEquals(InputShape.LIST, requirement.expectedType.shape)
+        assertEquals("param2", contract.aliases.single().name)
+        assertEquals(InputAliasKind.GENERIC_PARAM, contract.aliases.single().kind)
+        assertTrue(
+            requirement.provenance.evidence
+                .filterIsInstance<InputEvidence.GeneratedAlias>()
+                .any {
+                    it.parameterIndex == 1 &&
+                        it.alias == "param2" &&
+                        it.ruleId == "mybatis-3.5.19-param-name-resolver-generic"
+                },
+        )
+        assertTrue(
+            requirement.provenance.evidence
+                .filterIsInstance<InputEvidence.ForeachCollection>()
+                .any { it.expression == "param2" },
+        )
+    }
+
+    @Test
     fun staticCallerPlaceholderOutsideForeachRemainsIndependent() {
         val graph = graph(
             """
