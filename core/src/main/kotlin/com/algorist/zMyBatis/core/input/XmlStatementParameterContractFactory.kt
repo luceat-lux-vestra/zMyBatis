@@ -473,7 +473,7 @@ object XmlStatementParameterContractFactory {
             index?.let(simpleRoot::matches) == false ||
             collection in reservedInternalRoots ||
             item in reservedInternalRoots ||
-            index in reservedInternalRoots
+            (index != null && index in reservedInternalRoots)
         ) {
             return null
         }
