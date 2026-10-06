@@ -200,6 +200,7 @@ object XmlMapperMethodParameterContractFactory {
                             kind = kind,
                             aliasKind = InputAliasKind.EXPLICIT_PARAM,
                             placeholders = placeholders,
+                            foreachCollections = foreachCollections,
                             generatedAlias = null,
                         )
                     }
@@ -241,6 +242,7 @@ object XmlMapperMethodParameterContractFactory {
                         kind = kind,
                         aliasKind = shortcut.aliasKind,
                         placeholders = placeholders,
+                        foreachCollections = foreachCollections,
                         generatedAlias = InputEvidence.GeneratedAlias(
                             parameterIndex = shortcut.parameter.index,
                             alias = mappingProperty,
