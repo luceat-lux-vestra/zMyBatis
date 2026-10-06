@@ -5,9 +5,6 @@ import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputKind
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InputShape
-import com.algorist.zMyBatis.core.input.InternalBinding
-import com.algorist.zMyBatis.core.input.InternalBindingKind
-import com.algorist.zMyBatis.core.input.XmlStatementParameterContractFactory
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
@@ -23,7 +20,6 @@ import com.algorist.zMyBatis.core.source.XmlStatementId
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.lang.reflect.InvocationTargetException
-import java.lang.reflect.Method
 import java.net.URLClassLoader
 import java.nio.charset.StandardCharsets
 import org.apache.ibatis.session.Configuration
@@ -44,7 +40,6 @@ object XmlMapperPreparationEngine {
     private const val DYNAMIC_SQL_SOURCE = "org.apache.ibatis.scripting.xmltags.DynamicSqlSource"
     private const val BOUND_SQL = "org.apache.ibatis.mapping.BoundSql"
     private const val RESOURCES = "org.apache.ibatis.io.Resources"
-    private const val FOREACH_SQL_NODE = "org.apache.ibatis.scripting.xmltags.ForEachSqlNode"
 
     private const val WRONG_SOURCE = "xml-preparation-source-kind-unsupported"
     private const val INPUT_CONTRACT_UNSUPPORTED = "xml-preparation-input-contract-unsupported"
@@ -75,16 +70,6 @@ object XmlMapperPreparationEngine {
     private const val TYPE_HANDLER_UNSUPPORTED = "xml-preparation-type-handler-unsupported"
     private const val BINDING_VALUE_UNSUPPORTED = "xml-preparation-binding-value-unsupported"
     private const val DYNAMIC_UNSUPPORTED = "xml-preparation-dynamic-sql-unsupported"
-    private const val FOREACH_SOURCE_CONTRACT_MISMATCH =
-        "xml-preparation-foreach-source-contract-mismatch"
-    private const val FOREACH_SOURCE_UNSUPPORTED =
-        "xml-preparation-foreach-source-unsupported"
-    private const val FOREACH_GENERATED_UNRESOLVED =
-        "xml-preparation-foreach-generated-local-unresolved"
-    private const val FOREACH_RUNTIME_IDENTITY_UNAVAILABLE =
-        "xml-preparation-foreach-runtime-identity-unavailable"
-    private const val SOURCE_CALLER_AUTHORITY_PROBLEM =
-        "xml-caller-input-authority-unproven"
     private const val CLASS_LOADING_UNSUPPORTED = "xml-preparation-runtime-class-loading-unsupported"
     private const val EXTERNAL_ENTITY_UNSUPPORTED = "xml-preparation-external-entity-unsupported"
     private const val ROOT_STATEMENT_MISSING = "xml-preparation-root-statement-missing"
@@ -135,16 +120,6 @@ object XmlMapperPreparationEngine {
         val boundSqlClass: Class<*>,
     )
 
-    private data class XmlForeachAdmission(
-        val locals: Map<String, InternalBindingKind>,
-        val collectionRequirementIds: Set<InputRequirementId>,
-    )
-
-    private data class ForeachRuntimeIdentity(
-        val itemPrefix: String,
-        val itemizeMethod: Method,
-    )
-
     private class IsolationFailure(
         val failureCode: String,
         cause: Throwable? = null,
@@ -156,13 +131,7 @@ object XmlMapperPreparationEngine {
         val statementId = source.sourceGraph.rootStatement.id as? XmlStatementId
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
 
-        val foreachAdmission = when (val admission = foreachAdmission(source, request)) {
-            XmlForeachAdmissionResult.NotPresent -> null
-            is XmlForeachAdmissionResult.Admitted -> admission.admission
-            is XmlForeachAdmissionResult.Failed -> return PreparationResult.Failed(admission.failure)
-        }
-
-        inputContractFailure(request, foreachAdmission)?.let { return PreparationResult.Failed(it) }
+        inputContractFailure(request)?.let { return PreparationResult.Failed(it) }
 
         val typedMapRequirementIds = request.parameterContract.requirements
             .filter { requirement ->
@@ -173,13 +142,9 @@ object XmlMapperPreparationEngine {
                     }
             }
             .mapTo(linkedSetOf()) { it.id }
-        val typedStructuredRequirementIds = linkedSetOf<InputRequirementId>().apply {
-            addAll(typedMapRequirementIds)
-            foreachAdmission?.let { addAll(it.collectionRequirementIds) }
-        }
         val parameterValuesResult = MyBatisValueConversion.parameterValues(
             request,
-            typedStructuredRequirementIds = typedStructuredRequirementIds,
+            typedStructuredRequirementIds = typedMapRequirementIds,
         )
         if (parameterValuesResult is MyBatisValueConversion.ParameterValuesResult.Failed) {
             return PreparationResult.Failed(parameterValuesResult.failure)
@@ -196,34 +161,7 @@ object XmlMapperPreparationEngine {
         }
 
         return try {
-            if (foreachAdmission == null) {
-                prepareWithContextLoader(
-                    isolatedRuntime,
-                    source,
-                    statementId,
-                    request,
-                    parameterPayload,
-                    null,
-                )
-            } else {
-                val runtime = createIsolatedRuntime()
-                try {
-                    prepareWithContextLoader(
-                        runtime,
-                        source,
-                        statementId,
-                        request,
-                        parameterPayload,
-                        foreachAdmission,
-                    )
-                } finally {
-                    try {
-                        runtime.loader.close()
-                    } catch (_: Exception) {
-                        // Preserve the preparation result/failure.
-                    }
-                }
-            }
+            prepareWithContextLoader(isolatedRuntime, source, statementId, request, parameterPayload)
         } catch (failure: Throwable) {
             rethrowFatal(failure)
             when (failure) {
@@ -254,7 +192,6 @@ object XmlMapperPreparationEngine {
         statementId: XmlStatementId,
         request: MyBatisPreparationRequest,
         parameterPayload: XmlParameterPayload.Ready,
-        foreachAdmission: XmlForeachAdmission?,
     ): PreparationResult {
         val thread = Thread.currentThread()
         val previousContextLoader = thread.contextClassLoader
@@ -262,7 +199,7 @@ object XmlMapperPreparationEngine {
         return try {
             thread.contextClassLoader = runtime.loader
             switched = true
-            prepareIn(runtime, source, statementId, request, parameterPayload, foreachAdmission)
+            prepareIn(runtime, source, statementId, request, parameterPayload)
         } finally {
             if (switched) {
                 thread.contextClassLoader = previousContextLoader
@@ -276,7 +213,6 @@ object XmlMapperPreparationEngine {
         statementId: XmlStatementId,
         request: MyBatisPreparationRequest,
         parameterPayload: XmlParameterPayload.Ready,
-        foreachAdmission: XmlForeachAdmission?,
     ): PreparationResult {
         val configurationClass = runtime.configurationClass
         val builderClass = runtime.builderClass
@@ -341,21 +277,8 @@ object XmlMapperPreparationEngine {
 
         val sqlSource = mappedStatementClass.getMethod("getSqlSource").invoke(mappedStatement)
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
-        val dynamicSql = dynamicSqlSourceClass.isInstance(sqlSource)
-        if (dynamicSql && foreachAdmission == null) {
+        if (dynamicSqlSourceClass.isInstance(sqlSource)) {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_UNSUPPORTED)
-        }
-        if (!dynamicSql && foreachAdmission != null) {
-            return failed(PreparationFailureKind.PREPARATION_INVARIANT, FOREACH_SOURCE_CONTRACT_MISMATCH)
-        }
-        val foreachRuntimeIdentity = if (foreachAdmission != null) {
-            resolveForeachRuntimeIdentity(runtime.loader)
-                ?: return failed(
-                    PreparationFailureKind.PREPARATION_INVARIANT,
-                    FOREACH_RUNTIME_IDENTITY_UNAVAILABLE,
-                )
-        } else {
-            null
         }
 
         val parameterObject = parameterPayload.parameterObject
@@ -380,10 +303,6 @@ object XmlMapperPreparationEngine {
                 request = request,
                 parameterPayload = parameterPayload,
                 isolatedLoader = runtime.loader,
-                boundSql = boundSql,
-                boundSqlClass = boundSqlClass,
-                foreachAdmission = foreachAdmission,
-                foreachRuntimeIdentity = foreachRuntimeIdentity,
             )
         ) {
             is XmlBindingCapture.Ready -> captured.bindings
@@ -519,142 +438,8 @@ object XmlMapperPreparationEngine {
                 content[index + 1] == '{'
         }
 
-    private fun foreachAdmission(
-        source: XmlMapperPreparationSource,
-        request: MyBatisPreparationRequest,
-    ): XmlForeachAdmissionResult {
-        val contract = request.parameterContract
-        val locals = contract.internalBindings.filter {
-            it.kind == InternalBindingKind.FOREACH_ITEM ||
-                it.kind == InternalBindingKind.FOREACH_INDEX
-        }
-        val collections = contract.requirements.flatMap { requirement ->
-            requirement.provenance.evidence
-                .filterIsInstance<InputEvidence.ForeachCollection>()
-                .map { evidence -> requirement.id to evidence }
-        }
-        if (locals.isEmpty() && collections.isEmpty()) {
-            return XmlForeachAdmissionResult.NotPresent
-        }
-        if (
-            locals.isEmpty() ||
-            collections.size != 1 ||
-            contract.internalBindings.size != locals.size
-        ) {
-            return foreachAdmissionFailure(
-                PreparationFailureKind.BINDING_RESOLUTION,
-                FOREACH_SOURCE_CONTRACT_MISMATCH,
-            )
-        }
-
-        val sourceContract = XmlStatementParameterContractFactory.build(source.sourceGraph)
-        if (sourceContract.blockingProblems.any { it.code != SOURCE_CALLER_AUTHORITY_PROBLEM }) {
-            return foreachAdmissionFailure(
-                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-                FOREACH_SOURCE_UNSUPPORTED,
-            )
-        }
-        val sourceCollections = sourceContract.blockingProblems
-            .flatMap { it.provenance?.evidence.orEmpty() }
-            .filterIsInstance<InputEvidence.ForeachCollection>()
-        val (requirementId, collectionEvidence) = collections.single()
-        if (
-            sourceContract.internalBindings.toSet() != locals.toSet() ||
-            sourceCollections != listOf(collectionEvidence)
-        ) {
-            return foreachAdmissionFailure(
-                PreparationFailureKind.BINDING_RESOLUTION,
-                FOREACH_SOURCE_CONTRACT_MISMATCH,
-            )
-        }
-
-        val requirement = contract.requirement(requirementId)
-            ?: return foreachAdmissionFailure(
-                PreparationFailureKind.PREPARATION_INVARIANT,
-                FOREACH_SOURCE_CONTRACT_MISMATCH,
-            )
-        val alias = contract.aliases.singleOrNull {
-            it.requirementId == requirement.id &&
-                it.name == collectionEvidence.expression
-        } ?: return foreachAdmissionFailure(
-            PreparationFailureKind.BINDING_RESOLUTION,
-            FOREACH_SOURCE_CONTRACT_MISMATCH,
-        )
-        if (
-            requirement.kind != InputKind.BOUND ||
-            requirement.expectedType.shape !in setOf(InputShape.LIST, InputShape.ARRAY, InputShape.MAP) ||
-            alias.kind !in setOf(
-                InputAliasKind.EXPLICIT_PARAM,
-                InputAliasKind.GENERIC_PARAM,
-                InputAliasKind.COLLECTION,
-                InputAliasKind.LIST,
-                InputAliasKind.ARRAY,
-            )
-        ) {
-            return foreachAdmissionFailure(
-                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-                FOREACH_SOURCE_UNSUPPORTED,
-            )
-        }
-
-        return XmlForeachAdmissionResult.Admitted(
-            XmlForeachAdmission(
-                locals = locals.associate { it.name to it.kind },
-                collectionRequirementIds = setOf(requirement.id),
-            ),
-        )
-    }
-
-    private fun foreachAdmissionFailure(
-        kind: PreparationFailureKind,
-        code: String,
-    ) = XmlForeachAdmissionResult.Failed(PreparationFailure(kind, code))
-
-    private fun resolveForeachRuntimeIdentity(loader: URLClassLoader): ForeachRuntimeIdentity? {
-        val type = Class.forName(FOREACH_SQL_NODE, true, loader)
-        if (type.classLoader !== loader) return null
-        val prefix = type.getField("ITEM_PREFIX").get(null) as? String ?: return null
-        val itemize = type.getDeclaredMethod(
-            "itemizeItem",
-            String::class.java,
-            Int::class.javaPrimitiveType,
-        )
-        if (prefix.isBlank() || !itemize.trySetAccessible()) return null
-        return ForeachRuntimeIdentity(prefix, itemize)
-    }
-
-    private fun resolveGeneratedForeachBinding(
-        property: String,
-        request: MyBatisPreparationRequest,
-        admission: XmlForeachAdmission,
-        identity: ForeachRuntimeIdentity,
-    ): InternalBinding? {
-        if ('.' in property) return null
-        val root = property.substringBefore('.')
-        if (!root.startsWith(identity.itemPrefix)) return null
-        val uniqueNumber = root.substringAfterLast('_', missingDelimiterValue = "")
-            .toIntOrNull()
-            ?.takeIf { it >= 0 }
-            ?: return null
-        val matches = admission.locals.mapNotNull { (sourceLocal, kind) ->
-            val generated = identity.itemizeMethod.invoke(null, sourceLocal, uniqueNumber) as? String
-            if (generated == root) sourceLocal to kind else null
-        }
-        if (matches.size != 1) return null
-        val (name, kind) = matches.single()
-        return request.parameterContract.internalBindings.singleOrNull {
-            it.name == name && it.kind == kind
-        }
-    }
-
-    private fun inputContractFailure(
-        request: MyBatisPreparationRequest,
-        foreachAdmission: XmlForeachAdmission?,
-    ): PreparationFailure? {
-        if (
-            foreachAdmission == null &&
-            request.parameterContract.internalBindings.isNotEmpty()
-        ) {
+    private fun inputContractFailure(request: MyBatisPreparationRequest): PreparationFailure? {
+        if (request.parameterContract.internalBindings.isNotEmpty()) {
             return PreparationFailure(
                 PreparationFailureKind.UNSUPPORTED_SEMANTIC,
                 INPUT_CONTRACT_UNSUPPORTED,
@@ -667,20 +452,12 @@ object XmlMapperPreparationEngine {
             )
         }
         if (
-            request.parameterContract.requirements.any { requirement ->
-                val baseSupported = requirement.expectedType.shape in setOf(
+            request.parameterContract.requirements.any {
+                it.expectedType.shape !in setOf(
                     InputShape.SCALAR,
                     InputShape.TEMPORAL,
                     InputShape.MAP,
                 )
-                val foreachSupported =
-                    requirement.id in foreachAdmission?.collectionRequirementIds.orEmpty() &&
-                        requirement.expectedType.shape in setOf(
-                            InputShape.LIST,
-                            InputShape.ARRAY,
-                            InputShape.MAP,
-                        )
-                !baseSupported && !foreachSupported
             }
         ) {
             return PreparationFailure(
@@ -689,20 +466,12 @@ object XmlMapperPreparationEngine {
             )
         }
         if (
-            request.parameterContract.aliases.any { alias ->
-                val baseSupported = alias.kind in setOf(
+            request.parameterContract.aliases.any {
+                it.kind !in setOf(
                     InputAliasKind.EXPLICIT_PARAM,
                     InputAliasKind.GENERIC_PARAM,
                     InputAliasKind.PARAMETER_OBJECT,
                 )
-                val foreachSupported =
-                    alias.requirementId in foreachAdmission?.collectionRequirementIds.orEmpty() &&
-                        alias.kind in setOf(
-                            InputAliasKind.COLLECTION,
-                            InputAliasKind.LIST,
-                            InputAliasKind.ARRAY,
-                        )
-                !baseSupported && !foreachSupported
             }
         ) {
             return PreparationFailure(
@@ -732,8 +501,7 @@ object XmlMapperPreparationEngine {
         }
         if (
             mapRequirements.any { requirement ->
-                requirement.id !in foreachAdmission?.collectionRequirementIds.orEmpty() &&
-                    requirement.id !in namedMapRequirementIds &&
+                requirement.id !in namedMapRequirementIds &&
                     parameterObjectAliases.none { it.requirementId == requirement.id }
             }
         ) {
@@ -827,10 +595,6 @@ object XmlMapperPreparationEngine {
         request: MyBatisPreparationRequest,
         parameterPayload: XmlParameterPayload.Ready,
         isolatedLoader: ClassLoader,
-        boundSql: Any,
-        boundSqlClass: Class<*>,
-        foreachAdmission: XmlForeachAdmission?,
-        foreachRuntimeIdentity: ForeachRuntimeIdentity?,
     ): XmlBindingCapture {
         val aliasesByName = request.inputEnvironment.aliases.groupBy { it.name }
         val bindings = mutableListOf<PreparedBinding>()
@@ -861,116 +625,6 @@ object XmlMapperPreparationEngine {
                         MAPPING_PROPERTY_MISSING,
                     ),
                 )
-            val additionalParameter = boundSqlClass
-                .getMethod("hasAdditionalParameter", String::class.java)
-                .invoke(boundSql, property) as? Boolean
-                ?: return XmlBindingCapture.Failed(
-                    PreparationFailure(
-                        PreparationFailureKind.PREPARATION_INVARIANT,
-                        INVARIANT_FAILURE,
-                        property,
-                    ),
-                )
-            if (additionalParameter) {
-                val admission = foreachAdmission
-                    ?: return XmlBindingCapture.Failed(
-                        PreparationFailure(
-                            PreparationFailureKind.BINDING_RESOLUTION,
-                            FOREACH_GENERATED_UNRESOLVED,
-                            property,
-                        ),
-                    )
-                val identity = foreachRuntimeIdentity
-                    ?: return XmlBindingCapture.Failed(
-                        PreparationFailure(
-                            PreparationFailureKind.PREPARATION_INVARIANT,
-                            FOREACH_RUNTIME_IDENTITY_UNAVAILABLE,
-                            property,
-                        ),
-                    )
-                val internalBinding = resolveGeneratedForeachBinding(
-                    property,
-                    request,
-                    admission,
-                    identity,
-                ) ?: return XmlBindingCapture.Failed(
-                    PreparationFailure(
-                        PreparationFailureKind.BINDING_RESOLUTION,
-                        FOREACH_GENERATED_UNRESOLVED,
-                        property,
-                    ),
-                )
-                val parameterMode = (mappingClass.getMethod("getMode").invoke(mapping) as? Enum<*>)?.name
-                    ?: return XmlBindingCapture.Failed(
-                        PreparationFailure(
-                            PreparationFailureKind.PREPARATION_INVARIANT,
-                            INVARIANT_FAILURE,
-                            property,
-                        ),
-                    )
-                if (parameterMode != "IN") {
-                    return XmlBindingCapture.Failed(
-                        PreparationFailure(
-                            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-                            PARAMETER_MODE_UNSUPPORTED,
-                            property,
-                        ),
-                    )
-                }
-                val typeHandler = mappingClass.getMethod("getTypeHandler").invoke(mapping)
-                    ?: return XmlBindingCapture.Failed(
-                        PreparationFailure(
-                            PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER,
-                            TYPE_HANDLER_UNSUPPORTED,
-                            property,
-                        ),
-                    )
-                val typeHandlerIdentity = typeHandler.javaClass.name
-                if (
-                    typeHandler.javaClass.classLoader !== isolatedLoader ||
-                    !typeHandlerIdentity.startsWith("org.apache.ibatis.type.")
-                ) {
-                    return XmlBindingCapture.Failed(
-                        PreparationFailure(
-                            PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER,
-                            TYPE_HANDLER_UNSUPPORTED,
-                            property,
-                            typeHandlerIdentity,
-                        ),
-                    )
-                }
-                val runtimeValue = boundSqlClass
-                    .getMethod("getAdditionalParameter", String::class.java)
-                    .invoke(boundSql, property)
-                val coreValue = MyBatisValueConversion.toCoreValue(runtimeValue, null, property, null)
-                    ?: return XmlBindingCapture.Failed(
-                        PreparationFailure(
-                            PreparationFailureKind.UNSUPPORTED_BINDING_VALUE,
-                            BINDING_VALUE_UNSUPPORTED,
-                            property,
-                            runtimeValue?.javaClass?.name,
-                        ),
-                    )
-                val javaType = mappingClass.getMethod("getJavaType").invoke(mapping) as? Class<*>
-                val jdbcType = mappingClass.getMethod("getJdbcType").invoke(mapping) as? Enum<*>
-                val numericScale = mappingClass.getMethod("getNumericScale").invoke(mapping) as? Int
-                bindings += PreparedBinding(
-                    index = index,
-                    property = property,
-                    value = coreValue,
-                    origin = PreparedBindingOrigin.MyBatisAdditional(internalBinding),
-                    metadata = PreparedBindingMetadata(
-                        declaredJavaTypeIdentity = null,
-                        mappingJavaTypeIdentity = javaType?.name,
-                        jdbcTypeIdentity = jdbcType?.name,
-                        typeHandlerIdentity = typeHandlerIdentity,
-                        parameterMode = parameterMode,
-                        numericScale = numericScale,
-                    ),
-                )
-                return@forEachIndexed
-            }
-
             val namedMapPath = parseNamedMapProperty(property)
             if ('.' in property && namedMapPath == null) {
                 return XmlBindingCapture.Failed(
@@ -1192,13 +846,15 @@ object XmlMapperPreparationEngine {
             mappingCounts[requirement.id] = (mappingCounts[requirement.id] ?: 0) + 1
         }
 
-        val expectedMappingCounts = request.parameterContract.requirements.mapNotNull { requirement ->
-            val count = requirement.provenance.evidence
+        val expectedMappingCounts = request.parameterContract.requirements.associate { requirement ->
+            requirement.id to requirement.provenance.evidence
                 .filterIsInstance<InputEvidence.Placeholder>()
                 .count { it.kind == InputKind.BOUND }
-            if (count == 0) null else requirement.id to count
-        }.toMap()
-        if (mappingCounts != expectedMappingCounts) {
+        }
+        if (
+            expectedMappingCounts.values.any { it == 0 } ||
+            mappingCounts != expectedMappingCounts
+        ) {
             return XmlBindingCapture.Failed(
                 PreparationFailure(
                     PreparationFailureKind.PARAMETER_MAPPING_MISMATCH,
@@ -1353,18 +1009,6 @@ object XmlMapperPreparationEngine {
             parameterObject = parameterObject,
             directRequirementId = requirementId,
         )
-    }
-
-    private sealed interface XmlForeachAdmissionResult {
-        object NotPresent : XmlForeachAdmissionResult
-
-        data class Admitted(
-            val admission: XmlForeachAdmission,
-        ) : XmlForeachAdmissionResult
-
-        data class Failed(
-            val failure: PreparationFailure,
-        ) : XmlForeachAdmissionResult
     }
 
     private sealed interface XmlParameterPayload {
