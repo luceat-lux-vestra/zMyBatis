@@ -27,6 +27,10 @@ internal object XmlForeachPreparationAdmission {
         "xml-foreach-preparation-source-unsupported"
     private const val CONTRACT_UNSUPPORTED =
         "xml-foreach-preparation-contract-unsupported"
+    private const val GENERIC_ALIAS_RULE =
+        "mybatis-3.5.19-param-name-resolver-generic"
+    private const val COLLECTION_SHORTCUT_RULE =
+        "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
 
     private val supportedShapes = setOf(InputShape.LIST, InputShape.ARRAY, InputShape.MAP)
     private val supportedAliases = setOf(
@@ -41,6 +45,10 @@ internal object XmlForeachPreparationAdmission {
         sourceGraph: StatementSourceGraph,
         contract: ParameterContract,
     ): Result {
+        if (contract.blockingProblems.isNotEmpty()) {
+            return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, CONTRACT_UNSUPPORTED)
+        }
+
         val locals = contract.internalBindings.filter {
             it.kind == InternalBindingKind.FOREACH_ITEM ||
                 it.kind == InternalBindingKind.FOREACH_INDEX
@@ -93,7 +101,8 @@ internal object XmlForeachPreparationAdmission {
         if (
             requirement.kind != InputKind.BOUND ||
             requirement.expectedType.shape !in supportedShapes ||
-            alias.kind !in supportedAliases
+            alias.kind !in supportedAliases ||
+            !aliasAuthorityIsCoherent(alias)
         ) {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, CONTRACT_UNSUPPORTED)
         }
@@ -102,6 +111,49 @@ internal object XmlForeachPreparationAdmission {
             collectionRequirementIds = setOf(requirement.id),
             locals = locals.associate { it.name to it.kind },
         )
+    }
+
+    private fun aliasAuthorityIsCoherent(
+        alias: com.algorist.zMyBatis.core.input.InputAlias,
+    ): Boolean {
+        val parameterIndexes = alias.provenance.evidence
+            .filterIsInstance<InputEvidence.MapperMethodParameter>()
+            .map { it.index }
+            .distinct()
+        if (parameterIndexes.size != 1) return false
+        val parameterIndex = parameterIndexes.single()
+
+        return when (alias.kind) {
+            InputAliasKind.EXPLICIT_PARAM ->
+                alias.provenance.evidence
+                    .filterIsInstance<InputEvidence.ExplicitParamAlias>()
+                    .any {
+                        it.parameterIndex == parameterIndex &&
+                            it.alias == alias.name
+                    }
+
+            InputAliasKind.GENERIC_PARAM ->
+                alias.provenance.evidence
+                    .filterIsInstance<InputEvidence.GeneratedAlias>()
+                    .any {
+                        it.parameterIndex == parameterIndex &&
+                            it.alias == alias.name &&
+                            it.ruleId == GENERIC_ALIAS_RULE
+                    }
+
+            InputAliasKind.COLLECTION,
+            InputAliasKind.LIST,
+            InputAliasKind.ARRAY,
+            -> alias.provenance.evidence
+                .filterIsInstance<InputEvidence.GeneratedAlias>()
+                .any {
+                    it.parameterIndex == parameterIndex &&
+                        it.alias == alias.name &&
+                        it.ruleId == COLLECTION_SHORTCUT_RULE
+                }
+
+            else -> false
+        }
     }
 
     private fun mismatch(): Result.Failed =
