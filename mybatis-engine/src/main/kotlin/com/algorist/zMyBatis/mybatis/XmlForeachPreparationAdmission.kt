@@ -75,6 +75,10 @@ internal object XmlForeachPreparationAdmission {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, SOURCE_UNSUPPORTED)
         }
 
+        if (sourceContract.statementId != contract.statementId) {
+            return mismatch()
+        }
+
         val sourceLocals = sourceContract.internalBindings.filter {
             it.kind == InternalBindingKind.FOREACH_ITEM ||
                 it.kind == InternalBindingKind.FOREACH_INDEX
@@ -93,6 +97,13 @@ internal object XmlForeachPreparationAdmission {
 
         val requirement = contract.requirement(collection.requirementId)
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, SOURCE_CONTRACT_MISMATCH)
+        val mapperParameter = requirement.provenance.evidence
+            .filterIsInstance<InputEvidence.MapperMethodParameter>()
+            .distinct()
+            .singleOrNull()
+            ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, CONTRACT_UNSUPPORTED)
+        val provenShape = collectionShape(mapperParameter.typeIdentity.value)
+            ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, CONTRACT_UNSUPPORTED)
         val alias = contract.aliases.singleOrNull {
             it.requirementId == requirement.id &&
                 it.name == collection.evidence.expression
@@ -101,8 +112,10 @@ internal object XmlForeachPreparationAdmission {
         if (
             requirement.kind != InputKind.BOUND ||
             requirement.expectedType.shape !in supportedShapes ||
+            requirement.expectedType.shape != provenShape ||
+            requirement.expectedType.javaTypeIdentity != mapperParameter.typeIdentity ||
             alias.kind !in supportedAliases ||
-            !aliasAuthorityIsCoherent(alias)
+            !aliasAuthorityIsCoherent(alias, mapperParameter.index)
         ) {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, CONTRACT_UNSUPPORTED)
         }
@@ -113,15 +126,26 @@ internal object XmlForeachPreparationAdmission {
         )
     }
 
+    private fun collectionShape(typeIdentity: String): InputShape? {
+        val canonical = typeIdentity.trim()
+        if (canonical.endsWith("[]")) return InputShape.ARRAY
+        return when (canonical.substringBefore('<').trim()) {
+            "java.util.List", "java.util.Collection" -> InputShape.LIST
+            "java.util.Map" -> InputShape.MAP
+            else -> null
+        }
+    }
+
     private fun aliasAuthorityIsCoherent(
         alias: com.algorist.zMyBatis.core.input.InputAlias,
+        expectedParameterIndex: Int,
     ): Boolean {
         val parameterIndexes = alias.provenance.evidence
             .filterIsInstance<InputEvidence.MapperMethodParameter>()
             .map { it.index }
             .distinct()
-        if (parameterIndexes.size != 1) return false
-        val parameterIndex = parameterIndexes.single()
+        if (parameterIndexes != listOf(expectedParameterIndex)) return false
+        val parameterIndex = expectedParameterIndex
 
         return when (alias.kind) {
             InputAliasKind.EXPLICIT_PARAM ->
@@ -170,7 +194,7 @@ internal object XmlForeachPreparationAdmission {
     )
 
     sealed interface Result {
-        data object NotPresent : Result
+        object NotPresent : Result
 
         data class Admitted(
             val collectionRequirementIds: Set<InputRequirementId>,
