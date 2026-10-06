@@ -1,6 +1,8 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.InputAliasKind
+import com.algorist.zMyBatis.core.input.InputContractProblem
+import com.algorist.zMyBatis.core.input.InputContractProblemKind
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputProvenance
 import com.algorist.zMyBatis.core.input.InternalBinding
@@ -168,7 +170,7 @@ class XmlForeachPreparationAdmissionTest {
     }
 
     @Test
-    fun forgedAliasKindFailsContractAdmission() {
+    fun supportedAliasKindCannotBeForgedWithoutMatchingProvenance() {
         val fixture = fixture(
             """SELECT <foreach collection="ids" item="item">#{item}</foreach>""",
             listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", "ids")),
@@ -177,11 +179,37 @@ class XmlForeachPreparationAdmissionTest {
         val alias = authentic.aliases.single()
         val forged = copyContract(
             authentic,
-            aliases = listOf(alias.copy(kind = InputAliasKind.SOURCE_PARAMETER_NAME)),
+            aliases = listOf(alias.copy(kind = InputAliasKind.GENERIC_PARAM)),
         )
 
         assertFailure(
             XmlForeachPreparationAdmission.inspect(fixture.graph, forged),
+            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+            "xml-foreach-preparation-contract-unsupported",
+        )
+    }
+
+    @Test
+    fun blockedConsumerContractCannotBecomeForeachAuthority() {
+        val fixture = fixture(
+            """SELECT <foreach collection="ids" item="item">#{item}</foreach>""",
+            listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", "ids")),
+        )
+        val authentic = contract(fixture)
+        val blocked = copyContract(
+            authentic,
+            blockingProblems = listOf(
+                InputContractProblem(
+                    kind = InputContractProblemKind.UNSUPPORTED,
+                    code = "forged-blocking-problem",
+                    requirementId = null,
+                    provenance = null,
+                ),
+            ),
+        )
+
+        assertFailure(
+            XmlForeachPreparationAdmission.inspect(fixture.graph, blocked),
             PreparationFailureKind.UNSUPPORTED_SEMANTIC,
             "xml-foreach-preparation-contract-unsupported",
         )
@@ -203,12 +231,13 @@ class XmlForeachPreparationAdmissionTest {
         requirements: List<com.algorist.zMyBatis.core.input.InputRequirement> = source.requirements,
         aliases: List<com.algorist.zMyBatis.core.input.InputAlias> = source.aliases,
         internalBindings: List<InternalBinding> = source.internalBindings,
+        blockingProblems: List<InputContractProblem> = emptyList(),
     ) = ParameterContract(
         statementId = source.statementId,
         requirements = requirements,
         aliases = aliases,
         internalBindings = internalBindings,
-        blockingProblems = emptyList(),
+        blockingProblems = blockingProblems,
         sourceRevisions = source.sourceRevisions,
     )
 
