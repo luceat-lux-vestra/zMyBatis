@@ -371,8 +371,7 @@ object XmlMapperMethodParameterContractFactory {
                     requirementId = requirementId,
                     provenance = provenance,
                 )
-            }
-            if (
+            } else if (
                 foreachCollectionEvidence.isNotEmpty() &&
                 expectedType.shape !in setOf(InputShape.LIST, InputShape.ARRAY, InputShape.MAP)
             ) {
