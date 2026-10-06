@@ -25,6 +25,7 @@ object XmlMapperMethodParameterContractFactory {
     private const val UNPROVEN_SHAPE_PROBLEM = "xml-unproven-parameter-shape"
     private const val RAW_NON_STRING_PROBLEM = "xml-raw-non-string-parameter"
     private const val FOREACH_COLLECTION_SHAPE_PROBLEM = "xml-foreach-collection-shape-unsupported"
+    private const val FOREACH_LOCAL_SHADOWING_PROBLEM = "xml-foreach-local-shadowing-unsupported"
     private const val GENERIC_ALIAS_RULE = "mybatis-3.5.19-param-name-resolver-generic"
     private const val COLLECTION_SHORTCUT_RULE =
         "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
@@ -128,6 +129,25 @@ object XmlMapperMethodParameterContractFactory {
         val problems = baseline.blockingProblems
             .filterNot { it.code == CALLER_AUTHORITY_PROBLEM }
             .toMutableList()
+        val provenCallerAliases = buildSet {
+            addAll(parametersByExplicitAlias.keys)
+            addAll(parametersByGenericAlias.keys)
+            addAll(parametersByCollectionShortcutAlias.keys)
+        }
+        baseline.internalBindings
+            .filter {
+                it.kind == InternalBindingKind.FOREACH_ITEM ||
+                    it.kind == InternalBindingKind.FOREACH_INDEX
+            }
+            .filter { it.name in provenCallerAliases }
+            .forEach { local ->
+                problems += InputContractProblem(
+                    kind = InputContractProblemKind.UNSUPPORTED,
+                    code = FOREACH_LOCAL_SHADOWING_PROBLEM,
+                    requirementId = null,
+                    provenance = local.provenance,
+                )
+            }
         val resolvedByParameter = linkedMapOf<Int, MutableList<ResolvedUse>>()
 
         authorityProblems.forEach { authorityProblem ->
