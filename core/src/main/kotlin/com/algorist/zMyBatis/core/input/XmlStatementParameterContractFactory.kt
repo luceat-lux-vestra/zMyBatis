@@ -30,6 +30,10 @@ object XmlStatementParameterContractFactory {
     private const val RESERVED_ROOT_PROBLEM = "xml-reserved-internal-placeholder-root"
     private const val MIXED_KIND_PROBLEM = "xml-mixed-raw-bound-input"
     private const val CALLER_AUTHORITY_PROBLEM = "xml-caller-input-authority-unproven"
+    private const val FOREACH_PROVENANCE_PROBLEM = "xml-foreach-input-provenance-unsupported"
+    private const val FOREACH_LOCAL_RAW_PROBLEM = "xml-foreach-raw-local-unsupported"
+    private const val FOREACH_LOCAL_EXPRESSION_PROBLEM = "xml-foreach-local-expression-unsupported"
+    private const val FOREACH_LOCAL_SHADOWING_PROBLEM = "xml-foreach-local-shadowing-unsupported"
     private const val UNSAFE_DTD_PROBLEM = "xml-parameter-contract-unsafe-dtd"
 
     private val simpleRoot = Regex("[A-Za-z_][A-Za-z0-9_]*")
@@ -101,21 +105,81 @@ object XmlStatementParameterContractFactory {
             )
         }
 
-        val usesByRoot = linkedMapOf<String, MutableList<PlaceholderUse>>()
+        val foreach = statementScan.foreach
+        val foreachLocals = foreach
+            ?.let { declaration -> listOfNotNull(declaration.item, declaration.index).toSet() }
+            .orEmpty()
+        val callerRoots = placeholderScan.uses
+            .mapTo(linkedSetOf()) { use -> use.expression.substringBefore('.') }
+        if (foreachLocals.any { it in callerRoots }) {
+            return blockedContract(
+                statementId,
+                sourceRevisions,
+                InputContractProblemKind.UNSUPPORTED,
+                FOREACH_LOCAL_SHADOWING_PROBLEM,
+            )
+        }
+
+        val internalBindings = buildList {
+            foreach?.let { declaration ->
+                add(
+                    InternalBinding(
+                        name = declaration.item,
+                        kind = InternalBindingKind.FOREACH_ITEM,
+                        provenance = InputProvenance(
+                            listOf(
+                                InputEvidence.ForeachLocal(
+                                    name = declaration.item,
+                                    role = ForeachLocalRole.ITEM,
+                                    source = statementSource,
+                                ),
+                            ),
+                        ),
+                    ),
+                )
+                declaration.index?.let { index ->
+                    add(
+                        InternalBinding(
+                            name = index,
+                            kind = InternalBindingKind.FOREACH_INDEX,
+                            provenance = InputProvenance(
+                                listOf(
+                                    InputEvidence.ForeachLocal(
+                                        name = index,
+                                        role = ForeachLocalRole.INDEX,
+                                        source = statementSource,
+                                    ),
+                                ),
+                            ),
+                        ),
+                    )
+                }
+            }
+        }
+
+        val usesByRoot = linkedMapOf<String, MutableList<CallerUse>>()
         placeholderScan.uses.forEach { use ->
-            usesByRoot.getOrPut(use.expression) { mutableListOf() } += use
+            usesByRoot.getOrPut(use.expression) { mutableListOf() } += CallerUse(
+                kind = use.kind,
+                evidence = InputEvidence.Placeholder(
+                    kind = use.kind,
+                    expression = use.expression,
+                    source = statementSource,
+                ),
+            )
+        }
+        foreach?.let { declaration ->
+            usesByRoot.getOrPut(declaration.collection) { mutableListOf() } += CallerUse(
+                kind = InputKind.BOUND,
+                evidence = InputEvidence.ForeachCollection(
+                    expression = declaration.collection,
+                    source = statementSource,
+                ),
+            )
         }
 
         val problems = usesByRoot.map { (root, uses) ->
-            val provenance = InputProvenance(
-                uses.map { use ->
-                    InputEvidence.Placeholder(
-                        kind = use.kind,
-                        expression = use.expression,
-                        source = statementSource,
-                    )
-                },
-            )
+            val provenance = InputProvenance(uses.map { it.evidence })
             val kinds = uses.mapTo(linkedSetOf()) { it.kind }
 
             when {
@@ -144,7 +208,7 @@ object XmlStatementParameterContractFactory {
             statementId = statementId,
             requirements = emptyList(),
             aliases = emptyList(),
-            internalBindings = emptyList(),
+            internalBindings = internalBindings,
             blockingProblems = problems,
             sourceRevisions = sourceRevisions,
         )
@@ -166,7 +230,9 @@ object XmlStatementParameterContractFactory {
         var targetDepth = -1
         var targetMatches = 0
         var targetClosed = false
-        val textSegments = mutableListOf<String>()
+        var foreachDepth = -1
+        var foreachDeclaration: ForeachDeclaration? = null
+        val textSegments = mutableListOf<StatementTextSegment>()
 
         return try {
             while (reader.hasNext()) {
@@ -219,6 +285,22 @@ object XmlStatementParameterContractFactory {
                         }
 
                         if (targetDepth >= 0) {
+                            if (
+                                depth == targetDepth + 1 &&
+                                localName == "foreach" &&
+                                isUnqualifiedElement(reader) &&
+                                foreachDepth < 0 &&
+                                foreachDeclaration == null
+                            ) {
+                                val declaration = parseForeachDeclaration(reader)
+                                    ?: return StatementScan.Failed(
+                                        InputContractProblemKind.UNSUPPORTED,
+                                        FOREACH_PROVENANCE_PROBLEM,
+                                    )
+                                foreachDeclaration = declaration
+                                foreachDepth = depth
+                                continue
+                            }
                             return StatementScan.Failed(
                                 InputContractProblemKind.UNSUPPORTED,
                                 NESTED_ELEMENT_PROBLEM,
@@ -231,11 +313,20 @@ object XmlStatementParameterContractFactory {
                     -> if (targetDepth >= 0) {
                         val text = reader.text
                         if (text.isNotEmpty()) {
-                            textSegments += text
+                            val locals = if (foreachDepth >= 0) {
+                                val declaration = requireNotNull(foreachDeclaration)
+                                listOfNotNull(declaration.item, declaration.index).toSet()
+                            } else {
+                                emptySet()
+                            }
+                            textSegments += StatementTextSegment(text, locals)
                         }
                     }
 
                     XMLStreamConstants.END_ELEMENT -> {
+                        if (foreachDepth == depth) {
+                            foreachDepth = -1
+                        }
                         if (targetDepth == depth) {
                             targetDepth = -1
                             targetClosed = true
@@ -254,7 +345,7 @@ object XmlStatementParameterContractFactory {
             if (!mapperSeen || targetMatches != 1 || !targetClosed || depth != 0) {
                 StatementScan.Failed(InputContractProblemKind.UNKNOWN, ROOT_MISMATCH_PROBLEM)
             } else {
-                StatementScan.Ready(textSegments)
+                StatementScan.Ready(textSegments, foreachDeclaration)
             }
         } catch (_: XMLStreamException) {
             StatementScan.Failed(InputContractProblemKind.UNKNOWN, MALFORMED_XML_PROBLEM)
@@ -267,28 +358,29 @@ object XmlStatementParameterContractFactory {
         }
     }
 
-    private fun scanPlaceholders(segments: List<String>): PlaceholderScan {
+    private fun scanPlaceholders(segments: List<StatementTextSegment>): PlaceholderScan {
         val uses = mutableListOf<PlaceholderUse>()
         val failures = mutableListOf<PlaceholderFailure>()
 
         segments.forEach { segment ->
+            val text = segment.text
             var cursor = 0
-            while (cursor < segment.length - 1) {
+            while (cursor < text.length - 1) {
                 val kind = when {
-                    segment[cursor] == '#' && segment[cursor + 1] == '{' -> InputKind.BOUND
-                    segment[cursor].code == 36 && segment[cursor + 1] == '{' -> InputKind.RAW_INTERPOLATION
+                    text[cursor] == '#' && text[cursor + 1] == '{' -> InputKind.BOUND
+                    text[cursor].code == 36 && text[cursor + 1] == '{' -> InputKind.RAW_INTERPOLATION
                     else -> {
                         cursor += 1
                         continue
                     }
                 }
 
-                if (cursor > 0 && segment[cursor - 1] == '\\') {
+                if (cursor > 0 && text[cursor - 1] == '\\') {
                     cursor += 2
                     continue
                 }
 
-                val close = findClosingToken(segment, cursor + 2)
+                val close = findClosingToken(text, cursor + 2)
                 if (close == null) {
                     failures += PlaceholderFailure(
                         kind = kind,
@@ -308,15 +400,34 @@ object XmlStatementParameterContractFactory {
                 val supportedExpression =
                     simpleRoot.matches(expression) ||
                         (kind == InputKind.BOUND && simpleNamedProperty.matches(expression))
-                if (expression.isEmpty() || !supportedExpression) {
-                    failures += PlaceholderFailure(
-                        kind = kind,
-                        expression = expression.takeIf(String::isNotEmpty),
-                        problemKind = InputContractProblemKind.UNSUPPORTED,
-                        code = COMPLEX_PLACEHOLDER_PROBLEM,
-                    )
-                } else {
-                    uses += PlaceholderUse(kind, expression)
+                val root = expression.substringBefore('.')
+                when {
+                    root in segment.foreachLocals && kind == InputKind.RAW_INTERPOLATION -> {
+                        failures += PlaceholderFailure(
+                            kind = kind,
+                            expression = expression.takeIf(String::isNotEmpty),
+                            problemKind = InputContractProblemKind.UNSUPPORTED,
+                            code = FOREACH_LOCAL_RAW_PROBLEM,
+                        )
+                    }
+                    root in segment.foreachLocals && expression != root -> {
+                        failures += PlaceholderFailure(
+                            kind = kind,
+                            expression = expression.takeIf(String::isNotEmpty),
+                            problemKind = InputContractProblemKind.UNSUPPORTED,
+                            code = FOREACH_LOCAL_EXPRESSION_PROBLEM,
+                        )
+                    }
+                    root in segment.foreachLocals -> Unit
+                    expression.isEmpty() || !supportedExpression -> {
+                        failures += PlaceholderFailure(
+                            kind = kind,
+                            expression = expression.takeIf(String::isNotEmpty),
+                            problemKind = InputContractProblemKind.UNSUPPORTED,
+                            code = COMPLEX_PLACEHOLDER_PROBLEM,
+                        )
+                    }
+                    else -> uses += PlaceholderUse(kind, expression)
                 }
                 cursor = close.endOffset + 1
             }
@@ -341,6 +452,36 @@ object XmlStatementParameterContractFactory {
             }
         }
         return null
+    }
+
+    private fun parseForeachDeclaration(reader: XMLStreamReader): ForeachDeclaration? {
+        if (reader.getAttributeValue(null, "nullable") != null) return null
+
+        val collection = reader.getAttributeValue(null, "collection")
+            ?.takeIf(String::isNotBlank)
+            ?: return null
+        val item = reader.getAttributeValue(null, "item")
+            ?.takeIf(String::isNotBlank)
+            ?: return null
+        val index = reader.getAttributeValue(null, "index")?.let { raw ->
+            raw.takeIf(String::isNotBlank) ?: return null
+        }
+
+        if (
+            !simpleRoot.matches(collection) ||
+            !simpleRoot.matches(item) ||
+            index?.let(simpleRoot::matches) == false ||
+            collection in reservedInternalRoots ||
+            item in reservedInternalRoots ||
+            index in reservedInternalRoots
+        ) {
+            return null
+        }
+
+        val names = listOfNotNull(collection, item, index)
+        if (names.toSet().size != names.size) return null
+
+        return ForeachDeclaration(collection, item, index)
     }
 
     private fun secureInputFactory(): XMLInputFactory =
@@ -378,13 +519,32 @@ object XmlStatementParameterContractFactory {
     )
 
     private sealed interface StatementScan {
-        data class Ready(val textSegments: List<String>) : StatementScan
+        data class Ready(
+            val textSegments: List<StatementTextSegment>,
+            val foreach: ForeachDeclaration?,
+        ) : StatementScan
 
         data class Failed(
             val kind: InputContractProblemKind,
             val code: String,
         ) : StatementScan
     }
+
+    private data class StatementTextSegment(
+        val text: String,
+        val foreachLocals: Set<String>,
+    )
+
+    private data class ForeachDeclaration(
+        val collection: String,
+        val item: String,
+        val index: String?,
+    )
+
+    private data class CallerUse(
+        val kind: InputKind,
+        val evidence: InputEvidence,
+    )
 
     private data class PlaceholderUse(
         val kind: InputKind,
