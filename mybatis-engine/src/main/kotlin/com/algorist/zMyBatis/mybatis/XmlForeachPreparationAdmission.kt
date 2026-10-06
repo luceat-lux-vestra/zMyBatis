@@ -145,14 +145,13 @@ internal object XmlForeachPreparationAdmission {
             .map { it.index }
             .distinct()
         if (parameterIndexes != listOf(expectedParameterIndex)) return false
-        val parameterIndex = expectedParameterIndex
 
         return when (alias.kind) {
             InputAliasKind.EXPLICIT_PARAM ->
                 alias.provenance.evidence
                     .filterIsInstance<InputEvidence.ExplicitParamAlias>()
                     .any {
-                        it.parameterIndex == parameterIndex &&
+                        it.parameterIndex == expectedParameterIndex &&
                             it.alias == alias.name
                     }
 
@@ -160,7 +159,7 @@ internal object XmlForeachPreparationAdmission {
                 alias.provenance.evidence
                     .filterIsInstance<InputEvidence.GeneratedAlias>()
                     .any {
-                        it.parameterIndex == parameterIndex &&
+                        it.parameterIndex == expectedParameterIndex &&
                             it.alias == alias.name &&
                             it.ruleId == GENERIC_ALIAS_RULE
                     }
@@ -171,7 +170,7 @@ internal object XmlForeachPreparationAdmission {
             -> alias.provenance.evidence
                 .filterIsInstance<InputEvidence.GeneratedAlias>()
                 .any {
-                    it.parameterIndex == parameterIndex &&
+                    it.parameterIndex == expectedParameterIndex &&
                         it.alias == alias.name &&
                         it.ruleId == COLLECTION_SHORTCUT_RULE
                 }
