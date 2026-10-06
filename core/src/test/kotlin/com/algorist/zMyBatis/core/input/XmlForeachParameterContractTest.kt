@@ -259,6 +259,46 @@ class XmlForeachParameterContractTest {
     }
 
     @Test
+    fun foreachLocalsCannotShadowProvenMapperAliases() {
+        val explicitGraph = graph(
+            """<foreach collection="ids" item="status">#{status}</foreach>""",
+        )
+        val explicitMapper = mapper(
+            explicitGraph,
+            listOf(
+                parameter(0, "java.util.List<java.lang.Long>", "ids", "ids"),
+                parameter(1, "java.lang.String", "status", "status"),
+            ),
+        )
+
+        val explicit = XmlMapperMethodParameterContractFactory.build(explicitGraph, explicitMapper)
+
+        assertTrue(explicit.isPreparationBlocked)
+        assertTrue(
+            explicit.blockingProblems.any {
+                it.code == "xml-foreach-local-shadowing-unsupported"
+            },
+        )
+
+        val shortcutGraph = graph(
+            """<foreach collection="list" item="collection">#{collection}</foreach>""",
+        )
+        val shortcutMapper = mapper(
+            shortcutGraph,
+            listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", null)),
+        )
+
+        val shortcut = XmlMapperMethodParameterContractFactory.build(shortcutGraph, shortcutMapper)
+
+        assertTrue(shortcut.isPreparationBlocked)
+        assertTrue(
+            shortcut.blockingProblems.any {
+                it.code == "xml-foreach-local-shadowing-unsupported"
+            },
+        )
+    }
+
+    @Test
     fun foreachCollectionMustHaveCollectionShape() {
         val graph = graph(
             """<foreach collection="ids" item="id">#{id}</foreach>""",
