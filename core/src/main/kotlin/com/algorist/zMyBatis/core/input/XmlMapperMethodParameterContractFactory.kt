@@ -24,6 +24,7 @@ object XmlMapperMethodParameterContractFactory {
     private const val MIXED_KIND_PROBLEM = "xml-mixed-raw-bound-input"
     private const val UNPROVEN_SHAPE_PROBLEM = "xml-unproven-parameter-shape"
     private const val RAW_NON_STRING_PROBLEM = "xml-raw-non-string-parameter"
+    private const val FOREACH_COLLECTION_SHAPE_PROBLEM = "xml-foreach-collection-shape-unsupported"
     private const val GENERIC_ALIAS_RULE = "mybatis-3.5.19-param-name-resolver-generic"
     private const val COLLECTION_SHORTCUT_RULE =
         "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
@@ -130,16 +131,21 @@ object XmlMapperMethodParameterContractFactory {
         val resolvedByParameter = linkedMapOf<Int, MutableList<ResolvedUse>>()
 
         authorityProblems.forEach { authorityProblem ->
-            val placeholders = authorityProblem.provenance
-                ?.evidence
-                ?.filterIsInstance<InputEvidence.Placeholder>()
-                .orEmpty()
-            val mappingProperty = placeholders.map { it.expression }.distinct().singleOrNull()
+            val authorityEvidence = authorityProblem.provenance?.evidence.orEmpty()
+            val placeholders = authorityEvidence.filterIsInstance<InputEvidence.Placeholder>()
+            val foreachCollections = authorityEvidence.filterIsInstance<InputEvidence.ForeachCollection>()
+            val mappingProperty = (
+                placeholders.map { it.expression } +
+                    foreachCollections.map { it.expression }
+                ).distinct().singleOrNull()
                 ?: run {
                     problems += authorityProblem
                     return@forEach
                 }
-            val kind = placeholders.map { it.kind }.distinct().singleOrNull()
+            val kinds = placeholders.mapTo(linkedSetOf()) { it.kind }.apply {
+                if (foreachCollections.isNotEmpty()) add(InputKind.BOUND)
+            }
+            val kind = kinds.singleOrNull()
                 ?: run {
                     problems += authorityProblem
                     return@forEach
@@ -155,6 +161,7 @@ object XmlMapperMethodParameterContractFactory {
                             addAll(mapperEvidence(parameter, mapperSource))
                         }
                         addAll(placeholders)
+                        addAll(foreachCollections)
                     }
                     problems += InputContractProblem(
                         kind = InputContractProblemKind.AMBIGUOUS,
@@ -175,6 +182,7 @@ object XmlMapperMethodParameterContractFactory {
                                 kind = kind,
                                 aliasKind = InputAliasKind.EXPLICIT_PARAM,
                                 placeholders = placeholders,
+                                foreachCollections = foreachCollections,
                                 generatedAlias = null,
                                 namedMapProperty = InputEvidence.NamedMapProperty(
                                     parameterIndex = parameter.index,
@@ -207,6 +215,7 @@ object XmlMapperMethodParameterContractFactory {
                             kind = kind,
                             aliasKind = InputAliasKind.GENERIC_PARAM,
                             placeholders = placeholders,
+                            foreachCollections = foreachCollections,
                             generatedAlias = InputEvidence.GeneratedAlias(
                                 parameterIndex = parameter.index,
                                 alias = authorityRoot,
@@ -239,7 +248,8 @@ object XmlMapperMethodParameterContractFactory {
                         ),
                     )
                 }
-                parameterObjectFallback != null &&
+                foreachCollections.isEmpty() &&
+                    parameterObjectFallback != null &&
                     kind == InputKind.BOUND &&
                     isSimpleMappingProperty(mappingProperty) -> {
                     resolvedByParameter.getOrPut(parameterObjectFallback.index) { mutableListOf() } += ResolvedUse(
@@ -256,7 +266,8 @@ object XmlMapperMethodParameterContractFactory {
                         ),
                     )
                 }
-                parameterObjectProperty != null &&
+                foreachCollections.isEmpty() &&
+                    parameterObjectProperty != null &&
                     kind == InputKind.BOUND &&
                     isSimpleMappingProperty(mappingProperty) -> {
                     resolvedByParameter.getOrPut(parameterObjectProperty.index) { mutableListOf() } += ResolvedUse(
@@ -291,13 +302,15 @@ object XmlMapperMethodParameterContractFactory {
             val parameterObjectPropertyEvidence = uses.mapNotNull { it.parameterObjectProperty }.distinct()
             val namedMapPropertyEvidence = uses.mapNotNull { it.namedMapProperty }.distinct()
             val placeholderEvidence = uses.flatMap { it.placeholders }
+            val foreachCollectionEvidence = uses.flatMap { it.foreachCollections }
             val provenance = InputProvenance(
                 mapperEvidence +
                     generatedEvidence +
                     parameterObjectFallbackEvidence +
                     parameterObjectPropertyEvidence +
                     namedMapPropertyEvidence +
-                    placeholderEvidence,
+                    placeholderEvidence +
+                    foreachCollectionEvidence,
             )
 
             if (kinds.size != 1) {
@@ -353,6 +366,17 @@ object XmlMapperMethodParameterContractFactory {
                 problems += InputContractProblem(
                     kind = InputContractProblemKind.UNSUPPORTED,
                     code = UNPROVEN_SHAPE_PROBLEM,
+                    requirementId = requirementId,
+                    provenance = provenance,
+                )
+            }
+            if (
+                foreachCollectionEvidence.isNotEmpty() &&
+                expectedType.shape !in setOf(InputShape.LIST, InputShape.ARRAY, InputShape.MAP)
+            ) {
+                problems += InputContractProblem(
+                    kind = InputContractProblemKind.UNSUPPORTED,
+                    code = FOREACH_COLLECTION_SHAPE_PROBLEM,
                     requirementId = requirementId,
                     provenance = provenance,
                 )
@@ -531,6 +555,7 @@ object XmlMapperMethodParameterContractFactory {
         val kind: InputKind,
         val aliasKind: InputAliasKind,
         val placeholders: List<InputEvidence.Placeholder>,
+        val foreachCollections: List<InputEvidence.ForeachCollection> = emptyList(),
         val generatedAlias: InputEvidence.GeneratedAlias?,
         val parameterObjectFallback: InputEvidence.ParameterObjectFallback? = null,
         val parameterObjectProperty: InputEvidence.ParameterObjectProperty? = null,
