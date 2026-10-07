@@ -2,6 +2,7 @@ package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputEnvironment
+import com.algorist.zMyBatis.core.input.InputEnvironmentFailureKind
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputValue
@@ -133,6 +134,24 @@ class XmlMapperForeachPreparationTest {
         val nullItem = success(request(fixture, mapOf(0 to InputValue.ListValue(listOf(InputValue.NullValue)))))
         assertEquals(InputValue.NullValue, nullItem.orderedBindings.single().value)
         assertTrue(nullItem.orderedBindings.single().additionalParameter)
+        val nullCollection = InputEnvironment.validate(
+            contract(fixture),
+            listOf(ProvidedInput(contract(fixture).requirements.single().id, InputValue.NullValue, ExecutionInputOrigin.USER_ENTERED)),
+        ) as InputEnvironmentResult.Failure
+        assertEquals(InputEnvironmentFailureKind.NULL_NOT_ALLOWED, nullCollection.failures.single().kind)
+    }
+
+    @Test
+    fun myBatisMappingFailureRestoresTheOriginalContextLoader() {
+        val fixture = fixture(
+            """SELECT <foreach collection="ids" item="item">#{item,jdbcType=NOT_A_JDBC_TYPE}</foreach>""",
+            listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")),
+        )
+        val contextLoader = Thread.currentThread().contextClassLoader
+        val result = XmlMapperPreparationEngine.prepare(request(fixture, mapOf(0 to listValue(7)))) as PreparationResult.Failed
+        assertEquals(PreparationFailureKind.MYBATIS_PARSE, result.failure.kind)
+        assertEquals("mybatis-xml-mapper-parse-failure", result.failure.code)
+        assertSame(contextLoader, Thread.currentThread().contextClassLoader)
     }
 
     @Test
