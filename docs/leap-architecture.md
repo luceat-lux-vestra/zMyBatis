@@ -92,7 +92,7 @@ root IntelliJ plugin module
   -> Kotlin/JDK only
 ```
 
-This is a dependency DAG, not a linear root -> engine -> core chain. Root IntelliJ adapters consume core contracts directly, while `:mybatis-engine` depends on `:core` and MyBatis. The current repository includes both `:core` and `:mybatis-engine` in `settings.gradle.kts`, and CI runs both module checks. The physical boundary defined by #101 is therefore present; #64 remains open because the semantic preparation/materialization migration and legacy evaluator replacement are not complete merely because the module exists. The platform/core dependency direction does not invert.
+This is a dependency DAG, not a linear root -> engine -> core chain. Root IntelliJ adapters consume core contracts directly, while `:mybatis-engine` depends on `:core` and MyBatis. The current repository includes both `:core` and `:mybatis-engine` in `settings.gradle.kts`, and CI runs both module checks. The root currently depends on `:core` only; the engine is a standalone preparation module and is absent from the packaged plugin. The module boundary is present, but the target root-to-engine edge and production consumer cutover remain future work under #258. #64 remains open because the semantic preparation/execution migration and legacy evaluator replacement are not complete merely because the module exists. The platform/core dependency direction does not invert.
 
 The root module remains the IntelliJ plugin module so existing `buildPlugin`, verifier, signing, publishing, and CI entry points do not need a repository-wide workflow rewrite merely to establish architecture.
 
