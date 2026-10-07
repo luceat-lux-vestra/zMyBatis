@@ -144,9 +144,7 @@ internal object XmlForeachPreparationAdmission {
             .filterIsInstance<InputEvidence.MapperMethodParameter>()
             .map { it.index }
             .distinct()
-        if (parameterIndexes != listOf(expectedParameterIndex)) return false
-
-        return when (alias.kind) {
+        return parameterIndexes == listOf(expectedParameterIndex) && when (alias.kind) {
             InputAliasKind.EXPLICIT_PARAM ->
                 alias.provenance.evidence
                     .filterIsInstance<InputEvidence.ExplicitParamAlias>()
