@@ -24,6 +24,7 @@ The required `Test` CI context is product evidence, not a line-coverage target. 
 | Annotation SQL extraction | `AnnotationSqlExtractorTest`, `AnnotationSqlExtractorProjectFixtureTest` | literal/array/constant shapes at the PSI-interface contract plus real Java PSI/project-index resolution of cross-file constant references, including ordered constant arrays |
 | Java action source authority / overload identity | `JavaActionContextProjectFixtureTest` | direct legacy analyzer/extractor calls continue to read last-committed PSI until explicit `commitDocument`; the shipping execution action separately refuses an uncommitted editor/PSI boundary before extraction rather than executing stale PSI; a real saved Java editor/caret selects the exact overloaded `PsiMethod` and annotation SQL; shipping remembered-input keys now include qualified mapper type + ordered method parameter-type signature, and exact project history lookup remains isolated across overloads while XML keys retain `file::statementId` form |
 | IDE action presentation boundary | `MyBatisActionUpdateProjectFixtureTest`, `MyBatisActionUpdateBoundaryTest` | the shipping BGT `update()` enables/shows only local supported XML/direct-Java/provider contexts, hides unrelated or missing-editor contexts, fails closed for Java when indexes are unavailable, and delegates only to bounded context classification without SQL extraction, parameter analysis, datasource enumeration, persistence, console creation, or execution |
+| Leap XML Boolean-if preparation admission | `XmlBooleanIfPreparationAdmissionTest`, `XmlBooleanIfProducerBoundaryTest` | source-derived condition evidence plus the complete authoritative mapper-method capture rebuild the producer contract; exact caller requirements, aliases, internal bindings and source revisions must match before returning one condition requirement id/alias; unused mapper parameters that suppress generated aliases, forged/missing/duplicate evidence, type/requiredness/range/identity/revision drift, extra XML snapshots/dependencies, and unsupported sources fail typed; this admission-only boundary is not wired into XML runtime preparation or production execution |
 | Leap XML Boolean-if input provenance | `XmlBooleanIfParameterContractTest`, `XmlBooleanIfProducerBoundaryTest` | one direct `<if test="alias">` requests a required Boolean caller input only through proven explicit/generic mapper aliases, retains OGNL and placeholder evidence separately, and never applies scalar whole-object fallback to condition names; non-Boolean, unproven, nested/multiple/mixed dynamic, complex/reserved, raw-interpolation, and source-authority drift cases remain blocked; missing condition input is refused and both true/false inputs still return the engine's typed dynamic-SQL refusal; this producer-only boundary does not enable XML-if runtime preparation or production execution |
 | Leap active-editor snapshot boundary | `ActiveEditorSourceSnapshotAdapterProjectFixtureTest` | the new non-wired source adapter captures saved and unsaved active `Document` text/revision/caret without committing PSI or saving disk, fails closed for missing file identity/source mutation/invalid caret evidence, and returns no retained IntelliJ platform object; it does not prove production action cutover or dependent-source resolution |
 | Leap dependent mapper snapshot boundary | `DependentMapperSourceSnapshotAdapterProjectFixtureTest` | for one already-resolved dependent `VirtualFile`, a loaded unsaved `Document` wins over stale VFS/disk content; otherwise bounded VFS text is captured with the same source identity scheme; oversize/invalid/unreadable/racing source fails closed and no IntelliJ platform object is retained; it does not discover namespaces/includes or construct dependency graphs |
@@ -164,3 +165,22 @@ Those gaps are explicit so a green `Test` context is not misrepresented as evide
 ## Other gates
 
 `Inspect code`/Qodana and `Verify plugin` remain separate required evidence for static analysis and JetBrains compatibility. They do not substitute for the product assertions in `Test`.
+
+## XML Boolean-if preparation admission evidence
+
+`XmlBooleanIfPreparationAdmission.inspect` consumes an immutable XML source graph, the complete
+`XmlMapperMethodCapture` from the source authority boundary, and the proposed `ParameterContract`.
+It rebuilds the source and mapper contract rather than accepting a contract's alias evidence as
+self-authenticating. The complete capture matters even when some parameters are not requested: an
+unused explicit alias can suppress a generated `paramN` alias and change which value a condition reads.
+
+This proves consistency with the supplied authoritative captures; it does not independently parse
+Java source to authenticate mapper metadata or revalidate live IDE documents. Those source-capture
+and revision responsibilities remain at the #62 boundary. The admitted result contains only a core
+requirement id and alias, with no source/platform object or runtime value retained.
+
+E2E applicability: not applicable to this admission-only slice. The changed invariant is fully owned
+by pure source/contract tests in `:mybatis-engine`; installed-plugin wiring, production action/UI,
+Database Tools behavior and packaging dependencies are unchanged. The engine's existing true/false
+Boolean-if producer-boundary test still requires typed refusal of XML dynamic preparation. A future
+#64 runtime consumer must be reviewed and evidenced separately; #258 continues to govern execution.
