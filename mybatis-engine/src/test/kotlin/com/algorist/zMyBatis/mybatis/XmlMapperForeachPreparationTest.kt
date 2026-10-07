@@ -34,8 +34,10 @@ import com.algorist.zMyBatis.core.source.XmlMapperMethodCapture
 import com.algorist.zMyBatis.core.source.XmlStatementId
 import java.lang.reflect.Proxy
 import java.math.BigInteger
+import java.net.URLClassLoader
 import java.time.LocalDate
 import java.util.concurrent.Callable
+import java.util.concurrent.CancellationException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import org.apache.ibatis.session.Configuration
@@ -152,6 +154,35 @@ class XmlMapperForeachPreparationTest {
         assertEquals(PreparationFailureKind.MYBATIS_PARSE, result.failure.kind)
         assertEquals("mybatis-xml-mapper-parse-failure", result.failure.code)
         assertSame(contextLoader, Thread.currentThread().contextClassLoader)
+    }
+
+    @Test
+    fun mappingSnapshotPropagatesWrappedFatalAndCancellationWhileRejectingOrdinaryLookupFailure() {
+        val location = Configuration::class.java.protectionDomain.codeSource.location
+        URLClassLoader(arrayOf(location), ClassLoader.getPlatformClassLoader()).use { loader ->
+            val configurationClass = Class.forName("org.apache.ibatis.session.Configuration", true, loader)
+            val configuration = configurationClass.getDeclaredConstructor().newInstance()
+            val builderClass = Class.forName("org.apache.ibatis.mapping.ParameterMapping\$Builder", true, loader)
+            val builder = builderClass.getConstructor(configurationClass, String::class.java, Class::class.java)
+                .newInstance(configuration, "id", Long::class.javaObjectType)
+            val mappings = listOf(builderClass.getMethod("build").invoke(builder))
+            val boundSqlClass = Class.forName("org.apache.ibatis.mapping.BoundSql", true, loader)
+            for (failure in listOf(AssertionError("fatal lookup"), LinkageError("linkage lookup"), CancellationException("cancelled lookup"), IllegalStateException("ordinary lookup"))) {
+                val values = object : HashMap<String, Any?>() {
+                    override fun get(key: String): Any? = throw failure
+                }
+                val boundSql = boundSqlClass.getConstructor(configurationClass, String::class.java, List::class.java, Any::class.java)
+                    .newInstance(configuration, "SELECT ?", mappings, values)
+                val result = runCatching {
+                    IsolatedDynamicMyBatisPreparation.snapshotMappings(loader, configuration, boundSql, values, mappings, emptyMap())
+                }
+                if (failure is Exception && failure !is CancellationException) {
+                    assertTrue(result.getOrThrow().single().runtimeValue is MyBatisRuntimeValueSnapshot.Failed)
+                } else {
+                    assertSame(failure, result.exceptionOrNull())
+                }
+            }
+        }
     }
 
     @Test

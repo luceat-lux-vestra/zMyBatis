@@ -6,6 +6,7 @@ import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import java.lang.reflect.Array as ReflectArray
 import java.lang.reflect.Method
 import java.net.URLClassLoader
+import java.util.concurrent.CancellationException
 import org.apache.ibatis.session.Configuration
 
 /**
@@ -462,7 +463,7 @@ internal object IsolatedDynamicMyBatisPreparation {
 
     private fun rethrowFatal(failure: Throwable) {
         val fatal = throwableChain(failure).firstOrNull {
-            it is VirtualMachineError || it.javaClass.name == "java.lang.ThreadDeath"
+            it !is Exception || it is CancellationException
         }
         if (fatal != null) throw fatal
     }
