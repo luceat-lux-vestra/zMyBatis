@@ -35,6 +35,49 @@ import org.junit.Test
 
 class XmlBooleanIfPreparationAdmissionTest {
     @Test
+    fun whereWrappedConditionIsAdmittedOnlyWithCompleteMapperEvidence() {
+        val fixture = fixture(
+            "SELECT #{id} <where><if test=\"param1\">AND id = #{id}</if></where>",
+            listOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id")),
+        )
+        val original = contract(fixture)
+        val admitted = inspect(fixture, original) as XmlBooleanIfPreparationAdmission.Result.Admitted
+        assertEquals("param1", admitted.conditionAlias)
+        assertEquals("xml-java-param:0", admitted.conditionRequirementId.value)
+
+        val condition = original.requirement(admitted.conditionRequirementId)!!
+        val stripped = condition.copy(provenance = InputProvenance(condition.provenance.evidence.filterNot { it is InputEvidence.OgnlExpression }))
+        assertFailure(inspect(fixture, copyContract(original, requirements = original.requirements.map { if (it.id == condition.id) stripped else it })))
+        val suppressed = mapper(fixture.graph, listOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"), parameter(2, "boolean", "param1")))
+        assertFailure(XmlBooleanIfPreparationAdmission.inspect(fixture.graph, suppressed, original))
+    }
+
+    @Test
+    fun supportedWherePlaceholderDriftCannotReuseOldContract() {
+        val fixture = fixture("SELECT 1 <where><if test=\"enabled\">AND enabled = #{enabled}</if></where>")
+        val changed = graph("SELECT 1 <where><if test=\"enabled\">AND enabled = #{enabled} OR enabled = #{enabled}</if></where>")
+        assertFailure(XmlBooleanIfPreparationAdmission.inspect(changed, mapper(changed), contract(fixture)))
+    }
+
+    @Test
+    fun unsupportedWhereStructureCannotBeAuthorizedByAValidConditionContract() {
+        val fixture = fixture("SELECT 1 <where><if test=\"enabled\">AND 1 = 1</if></where>")
+        val condition = "<if test=\"enabled\">AND 1 = 1</if>"
+        for (body in listOf(
+            "<where/>", "<where>AND 1 = 1</where>",
+            "<where prefixOverrides=\"AND\">$condition</where>",
+            "<where xmlns=\"urn:unsupported\">$condition</where>",
+            "<where><where>$condition</where></where>",
+            "<where>$condition$condition</where>",
+            "<where>$condition</where>$condition",
+            "<where><include refid=\"fragment\"/>$condition</where>",
+        )) {
+            val source = graph("SELECT 1 $body")
+            assertFailure(XmlBooleanIfPreparationAdmission.inspect(source, mapper(source), contract(fixture)), PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-boolean-if-preparation-source-unsupported")
+        }
+    }
+
+    @Test
     fun primitiveAndBoxedExplicitBooleanAuthorityAreAdmitted() {
         for (type in listOf("boolean", "java.lang.Boolean")) {
             val fixture = fixture(parameters = listOf(parameter(0, type, "enabled")))

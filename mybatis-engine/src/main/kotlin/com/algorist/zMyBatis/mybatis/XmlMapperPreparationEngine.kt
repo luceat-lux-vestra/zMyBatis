@@ -31,8 +31,8 @@ import org.apache.ibatis.session.Configuration
  * The complete captured mapper documents are parsed by an isolated stock MyBatis 3.5.19 runtime.
  * Static zero-input statements and the deliberately narrow proven scalar/temporal bound-input
  * island and source-proven foreach/Boolean-if contracts are admitted. Dynamic preparation owns
- * a fresh runtime; Boolean-if additionally requires complete mapper capture. No MyBatis object
- * crosses the child-classloader boundary.
+ * a fresh runtime; Boolean-if directly or inside one where additionally requires complete mapper
+ * capture. Stock MyBatis owns evaluation and WHERE trimming. No MyBatis object crosses the boundary.
  */
 object XmlMapperPreparationEngine {
     private const val ENGINE_ID = "org.mybatis:mybatis"

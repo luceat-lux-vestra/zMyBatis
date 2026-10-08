@@ -18,8 +18,9 @@ import javax.xml.stream.XMLStreamReader
  * The XML source graph proves statement identity and source use, but it does not prove the mapper
  * method parameter-object semantics that MyBatis will apply at runtime. Therefore a placeholder use
  * is retained as provenance while caller-input authority remains blocked. A placeholder-free static
- * root statement can produce an empty non-blocking contract. A single direct simple-name if
- * condition carries OGNL provenance; mapper metadata must separately prove its Boolean caller alias.
+ * root statement can produce an empty non-blocking contract. A single simple-name if, either direct
+ * or inside one attribute-free direct where, carries OGNL provenance; mapper metadata must separately
+ * prove its Boolean caller alias. This scanner discovers source uses, never WHERE/trim semantics.
  */
 object XmlStatementParameterContractFactory {
     private const val DEPENDENCY_PROVENANCE_PROBLEM = "xml-dependent-fragment-provenance-unsupported"
@@ -255,6 +256,8 @@ object XmlStatementParameterContractFactory {
         var targetMatches = 0
         var targetClosed = false
         var foreachDepth = -1
+        var whereDepth = -1
+        var whereSeen = false
         var ifCondition: String? = null
         var foreachDeclaration: ForeachDeclaration? = null
         val textSegments = mutableListOf<StatementTextSegment>()
@@ -311,12 +314,21 @@ object XmlStatementParameterContractFactory {
 
                         if (targetDepth >= 0) {
                             if (
+                                depth == targetDepth + 1 && localName == "where" &&
+                                isUnqualifiedElement(reader) && reader.attributeCount == 0 &&
+                                !whereSeen && ifCondition == null && foreachDeclaration == null
+                            ) {
+                                whereSeen = true
+                                whereDepth = depth
+                                continue
+                            }
+                            if (
                                 depth == targetDepth + 1 &&
                                 localName == "foreach" &&
                                 isUnqualifiedElement(reader) &&
                                 foreachDepth < 0 &&
                                 foreachDeclaration == null &&
-                                ifCondition == null
+                                ifCondition == null && !whereSeen
                             ) {
                                 val declaration = parseForeachDeclaration(reader)
                                     ?: return StatementScan.Failed(
@@ -328,7 +340,10 @@ object XmlStatementParameterContractFactory {
                                 continue
                             }
                             if (
-                                depth == targetDepth + 1 && localName == "if" &&
+                                (
+                                    (depth == targetDepth + 1 && !whereSeen) ||
+                                        (whereDepth >= 0 && depth == whereDepth + 1)
+                                    ) && localName == "if" &&
                                 isUnqualifiedElement(reader) && foreachDeclaration == null &&
                                 ifCondition == null
                             ) {
@@ -367,6 +382,15 @@ object XmlStatementParameterContractFactory {
                     }
 
                     XMLStreamConstants.END_ELEMENT -> {
+                        if (whereDepth == depth) {
+                            if (ifCondition == null) {
+                                return StatementScan.Failed(
+                                    InputContractProblemKind.UNSUPPORTED,
+                                    NESTED_ELEMENT_PROBLEM,
+                                )
+                            }
+                            whereDepth = -1
+                        }
                         if (foreachDepth == depth) {
                             foreachDepth = -1
                         }

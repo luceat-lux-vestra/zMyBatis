@@ -18,6 +18,114 @@ import org.junit.Test
 
 class XmlBooleanIfParameterContractTest {
     @Test
+    fun whereConditionStillNeedsMapperAuthorityAndNeverCreatesAWhereInput() {
+        val graph = graph("SELECT 1 <where><if test=\"enabled\">AND id = #{id}</if></where>")
+        val sourceOnly = XmlStatementParameterContractFactory.build(graph)
+        assertTrue(sourceOnly.isPreparationBlocked)
+        assertTrue(sourceOnly.requirements.isEmpty())
+        assertEquals(setOf("id", "enabled"), sourceOnly.blockingProblems.flatMap {
+            it.provenance!!.evidence.map { evidence ->
+                when (evidence) {
+                    is InputEvidence.Placeholder -> evidence.expression
+                    is InputEvidence.OgnlExpression -> evidence.expression
+                    else -> throw AssertionError("unexpected source evidence: $evidence")
+                }
+            }
+        }.toSet())
+
+        val proven = build(graph, parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
+        assertFalse(proven.isPreparationBlocked)
+        assertEquals(setOf("enabled", "id"), proven.aliases.map { it.name }.toSet())
+        assertTrue(proven.internalBindings.isEmpty())
+        assertEquals(mapOf(XML_FILE to XML_REVISION, JAVA_FILE to JAVA_REVISION), proven.sourceRevisions)
+    }
+
+    @Test
+    fun whereRetainsBoundUsesOutsideInsideAndAfterTheCondition() {
+        val contract = build(
+            graph("SELECT #{id} <where>AND id = #{id} <if test=\"enabled\">AND enabled = #{enabled} AND id = #{id}</if> AND id = #{id}</where> ORDER BY #{id}"),
+            parameter(0, "boolean", "enabled"), parameter(1, "long", "id"),
+        )
+        assertFalse(contract.isPreparationBlocked)
+        val enabled = contract.requirement(contract.aliases.single { it.name == "enabled" }.requirementId)!!
+        assertEquals(listOf("enabled"), conditions(enabled))
+        assertEquals(1, enabled.provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().size)
+        val id = contract.requirement(contract.aliases.single { it.name == "id" }.requirementId)!!
+        assertEquals(5, id.provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().size)
+        assertTrue(id.provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().all {
+            it.source.sourceFileId == XML_FILE && it.source.sourceRevision == XML_REVISION
+        })
+    }
+
+    @Test
+    fun whereSupportsOnlyProvenPrimitiveOrBoxedBooleanAliases() {
+        for (type in listOf("boolean", "java.lang.Boolean")) {
+            for (alias in listOf("enabled", "param1")) {
+                val contract = build(
+                    graph("SELECT 1 <where><!-- no caller --> <if test=\" $alias \"><![CDATA[AND id = #{id}]]></if></where>"),
+                    parameter(0, type, "enabled"), parameter(1, "long", "id"),
+                )
+                assertFalse("$type / $alias", contract.isPreparationBlocked)
+                val requirement = contract.requirement(contract.aliases.single { it.name == alias }.requirementId)!!
+                assertEquals(InputRequiredness.REQUIRED, requirement.requiredness)
+                assertEquals(InputScalarType.BOOLEAN, requirement.expectedType.scalarType)
+                assertEquals(listOf(alias), conditions(requirement))
+            }
+        }
+        for (type in listOf("long", "java.lang.String", "java.util.Map<java.lang.String,java.lang.Boolean>")) {
+            val contract = build(graph("SELECT 1 <where><if test=\"enabled\">AND 1 = 1</if></where>"), parameter(0, type, "enabled"))
+            assertTrue(type, contract.blockingProblems.any { it.code == "xml-if-condition-type-unsupported" })
+        }
+    }
+
+    @Test
+    fun unsupportedWhereShapesFailWithoutPartialCallerAuthority() {
+        val condition = "<if test=\"enabled\">AND id = #{id}</if>"
+        val bodies = listOf(
+            "<where/>", "<where>AND id = #{id}</where>",
+            "<where><!-- $condition --> <![CDATA[$condition]]></where>",
+            "<where extra=\"ignored\">$condition</where>",
+            "<where prefixOverrides=\"OR\">$condition</where>",
+            "<where xmlns=\"urn:unsupported\">$condition</where>",
+            "<x:where xmlns:x=\"urn:unsupported\">$condition</x:where>",
+            "<where><where>$condition</where></where>",
+            "<where>$condition$condition</where>",
+            "<where>$condition</where><where>$condition</where>",
+            "$condition<where>$condition</where>",
+            "<where>$condition</where>$condition",
+            "<where>$condition<bind name=\"x\" value=\"1\"/></where>",
+            "<where><include refid=\"fragment\"/>$condition</where>",
+            "<where><foreach collection=\"ids\" item=\"id\">#{id}</foreach>$condition</where>",
+            "<foreach collection=\"ids\" item=\"id\">#{id}</foreach><where>$condition</where>",
+            "<where>$condition</where><foreach collection=\"ids\" item=\"id\">#{id}</foreach>",
+            "<if test=\"enabled\"><where>AND id = #{id}</where></if>",
+            "<trim>$condition</trim>", "<set>$condition</set>",
+        ) + listOf("enabled != null", "enabled.value", "!enabled", "true", "_parameter", "").map {
+            "<where><if test=\"$it\">AND id = #{id}</if></where>"
+        }
+        for (body in bodies) {
+            val contract = build(graph("SELECT #{id} $body"), parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
+            assertTrue(body, contract.isPreparationBlocked)
+            assertTrue(body, contract.requirements.isEmpty())
+            assertTrue(body, contract.aliases.isEmpty())
+            assertTrue(body, contract.internalBindings.isEmpty())
+        }
+    }
+
+    @Test
+    fun rawInputAnywhereInWhereIslandRemainsUnsupported() {
+        for (body in listOf(
+            "\${table}<where><if test=\"enabled\">AND 1 = 1</if></where>",
+            "<where>\${table}<if test=\"enabled\">AND 1 = 1</if></where>",
+            "<where><if test=\"enabled\">AND \${table} = 1</if></where>",
+        )) {
+            val contract = build(graph(body), parameter(0, "boolean", "enabled"), parameter(1, "java.lang.String", "table"))
+            assertEquals("xml-if-raw-input-unsupported", contract.blockingProblems.single().code)
+            assertTrue(contract.requirements.isEmpty())
+        }
+    }
+
+    @Test
     fun sourceConditionAloneCannotInventCallerAuthority() {
         val graph = graph("SELECT 1 <if test=\"enabled\">WHERE 1 = 1</if>")
         val contract = XmlStatementParameterContractFactory.build(graph)

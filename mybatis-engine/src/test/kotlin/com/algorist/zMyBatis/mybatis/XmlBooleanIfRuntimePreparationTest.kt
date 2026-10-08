@@ -46,6 +46,128 @@ import org.junit.Test
 
 class XmlBooleanIfRuntimePreparationTest {
     @Test
+    fun whereUsesStockLeadingAndOrTrimmingAndDisappearsWhenInactive() {
+        for (prefix in listOf("AND ", "and ", "OR ", "or ", "AND\n", "OR\t", "aNd\r\n")) {
+            val fixture = fixture("SELECT 1 <where><if test=\"enabled\">${prefix}id = #{id,jdbcType=BIGINT}</if></where>")
+            for (enabled in listOf(true, false)) {
+                val execution = success(prepare(fixture, enabled))
+                assertEquals(if (enabled) "SELECT 1 WHERE id = ?" else "SELECT 1", normalize(execution.sqlWithPlaceholders))
+                assertEquals(if (enabled) listOf(integer(42)) else emptyList<InputValue>(), execution.orderedBindings.map { it.value })
+                assertStockParity(fixture, enabled, execution)
+                assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
+            }
+        }
+    }
+
+    @Test
+    fun whereDoesNotStripAndOrPrefixesFromOrdinaryIdentifiers() {
+        for (identifier in listOf("ANDROID", "ORACLE", "OR_id")) {
+            val fixture = fixture("SELECT 1 <where><if test=\"enabled\">$identifier = #{id}</if></where>")
+            val execution = success(prepare(fixture, true))
+            assertEquals("SELECT 1 WHERE $identifier = ?", normalize(execution.sqlWithPlaceholders))
+            assertStockParity(fixture, true, execution)
+        }
+    }
+
+    @Test
+    fun whitespaceOnlyWhereIsOmittedEvenWhenConditionIsTrue() {
+        val fixture = fixture("SELECT 1 <where><if test=\"enabled\"> \n\t </if></where>")
+        for (enabled in listOf(true, false)) {
+            val execution = success(prepare(fixture, enabled))
+            assertEquals("SELECT 1", normalize(execution.sqlWithPlaceholders))
+            assertTrue(execution.orderedBindings.isEmpty())
+            assertStockParity(fixture, enabled, execution)
+        }
+    }
+
+    @Test
+    fun emptyWhereOnlySqlAndActiveMappingErrorsRemainTypedAndRestoreContext() {
+        val before = Thread.currentThread().contextClassLoader
+        val whereOnly = fixture("<where><if test=\"enabled\">AND id = #{id}</if></where>")
+        assertEquals("mybatis-prepared-sql-empty", (prepare(whereOnly, false) as PreparationResult.Failed).failure.code)
+        assertSame(before, Thread.currentThread().contextClassLoader)
+        val invalidMapping = fixture("SELECT 1 <where><if test=\"enabled\">AND id = #{id,jdbcType=NOT_A_TYPE}</if></where>")
+        assertEquals(PreparationFailureKind.MYBATIS_PARSE, (prepare(invalidMapping, true) as PreparationResult.Failed).failure.kind)
+        assertSame(before, Thread.currentThread().contextClassLoader)
+        val inactive = success(prepare(invalidMapping, false))
+        assertEquals("SELECT 1", normalize(inactive.sqlWithPlaceholders))
+        assertTrue(inactive.orderedBindings.isEmpty())
+        assertSame(before, Thread.currentThread().contextClassLoader)
+    }
+
+    @Test
+    fun whereKeepsStaticAndConditionalMappingsInStockOrder() {
+        val fixture = fixture("SELECT #{id} <where>AND id = #{id} <if test=\"enabled\">AND enabled = #{enabled,jdbcType=BOOLEAN} AND id = #{id}</if> AND id = #{id}</where> ORDER BY #{id}")
+        for (enabled in listOf(true, false)) {
+            val execution = success(prepare(fixture, enabled))
+            assertEquals(if (enabled) listOf("id", "id", "enabled", "id", "id", "id") else listOf("id", "id", "id", "id"), execution.orderedBindings.map { it.property })
+            assertEquals(if (enabled) listOf(integer(42), integer(42), InputValue.BooleanValue(true), integer(42), integer(42), integer(42)) else List(4) { integer(42) }, execution.orderedBindings.map { it.value })
+            assertStockParity(fixture, enabled, execution)
+            assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
+        }
+    }
+
+    @Test
+    fun whereCommentsCdataAndGenericBoxedConditionRemainStockSemantics() {
+        val fixture = fixture("SELECT 1 <where><!-- <if test=\"forged\"> --> <if test=\" param1 \"><![CDATA[OR id = #{param2}]]></if></where>", type = "java.lang.Boolean")
+        for (enabled in listOf(true, false)) {
+            val execution = success(prepare(fixture, enabled))
+            assertStockParity(fixture, enabled, execution)
+            assertEquals(if (enabled) "SELECT 1 WHERE id = ?" else "SELECT 1", normalize(execution.sqlWithPlaceholders))
+            assertEquals(if (enabled) listOf("param2") else emptyList<String>(), execution.orderedBindings.map { it.property })
+            assertTrue(execution.orderedBindings.none { it.additionalParameter })
+            assertTrue(execution.rawInterpolations.isEmpty())
+        }
+    }
+
+    @Test
+    fun whereNamedMapLeafIsRequiredOnlyWhenStockEmitsItsMapping() {
+        val fixture = fixture("SELECT 1 <where><if test=\"enabled\">AND id = #{id.key}</if></where>", idType = "java.util.Map<java.lang.String,java.lang.Long>")
+        val emptyMap = InputValue.MapValue(emptyMap())
+        val inactive = success(prepare(fixture, false, overrides = mapOf(1 to emptyMap)))
+        assertEquals("SELECT 1", normalize(inactive.sqlWithPlaceholders))
+        assertTrue(inactive.orderedBindings.isEmpty())
+        val missing = (prepare(fixture, true, overrides = mapOf(1 to emptyMap)) as PreparationResult.Failed).failure
+        assertEquals(PreparationFailureKind.BINDING_RESOLUTION, missing.kind)
+        assertEquals("xml-preparation-named-map-property-missing", missing.code)
+        val presentNull = success(prepare(fixture, true, overrides = mapOf(1 to InputValue.MapValue(mapOf("key" to InputValue.NullValue)))))
+        assertEquals(InputValue.NullValue, presentNull.orderedBindings.single().value)
+    }
+
+    @Test
+    fun whereRequiresMapperCaptureAndRefusesUnsupportedSourceEvenWhenFalse() {
+        val fixture = fixture("SELECT 1 <where><if test=\"enabled\">AND id = #{id}</if></where>")
+        assertEquals("xml-preparation-dynamic-sql-unsupported", (prepare(fixture, false, withMapper = false) as PreparationResult.Failed).failure.code)
+        val condition = "<if test=\"enabled\">AND id = #{id}</if>"
+        for (body in listOf(
+            "<where prefixOverrides=\"AND\">$condition</where>",
+            "<where>$condition$condition</where>",
+            "<where><include refid=\"fragment\"/>$condition</where>",
+            "<where><if test=\"enabled != null\">AND id = #{id}</if></where>",
+            "<where><if test=\"enabled\">AND \${table} = #{id}</if></where>",
+            "<if test=\"enabled\"><where>AND id = #{id}</where></if>",
+        )) {
+            assertEquals(body, "xml-boolean-if-preparation-source-unsupported", (prepare(fixture("SELECT 1 $body"), false, supplied = contract(fixture)) as PreparationResult.Failed).failure.code)
+        }
+    }
+
+    @Test
+    fun whereBoundTokensCannotBeSynthesizedAcrossItsNewBoundaries() {
+        for (body in listOf(
+            "SELECT #<where><if test=\"enabled\">{id}</if></where>",
+            "SELECT 1 <where>#<if test=\"enabled\">{id}</if></where>",
+            "SELECT 1 <where>\\<if test=\"enabled\">#{id}</if></where>",
+            "SELECT 1 <where><if test=\"enabled\">AND id = \\#{id}</if></where>",
+        )) {
+            val fixture = fixture(body)
+            assertFalse(body, contract(fixture).isPreparationBlocked)
+            for (enabled in listOf(true, false)) {
+                assertEquals(body, "xml-boolean-if-bound-token-topology-unsupported", (prepare(fixture, enabled) as PreparationResult.Failed).failure.code)
+            }
+        }
+    }
+
+    @Test
     fun trueAndFalseRetainStockSqlAndOrderedCallerMappings() {
         val fixture = fixture("SELECT #{id} <if test=\"enabled\">, #{enabled,jdbcType=BOOLEAN}, #{id}</if>, #{id}")
         val active = success(prepare(fixture, true))
@@ -251,12 +373,16 @@ class XmlBooleanIfRuntimePreparationTest {
             assertThrows(InvocationTargetException::class.java) {
                 ognl.getMethod("parseExpression", String::class.java).invoke(null, "enabled")
             }
-            val fixture = fixture("SELECT 1 <if test=\"enabled\">WHERE id = #{id}</if>")
-            for (enabled in listOf(true, false)) {
-                val execution = success(prepare(fixture, enabled))
-                assertEquals(if (enabled) 1 else 0, execution.orderedBindings.size)
-                assertSame(poison, get.invoke(null, context))
-                assertEquals(1, max.get(null))
+            for (body in listOf(
+                "SELECT 1 <if test=\"enabled\">WHERE id = #{id}</if>",
+                "SELECT 1 <where><if test=\"enabled\">AND id = #{id}</if></where>",
+            )) {
+                for (enabled in listOf(true, false)) {
+                    val execution = success(prepare(fixture(body), enabled))
+                    assertEquals(if (enabled) 1 else 0, execution.orderedBindings.size)
+                    assertSame(poison, get.invoke(null, context))
+                    assertEquals(1, max.get(null))
+                }
             }
         } finally {
             max.set(null, originalMax)
@@ -281,13 +407,16 @@ class XmlBooleanIfRuntimePreparationTest {
 
     @Test
     fun concurrentInvocationsOwnIndependentRuntimeAndRestoreThreadContext() {
-        val fixture = fixture("SELECT #{id} <if test=\"enabled\">, #{id}</if>")
+        val fixtures = listOf(
+            fixture("SELECT #{id} <if test=\"enabled\">, #{id}</if>"),
+            fixture("SELECT #{id} <where><if test=\"enabled\">AND id = #{id}</if></where>"),
+        )
         val pool = Executors.newFixedThreadPool(4)
         try {
             val results = (0 until 12).map { index -> pool.submit(Callable {
                 val thread = Thread.currentThread()
                 val before = thread.contextClassLoader
-                val execution = success(prepare(fixture, index % 2 == 0, id = index))
+                val execution = success(prepare(fixtures[index / 2 % 2], index % 2 == 0, id = index))
                 assertSame(before, thread.contextClassLoader)
                 assertEquals(if (index % 2 == 0) 2 else 1, execution.orderedBindings.size)
                 assertTrue(execution.orderedBindings.all { it.value == integer(index) })
@@ -333,6 +462,19 @@ class XmlBooleanIfRuntimePreparationTest {
         val graph = StatementSourceGraph(CapturedStatement(STATEMENT, StatementKind.SELECT, SourceRange(0, xml.length)), listOf(SourceSnapshot(XML_FILE, XML_REVISION, xml)), emptyList())
         val mapper = XmlMapperMethodCapture(STATEMENT, SourceSnapshot(JAVA_FILE, JAVA_REVISION, "x".repeat(100)), SourceRange(0, 100), listOf(JavaMethodParameterMetadata(0, "enabled", JavaTypeIdentity(type), "enabled"), JavaMethodParameterMetadata(1, "id", JavaTypeIdentity(idType), "id")))
         return Fixture(graph, mapper)
+    }
+
+    private fun assertStockParity(fixture: Fixture, enabled: Boolean, execution: PreparedExecution) {
+        val stock = stockBoundSql(fixture, enabled, 42)
+        assertEquals(stock.sql, execution.sqlWithPlaceholders)
+        assertEquals(stock.parameterMappings.map { it.property }, execution.orderedBindings.map { it.property })
+        stock.parameterMappings.zip(execution.orderedBindings).forEach { (mapping, binding) ->
+            assertEquals(mapping.javaType.name, binding.metadata.mappingJavaTypeIdentity)
+            assertEquals(mapping.jdbcType?.name, binding.metadata.jdbcTypeIdentity)
+            assertEquals(mapping.typeHandler.javaClass.name, binding.metadata.typeHandlerIdentity)
+            assertEquals(mapping.mode.name, binding.metadata.parameterMode)
+            assertEquals(mapping.numericScale, binding.metadata.numericScale)
+        }
     }
 
     private fun stockBoundSql(fixture: Fixture, enabled: Boolean, id: Int): org.apache.ibatis.mapping.BoundSql {
