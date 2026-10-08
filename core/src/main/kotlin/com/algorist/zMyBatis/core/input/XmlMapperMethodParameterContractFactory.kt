@@ -26,6 +26,7 @@ object XmlMapperMethodParameterContractFactory {
     private const val RAW_NON_STRING_PROBLEM = "xml-raw-non-string-parameter"
     private const val FOREACH_COLLECTION_SHAPE_PROBLEM = "xml-foreach-collection-shape-unsupported"
     private const val FOREACH_LOCAL_SHADOWING_PROBLEM = "xml-foreach-local-shadowing-unsupported"
+    private const val IF_CONDITION_TYPE_PROBLEM = "xml-if-condition-type-unsupported"
     private const val GENERIC_ALIAS_RULE = "mybatis-3.5.19-param-name-resolver-generic"
     private const val COLLECTION_SHORTCUT_RULE =
         "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
@@ -154,16 +155,18 @@ object XmlMapperMethodParameterContractFactory {
             val authorityEvidence = authorityProblem.provenance?.evidence.orEmpty()
             val placeholders = authorityEvidence.filterIsInstance<InputEvidence.Placeholder>()
             val foreachCollections = authorityEvidence.filterIsInstance<InputEvidence.ForeachCollection>()
+            val conditions = authorityEvidence.filterIsInstance<InputEvidence.OgnlExpression>()
             val mappingProperty = (
                 placeholders.map { it.expression } +
-                    foreachCollections.map { it.expression }
+                    foreachCollections.map { it.expression } +
+                    conditions.map { it.expression }
                 ).distinct().singleOrNull()
                 ?: run {
                     problems += authorityProblem
                     return@forEach
                 }
             val kinds = placeholders.mapTo(linkedSetOf()) { it.kind }.apply {
-                if (foreachCollections.isNotEmpty()) add(InputKind.BOUND)
+                if (foreachCollections.isNotEmpty() || conditions.isNotEmpty()) add(InputKind.BOUND)
             }
             val kind = kinds.singleOrNull()
                 ?: run {
@@ -182,6 +185,7 @@ object XmlMapperMethodParameterContractFactory {
                         }
                         addAll(placeholders)
                         addAll(foreachCollections)
+                        addAll(conditions)
                     }
                     problems += InputContractProblem(
                         kind = InputContractProblemKind.AMBIGUOUS,
@@ -203,6 +207,7 @@ object XmlMapperMethodParameterContractFactory {
                                 aliasKind = InputAliasKind.EXPLICIT_PARAM,
                                 placeholders = placeholders,
                                 foreachCollections = foreachCollections,
+                                conditions = conditions,
                                 generatedAlias = null,
                                 namedMapProperty = InputEvidence.NamedMapProperty(
                                     parameterIndex = parameter.index,
@@ -221,6 +226,7 @@ object XmlMapperMethodParameterContractFactory {
                             aliasKind = InputAliasKind.EXPLICIT_PARAM,
                             placeholders = placeholders,
                             foreachCollections = foreachCollections,
+                            conditions = conditions,
                             generatedAlias = null,
                         )
                     }
@@ -237,6 +243,7 @@ object XmlMapperMethodParameterContractFactory {
                             aliasKind = InputAliasKind.GENERIC_PARAM,
                             placeholders = placeholders,
                             foreachCollections = foreachCollections,
+                            conditions = conditions,
                             generatedAlias = InputEvidence.GeneratedAlias(
                                 parameterIndex = parameter.index,
                                 alias = authorityRoot,
@@ -263,6 +270,7 @@ object XmlMapperMethodParameterContractFactory {
                         aliasKind = shortcut.aliasKind,
                         placeholders = placeholders,
                         foreachCollections = foreachCollections,
+                        conditions = conditions,
                         generatedAlias = InputEvidence.GeneratedAlias(
                             parameterIndex = shortcut.parameter.index,
                             alias = mappingProperty,
@@ -270,7 +278,7 @@ object XmlMapperMethodParameterContractFactory {
                         ),
                     )
                 }
-                foreachCollections.isEmpty() &&
+                foreachCollections.isEmpty() && conditions.isEmpty() &&
                     parameterObjectFallback != null &&
                     kind == InputKind.BOUND &&
                     isSimpleMappingProperty(mappingProperty) -> {
@@ -288,7 +296,7 @@ object XmlMapperMethodParameterContractFactory {
                         ),
                     )
                 }
-                foreachCollections.isEmpty() &&
+                foreachCollections.isEmpty() && conditions.isEmpty() &&
                     parameterObjectProperty != null &&
                     kind == InputKind.BOUND &&
                     isSimpleMappingProperty(mappingProperty) -> {
@@ -325,6 +333,7 @@ object XmlMapperMethodParameterContractFactory {
             val namedMapPropertyEvidence = uses.mapNotNull { it.namedMapProperty }.distinct()
             val placeholderEvidence = uses.flatMap { it.placeholders }
             val foreachCollectionEvidence = uses.flatMap { it.foreachCollections }
+            val conditionEvidence = uses.flatMap { it.conditions }
             val provenance = InputProvenance(
                 mapperEvidence +
                     generatedEvidence +
@@ -332,7 +341,8 @@ object XmlMapperMethodParameterContractFactory {
                     parameterObjectPropertyEvidence +
                     namedMapPropertyEvidence +
                     placeholderEvidence +
-                    foreachCollectionEvidence,
+                    foreachCollectionEvidence +
+                    conditionEvidence,
             )
 
             if (kinds.size != 1) {
@@ -380,6 +390,17 @@ object XmlMapperMethodParameterContractFactory {
                 problems += InputContractProblem(
                     kind = InputContractProblemKind.UNSUPPORTED,
                     code = RAW_NON_STRING_PROBLEM,
+                    requirementId = requirementId,
+                    provenance = provenance,
+                )
+            }
+            if (
+                conditionEvidence.isNotEmpty() &&
+                (expectedType.shape != InputShape.SCALAR || expectedType.scalarType != InputScalarType.BOOLEAN)
+            ) {
+                problems += InputContractProblem(
+                    kind = InputContractProblemKind.UNSUPPORTED,
+                    code = IF_CONDITION_TYPE_PROBLEM,
                     requirementId = requirementId,
                     provenance = provenance,
                 )
@@ -577,6 +598,7 @@ object XmlMapperMethodParameterContractFactory {
         val aliasKind: InputAliasKind,
         val placeholders: List<InputEvidence.Placeholder>,
         val foreachCollections: List<InputEvidence.ForeachCollection> = emptyList(),
+        val conditions: List<InputEvidence.OgnlExpression> = emptyList(),
         val generatedAlias: InputEvidence.GeneratedAlias?,
         val parameterObjectFallback: InputEvidence.ParameterObjectFallback? = null,
         val parameterObjectProperty: InputEvidence.ParameterObjectProperty? = null,
