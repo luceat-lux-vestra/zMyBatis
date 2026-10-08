@@ -19,9 +19,9 @@ import javax.xml.stream.XMLStreamReader
  * method parameter-object semantics that MyBatis will apply at runtime. Therefore a placeholder use
  * is retained as provenance while caller-input authority remains blocked. A placeholder-free static
  * root statement can produce an empty non-blocking contract. Flat simple-name if siblings, either
- * direct or inside one attribute-free direct where, carry OGNL and placeholder-scope provenance;
+ * direct or inside one attribute-free direct where (or set for UPDATE), carry OGNL and placeholder-scope provenance;
  * mapper metadata must separately prove every Boolean caller alias. This scanner discovers source
- * uses, never evaluates conditions or WHERE/trim semantics.
+ * uses, never evaluates conditions or WHERE/SET trimming semantics.
  */
 object XmlStatementParameterContractFactory {
     private const val DEPENDENCY_PROVENANCE_PROBLEM = "xml-dependent-fragment-provenance-unsupported"
@@ -258,8 +258,8 @@ object XmlStatementParameterContractFactory {
         var targetMatches = 0
         var targetClosed = false
         var foreachDepth = -1
-        var whereDepth = -1
-        var whereSeen = false
+        var wrapperDepth = -1
+        var wrapperSeen = false
         var ifDepth = -1
         var activeIfCondition: String? = null
         val ifConditions = mutableListOf<String>()
@@ -318,12 +318,13 @@ object XmlStatementParameterContractFactory {
 
                         if (targetDepth >= 0) {
                             if (
-                                depth == targetDepth + 1 && localName == "where" &&
+                                depth == targetDepth + 1 &&
+                                (localName == "where" || (localName == "set" && statementKind == StatementKind.UPDATE)) &&
                                 isUnqualifiedElement(reader) && reader.attributeCount == 0 &&
-                                !whereSeen && ifConditions.isEmpty() && foreachDeclaration == null
+                                !wrapperSeen && ifConditions.isEmpty() && foreachDeclaration == null
                             ) {
-                                whereSeen = true
-                                whereDepth = depth
+                                wrapperSeen = true
+                                wrapperDepth = depth
                                 continue
                             }
                             if (
@@ -332,7 +333,7 @@ object XmlStatementParameterContractFactory {
                                 isUnqualifiedElement(reader) &&
                                 foreachDepth < 0 &&
                                 foreachDeclaration == null &&
-                                ifConditions.isEmpty() && !whereSeen
+                                ifConditions.isEmpty() && !wrapperSeen
                             ) {
                                 val declaration = parseForeachDeclaration(reader)
                                     ?: return StatementScan.Failed(
@@ -345,8 +346,8 @@ object XmlStatementParameterContractFactory {
                             }
                             if (
                                 (
-                                    (depth == targetDepth + 1 && !whereSeen) ||
-                                        (whereDepth >= 0 && depth == whereDepth + 1)
+                                    (depth == targetDepth + 1 && !wrapperSeen) ||
+                                        (wrapperDepth >= 0 && depth == wrapperDepth + 1)
                                     ) && localName == "if" &&
                                 isUnqualifiedElement(reader) && foreachDeclaration == null &&
                                 ifDepth < 0
@@ -392,14 +393,14 @@ object XmlStatementParameterContractFactory {
                             ifDepth = -1
                             activeIfCondition = null
                         }
-                        if (whereDepth == depth) {
+                        if (wrapperDepth == depth) {
                             if (ifConditions.isEmpty()) {
                                 return StatementScan.Failed(
                                     InputContractProblemKind.UNSUPPORTED,
                                     NESTED_ELEMENT_PROBLEM,
                                 )
                             }
-                            whereDepth = -1
+                            wrapperDepth = -1
                         }
                         if (foreachDepth == depth) {
                             foreachDepth = -1
