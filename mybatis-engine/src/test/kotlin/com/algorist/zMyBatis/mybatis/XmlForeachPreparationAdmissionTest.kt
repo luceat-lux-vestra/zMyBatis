@@ -28,6 +28,25 @@ import org.junit.Test
 
 class XmlForeachPreparationAdmissionTest {
     @Test
+    fun wrappedCollectionAndLocalsAreRebuiltFromSource() {
+        val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\">#{idx},#{item}</foreach>"
+        for (body in listOf("SELECT 1 <where>$loop</where>", "SELECT 1 <trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">$loop</trim>")) {
+            val fixture = fixture(body, listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", "ids")))
+            val authentic = contract(fixture)
+            val admitted = XmlForeachPreparationAdmission.inspect(fixture.graph, authentic) as XmlForeachPreparationAdmission.Result.Admitted
+            assertEquals(setOf(authentic.requirements.single().id), admitted.collectionRequirementIds)
+            assertEquals(mapOf("item" to InternalBindingKind.FOREACH_ITEM, "idx" to InternalBindingKind.FOREACH_INDEX), admitted.locals)
+            val local = authentic.internalBindings.first()
+            val forged = copyContract(authentic, internalBindings = listOf(InternalBinding("forged", local.kind, local.provenance)) + authentic.internalBindings.drop(1))
+            assertFailure(XmlForeachPreparationAdmission.inspect(fixture.graph, forged), PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-preparation-source-contract-mismatch")
+            for (drift in listOf(body.replace("<where>", "<where bogus=\"x\">"), body.replace("AND |OR ", "AND|OR"), body.replace(loop, "$loop<if test=\"enabled\">AND id = #{id}</if>"))) {
+                if (drift == body) continue
+                assertFailure(XmlForeachPreparationAdmission.inspect(graph(drift, XML_REVISION), authentic), PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-source-unsupported")
+            }
+        }
+    }
+
+    @Test
     fun authenticExplicitAliasAndLocalsAreAdmitted() {
         val fixture = fixture(
             """

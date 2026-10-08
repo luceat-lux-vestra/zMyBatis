@@ -36,7 +36,7 @@ The required `Test` CI context is product evidence, not a line-coverage target. 
 | Leap XML single-parameter-object binding boundary | `XmlSingleParameterObjectContractTest`, `XmlMapperSingleParameterObjectPreparationTest`, `XmlMapperMethodParameterContractFactoryTest`, `XmlMapperStaticBoundInputPreparationTest` | for one authoritative unannotated scalar/temporal Java mapper parameter whose exact runtime type has a stock MyBatis 3.5.19 built-in TypeHandler, a simple static XML `#{...}` property may resolve through whole-parameter fallback without being misrepresented as a Java/source alias; contract provenance records `PARAMETER_OBJECT` authority, isolated preparation passes the direct converted value to MyBatis and preserves mapping order/property metadata, while multi-parameter, structured, raw, nested, dynamic, and no-stock-TypeHandler scalar cases such as UUID remain outside this island |
 | Leap XML single-Map parameter-object property boundary | `XmlSingleMapParameterObjectContractTest`, `XmlMapperSingleMapParameterObjectPreparationTest`, `ContractInputProvenancePresenterTest` | for one authoritative unannotated exact `Map<String,V>` mapper parameter where `V` is a maintained scalar/temporal stock-MyBatis type, simple static bound properties may resolve through parameter-object Map property lookup; one MAP caller requirement retains explicit `ParameterObjectProperty` provenance for every mapping property, isolated preparation converts the Map with declared generic value fidelity, passes the Map itself to MyBatis, captures each ordered entry value, distinguishes absent key from present-null, and fails closed on provenance tampering or value-type mismatch; raw/non-String-key/nested/container/custom Maps and raw/nested/dynamic XML remain outside this island |
 | Leap XML named-Map property binding boundary | `XmlNamedMapPropertyContractTest`, `XmlMapperNamedMapPropertyPreparationTest`, `ContractInputProvenancePresenterTest` | a statically proven explicit `@Param` or deterministic `paramN` alias whose exact type is `Map<String,V>` may authorize one simple leaf path such as `#{payload.id}`; the contract keeps the root caller alias and records separate `NamedMapProperty` provenance for the full MyBatis mapping property, isolated preparation passes the typed Map under that alias and captures the resolved entry value in order, while missing keys, deep/bracket paths, raw interpolation, unproven aliases, unsupported Map shapes/value types, and provenance tampering fail closed |
-| Leap XML foreach preparation boundary | `XmlForeachPreparationAdmissionTest`, `XmlMapperForeachPreparationTest` | source-derived foreach collection and exact item/index authority are revalidated before a fresh isolated XML MyBatis runtime prepares the bounded single-foreach island; typed LIST/ARRAY/MAP conversion preserves stock generated additional bindings, mapping order, handler metadata and local provenance; empty collections, null items, repeated mappings, stock aliases and caller bindings outside foreach are covered; source drift, nested/property/raw/include/nullable cases, forged local/additional identity and element type mismatch fail closed; concurrent preparations ignore parent OGNL sentinels and restore context loaders; non-zero bindings still fail materialization with `BOUND_EXECUTION_REQUIRED` under #258 and no production action or Database Tools cutover is wired |
+| Leap XML foreach preparation boundary | `XmlForeachPreparationAdmissionTest`, `XmlMapperForeachPreparationTest` | source-derived foreach collection and exact item/index authority are revalidated before a fresh isolated XML MyBatis runtime prepares the bounded single-foreach island, direct or inside one attribute-free where / exact literal WHERE trim wrapper; typed LIST/ARRAY/MAP conversion preserves stock generated additional bindings, mapping order, handler metadata and local provenance; empty collections, null items, repeated mappings, stock aliases and caller bindings outside foreach are covered; source drift, nested/property/raw/include/nullable cases, forged local/additional identity and element type mismatch fail closed; concurrent preparations ignore parent OGNL sentinels and restore context loaders; non-zero bindings still fail materialization with `BOUND_EXECUTION_REQUIRED` under #258 and no production action or Database Tools cutover is wired |
 | Leap target-derived MyBatis databaseId boundary | `DatabaseIdTest`, `DatabaseToolsTargetResolverTest`, `XmlStatementSourceGraphResolverTest`, `JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest`, `PreparationTest`, `XmlMapperPreparationEngineTest`, `MyBatisPreparationEngineTest` | DBMS metadata is non-gating target semantic context; PostgreSQL/Oracle stock `DB_VENDOR` ids select XML/Java variants and reach isolated `Configuration.databaseId`; selection artifacts retain that authority, preparation rejects conflicting context, `_databaseId` observes the same value, missing/custom mappings fail narrowly, and explicitly proven custom-provider ids remain representable without a DBMS execution allowlist |
 | Execution-target persistence and deferred console lifecycle | `PersistedConsoleSessionTest`, `LegacyV2ConsoleSessionMigrationStoreTest`, `ConsoleCacheServiceLifecycleTest`, `PersistedExecutionTargetSelectionTest`, `ExecutionTargetDescriptorStoreTest`, `MyBatisActionInterceptorActivityLifecycleTest`, `StoredExecutionTargetBridgeTest`, `DatabaseToolsConsoleAdapterBoundaryTest` | migration-only v2 state is owned by a dedicated project store and migrates only from proven canonical source identity into project-scoped v3 descriptors; malformed/interrupted/orphan state fails closed; existing v3 wins interrupted duplicate migration; `ConsoleCacheService` has no persistence surface and owns only live console/selection/shutdown lifecycle; startup composes its shutdown-linearized transition gate with v2 cleanup, prunes stale source associations without VFS refresh, and creates no console; action-time stored targets exact-resolve before console acquisition; lazy acquisition is serialized by the existing per-source selection guard; explicit target choice updates/clears v3 before console-resource acquisition; datasource IDs use the maintained normalized stable-id rule while schema identity is preserved exactly; default-schema/unproven identity is non-persistable; live REUSE console lifecycle is not target-persistence authority; source-boundary evidence keeps `JdbcConsole.newConsole`, schema switching, script-model construction, write-command document injection, editor opening, and native query invocation out of `MyBatisExecuteProxyAction` and behind `DatabaseToolsConsoleAdapter`, while the adapter contains no target persistence store/bridge |
 | Legacy persisted-target pre-execution revalidation | `LegacyActionTargetRevalidationContractTest`, `StoredExecutionTargetBridgeTest`, `ConsoleCacheServiceLifecycleTest` | the still-shipping action resolves persisted target authority before REUSE lookup, cache entries carry optional immutable `ExecutionTargetId`, cross-target mapper-key reuse is rejected, and persisted exact targets are re-resolved through parameter/preview/delayed Database Tools/native-query boundaries; pre-execution revalidation is non-mutating and ordinary resolver failure fails closed, while default-schema or stable-id-unavailable in-process targets remain explicitly outside this persisted-target proof |
@@ -167,6 +167,36 @@ Those gaps are explicit so a green `Test` context is not misrepresented as evide
 
 `Inspect code`/Qodana and `Verify plugin` remain separate required evidence for static analysis and JetBrains compatibility. They do not substitute for the product assertions in `Test`.
 
+## XML foreach where-wrapper evidence
+
+The source-proven single foreach may be direct or the direct child of one unqualified `<where>`
+without attributes, or `<trim prefix="WHERE" prefixOverrides="AND |OR ">` with those two exact
+unqualified XML-decoded attributes. Wrapper text may contain static SQL and caller bindings before
+and after the loop. The loop must retain the bounded collection/item/index rules: foreach locals
+never become caller requirements, and a local outside the loop is rejected. Empty/static-only
+wrappers, if/set composition, other dynamic tags, nested or duplicate loops/wrappers, arbitrary
+trim attributes, qualified elements, raw interpolation and explicit nullable remain refused.
+This is separate from the Boolean-if wrapper island; foreach and if still cannot compose.
+
+`XmlForeachParameterContractTest` and `XmlForeachPreparationAdmissionTest` prove source/mapper alias,
+shape and local authority, including explicit/generated/stock collection aliases and wrapper drift
+against an older contract. `XmlMapperForeachPreparationTest` compares native and literal trim wrappers
+against an independent stock mapper-parser oracle: exact SQL bytes, mapping order, Java/JDBC/handler/
+mode/scale metadata and values, with scalar caller bindings outside/inside the wrapper, repeated
+item/index mappings, arrays, Map keys/temporal values, null items and empty collections. Tests preserve
+statement declaration kind without claiming SQL grammar validity. Stock MyBatis owns WHERE insertion,
+override whitespace behavior and omission of an empty wrapper; preparation invents no predicate or
+binding. An empty final SQL remains a typed failure.
+
+The shared dynamic bound-token topology guard now runs before all admitted XML foreach evaluation,
+including the existing direct form. Incomplete/escaped openers and unsafe fragment endings in source
+text or loop open/close/separator attributes cannot synthesize mappings across loop/wrapper boundaries,
+even when a collection is empty. Raw structural attributes remain refused by XML preflight. Concurrent
+direct/where/trim foreach preparations under a poisoned parent OGNL accessor retain generated local
+identity, per-invocation loader ownership and TCCL restoration. The engine remains standalone and
+unpackaged; non-zero bindings still fail materialization with `BOUND_EXECUTION_REQUIRED` under #258.
+No production action, target/console, execution or materialization authority is introduced.
+
 ## XML Boolean-if preparation admission evidence
 
 `XmlBooleanIfPreparationAdmission.inspect` consumes an immutable XML source graph, the complete
@@ -223,7 +253,7 @@ The bounded `<where>` wrapper contains one or more direct Boolean-if siblings an
 text and bound placeholders before or after it. It accepts no attributes or namespace-qualified
 name. UPDATE may also carry the single set wrapper described below. Static-only/empty where
 nodes, a second where, an if outside the wrappers, nested where/if,
-foreach/bind/include/other tags and raw interpolation remain typed refusals before runtime, even
+mixed foreach/if, bind/include/other tags and raw interpolation remain typed refusals before runtime, even
 when the supplied condition is false. Comments and CDATA cannot invent a conditional caller.
 
 Stock MyBatis owns `WHERE` insertion, leading `AND`/`OR` trimming and omission of an empty where.
@@ -284,7 +314,8 @@ Two literal `<trim>` forms share these wrapper limits:
 - `<trim prefix="SET" suffixOverrides=",">` counts as the single set wrapper and requires UPDATE.
 
 Both attributes must be unqualified, with those exact XML-decoded values and no other attributes.
-The element must be unqualified. Each trim requires a direct simple Boolean-if child. Native and
+The element must be unqualified. In the Boolean-if island each trim requires a direct simple
+Boolean-if child; the separate foreach island above permits a sole direct foreach in WHERE trim. Native and
 trim forms may compose for UPDATE, but two wrappers of the same role are rejected even when their
 element names differ. Empty/static-only trim, nested/duplicate/outside-condition structures, arbitrary
 prefix/suffix/override values, property-substituted or bound attributes, raw interpolation and other

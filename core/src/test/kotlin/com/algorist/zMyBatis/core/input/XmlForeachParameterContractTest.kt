@@ -18,6 +18,77 @@ import org.junit.Test
 
 class XmlForeachParameterContractTest {
     @Test
+    fun whereAndLiteralTrimRetainCollectionAndLocalAuthority() {
+        val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\" open=\"(\" separator=\",\" close=\")\">#{idx},#{item}</foreach>"
+        for ((open, close) in listOf(
+            "<where>" to "</where>",
+            "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">" to "</trim>",
+            "<trim prefixOverrides=\"AND &#124;OR \" prefix=\"&#87;HERE\">" to "</trim>",
+        )) {
+            val graph = graph("SELECT #{status} $open AND id IN $loop AND status = #{status} $close")
+            val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper(graph, listOf(
+                parameter(0, "java.lang.String", "status", "status"),
+                parameter(1, "java.util.List<java.lang.Long>", "ids", "ids"),
+            )))
+            assertFalse(open, contract.isPreparationBlocked)
+            assertEquals(listOf("status", "ids"), contract.aliases.map { it.name })
+            assertEquals(listOf(InternalBindingKind.FOREACH_ITEM, InternalBindingKind.FOREACH_INDEX), contract.internalBindings.map { it.kind })
+            assertEquals(listOf("item", "idx"), contract.internalBindings.map { it.name })
+            assertEquals(listOf("ids"), contract.requirements.flatMap { it.provenance.evidence }.filterIsInstance<InputEvidence.ForeachCollection>().map { it.expression })
+            assertEquals(listOf("status", "status"), contract.requirements.flatMap { it.provenance.evidence }.filterIsInstance<InputEvidence.Placeholder>().map { it.expression })
+        }
+    }
+
+    @Test
+    fun wrappedForeachRetainsGenericAndStockCollectionAliases() {
+        for ((alias, type, parameters) in listOf(
+            Triple("param2", "java.util.List<java.lang.Long>", listOf(parameter(0, "long", "unused", "unused"), parameter(1, "java.util.List<java.lang.Long>", "ids", "ids"))),
+            Triple("list", "java.util.List<java.lang.Long>", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", null))),
+            Triple("collection", "java.util.Collection<java.lang.Long>", listOf(parameter(0, "java.util.Collection<java.lang.Long>", "ids", null))),
+            Triple("array", "long[]", listOf(parameter(0, "long[]", "ids", null))),
+            Triple("entries", "java.util.Map<java.lang.String,java.lang.Long>", listOf(parameter(0, "java.util.Map<java.lang.String,java.lang.Long>", "entries", "entries"))),
+        )) {
+            val graph = graph("SELECT 1 <where><foreach collection=\"$alias\" item=\"item\">#{item}</foreach></where>")
+            val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper(graph, parameters))
+            assertFalse(alias, contract.isPreparationBlocked)
+            assertEquals(alias, contract.aliases.single().name)
+            assertEquals(JavaTypeIdentity(type), contract.requirements.single().expectedType.javaTypeIdentity)
+        }
+    }
+
+    @Test
+    fun wrappedForeachRejectsUnsupportedCompositionAndLocalEscape() {
+        val loop = "<foreach collection=\"ids\" item=\"item\">#{item}</foreach>"
+        val condition = "<if test=\"enabled\">AND id = #{id}</if>"
+        val trim = "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">$loop</trim>"
+        val invalid = listOf(
+            "<where>$loop$condition</where>", "<where>$condition$loop</where>",
+            "<where>$loop$loop</where>", "<where><where>$loop</where></where>",
+            "<where>$loop</where>$loop", "$loop<where>$loop</where>",
+            "<where>$loop</where><where>$condition</where>", "$trim<where>$loop</where>",
+            "<where>$loop<bind name=\"x\" value=\"1\"/></where>",
+            "<where>$loop<include refid=\"fragment\"/></where>",
+            "<where bogus=\"value\">$loop</where>",
+            "<where xmlns=\"urn:unsupported\">$loop</where>",
+            "<trim prefix=\"WHERE\" prefixOverrides=\"AND|OR\">$loop</trim>",
+            "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \" suffix=\"tail\">$loop</trim>",
+            "<where><foreach collection=\"ids\" item=\"item\" nullable=\"true\">#{item}</foreach></where>",
+            "<where><foreach collection=\"ids\" item=\"item\">#{item.id}</foreach></where>",
+            "<where><foreach collection=\"ids\" item=\"item\">${raw("item")}</foreach></where>",
+            "<where>$loop AND id = #{item}</where>",
+            "<set>$loop</set>", "<trim prefix=\"SET\" suffixOverrides=\",\">$loop</trim>",
+            "<set>$condition</set><where>$loop</where>",
+            "<where>$loop</where><set>$condition</set>",
+        )
+        for (body in invalid) {
+            val source = XmlStatementParameterContractFactory.build(graph(body, StatementKind.UPDATE))
+            assertTrue(body, source.isPreparationBlocked)
+            assertTrue(body, source.requirements.isEmpty() && source.aliases.isEmpty())
+            assertTrue(body, source.blockingProblems.any { it.kind == InputContractProblemKind.UNSUPPORTED })
+        }
+    }
+
+    @Test
     fun explicitListAliasProducesForeachCollectionAndLocalProvenance() {
         val graph = graph(
             """
@@ -320,16 +391,17 @@ class XmlForeachParameterContractTest {
         )
     }
 
-    private fun graph(body: String): StatementSourceGraph {
+    private fun graph(body: String, kind: StatementKind = StatementKind.SELECT): StatementSourceGraph {
         val statementId = XmlStatementId(XML_FILE, "com.acme.UserMapper", "find")
-        val declaration = "<select id=\"find\">$body</select>"
+        val element = kind.name.lowercase()
+        val declaration = "<$element id=\"find\">$body</$element>"
         val xml = "<mapper namespace=\"com.acme.UserMapper\">$declaration</mapper>"
-        val start = xml.indexOf("<select id=\"find\">")
+        val start = xml.indexOf("<$element id=\"find\">")
         val end = xml.indexOf('>', start) + 1
         return StatementSourceGraph(
             rootStatement = CapturedStatement(
                 id = statementId,
-                kind = StatementKind.SELECT,
+                kind = kind,
                 sourceRange = SourceRange(start, end),
             ),
             sourceSnapshots = listOf(SourceSnapshot(XML_FILE, XML_REVISION, xml)),

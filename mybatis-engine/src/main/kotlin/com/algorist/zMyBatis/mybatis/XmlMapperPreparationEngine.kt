@@ -32,7 +32,8 @@ import org.apache.ibatis.session.Configuration
  * Static zero-input statements and the deliberately narrow proven scalar/temporal bound-input
  * island and source-proven foreach/Boolean-if contracts are admitted. Dynamic preparation owns
  * a fresh runtime; flat Boolean-if siblings directly or inside bounded where/set/trim wrappers require
- * complete mapper capture. Stock MyBatis owns evaluation and WHERE/SET trimming. No MyBatis object
+ * complete mapper capture. A single foreach may be direct or inside the sole where-role wrapper.
+ * Stock MyBatis owns evaluation and WHERE/SET trimming. No MyBatis object
  * crosses the child-classloader boundary.
  */
 object XmlMapperPreparationEngine {
@@ -178,13 +179,19 @@ object XmlMapperPreparationEngine {
             preflight(snapshot)?.let { return PreparationResult.Failed(it) }
         }
 
-        if (booleanIf != null) {
-            DynamicBoundTokenTopologyAdmission.failureOrNull(
-                source.sourceGraph.sourceSnapshots.single().content,
-                rootPath = "/mapper",
-                unsupportedCode = "xml-boolean-if-bound-token-topology-unsupported",
-                parseFailureCode = PARSE_FAILURE,
-            )?.let { return PreparationResult.Failed(it) }
+        if (booleanIf != null || foreach != null) {
+            for (snapshot in source.sourceGraph.sourceSnapshots) {
+                DynamicBoundTokenTopologyAdmission.failureOrNull(
+                    snapshot.content,
+                    rootPath = "/mapper",
+                    unsupportedCode = if (booleanIf != null) {
+                        "xml-boolean-if-bound-token-topology-unsupported"
+                    } else {
+                        "xml-foreach-bound-token-topology-unsupported"
+                    },
+                    parseFailureCode = PARSE_FAILURE,
+                )?.let { return PreparationResult.Failed(it) }
+            }
         }
 
         return try {
