@@ -46,6 +46,105 @@ import org.junit.Test
 
 class XmlSiblingBooleanIfPreparationTest {
     @Test
+    fun boundedTrimAndNativeWrapperCombinationsPreserveStockSqlAndMappingMetadata() {
+        val setBody = "base = #{id},<if test=\"enabled\">a = #{id},</if><if test=\"third\">flag = #{third,jdbcType=BOOLEAN},</if>"
+        val whereBody = "<if test=\"other\">OR id = #{id}</if><if test=\"third\">AND flag = #{third,jdbcType=BOOLEAN}</if>"
+        for (setTag in listOf("<set>", "<trim prefix=\"SET\" suffixOverrides=\",\">")) {
+            for (whereTag in listOf("<where>", "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">")) {
+                val setClose = if (setTag == "<set>") "</set>" else "</trim>"
+                val whereClose = if (whereTag == "<where>") "</where>" else "</trim>"
+                val fixture = fixture("UPDATE t $setTag$setBody$setClose$whereTag$whereBody$whereClose RETURNING #{id}", kind = StatementKind.UPDATE)
+                for (mask in 0..7) {
+                    val before = Thread.currentThread().contextClassLoader
+                    val execution = success(prepare(fixture, mask))
+                    assertStockParity(fixture, mask, execution)
+                    val properties = buildList {
+                        add("id")
+                        if (flag(mask, 0)) add("id")
+                        if (flag(mask, 2)) add("third")
+                        if (flag(mask, 1)) add("id")
+                        if (flag(mask, 2)) add("third")
+                        add("id")
+                    }
+                    assertEquals(properties, execution.orderedBindings.map { it.property })
+                    assertEquals(properties.map { if (it == "third") InputValue.BooleanValue(true) else integer(42) }, execution.orderedBindings.map { it.value })
+                    assertEquals(StatementKind.UPDATE, execution.statementKind)
+                    assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
+                    assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
+                    assertSame(before, Thread.currentThread().contextClassLoader)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun trimAttributesRemainStockLiteralsAndWhitespaceOverridesAreNotRewritten() {
+        val conditions = "<!-- ignored --><if test=\"enabled\"><![CDATA[and id = #{id}]]></if><if test=\"param1\">OR other = #{param4}</if>"
+        for (opening in listOf(
+            "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">",
+            "<trim prefixOverrides=\"AND &#124;OR \" prefix=\"&#87;HERE\">",
+        )) {
+            for (predicate in listOf(conditions, "<if test=\"enabled\">AND\nid = #{id}</if>", "<if test=\"enabled\">ANDROID = #{id}</if>")) {
+                val fixture = fixture("SELECT 1 $opening$predicate</trim>")
+                for (mask in 0..1) {
+                    val execution = success(prepare(fixture, mask))
+                    assertStockParity(fixture, mask, execution)
+                    if (mask == 0) assertEquals("SELECT 1", normalize(execution.sqlWithPlaceholders))
+                    if (mask == 1 && predicate.contains("AND\n")) assertTrue(normalize(execution.sqlWithPlaceholders).contains("WHERE AND id = ?"))
+                    if (mask == 1 && predicate.contains("ANDROID")) assertTrue(execution.sqlWithPlaceholders.contains("ANDROID"))
+                    assertTrue(contract(fixture).aliases.none { it.name in setOf("prefix", "prefixOverrides", "trim", "WHERE") })
+                }
+            }
+        }
+        val set = fixture("UPDATE t <trim suffixOverrides=\",\" prefix=\"SET\">\n<if test=\"param1\"><![CDATA[a = #{id},\t]]></if></trim> WHERE id = 1", kind = StatementKind.UPDATE)
+        for (mask in 0..1) assertStockParity(set, mask, success(prepare(set, mask)))
+    }
+
+    @Test
+    fun trimMapLeavesRemainPresenceAwareAndFalseBranchesDoNotInventBindings() {
+        val fixture = fixture("UPDATE t <trim prefix=\"SET\" suffixOverrides=\",\"><if test=\"enabled\">a = #{id.first},</if></trim><trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"other\">AND b = #{id.second}</if></trim>", "java.util.Map<java.lang.String,java.lang.Long>", StatementKind.UPDATE)
+        val partial = InputValue.MapValue(mapOf("first" to InputValue.NullValue))
+        assertEquals(InputValue.NullValue, success(prepare(fixture, 1, replacements = mapOf(3 to partial))).orderedBindings.single().value)
+        assertTrue(success(prepare(fixture, 0, replacements = mapOf(3 to partial))).orderedBindings.isEmpty())
+        for (mask in listOf(2, 3)) assertEquals("xml-preparation-named-map-property-missing", (prepare(fixture, mask, replacements = mapOf(3 to partial)) as PreparationResult.Failed).failure.code)
+        val complete = InputValue.MapValue(mapOf("first" to integer(5), "second" to InputValue.NullValue))
+        assertEquals(listOf(integer(5), InputValue.NullValue), success(prepare(fixture, 3, replacements = mapOf(3 to complete))).orderedBindings.map { it.value })
+    }
+
+    @Test
+    fun trimSourceAttributesAndTokenBoundariesFailClosedBeforeRuntime() {
+        val valid = fixture("SELECT 1 <trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"enabled\">AND id = #{id}</if></trim>")
+        val original = contract(valid)
+        for (opening in listOf(
+            "<trim prefix=\"WHERE\" prefixOverrides=\"?\">",
+            "<trim prefix=\"#{id}\" prefixOverrides=\"AND |OR \">",
+            "<trim prefix=\"\${id}\" prefixOverrides=\"AND |OR \">",
+            "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \" suffix=\"#{id}\">",
+            "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \" xmlns=\"urn:unsupported\">",
+        )) {
+            val changed = fixture("SELECT 1 $opening<if test=\"enabled\">AND id = #{id}</if></trim>")
+            assertEquals(opening, "xml-boolean-if-preparation-source-unsupported", (prepare(changed, 0, supplied = original) as PreparationResult.Failed).failure.code)
+        }
+        for (body in listOf(
+            "SELECT 1 #<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"enabled\">{id}</if></trim>",
+            "SELECT 1 <trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"enabled\">#</if><if test=\"other\">{id}</if></trim>",
+            "SELECT 1 <trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"enabled\">\\</if><if test=\"other\">AND id = #{id}</if></trim>",
+        )) {
+            val fixture = fixture(body)
+            assertFalse(contract(fixture).isPreparationBlocked)
+            for (mask in 0..3) assertEquals("xml-boolean-if-bound-token-topology-unsupported", (prepare(fixture, mask) as PreparationResult.Failed).failure.code)
+        }
+        val empty = fixture("<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"enabled\">AND id = #{id}</if></trim>")
+        assertEquals("mybatis-prepared-sql-empty", (prepare(empty, 0) as PreparationResult.Failed).failure.code)
+        val inputs = original.requirements.map { requirement ->
+            ProvidedInput(requirement.id, if (indexOf(requirement.provenance.evidence) == 3) integer(42) else InputValue.BooleanValue(false), ExecutionInputOrigin.USER_ENTERED)
+        }
+        val environment = (InputEnvironment.validate(original, inputs) as InputEnvironmentResult.Success).environment
+        val request = (MyBatisPreparationRequest.create(XmlMapperPreparationSource(valid.graph, additionalAuthoritySnapshots = listOf(valid.mapper.mapperSource)), original, environment) as PreparationRequestResult.Ready).request
+        assertEquals("xml-preparation-dynamic-sql-unsupported", (XmlMapperPreparationEngine.prepare(request) as PreparationResult.Failed).failure.code)
+    }
+
+    @Test
     fun allEightCombinedUpdateCombinationsKeepStockSqlMetadataAndGuardedMappingCounts() {
         for (staticAssignment in listOf("", "base = #{id},")) {
             for (staticPredicate in listOf("", "AND base = #{id}")) {
@@ -384,6 +483,7 @@ class XmlSiblingBooleanIfPreparationTest {
         val siblings = fixture("SELECT #{id}<where><if test=\"enabled\">AND a = #{id}</if><if test=\"other\">AND b = #{id}</if><if test=\"third\">AND c = #{id}</if></where>")
         val setFixture = fixture("UPDATE t <set><if test=\"enabled\">a = #{id},</if><if test=\"other\">b = #{id},</if><if test=\"third\">c = #{id},</if></set> WHERE id = #{id}", kind = StatementKind.UPDATE)
         val combined = fixture("UPDATE t <set><if test=\"enabled\">a = #{id},</if><if test=\"third\">c = #{id},</if></set><where><if test=\"other\">AND id = #{id}</if><if test=\"third\">AND c = #{id}</if></where>", kind = StatementKind.UPDATE)
+        val trimmed = fixture("UPDATE t <trim prefix=\"SET\" suffixOverrides=\",\"><if test=\"enabled\">a = #{id},</if></trim><trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"other\">AND id = #{id}</if><if test=\"third\">OR c = #{id}</if></trim>", kind = StatementKind.UPDATE)
         val foreach = fixture("SELECT <foreach collection=\"id\" item=\"item\" separator=\",\">#{item}</foreach>", "java.util.List<java.lang.Long>")
         val executor = Executors.newFixedThreadPool(4)
         set.invoke(null, context, poison)
@@ -400,6 +500,9 @@ class XmlSiblingBooleanIfPreparationTest {
                 val composed = success(prepare(combined, mask, id = mask.toLong()))
                 assertEquals(Integer.bitCount(mask) + (if (flag(mask, 2)) 1 else 0), composed.orderedBindings.size)
                 assertTrue(composed.orderedBindings.all { it.value == integer(mask.toLong()) })
+                val trimmedExecution = success(prepare(trimmed, mask, id = mask.toLong()))
+                assertEquals(Integer.bitCount(mask), trimmedExecution.orderedBindings.size)
+                assertTrue(trimmedExecution.orderedBindings.all { it.value == integer(mask.toLong()) })
                 val items = InputValue.ListValue(listOf(integer(mask.toLong()), integer(99)))
                 val repeated = success(prepare(foreach, 0, replacements = mapOf(3 to items)))
                 assertEquals(listOf(integer(mask.toLong()), integer(99)), repeated.orderedBindings.map { it.value })
