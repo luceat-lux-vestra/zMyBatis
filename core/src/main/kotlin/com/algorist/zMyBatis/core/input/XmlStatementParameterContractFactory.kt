@@ -19,9 +19,11 @@ import javax.xml.stream.XMLStreamReader
  * method parameter-object semantics that MyBatis will apply at runtime. Therefore a placeholder use
  * is retained as provenance while caller-input authority remains blocked. A placeholder-free static
  * root statement can produce an empty non-blocking contract. Flat simple-name if siblings, either
- * direct or inside attribute-free direct wrappers (one where, plus one set for UPDATE), carry
+ * direct or inside direct wrappers (one where, plus one set for UPDATE), carry
  * OGNL and placeholder-scope provenance. Each wrapper must contain a Boolean-if sibling;
- * mapper metadata must separately prove every Boolean caller alias. This scanner discovers source
+ * bounded trim forms with literal WHERE/SET prefixes share those wrapper limits. Native where/set
+ * accept no attributes; trim accepts only the exact prefix/override pairs checked below.
+ * Mapper metadata must separately prove every Boolean caller alias. This scanner discovers source
  * uses, never evaluates conditions or WHERE/SET trimming semantics.
  */
 object XmlStatementParameterContractFactory {
@@ -319,16 +321,15 @@ object XmlStatementParameterContractFactory {
                         }
 
                         if (targetDepth >= 0) {
+                            val wrapperKind = booleanWrapperKind(reader, statementKind)
                             if (
                                 depth == targetDepth + 1 &&
-                                (localName == "where" || (localName == "set" && statementKind == StatementKind.UPDATE)) &&
-                                isUnqualifiedElement(reader) && reader.attributeCount == 0 &&
-                                localName !in wrappersSeen &&
+                                wrapperKind != null && wrapperKind !in wrappersSeen &&
                                 (ifConditions.isEmpty() ||
                                     (statementKind == StatementKind.UPDATE && wrappersSeen.isNotEmpty())) &&
                                 foreachDeclaration == null
                             ) {
-                                wrappersSeen += localName
+                                wrappersSeen += wrapperKind
                                 wrapperDepth = depth
                                 wrapperConditionStart = ifConditions.size
                                 continue
@@ -566,6 +567,29 @@ object XmlStatementParameterContractFactory {
         if (names.toSet().size != names.size) return null
 
         return ForeachDeclaration(collection, item, index)
+    }
+
+    /** Classifies wrapper limits only; stock MyBatis still owns every trim operation. */
+    private fun booleanWrapperKind(reader: XMLStreamReader, kind: StatementKind): String? {
+        if (!isUnqualifiedElement(reader)) return null
+        return when (reader.localName) {
+            "where" -> "where".takeIf { reader.attributeCount == 0 }
+            "set" -> "set".takeIf { kind == StatementKind.UPDATE && reader.attributeCount == 0 }
+            "trim" -> {
+                if (
+                    reader.attributeCount != 2 ||
+                    (0 until reader.attributeCount).any { !reader.getAttributeNamespace(it).isNullOrEmpty() }
+                ) return null
+                when {
+                    reader.getAttributeValue(null, "prefix") == "WHERE" &&
+                        reader.getAttributeValue(null, "prefixOverrides") == "AND |OR " -> "where"
+                    kind == StatementKind.UPDATE && reader.getAttributeValue(null, "prefix") == "SET" &&
+                        reader.getAttributeValue(null, "suffixOverrides") == "," -> "set"
+                    else -> null
+                }
+            }
+            else -> null
+        }
     }
 
     private fun secureInputFactory(): XMLInputFactory =

@@ -18,6 +18,73 @@ import org.junit.Test
 
 class XmlBooleanIfParameterContractTest {
     @Test
+    fun boundedTrimFormsPreserveSourceGuardScopesAndMapperCallerAuthority() {
+        val setBody = "base = #{id},<if test=\"enabled\">a = #{id},</if>"
+        val whereBody = "AND base = #{id}<if test=\"param2\">OR id = #{id}</if>"
+        val set = "<trim prefix=\"SET\" suffixOverrides=\",\">$setBody</trim>"
+        val where = "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">$whereBody</trim>"
+        for ((body, kind, scopes) in listOf(
+            Triple(where, StatementKind.SELECT, listOf(null, "param2")),
+            Triple(set, StatementKind.UPDATE, listOf(null, "enabled")),
+            Triple("$set $where", StatementKind.UPDATE, listOf(null, "enabled", null, "param2")),
+            Triple("<set>$setBody</set>$where", StatementKind.UPDATE, listOf(null, "enabled", null, "param2")),
+            Triple("$set<where>$whereBody</where>", StatementKind.UPDATE, listOf(null, "enabled", null, "param2")),
+        )) {
+            val graph = graph(body, kind)
+            val sourceOnly = XmlStatementParameterContractFactory.build(graph)
+            assertTrue(sourceOnly.isPreparationBlocked)
+            assertTrue(sourceOnly.requirements.isEmpty())
+            val contract = build(graph, parameter(0, "boolean", "enabled"), parameter(1, "java.lang.Boolean", "other"), parameter(2, "long", "id"))
+            assertFalse(body, contract.isPreparationBlocked)
+            val id = contract.requirements.single { it.id.value == "xml-java-param:2" }
+            assertEquals(scopes, id.provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().map { it.enclosingOgnlExpression })
+            assertTrue(contract.aliases.none { it.name in setOf("trim", "WHERE", "SET", "prefix", "prefixOverrides", "suffixOverrides") })
+            assertTrue(contract.internalBindings.isEmpty())
+        }
+    }
+
+    @Test
+    fun arbitraryTrimAttributesAndInvalidCompositionCannotLeavePartialCallerAuthority() {
+        val condition = "<if test=\"enabled\">id = #{id}</if>"
+        val where = "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">$condition</trim>"
+        val set = "<trim prefix=\"SET\" suffixOverrides=\",\">$condition</trim>"
+        for (body in listOf(
+            "<trim>$condition</trim>", "<trim prefix=\"WHERE\">$condition</trim>",
+            "<trim prefix=\"where\" prefixOverrides=\"AND |OR \">$condition</trim>",
+            "<trim prefix=\"WHERE\" prefixOverrides=\"AND|OR\">$condition</trim>",
+            "<trim prefix=\"WHERE\" suffixOverrides=\",\">$condition</trim>",
+            "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \" suffix=\"tail\">$condition</trim>",
+            "<trim prefix=\"SET\" suffixOverrides=\"?\">$condition</trim>",
+            "<trim prefix=\"#{id}\" prefixOverrides=\"AND |OR \">$condition</trim>",
+            "<trim prefix=\"\${prefix}\" prefixOverrides=\"AND |OR \">$condition</trim>",
+            "<trim prefix=\"WHERE\" prefixOverrides=\"\${overrides}\">$condition</trim>",
+            "<trim prefix=\"WHERE\" x:prefixOverrides=\"AND |OR \" xmlns:x=\"urn:unsupported\">$condition</trim>",
+            "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \" xmlns=\"urn:unsupported\">$condition</trim>",
+            "<x:trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \" xmlns:x=\"urn:unsupported\">$condition</x:trim>",
+            "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"/>",
+            "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">AND id = #{id}</trim>",
+            "<trim prefix=\"SET\" suffixOverrides=\",\">a = #{id},</trim>",
+            "$where<where>$condition</where>", "<where>$condition</where>$where", "$where$where",
+            "$set<set>$condition</set>", "<set>$condition</set>$set", "$set$set",
+            "$where<trim prefix=\"SET\" suffixOverrides=\",\"/>",
+            "$set<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">AND id = #{id}</trim>",
+            "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><where>$condition</where></trim>",
+            "$condition$where", "$where$condition", "$set$condition$where",
+        )) {
+            val contract = build(graph(body, StatementKind.UPDATE), parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
+            assertTrue(body, contract.isPreparationBlocked)
+            assertTrue(body, contract.requirements.isEmpty())
+            assertTrue(body, contract.aliases.isEmpty())
+        }
+        for (kind in listOf(StatementKind.SELECT, StatementKind.INSERT, StatementKind.DELETE)) {
+            assertTrue(build(graph(set, kind), parameter(0, "boolean", "enabled"), parameter(1, "long", "id")).isPreparationBlocked)
+        }
+        for (type in listOf("long", "java.lang.String")) {
+            assertTrue(build(graph(where), parameter(0, type, "enabled"), parameter(1, "long", "id")).isPreparationBlocked)
+        }
+    }
+
+    @Test
     fun updateSetAndWhereRetainIndependentAndRepeatedGuardProvenanceInSourceOrder() {
         val set = "<set>base = #{id},<if test=\"enabled\">a = #{id},</if><if test=\"param2\">b = #{id},</if></set>"
         val where = "<where>AND base = #{id}<if test=\"other\">AND b = #{id}</if><if test=\"enabled\">AND a = #{id}</if></where>"
