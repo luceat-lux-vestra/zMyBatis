@@ -18,6 +18,78 @@ import org.junit.Test
 
 class XmlBooleanIfParameterContractTest {
     @Test
+    fun setPreservesConditionalAndUnconditionalUsesWithoutCreatingASetCaller() {
+        val graph = graph(
+            "UPDATE t <set>base = #{id},<if test=\"enabled\">a = #{id},</if><if test=\"param2\">b = #{id},</if></set> WHERE id = #{id}",
+            StatementKind.UPDATE,
+        )
+        val sourceOnly = XmlStatementParameterContractFactory.build(graph)
+        assertTrue(sourceOnly.isPreparationBlocked)
+        assertTrue(sourceOnly.requirements.isEmpty())
+        val contract = build(graph, parameter(0, "boolean", "enabled"), parameter(1, "java.lang.Boolean", "other"), parameter(2, "long", "id"))
+        assertFalse(contract.isPreparationBlocked)
+        assertEquals(3, contract.requirements.size)
+        assertTrue(contract.requirements.all { it.requiredness == InputRequiredness.REQUIRED })
+        assertEquals(listOf("enabled"), conditions(contract.requirements[0]))
+        assertEquals(listOf("param2"), conditions(contract.requirements[1]))
+        assertEquals(listOf(null, "enabled", "param2", null), contract.requirements[2].provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().map { it.enclosingOgnlExpression })
+        assertTrue(contract.aliases.none { it.name == "set" })
+        assertTrue(contract.internalBindings.isEmpty())
+    }
+
+    @Test
+    fun unsupportedSetCompositionCannotLeavePartialCallerAuthority() {
+        val condition = "<if test=\"enabled\">a = #{id},</if>"
+        for (body in listOf(
+            "<set/>", "<set>a = #{id},</set>",
+            "<set><!-- $condition --><![CDATA[$condition]]></set>",
+            "<set suffixOverrides=\",\">$condition</set>",
+            "<set xmlns=\"urn:unsupported\">$condition</set>",
+            "<x:set xmlns:x=\"urn:unsupported\">$condition</x:set>",
+            "<set><set>$condition</set></set>",
+            "<set><where>$condition</where></set>",
+            "<set>$condition</set><where>$condition</where>",
+            "<where>$condition</where><set>$condition</set>",
+            "<set>$condition</set><set>$condition</set>",
+            "$condition<set>$condition</set>", "<set>$condition</set>$condition",
+            "<if test=\"enabled\"><set>a = #{id},</set></if>",
+            "<set>$condition<bind name=\"x\" value=\"1\"/></set>",
+            "<set>$condition<include refid=\"fragment\"/></set>",
+            "<set>$condition<foreach collection=\"ids\" item=\"item\">#{item}</foreach></set>",
+            "<foreach collection=\"ids\" item=\"item\">#{item}</foreach><set>$condition</set>",
+            "<set>$condition</set><foreach collection=\"ids\" item=\"item\">#{item}</foreach>",
+        )) {
+            val contract = build(graph("UPDATE t $body WHERE id = #{id}", StatementKind.UPDATE), parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
+            assertTrue(body, contract.isPreparationBlocked)
+            assertTrue(body, contract.requirements.isEmpty())
+            assertTrue(body, contract.aliases.isEmpty())
+        }
+    }
+
+    @Test
+    fun setCannotGrantUnprovenNonBooleanOrRawInputAuthority() {
+        val body = "UPDATE t <set><if test=\"enabled\">a = #{id},</if></set> WHERE id = #{id}"
+        for (kind in listOf(StatementKind.SELECT, StatementKind.INSERT, StatementKind.DELETE)) {
+            val contract = build(graph(body, kind), parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
+            assertTrue(contract.isPreparationBlocked)
+            assertTrue(contract.requirements.isEmpty())
+        }
+        for (type in listOf("long", "java.lang.String", "java.util.Map<java.lang.String,java.lang.Boolean>")) {
+            assertTrue(build(graph(body, StatementKind.UPDATE), parameter(0, type, "enabled"), parameter(1, "long", "id")).isPreparationBlocked)
+        }
+        assertTrue(build(graph(body, StatementKind.UPDATE), parameter(0, "boolean", "different"), parameter(1, "long", "id")).isPreparationBlocked)
+        for (rawBody in listOf(
+            "UPDATE \${table} <set><if test=\"enabled\">a = #{id},</if></set>",
+            "UPDATE t <set>\${table}<if test=\"enabled\">a = #{id},</if></set>",
+            "UPDATE t <set><if test=\"enabled\">\${table} = #{id},</if></set>",
+        )) {
+            val contract = build(graph(rawBody, StatementKind.UPDATE), parameter(0, "boolean", "enabled"), parameter(1, "long", "id"), parameter(2, "java.lang.String", "table"))
+            assertEquals("xml-if-raw-input-unsupported", contract.blockingProblems.single().code)
+            assertTrue(contract.requirements.isEmpty())
+        }
+    }
+
+    @Test
     fun siblingConditionsPreserveEachPlaceholderScopeAndAllRequiredCallerRoots() {
         for (wrapped in listOf(false, true)) {
             val body = "#{id}<if test=\"enabled\">#{id}</if>#{id}<if test=\"other\">#{id}</if>#{id}"
@@ -352,13 +424,14 @@ class XmlBooleanIfParameterContractTest {
             ),
         )
 
-    private fun graph(body: String): StatementSourceGraph {
-        val xml = "<mapper namespace=\"com.acme.Mapper\"><select id=\"find\">$body</select></mapper>"
-        val start = xml.indexOf("<select")
+    private fun graph(body: String, kind: StatementKind = StatementKind.SELECT): StatementSourceGraph {
+        val element = kind.name.lowercase()
+        val xml = "<mapper namespace=\"com.acme.Mapper\"><$element id=\"find\">$body</$element></mapper>"
+        val start = xml.indexOf("<$element")
         return StatementSourceGraph(
             rootStatement = CapturedStatement(
                 id = XmlStatementId(XML_FILE, "com.acme.Mapper", "find"),
-                kind = StatementKind.SELECT,
+                kind = kind,
                 sourceRange = SourceRange(start, xml.indexOf('>', start) + 1),
             ),
             sourceSnapshots = listOf(SourceSnapshot(XML_FILE, XML_REVISION, xml)),

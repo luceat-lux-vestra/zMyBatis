@@ -35,6 +35,21 @@ import org.junit.Test
 
 class XmlBooleanIfPreparationAdmissionTest {
     @Test
+    fun setRequiresCompleteMapperAndExactConditionalProvenance() {
+        val body = "UPDATE t <set>base = #{id},<if test=\"enabled\">a = #{id},</if><if test=\"param2\">b = #{id},</if></set> WHERE id = #{id}"
+        val parameters = listOf(parameter(0, "boolean", "enabled"), parameter(1, "java.lang.Boolean", "other"), parameter(2, "long", "id"))
+        val graph = graph(body, kind = StatementKind.UPDATE)
+        val fixture = Fixture(graph, mapper(graph, parameters))
+        val original = contract(fixture)
+        val admitted = inspect(fixture) as XmlBooleanIfPreparationAdmission.Result.Admitted
+        assertEquals(setOf("enabled", "param2"), admitted.conditions.map { it.conditionAlias }.toSet())
+        val moved = graph(body.replace("base = #{id},", "base = 1,").replace("a = #{id},", "a = #{id}, extra = #{id},"), kind = StatementKind.UPDATE)
+        assertFailure(XmlBooleanIfPreparationAdmission.inspect(moved, fixture.mapper, original))
+        val alteredMapper = mapper(graph, parameters.map { if (it.index == 1) parameter(1, "long", "other") else it })
+        assertFailure(XmlBooleanIfPreparationAdmission.inspect(graph, alteredMapper, original), PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-boolean-if-preparation-mapper-unsupported")
+    }
+
+    @Test
     fun independentAndRepeatedSiblingConditionsRetainEveryDistinctAliasAuthority() {
         val fixture = fixture(
             "SELECT #{id}<where><if test=\"enabled\">AND id = #{id}</if><if test=\"param2\">AND id = #{id}</if><if test=\"enabled\">AND 1 = 1</if></where>",
@@ -452,11 +467,13 @@ class XmlBooleanIfPreparationAdmissionTest {
         body: String,
         revision: SourceRevision = XML_REVISION,
         statementName: String = "find",
+        kind: StatementKind = StatementKind.SELECT,
     ): StatementSourceGraph {
-        val xml = "<mapper namespace=\"example.Mapper\"><select id=\"$statementName\">$body</select></mapper>"
-        val start = xml.indexOf("<select")
+        val element = kind.name.lowercase()
+        val xml = "<mapper namespace=\"example.Mapper\"><$element id=\"$statementName\">$body</$element></mapper>"
+        val start = xml.indexOf("<$element")
         return StatementSourceGraph(
-            CapturedStatement(XmlStatementId(XML_FILE, "example.Mapper", statementName), StatementKind.SELECT, SourceRange(start, xml.indexOf('>', start) + 1)),
+            CapturedStatement(XmlStatementId(XML_FILE, "example.Mapper", statementName), kind, SourceRange(start, xml.indexOf('>', start) + 1)),
             listOf(SourceSnapshot(XML_FILE, revision, xml)),
             emptyList(),
         )

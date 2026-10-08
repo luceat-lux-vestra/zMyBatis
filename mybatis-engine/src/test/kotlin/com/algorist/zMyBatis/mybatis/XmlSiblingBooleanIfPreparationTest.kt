@@ -46,6 +46,105 @@ import org.junit.Test
 
 class XmlSiblingBooleanIfPreparationTest {
     @Test
+    fun allEightSetCombinationsKeepStockSqlOrderedMetadataAndUnconditionalBindings() {
+        for (staticAssignment in listOf("", "base = #{id},")) {
+            val fixture = fixture(
+                "UPDATE t <set>$staticAssignment<if test=\"enabled\">a = #{id},</if><if test=\"other\">b = #{id},</if><if test=\"third\">flag = #{third,jdbcType=BOOLEAN},</if></set> WHERE id = #{id}",
+                kind = StatementKind.UPDATE,
+            )
+            for (mask in 0..7) {
+                val before = Thread.currentThread().contextClassLoader
+                val execution = success(prepare(fixture, mask))
+                assertStockParity(fixture, mask, execution)
+                assertEquals(StatementKind.UPDATE, execution.statementKind)
+                val properties = buildList {
+                    if (staticAssignment.isNotEmpty()) add("id")
+                    if (flag(mask, 0)) add("id")
+                    if (flag(mask, 1)) add("id")
+                    if (flag(mask, 2)) add("third")
+                    add("id")
+                }
+                assertEquals(properties, execution.orderedBindings.map { it.property })
+                assertEquals(properties.map { if (it == "third") InputValue.BooleanValue(true) else integer(42) }, execution.orderedBindings.map { it.value })
+                assertEquals(mask != 0 || staticAssignment.isNotEmpty(), execution.sqlWithPlaceholders.contains("SET"))
+                assertFalse(execution.sqlWithPlaceholders.substringBefore("WHERE").trimEnd().endsWith(','))
+                if (mask == 0 && staticAssignment.isEmpty()) assertEquals("UPDATE t WHERE id = ?", normalize(execution.sqlWithPlaceholders))
+                assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
+                assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
+                assertSame(before, Thread.currentThread().contextClassLoader)
+            }
+        }
+    }
+
+    @Test
+    fun setPreservesStockWhitespaceCommentsAndGenericRepeatedGuards() {
+        val fixture = fixture("UPDATE t <set>\n<!-- ignored --> <if test=\"enabled\"><![CDATA[a = #{id},\t]]></if><if test=\"param1\">b = #{param4},\n</if><if test=\"other\">c = #{id},</if></set> WHERE id = #{id}", kind = StatementKind.UPDATE)
+        for (mask in 0..3) {
+            val execution = success(prepare(fixture, mask))
+            assertStockParity(fixture, mask, execution)
+            assertEquals(1 + (if (flag(mask, 0)) 2 else 0) + (if (flag(mask, 1)) 1 else 0), execution.orderedBindings.size)
+        }
+    }
+
+    @Test
+    fun setActiveMapLeavesRemainPresenceAwareWhileInactiveLeavesAreUnread() {
+        val fixture = fixture("UPDATE t <set><if test=\"enabled\">a = #{id.first},</if><if test=\"other\">b = #{id.second},</if></set> WHERE id = 1", "java.util.Map<java.lang.String,java.lang.Long>", StatementKind.UPDATE)
+        val partial = InputValue.MapValue(mapOf("first" to InputValue.NullValue))
+        assertEquals(InputValue.NullValue, success(prepare(fixture, 1, replacements = mapOf(3 to partial))).orderedBindings.single().value)
+        val inactive = success(prepare(fixture, 0, replacements = mapOf(3 to partial)))
+        assertTrue(inactive.orderedBindings.isEmpty())
+        assertEquals("UPDATE t WHERE id = 1", normalize(inactive.sqlWithPlaceholders))
+        for (mask in listOf(2, 3)) {
+            val failure = (prepare(fixture, mask, replacements = mapOf(3 to partial)) as PreparationResult.Failed).failure
+            assertEquals(PreparationFailureKind.BINDING_RESOLUTION, failure.kind)
+            assertEquals("xml-preparation-named-map-property-missing", failure.code)
+        }
+    }
+
+    @Test
+    fun falseSetCannotHideUnsupportedSourceOrMissingMapperCapture() {
+        val fixture = fixture("UPDATE t <set><if test=\"enabled\">a = #{id},</if></set> WHERE id = #{id}", kind = StatementKind.UPDATE)
+        val original = contract(fixture)
+        for (set in listOf(
+            "<set/>", "<set>a = #{id},</set>",
+            "<set suffixOverrides=\",\"><if test=\"enabled\">a = #{id},</if></set>",
+            "<set><if test=\"enabled != null\">a = #{id},</if></set>",
+            "<set><if test=\"enabled\">a = #{id},</if><include refid=\"fragment\"/></set>",
+            "<set><if test=\"enabled\">a = \${id},</if></set>",
+            "<set><if test=\"enabled\">a = #{id},</if></set><where><if test=\"other\">id = #{id}</if></where>",
+        )) {
+            val changed = fixture("UPDATE t $set WHERE id = #{id}", kind = StatementKind.UPDATE)
+            assertEquals(set, "xml-boolean-if-preparation-source-unsupported", (prepare(changed, 0, supplied = original) as PreparationResult.Failed).failure.code)
+        }
+        val inputs = original.requirements.map { requirement ->
+            ProvidedInput(requirement.id, if (indexOf(requirement.provenance.evidence) == 3) integer(42) else InputValue.BooleanValue(false), ExecutionInputOrigin.USER_ENTERED)
+        }
+        val environment = (InputEnvironment.validate(original, inputs) as InputEnvironmentResult.Success).environment
+        val request = (MyBatisPreparationRequest.create(XmlMapperPreparationSource(fixture.graph, additionalAuthoritySnapshots = listOf(fixture.mapper.mapperSource)), original, environment) as PreparationRequestResult.Ready).request
+        assertEquals("xml-preparation-dynamic-sql-unsupported", (XmlMapperPreparationEngine.prepare(request) as PreparationResult.Failed).failure.code)
+    }
+
+    @Test
+    fun setTokenSynthesisAndEmptySqlRemainTypedFailuresAcrossBranches() {
+        for (body in listOf(
+            "UPDATE t #<set><if test=\"enabled\">{id},</if></set>",
+            "UPDATE t <set><if test=\"enabled\">#</if><if test=\"other\">{id},</if></set>",
+            "UPDATE t <set><if test=\"enabled\">\\</if><if test=\"other\">a = #{id},</if></set>",
+        )) {
+            val fixture = fixture(body, kind = StatementKind.UPDATE)
+            assertFalse(contract(fixture).isPreparationBlocked)
+            for (mask in 0..3) {
+                assertEquals("xml-boolean-if-bound-token-topology-unsupported", (prepare(fixture, mask) as PreparationResult.Failed).failure.code)
+            }
+        }
+        val empty = fixture("<set><if test=\"enabled\">a = #{id},</if></set>", kind = StatementKind.UPDATE)
+        val before = Thread.currentThread().contextClassLoader
+        assertEquals("mybatis-prepared-sql-empty", (prepare(empty, 0) as PreparationResult.Failed).failure.code)
+        assertSame(before, Thread.currentThread().contextClassLoader)
+        assertEquals("SET a = ?", normalize(success(prepare(empty, 1)).sqlWithPlaceholders))
+    }
+
+    @Test
     fun allEightDirectConditionCombinationsKeepStockSqlOrderedValuesAndMappingMetadata() {
         val fixture = fixture("SELECT #{id}<if test=\"enabled\">, #{id}, #{enabled,jdbcType=BOOLEAN}</if>, #{id}<if test=\"other\">, #{id}</if><if test=\"third\">, #{id}, #{id}</if>")
         for (mask in 0..7) {
@@ -189,6 +288,7 @@ class XmlSiblingBooleanIfPreparationTest {
         val original = get.invoke(null, context)
         val poison = Proxy.newProxyInstance(loader, arrayOf(accessor)) { _, _, _ -> throw AssertionError("parent OGNL was invoked") }
         val siblings = fixture("SELECT #{id}<where><if test=\"enabled\">AND a = #{id}</if><if test=\"other\">AND b = #{id}</if><if test=\"third\">AND c = #{id}</if></where>")
+        val setFixture = fixture("UPDATE t <set><if test=\"enabled\">a = #{id},</if><if test=\"other\">b = #{id},</if><if test=\"third\">c = #{id},</if></set> WHERE id = #{id}", kind = StatementKind.UPDATE)
         val foreach = fixture("SELECT <foreach collection=\"id\" item=\"item\" separator=\",\">#{item}</foreach>", "java.util.List<java.lang.Long>")
         val executor = Executors.newFixedThreadPool(4)
         set.invoke(null, context, poison)
@@ -198,6 +298,10 @@ class XmlSiblingBooleanIfPreparationTest {
                 val prepared = success(prepare(siblings, mask, id = mask.toLong()))
                 assertEquals(1 + Integer.bitCount(mask), prepared.orderedBindings.size)
                 assertTrue(prepared.orderedBindings.all { it.value == integer(mask.toLong()) })
+                val updated = success(prepare(setFixture, mask, id = mask.toLong()))
+                assertEquals(1 + Integer.bitCount(mask), updated.orderedBindings.size)
+                assertTrue(updated.orderedBindings.all { it.value == integer(mask.toLong()) })
+                assertEquals(StatementKind.UPDATE, updated.statementKind)
                 val items = InputValue.ListValue(listOf(integer(mask.toLong()), integer(99)))
                 val repeated = success(prepare(foreach, 0, replacements = mapOf(3 to items)))
                 assertEquals(listOf(integer(mask.toLong()), integer(99)), repeated.orderedBindings.map { it.value })
@@ -244,11 +348,12 @@ class XmlSiblingBooleanIfPreparationTest {
         }
     }
 
-    private fun fixture(body: String, idType: String = "long"): Fixture {
+    private fun fixture(body: String, idType: String = "long", kind: StatementKind = StatementKind.SELECT): Fixture {
         val file = SourceFileId("siblings.xml")
         val statement = XmlStatementId(file, "example.Mapper", "find")
-        val xml = "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\"><mapper namespace=\"example.Mapper\"><select id=\"find\">$body</select></mapper>"
-        val graph = StatementSourceGraph(CapturedStatement(statement, StatementKind.SELECT, SourceRange(0, xml.length)), listOf(SourceSnapshot(file, SourceRevision("xml-r1"), xml)), emptyList())
+        val element = kind.name.lowercase()
+        val xml = "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\"><mapper namespace=\"example.Mapper\"><$element id=\"find\">$body</$element></mapper>"
+        val graph = StatementSourceGraph(CapturedStatement(statement, kind, SourceRange(0, xml.length)), listOf(SourceSnapshot(file, SourceRevision("xml-r1"), xml)), emptyList())
         val parameters = listOf("enabled" to "boolean", "other" to "java.lang.Boolean", "third" to "boolean", "id" to idType).mapIndexed { index, (name, type) -> JavaMethodParameterMetadata(index, name, JavaTypeIdentity(type), name) }
         val mapper = XmlMapperMethodCapture(statement, SourceSnapshot(SourceFileId("Mapper.java"), SourceRevision("java-r1"), "x".repeat(100)), SourceRange(0, 100), parameters)
         return Fixture(graph, mapper)
