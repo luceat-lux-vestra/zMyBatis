@@ -180,9 +180,9 @@ object XmlMapperPreparationEngine {
         }
 
         if (booleanIf != null || foreach != null) {
-            for (snapshot in source.sourceGraph.sourceSnapshots) {
+            for ((_, _, content) in source.sourceGraph.sourceSnapshots) {
                 DynamicBoundTokenTopologyAdmission.failureOrNull(
-                    snapshot.content,
+                    content,
                     rootPath = "/mapper",
                     unsupportedCode = if (booleanIf != null) {
                         "xml-boolean-if-bound-token-topology-unsupported"
