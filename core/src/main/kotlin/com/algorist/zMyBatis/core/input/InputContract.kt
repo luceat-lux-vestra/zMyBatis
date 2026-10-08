@@ -178,9 +178,14 @@ sealed interface InputEvidence {
         val kind: InputKind,
         val expression: String,
         val source: SourceEvidence,
+        /** Immediate source-derived XML Boolean-if alias; null denotes unconditional source text. */
+        val enclosingOgnlExpression: String? = null,
     ) : InputEvidence {
         init {
             require(expression.isNotBlank()) { "placeholder expression must not be blank" }
+            require(enclosingOgnlExpression == null || enclosingOgnlExpression.isNotBlank()) {
+                "enclosing OGNL expression must be null or non-blank"
+            }
         }
     }
 

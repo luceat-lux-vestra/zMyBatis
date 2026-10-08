@@ -32,22 +32,27 @@ internal object DynamicBoundTokenTopologyAdmission {
     )
     private val boundTokenParser = GenericTokenParser("#{", "}") { "x" }
 
-    fun failureOrNull(script: String): PreparationFailure? {
-        if (script.length > MAX_SCRIPT_LENGTH) return unsupported()
+    fun failureOrNull(
+        script: String,
+        rootPath: String = "/script",
+        unsupportedCode: String = TOPOLOGY_UNSUPPORTED,
+        parseFailureCode: String = PARSE_FAILURE,
+    ): PreparationFailure? {
+        if (script.length > MAX_SCRIPT_LENGTH) return unsupported(unsupportedCode)
 
         val root = try {
-            XPathParser(script, false, null, XMLMapperEntityResolver()).evalNode("/script")
+            XPathParser(script, false, null, XMLMapperEntityResolver()).evalNode(rootPath)
         } catch (_: StackOverflowError) {
-            return unsupported()
+            return unsupported(unsupportedCode)
         } catch (failure: RuntimeException) {
             return PreparationFailure(
                 kind = PreparationFailureKind.MYBATIS_PARSE,
-                code = PARSE_FAILURE,
+                code = parseFailureCode,
                 diagnosticType = failure.javaClass.name,
             )
         } ?: return PreparationFailure(
             kind = PreparationFailureKind.MYBATIS_PARSE,
-            code = PARSE_FAILURE,
+            code = parseFailureCode,
             diagnosticType = IllegalArgumentException::class.java.name,
         )
 
@@ -56,9 +61,9 @@ internal object DynamicBoundTokenTopologyAdmission {
         var visited = 0
 
         while (pending.isNotEmpty()) {
-            if (++visited > MAX_NODES) return unsupported()
+            if (++visited > MAX_NODES) return unsupported(unsupportedCode)
             val current = pending.removeLast()
-            if (current.depth > MAX_DEPTH) return unsupported()
+            if (current.depth > MAX_DEPTH) return unsupported(unsupportedCode)
 
             val node = current.node
             when (node.nodeType) {
@@ -66,13 +71,13 @@ internal object DynamicBoundTokenTopologyAdmission {
                 Node.CDATA_SECTION_NODE,
                 -> {
                     val text = (node as CharacterData).data
-                    if (!fragmentIsTopologySafe(text)) return unsupported()
+                    if (!fragmentIsTopologySafe(text)) return unsupported(unsupportedCode)
                 }
                 Node.ELEMENT_NODE -> {
                     val xNode = root.newXNode(node)
                     for (attribute in structuralSqlAttributes[xNode.name].orEmpty()) {
                         val value = xNode.getStringAttribute(attribute) ?: continue
-                        if (!fragmentIsTopologySafe(value)) return unsupported()
+                        if (!fragmentIsTopologySafe(value)) return unsupported(unsupportedCode)
                     }
                 }
             }
@@ -101,9 +106,9 @@ internal object DynamicBoundTokenTopologyAdmission {
         return !fragment.endsWith('#') && !fragment.endsWith('\\')
     }
 
-    private fun unsupported() = PreparationFailure(
+    private fun unsupported(code: String) = PreparationFailure(
         kind = PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-        code = TOPOLOGY_UNSUPPORTED,
+        code = code,
     )
 
     private data class PendingNode(

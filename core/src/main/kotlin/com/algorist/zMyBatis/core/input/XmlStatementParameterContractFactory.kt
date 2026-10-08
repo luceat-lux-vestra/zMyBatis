@@ -18,7 +18,10 @@ import javax.xml.stream.XMLStreamReader
  * The XML source graph proves statement identity and source use, but it does not prove the mapper
  * method parameter-object semantics that MyBatis will apply at runtime. Therefore a placeholder use
  * is retained as provenance while caller-input authority remains blocked. A placeholder-free static
- * root statement can produce an empty non-blocking contract.
+ * root statement can produce an empty non-blocking contract. Flat simple-name if siblings, either
+ * direct or inside one attribute-free direct where, carry OGNL and placeholder-scope provenance;
+ * mapper metadata must separately prove every Boolean caller alias. This scanner discovers source
+ * uses, never evaluates conditions or WHERE/trim semantics.
  */
 object XmlStatementParameterContractFactory {
     private const val DEPENDENCY_PROVENANCE_PROBLEM = "xml-dependent-fragment-provenance-unsupported"
@@ -34,11 +37,18 @@ object XmlStatementParameterContractFactory {
     private const val FOREACH_LOCAL_RAW_PROBLEM = "xml-foreach-raw-local-unsupported"
     private const val FOREACH_LOCAL_EXPRESSION_PROBLEM = "xml-foreach-local-expression-unsupported"
     private const val FOREACH_LOCAL_SHADOWING_PROBLEM = "xml-foreach-local-shadowing-unsupported"
+    private const val IF_RAW_INPUT_PROBLEM = "xml-if-raw-input-unsupported"
     private const val UNSAFE_DTD_PROBLEM = "xml-parameter-contract-unsafe-dtd"
 
     private val simpleRoot = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val simpleNamedProperty = Regex("[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*")
     private val reservedInternalRoots = setOf("_parameter", "_databaseId")
+    // Alphabetic token literals from the maintained MyBatis 3.5.19 OgnlParserConstants.
+    // A lexically simple keyword is not an OGNL caller-variable lookup.
+    private val ognlKeywords = setOf(
+        "or", "and", "bor", "xor", "band", "eq", "neq", "lt", "gt", "lte", "gte",
+        "in", "not", "shl", "shr", "ushr", "instanceof", "true", "false", "null", "new",
+    )
 
     fun build(graph: StatementSourceGraph): ParameterContract {
         val statementId = graph.rootStatement.id as? XmlStatementId
@@ -105,6 +115,15 @@ object XmlStatementParameterContractFactory {
             )
         }
 
+        if (statementScan.ifConditions.isNotEmpty() && placeholderScan.uses.any { it.kind == InputKind.RAW_INTERPOLATION }) {
+            return blockedContract(
+                statementId,
+                sourceRevisions,
+                InputContractProblemKind.UNSUPPORTED,
+                IF_RAW_INPUT_PROBLEM,
+            )
+        }
+
         val foreach = statementScan.foreach
         val foreachLocals = foreach
             ?.let { declaration -> listOfNotNull(declaration.item, declaration.index).toSet() }
@@ -165,6 +184,7 @@ object XmlStatementParameterContractFactory {
                     kind = use.kind,
                     expression = use.expression,
                     source = statementSource,
+                    enclosingOgnlExpression = use.enclosingOgnlExpression,
                 ),
             )
         }
@@ -175,6 +195,13 @@ object XmlStatementParameterContractFactory {
                     expression = declaration.collection,
                     source = statementSource,
                 ),
+            )
+        }
+
+        statementScan.ifConditions.forEach { condition ->
+            usesByRoot.getOrPut(condition) { mutableListOf() } += CallerUse(
+                kind = InputKind.BOUND,
+                evidence = InputEvidence.OgnlExpression(condition, statementSource),
             )
         }
 
@@ -231,6 +258,11 @@ object XmlStatementParameterContractFactory {
         var targetMatches = 0
         var targetClosed = false
         var foreachDepth = -1
+        var whereDepth = -1
+        var whereSeen = false
+        var ifDepth = -1
+        var activeIfCondition: String? = null
+        val ifConditions = mutableListOf<String>()
         var foreachDeclaration: ForeachDeclaration? = null
         val textSegments = mutableListOf<StatementTextSegment>()
 
@@ -286,11 +318,21 @@ object XmlStatementParameterContractFactory {
 
                         if (targetDepth >= 0) {
                             if (
+                                depth == targetDepth + 1 && localName == "where" &&
+                                isUnqualifiedElement(reader) && reader.attributeCount == 0 &&
+                                !whereSeen && ifConditions.isEmpty() && foreachDeclaration == null
+                            ) {
+                                whereSeen = true
+                                whereDepth = depth
+                                continue
+                            }
+                            if (
                                 depth == targetDepth + 1 &&
                                 localName == "foreach" &&
                                 isUnqualifiedElement(reader) &&
                                 foreachDepth < 0 &&
-                                foreachDeclaration == null
+                                foreachDeclaration == null &&
+                                ifConditions.isEmpty() && !whereSeen
                             ) {
                                 val declaration = parseForeachDeclaration(reader)
                                     ?: return StatementScan.Failed(
@@ -300,6 +342,28 @@ object XmlStatementParameterContractFactory {
                                 foreachDeclaration = declaration
                                 foreachDepth = depth
                                 continue
+                            }
+                            if (
+                                (
+                                    (depth == targetDepth + 1 && !whereSeen) ||
+                                        (whereDepth >= 0 && depth == whereDepth + 1)
+                                    ) && localName == "if" &&
+                                isUnqualifiedElement(reader) && foreachDeclaration == null &&
+                                ifDepth < 0
+                            ) {
+                                val condition = reader.getAttributeValue(null, "test")?.trim()
+                                if (
+                                    condition != null && simpleRoot.matches(condition) &&
+                                    condition !in reservedInternalRoots &&
+                                    condition !in ognlKeywords &&
+                                    reader.attributeCount == 1 &&
+                                    reader.getAttributeNamespace(0).isNullOrEmpty()
+                                ) {
+                                    ifConditions += condition
+                                    ifDepth = depth
+                                    activeIfCondition = condition
+                                    continue
+                                }
                             }
                             return StatementScan.Failed(
                                 InputContractProblemKind.UNSUPPORTED,
@@ -319,11 +383,24 @@ object XmlStatementParameterContractFactory {
                             } else {
                                 emptySet()
                             }
-                            textSegments += StatementTextSegment(text, locals)
+                            textSegments += StatementTextSegment(text, locals, activeIfCondition)
                         }
                     }
 
                     XMLStreamConstants.END_ELEMENT -> {
+                        if (ifDepth == depth) {
+                            ifDepth = -1
+                            activeIfCondition = null
+                        }
+                        if (whereDepth == depth) {
+                            if (ifConditions.isEmpty()) {
+                                return StatementScan.Failed(
+                                    InputContractProblemKind.UNSUPPORTED,
+                                    NESTED_ELEMENT_PROBLEM,
+                                )
+                            }
+                            whereDepth = -1
+                        }
                         if (foreachDepth == depth) {
                             foreachDepth = -1
                         }
@@ -345,7 +422,7 @@ object XmlStatementParameterContractFactory {
             if (!mapperSeen || targetMatches != 1 || !targetClosed || depth != 0) {
                 StatementScan.Failed(InputContractProblemKind.UNKNOWN, ROOT_MISMATCH_PROBLEM)
             } else {
-                StatementScan.Ready(textSegments, foreachDeclaration)
+                StatementScan.Ready(textSegments, foreachDeclaration, ifConditions)
             }
         } catch (_: XMLStreamException) {
             StatementScan.Failed(InputContractProblemKind.UNKNOWN, MALFORMED_XML_PROBLEM)
@@ -427,7 +504,7 @@ object XmlStatementParameterContractFactory {
                             code = COMPLEX_PLACEHOLDER_PROBLEM,
                         )
                     }
-                    else -> uses += PlaceholderUse(kind, expression)
+                    else -> uses += PlaceholderUse(kind, expression, segment.enclosingOgnlExpression)
                 }
                 cursor = close.endOffset + 1
             }
@@ -522,6 +599,7 @@ object XmlStatementParameterContractFactory {
         data class Ready(
             val textSegments: List<StatementTextSegment>,
             val foreach: ForeachDeclaration?,
+            val ifConditions: List<String>,
         ) : StatementScan
 
         data class Failed(
@@ -533,6 +611,7 @@ object XmlStatementParameterContractFactory {
     private data class StatementTextSegment(
         val text: String,
         val foreachLocals: Set<String>,
+        val enclosingOgnlExpression: String?,
     )
 
     private data class ForeachDeclaration(
@@ -549,6 +628,7 @@ object XmlStatementParameterContractFactory {
     private data class PlaceholderUse(
         val kind: InputKind,
         val expression: String,
+        val enclosingOgnlExpression: String?,
     )
 
     private data class PlaceholderFailure(
