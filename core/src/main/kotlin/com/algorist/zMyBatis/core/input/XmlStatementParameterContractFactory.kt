@@ -19,7 +19,8 @@ import javax.xml.stream.XMLStreamReader
  * method parameter-object semantics that MyBatis will apply at runtime. Therefore a placeholder use
  * is retained as provenance while caller-input authority remains blocked. A placeholder-free static
  * root statement can produce an empty non-blocking contract. Flat simple-name if siblings, either
- * direct or inside one attribute-free direct where (or set for UPDATE), carry OGNL and placeholder-scope provenance;
+ * direct or inside attribute-free direct wrappers (one where, plus one set for UPDATE), carry
+ * OGNL and placeholder-scope provenance. Each wrapper must contain a Boolean-if sibling;
  * mapper metadata must separately prove every Boolean caller alias. This scanner discovers source
  * uses, never evaluates conditions or WHERE/SET trimming semantics.
  */
@@ -259,7 +260,8 @@ object XmlStatementParameterContractFactory {
         var targetClosed = false
         var foreachDepth = -1
         var wrapperDepth = -1
-        var wrapperSeen = false
+        val wrappersSeen = mutableSetOf<String>()
+        var wrapperConditionStart = 0
         var ifDepth = -1
         var activeIfCondition: String? = null
         val ifConditions = mutableListOf<String>()
@@ -321,10 +323,14 @@ object XmlStatementParameterContractFactory {
                                 depth == targetDepth + 1 &&
                                 (localName == "where" || (localName == "set" && statementKind == StatementKind.UPDATE)) &&
                                 isUnqualifiedElement(reader) && reader.attributeCount == 0 &&
-                                !wrapperSeen && ifConditions.isEmpty() && foreachDeclaration == null
+                                localName !in wrappersSeen &&
+                                (ifConditions.isEmpty() ||
+                                    (statementKind == StatementKind.UPDATE && wrappersSeen.isNotEmpty())) &&
+                                foreachDeclaration == null
                             ) {
-                                wrapperSeen = true
+                                wrappersSeen += localName
                                 wrapperDepth = depth
+                                wrapperConditionStart = ifConditions.size
                                 continue
                             }
                             if (
@@ -333,7 +339,7 @@ object XmlStatementParameterContractFactory {
                                 isUnqualifiedElement(reader) &&
                                 foreachDepth < 0 &&
                                 foreachDeclaration == null &&
-                                ifConditions.isEmpty() && !wrapperSeen
+                                ifConditions.isEmpty() && wrappersSeen.isEmpty()
                             ) {
                                 val declaration = parseForeachDeclaration(reader)
                                     ?: return StatementScan.Failed(
@@ -346,7 +352,7 @@ object XmlStatementParameterContractFactory {
                             }
                             if (
                                 (
-                                    (depth == targetDepth + 1 && !wrapperSeen) ||
+                                    (depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
                                         (wrapperDepth >= 0 && depth == wrapperDepth + 1)
                                     ) && localName == "if" &&
                                 isUnqualifiedElement(reader) && foreachDeclaration == null &&
@@ -394,7 +400,7 @@ object XmlStatementParameterContractFactory {
                             activeIfCondition = null
                         }
                         if (wrapperDepth == depth) {
-                            if (ifConditions.isEmpty()) {
+                            if (ifConditions.size == wrapperConditionStart) {
                                 return StatementScan.Failed(
                                     InputContractProblemKind.UNSUPPORTED,
                                     NESTED_ELEMENT_PROBLEM,

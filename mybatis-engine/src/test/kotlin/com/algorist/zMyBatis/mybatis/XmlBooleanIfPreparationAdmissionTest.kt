@@ -35,6 +35,29 @@ import org.junit.Test
 
 class XmlBooleanIfPreparationAdmissionTest {
     @Test
+    fun combinedUpdateWrappersRequireEveryMapperGuardAndExactPlaceholderScope() {
+        val body = "UPDATE t <set>base = #{id},<if test=\"enabled\">a = #{id},</if></set><where>AND base = #{id}<if test=\"param2\">AND id = #{id}</if></where>"
+        val parameters = listOf(parameter(0, "boolean", "enabled"), parameter(1, "java.lang.Boolean", "other"), parameter(2, "long", "id"))
+        val graph = graph(body, kind = StatementKind.UPDATE)
+        val fixture = Fixture(graph, mapper(graph, parameters))
+        val original = contract(fixture)
+        val admitted = inspect(fixture) as XmlBooleanIfPreparationAdmission.Result.Admitted
+        assertEquals(setOf("enabled", "param2"), admitted.conditions.map { it.conditionAlias }.toSet())
+        val moved = graph(body.replace("base = #{id},", "base = 1,").replace("AND id = #{id}", "AND id = #{id} AND base = #{id}"), kind = StatementKind.UPDATE)
+        assertFailure(XmlBooleanIfPreparationAdmission.inspect(moved, fixture.mapper, original))
+        val altered = mapper(graph, parameters.map { if (it.index == 1) parameter(1, "long", "other") else it })
+        assertFailure(XmlBooleanIfPreparationAdmission.inspect(graph, altered, original), PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-boolean-if-preparation-mapper-unsupported")
+        for (changed in listOf(
+            body.replace("<where>", "<where extra=\"ignored\">"),
+            body.replace("<where>AND base = #{id}<if test=\"param2\">AND id = #{id}</if></where>", "<where>AND base = #{id}</where>"),
+            body + "<set><if test=\"enabled\">extra = #{id},</if></set>",
+        )) {
+            val source = graph(changed, kind = StatementKind.UPDATE)
+            assertFailure(XmlBooleanIfPreparationAdmission.inspect(source, mapper(source, parameters), original), PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-boolean-if-preparation-source-unsupported")
+        }
+    }
+
+    @Test
     fun setRequiresCompleteMapperAndExactConditionalProvenance() {
         val body = "UPDATE t <set>base = #{id},<if test=\"enabled\">a = #{id},</if><if test=\"param2\">b = #{id},</if></set> WHERE id = #{id}"
         val parameters = listOf(parameter(0, "boolean", "enabled"), parameter(1, "java.lang.Boolean", "other"), parameter(2, "long", "id"))

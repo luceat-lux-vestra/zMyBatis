@@ -31,7 +31,7 @@ import org.apache.ibatis.session.Configuration
  * The complete captured mapper documents are parsed by an isolated stock MyBatis 3.5.19 runtime.
  * Static zero-input statements and the deliberately narrow proven scalar/temporal bound-input
  * island and source-proven foreach/Boolean-if contracts are admitted. Dynamic preparation owns
- * a fresh runtime; flat Boolean-if siblings directly or inside one where/set additionally require
+ * a fresh runtime; flat Boolean-if siblings directly or inside where/set wrappers additionally require
  * complete mapper capture. Stock MyBatis owns evaluation and WHERE/SET trimming. No MyBatis object
  * crosses the child-classloader boundary.
  */

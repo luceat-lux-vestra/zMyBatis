@@ -24,9 +24,9 @@ The required `Test` CI context is product evidence, not a line-coverage target. 
 | Annotation SQL extraction | `AnnotationSqlExtractorTest`, `AnnotationSqlExtractorProjectFixtureTest` | literal/array/constant shapes at the PSI-interface contract plus real Java PSI/project-index resolution of cross-file constant references, including ordered constant arrays |
 | Java action source authority / overload identity | `JavaActionContextProjectFixtureTest` | direct legacy analyzer/extractor calls continue to read last-committed PSI until explicit `commitDocument`; the shipping execution action separately refuses an uncommitted editor/PSI boundary before extraction rather than executing stale PSI; a real saved Java editor/caret selects the exact overloaded `PsiMethod` and annotation SQL; shipping remembered-input keys now include qualified mapper type + ordered method parameter-type signature, and exact project history lookup remains isolated across overloads while XML keys retain `file::statementId` form |
 | IDE action presentation boundary | `MyBatisActionUpdateProjectFixtureTest`, `MyBatisActionUpdateBoundaryTest` | the shipping BGT `update()` enables/shows only local supported XML/direct-Java/provider contexts, hides unrelated or missing-editor contexts, fails closed for Java when indexes are unavailable, and delegates only to bounded context classification without SQL extraction, parameter analysis, datasource enumeration, persistence, console creation, or execution |
-| Leap XML Boolean-if isolated runtime preparation | `XmlMapperMethodPreparationSourceTest`, `XmlBooleanIfRuntimePreparationTest`, `XmlSiblingBooleanIfPreparationTest`, `XmlBooleanIfProducerBoundaryTest` | complete mapper capture and its exact snapshot participate in the request; source/contract admission precedes conversion and a fresh owned MyBatis/OGNL runtime evaluates flat Boolean-if siblings directly or inside one attribute-free direct `<where>` (or `<set>` for UPDATE declarations); stock SQL and ordered caller mappings/handler metadata survive true/false branches, condition-only inputs add no fabricated binding, token-fragment topology and condition-scoped exact source/property counts block synthesized or missing mappings for every true/false combination, missing/invalid inputs and source drift fail closed, parent OGNL poisoning and concurrent invocations preserve isolation/TCCL, and non-zero bindings remain `BOUND_EXECUTION_REQUIRED`; absent capture still refuses dynamic XML and no production action wiring changes |
+| Leap XML Boolean-if isolated runtime preparation | `XmlMapperMethodPreparationSourceTest`, `XmlBooleanIfRuntimePreparationTest`, `XmlSiblingBooleanIfPreparationTest`, `XmlBooleanIfProducerBoundaryTest` | complete mapper capture and its exact snapshot participate in the request; source/contract admission precedes conversion and a fresh owned MyBatis/OGNL runtime evaluates flat Boolean-if siblings directly or inside bounded attribute-free direct wrappers: one `<where>`, one UPDATE `<set>`, or both for UPDATE; stock SQL and ordered caller mappings/handler metadata survive true/false branches, condition-only inputs add no fabricated binding, token-fragment topology and condition-scoped exact source/property counts block synthesized or missing mappings for every true/false combination, missing/invalid inputs and source drift fail closed, parent OGNL poisoning and concurrent invocations preserve isolation/TCCL, and non-zero bindings remain `BOUND_EXECUTION_REQUIRED`; absent capture still refuses dynamic XML and no production action wiring changes |
 | Leap XML Boolean-if preparation admission | `XmlBooleanIfPreparationAdmissionTest`, `XmlBooleanIfProducerBoundaryTest` | source-derived condition evidence plus the complete authoritative mapper-method capture rebuild the producer contract; exact caller requirements, aliases, internal bindings and source revisions must match before returning the distinct condition requirement ids/aliases; unused mapper parameters that suppress generated aliases, forged/missing/duplicate evidence, type/requiredness/range/identity/revision drift, extra XML snapshots/dependencies, and unsupported sources fail typed; the engine consumes this admission only with complete mapper capture, before isolated Boolean-if preparation; it grants no production execution authority |
-| Leap XML Boolean-if input provenance | `XmlBooleanIfParameterContractTest`, `XmlBooleanIfProducerBoundaryTest` | flat `<if test="alias">` siblings directly or inside one attribute-free direct `<where>` (or `<set>` for UPDATE declarations) request required Boolean caller inputs only through proven explicit/generic mapper aliases, retains OGNL and placeholder evidence separately, and never applies scalar whole-object fallback to condition names; non-Boolean, unproven, nested if/mixed tags/unsupported wrappers, complex/reserved, raw-interpolation, and source-authority drift cases remain blocked; missing condition input is refused and both true/false inputs without complete mapper capture still return the engine's typed dynamic-SQL refusal; the input contract alone grants no XML-if runtime authority without complete mapper capture and admission, and grants no production execution authority |
+| Leap XML Boolean-if input provenance | `XmlBooleanIfParameterContractTest`, `XmlBooleanIfProducerBoundaryTest` | flat `<if test="alias">` siblings directly or inside bounded attribute-free direct wrappers: one `<where>`, one UPDATE `<set>`, or both for UPDATE request required Boolean caller inputs only through proven explicit/generic mapper aliases, retains OGNL and placeholder evidence separately, and never applies scalar whole-object fallback to condition names; non-Boolean, unproven, nested if/mixed tags/unsupported wrappers, complex/reserved, raw-interpolation, and source-authority drift cases remain blocked; missing condition input is refused and both true/false inputs without complete mapper capture still return the engine's typed dynamic-SQL refusal; the input contract alone grants no XML-if runtime authority without complete mapper capture and admission, and grants no production execution authority |
 | Leap active-editor snapshot boundary | `ActiveEditorSourceSnapshotAdapterProjectFixtureTest` | the new non-wired source adapter captures saved and unsaved active `Document` text/revision/caret without committing PSI or saving disk, fails closed for missing file identity/source mutation/invalid caret evidence, and returns no retained IntelliJ platform object; it does not prove production action cutover or dependent-source resolution |
 | Leap dependent mapper snapshot boundary | `DependentMapperSourceSnapshotAdapterProjectFixtureTest` | for one already-resolved dependent `VirtualFile`, a loaded unsaved `Document` wins over stale VFS/disk content; otherwise bounded VFS text is captured with the same source identity scheme; oversize/invalid/unreadable/racing source fails closed and no IntelliJ platform object is retained; it does not discover namespaces/includes or construct dependency graphs |
 | Leap XML mapper discovery boundary | `XmlMapperSourceDiscoveryTest`, `XmlMapperSourceDiscoveryExternalResolutionTest` | immutable `SourceSnapshot` input is parsed without external DTD/entity resolution; mapper namespace, direct statement/fragment declarations, repeated nested `<include refid>` occurrences, exact source-backed start-tag ranges, and standard `databaseId` variants are preserved while custom `lang` remains unsupported evidence; duplicate logical ids are allowed only across distinct database ids; malformed/unsafe/duplicate-variant/structurally invalid source fails closed |
@@ -195,7 +195,8 @@ must match both bytes and revision. A conflicting snapshot is rejected rather th
 The default source construction remains compatible with the static XML path and continues to refuse
 dynamic XML without this capture. Request construction rejects stale mapper revisions before runtime.
 
-For the admitted flat Boolean-if island (direct siblings or siblings inside one attribute-free direct `<where>`),
+For the admitted flat Boolean-if island (direct siblings or siblings inside bounded attribute-free
+direct `<where>` / UPDATE `<set>` wrappers),
 `XmlMapperPreparationEngine` owns a fresh classloader and Configuration, delegates evaluation to
 stock MyBatis, restores the thread context loader and closes
 the invocation loader. No MyBatis object or mutable runtime state survives in `PreparedExecution`.
@@ -220,7 +221,8 @@ continues to own condition evaluation, SQL bytes, order and WHERE/SET trimming s
 
 The bounded `<where>` wrapper contains one or more direct Boolean-if siblings and may also contain static
 text and bound placeholders before or after it. It accepts no attributes or namespace-qualified
-name. Static-only/empty where nodes, a second where, an if outside the where, nested where/if,
+name. UPDATE may also carry the single set wrapper described below. Static-only/empty where
+nodes, a second where, an if outside the wrappers, nested where/if,
 foreach/bind/include/other tags and raw interpolation remain typed refusals before runtime, even
 when the supplied condition is false. Comments and CDATA cannot invent a conditional caller.
 
@@ -245,7 +247,7 @@ mapping proof. One unqualified attribute-free direct `<set>` must contain one or
 simple Boolean-if siblings; unconditional text/bindings may occur before, within or after it.
 `XmlBooleanIfParameterContractTest` and `XmlBooleanIfPreparationAdmissionTest` cover source/type/alias
 and moved-placeholder authority. SELECT/INSERT/DELETE declarations with set, empty/static-only set,
-nested/repeated/mixed where/set, direct conditions outside the wrapper, raw interpolation and
+nested/repeated wrappers, direct conditions outside the wrappers, raw interpolation and
 other dynamic tags remain refused without partial caller authority.
 
 `XmlSiblingBooleanIfPreparationTest` compares all eight combinations of three UPDATE conditions,
@@ -257,6 +259,24 @@ failure. Missing active Map leaves, absent complete mapper capture, forged/stale
 and token synthesis across set boundaries remain typed refusals. Concurrent set/where/foreach
 invocations under poisoned parent OGNL exercise isolation and TCCL restoration. This adds no
 production execution authority; non-zero bindings still require `BOUND_EXECUTION_REQUIRED`.
+
+UPDATE may compose one direct `<set>` and one direct `<where>`. Each wrapper independently
+requires at least one simple Boolean-if child; conditions in the first wrapper cannot authorize
+an empty/static-only second wrapper. The source scanner retains immediate guard provenance in
+source order across both wrappers, including repeated explicit/generic aliases. Admission rebuilds
+the complete source/mapper contract before isolated runtime preparation; moving an unconditional
+mapping into a condition or changing the second guard's mapper type cannot reuse old authority.
+Both source orders are admitted: preparation delegates SQL grammar and trimming to MyBatis.
+
+The core and admission tests retain duplicate/nested/attribute/namespace/raw/other-tag refusals
+and the SELECT/INSERT/DELETE set refusal. `XmlSiblingBooleanIfPreparationTest` compares all eight
+combinations of three guards, with and without static assignments/predicates, against the stock
+mapper-parser oracle's SQL bytes and ordered metadata. A shared guard in both wrappers contributes
+both proven occurrences when true. Tests additionally cover generic/repeated guards, comments/CDATA,
+both source orders, Map present-null/missing active leaves, all-false/empty SQL, cross-wrapper token
+synthesis and concurrent set/where/combined/foreach invocations under poisoned parent OGNL.
+All-false conditions may omit SET, WHERE, or both; no assignment, predicate, or SQL-validity claim
+is invented. #258 and the standalone, unpackaged engine boundary remain unchanged.
 
 An independent stock-MyBatis oracle checks byte-identical SQL and metadata. In this named-Map runtime
 path, a declared Boolean input can legitimately retain `Object` mapping type and `UnknownTypeHandler`;
