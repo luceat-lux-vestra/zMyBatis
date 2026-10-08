@@ -6,6 +6,7 @@ import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import java.lang.reflect.Array as ReflectArray
 import java.lang.reflect.Method
 import java.net.URLClassLoader
+import java.util.concurrent.CancellationException
 import org.apache.ibatis.session.Configuration
 
 /**
@@ -89,14 +90,7 @@ internal object IsolatedDynamicMyBatisPreparation {
         val languageDriverClass = Class.forName(LANGUAGE_DRIVER, true, loader)
         val sqlSourceClass = Class.forName(SQL_SOURCE, true, loader)
         val boundSqlClass = Class.forName(BOUND_SQL, true, loader)
-        val parameterMappingClass = Class.forName(PARAMETER_MAPPING, true, loader)
         val paramMapClass = Class.forName(PARAM_MAP, true, loader)
-        val foreachRuntimeIdentity = if (admittedForeachLocals.isNotEmpty()) {
-            resolveForeachRuntimeIdentity(loader)
-                ?: return Result.Failed(invariantFailure("mybatis-foreach-runtime-identity-unavailable"))
-        } else {
-            null
-        }
 
         val configuration = configurationClass.getDeclaredConstructor().newInstance()
         databaseId?.let {
@@ -139,8 +133,36 @@ internal object IsolatedDynamicMyBatisPreparation {
         val mappings = boundSqlClass.getMethod("getParameterMappings").invoke(boundSql) as? List<*>
             ?: return Result.Failed(invariantFailure("mybatis-parameter-mappings-unavailable"))
 
-        val snapshots = mappings.map { mapping ->
-            mapping ?: return Result.Failed(invariantFailure("mybatis-null-parameter-mapping"))
+        val snapshots = snapshotMappings(loader, configuration, boundSql, parameterObject, mappings, admittedForeachLocals)
+
+        return Result.Ready(
+            MyBatisBoundSqlSnapshot(
+                sql = sql,
+                mappings = snapshots,
+                languageDriverIdentity = languageDriver.javaClass.name,
+            ),
+        )
+    }
+
+    /** Copies mapping values and generated identities while the owning isolated runtime is live. */
+    fun snapshotMappings(
+        loader: URLClassLoader,
+        configuration: Any,
+        boundSql: Any,
+        parameterObject: Any?,
+        mappings: List<*>,
+        admittedForeachLocals: Map<String, InternalBindingKind>,
+    ): List<MyBatisParameterMappingSnapshot> {
+        val configurationClass = Class.forName(CONFIGURATION, true, loader)
+        val boundSqlClass = Class.forName(BOUND_SQL, true, loader)
+        val parameterMappingClass = Class.forName(PARAMETER_MAPPING, true, loader)
+        val foreachRuntimeIdentity = if (admittedForeachLocals.isNotEmpty()) {
+            checkNotNull(resolveForeachRuntimeIdentity(loader)) { "mybatis-foreach-runtime-identity-unavailable" }
+        } else {
+            null
+        }
+        return mappings.map { mapping ->
+            checkNotNull(mapping) { "mybatis-null-parameter-mapping" }
             snapshotMapping(
                 loader = loader,
                 configurationClass = configurationClass,
@@ -154,14 +176,6 @@ internal object IsolatedDynamicMyBatisPreparation {
                 admittedForeachLocals = admittedForeachLocals,
             )
         }
-
-        return Result.Ready(
-            MyBatisBoundSqlSnapshot(
-                sql = sql,
-                mappings = snapshots,
-                languageDriverIdentity = languageDriver.javaClass.name,
-            ),
-        )
     }
 
     private fun resolveForeachRuntimeIdentity(loader: URLClassLoader): ForeachRuntimeIdentity? {
@@ -449,7 +463,7 @@ internal object IsolatedDynamicMyBatisPreparation {
 
     private fun rethrowFatal(failure: Throwable) {
         val fatal = throwableChain(failure).firstOrNull {
-            it is VirtualMachineError || it.javaClass.name == "java.lang.ThreadDeath"
+            it !is Exception || it is CancellationException
         }
         if (fatal != null) throw fatal
     }

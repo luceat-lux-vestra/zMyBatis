@@ -22,6 +22,7 @@ import java.io.InputStream
 import java.lang.reflect.InvocationTargetException
 import java.net.URLClassLoader
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.CancellationException
 import org.apache.ibatis.session.Configuration
 
 /**
@@ -29,7 +30,8 @@ import org.apache.ibatis.session.Configuration
  *
  * The complete captured mapper documents are parsed by an isolated stock MyBatis 3.5.19 runtime.
  * Static zero-input statements and the deliberately narrow proven scalar/temporal bound-input
- * island are admitted. No MyBatis object crosses the child-classloader boundary.
+ * island and source-proven foreach contracts are admitted. Foreach preparation owns a fresh
+ * runtime; no MyBatis object crosses the child-classloader boundary.
  */
 object XmlMapperPreparationEngine {
     private const val ENGINE_ID = "org.mybatis:mybatis"
@@ -131,7 +133,13 @@ object XmlMapperPreparationEngine {
         val statementId = source.sourceGraph.rootStatement.id as? XmlStatementId
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
 
-        inputContractFailure(request)?.let { return PreparationResult.Failed(it) }
+        val foreach = when (val admission = XmlForeachPreparationAdmission.inspect(source.sourceGraph, request.parameterContract)) {
+            is XmlForeachPreparationAdmission.Result.Admitted -> admission
+            is XmlForeachPreparationAdmission.Result.Failed -> return PreparationResult.Failed(admission.failure)
+            XmlForeachPreparationAdmission.Result.NotPresent -> null
+        }
+        val foreachRequirementIds = foreach?.collectionRequirementIds.orEmpty()
+        inputContractFailure(request, foreachRequirementIds)?.let { return PreparationResult.Failed(it) }
 
         val typedMapRequirementIds = request.parameterContract.requirements
             .filter { requirement ->
@@ -144,7 +152,7 @@ object XmlMapperPreparationEngine {
             .mapTo(linkedSetOf()) { it.id }
         val parameterValuesResult = MyBatisValueConversion.parameterValues(
             request,
-            typedStructuredRequirementIds = typedMapRequirementIds,
+            typedStructuredRequirementIds = typedMapRequirementIds + foreachRequirementIds,
         )
         if (parameterValuesResult is MyBatisValueConversion.ParameterValuesResult.Failed) {
             return PreparationResult.Failed(parameterValuesResult.failure)
@@ -161,7 +169,14 @@ object XmlMapperPreparationEngine {
         }
 
         return try {
-            prepareWithContextLoader(isolatedRuntime, source, statementId, request, parameterPayload)
+            if (foreach == null) {
+                prepareWithContextLoader(isolatedRuntime, source, statementId, request, parameterPayload, null)
+            } else {
+                val runtime = createIsolatedRuntime(fresh = true)
+                runtime.loader.use {
+                    prepareWithContextLoader(runtime, source, statementId, request, parameterPayload, foreach)
+                }
+            }
         } catch (failure: Throwable) {
             rethrowFatal(failure)
             when (failure) {
@@ -192,6 +207,7 @@ object XmlMapperPreparationEngine {
         statementId: XmlStatementId,
         request: MyBatisPreparationRequest,
         parameterPayload: XmlParameterPayload.Ready,
+        foreach: XmlForeachPreparationAdmission.Result.Admitted?,
     ): PreparationResult {
         val thread = Thread.currentThread()
         val previousContextLoader = thread.contextClassLoader
@@ -199,7 +215,7 @@ object XmlMapperPreparationEngine {
         return try {
             thread.contextClassLoader = runtime.loader
             switched = true
-            prepareIn(runtime, source, statementId, request, parameterPayload)
+            prepareIn(runtime, source, statementId, request, parameterPayload, foreach)
         } finally {
             if (switched) {
                 thread.contextClassLoader = previousContextLoader
@@ -213,6 +229,7 @@ object XmlMapperPreparationEngine {
         statementId: XmlStatementId,
         request: MyBatisPreparationRequest,
         parameterPayload: XmlParameterPayload.Ready,
+        foreach: XmlForeachPreparationAdmission.Result.Admitted?,
     ): PreparationResult {
         val configurationClass = runtime.configurationClass
         val builderClass = runtime.builderClass
@@ -249,6 +266,7 @@ object XmlMapperPreparationEngine {
                 .getMethod("getMappedStatement", String::class.java)
                 .invoke(configuration, canonicalStatementId)
         } catch (failure: InvocationTargetException) {
+            rethrowFatal(failure)
             return PreparationResult.Failed(
                 PreparationFailure(
                     PreparationFailureKind.MYBATIS_PARSE,
@@ -277,7 +295,7 @@ object XmlMapperPreparationEngine {
 
         val sqlSource = mappedStatementClass.getMethod("getSqlSource").invoke(mappedStatement)
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
-        if (dynamicSqlSourceClass.isInstance(sqlSource)) {
+        if (dynamicSqlSourceClass.isInstance(sqlSource) && foreach == null) {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_UNSUPPORTED)
         }
 
@@ -303,6 +321,12 @@ object XmlMapperPreparationEngine {
                 request = request,
                 parameterPayload = parameterPayload,
                 isolatedLoader = runtime.loader,
+                foreachMappings = foreach?.let {
+                    IsolatedDynamicMyBatisPreparation.snapshotMappings(
+                        runtime.loader, configuration, boundSql, parameterObject, mappings, it.locals,
+                    )
+                },
+                foreach = foreach,
             )
         ) {
             is XmlBindingCapture.Ready -> captured.bindings
@@ -342,19 +366,26 @@ object XmlMapperPreparationEngine {
     }
 
     /**
-     * The isolated runtime loader is created once for the plugin lifetime and then treated as
-     * immutable. Every preparation still owns a fresh MyBatis Configuration, mapper builders, and
-     * fragment map. Reusing the loader avoids racing URLClassLoader.close() against concurrent local
-     * DTD reads from the same MyBatis JAR while keeping application/plugin classes unreachable.
+     * Static preparation reuses an immutable loader. Foreach owns a fresh loader and bypasses
+     * shared resource-stream caching so closing one invocation cannot interrupt another DTD read.
+     * Every preparation owns its Configuration, mapper builders and fragment map.
      */
-    private fun createIsolatedRuntime(): IsolatedRuntime {
+    private fun createIsolatedRuntime(fresh: Boolean = false): IsolatedRuntime {
         val myBatisLocation = Configuration::class.java.protectionDomain?.codeSource?.location
             ?: throw IsolationFailure("mybatis-code-source-unavailable")
         if (myBatisLocation.protocol != "file") {
             throw IsolationFailure("mybatis-code-source-non-local")
         }
 
-        val loader = URLClassLoader(arrayOf(myBatisLocation), platformLoader)
+        val loader = if (fresh) {
+            object : URLClassLoader(arrayOf(myBatisLocation), platformLoader) {
+                // A fresh loader must not close a globally cached DTD JAR stream owned by another invocation.
+                override fun getResourceAsStream(name: String): InputStream? =
+                    getResource(name)?.openConnection()?.apply { useCaches = false }?.getInputStream()
+            }
+        } else {
+            URLClassLoader(arrayOf(myBatisLocation), platformLoader)
+        }
         try {
             if (!hardenMyBatisResourceClassLoaders(loader)) {
                 throw IsolationFailure(CLASSLOADER_INVARIANT)
@@ -438,8 +469,11 @@ object XmlMapperPreparationEngine {
                 content[index + 1] == '{'
         }
 
-    private fun inputContractFailure(request: MyBatisPreparationRequest): PreparationFailure? {
-        if (request.parameterContract.internalBindings.isNotEmpty()) {
+    private fun inputContractFailure(
+        request: MyBatisPreparationRequest,
+        foreachRequirementIds: Set<InputRequirementId>,
+    ): PreparationFailure? {
+        if (request.parameterContract.internalBindings.isNotEmpty() && foreachRequirementIds.isEmpty()) {
             return PreparationFailure(
                 PreparationFailureKind.UNSUPPORTED_SEMANTIC,
                 INPUT_CONTRACT_UNSUPPORTED,
@@ -453,7 +487,7 @@ object XmlMapperPreparationEngine {
         }
         if (
             request.parameterContract.requirements.any {
-                it.expectedType.shape !in setOf(
+                it.id !in foreachRequirementIds && it.expectedType.shape !in setOf(
                     InputShape.SCALAR,
                     InputShape.TEMPORAL,
                     InputShape.MAP,
@@ -467,7 +501,9 @@ object XmlMapperPreparationEngine {
         }
         if (
             request.parameterContract.aliases.any {
-                it.kind !in setOf(
+                !(it.requirementId in foreachRequirementIds && it.kind in setOf(
+                    InputAliasKind.COLLECTION, InputAliasKind.LIST, InputAliasKind.ARRAY,
+                )) && it.kind !in setOf(
                     InputAliasKind.EXPLICIT_PARAM,
                     InputAliasKind.GENERIC_PARAM,
                     InputAliasKind.PARAMETER_OBJECT,
@@ -483,7 +519,7 @@ object XmlMapperPreparationEngine {
             it.kind == InputAliasKind.PARAMETER_OBJECT
         }
         val mapRequirements = request.parameterContract.requirements.filter {
-            it.expectedType.shape == InputShape.MAP
+            it.expectedType.shape == InputShape.MAP && it.id !in foreachRequirementIds
         }
         val namedMapRequirementIds = linkedSetOf<InputRequirementId>()
         for (requirement in mapRequirements) {
@@ -595,6 +631,8 @@ object XmlMapperPreparationEngine {
         request: MyBatisPreparationRequest,
         parameterPayload: XmlParameterPayload.Ready,
         isolatedLoader: ClassLoader,
+        foreachMappings: List<MyBatisParameterMappingSnapshot>?,
+        foreach: XmlForeachPreparationAdmission.Result.Admitted?,
     ): XmlBindingCapture {
         val aliasesByName = request.inputEnvironment.aliases.groupBy { it.name }
         val bindings = mutableListOf<PreparedBinding>()
@@ -625,6 +663,14 @@ object XmlMapperPreparationEngine {
                         MAPPING_PROPERTY_MISSING,
                     ),
                 )
+            val snapshot = foreachMappings?.get(index)
+            if (snapshot?.additionalParameter == true) {
+                when (val additional = XmlForeachAdditionalBindingCapture.capture(index, snapshot, request, checkNotNull(foreach))) {
+                    is XmlForeachAdditionalBindingCapture.Result.Ready -> bindings += additional.binding
+                    is XmlForeachAdditionalBindingCapture.Result.Failed -> return XmlBindingCapture.Failed(additional.failure)
+                }
+                return@forEachIndexed
+            }
             val namedMapPath = parseNamedMapProperty(property)
             if ('.' in property && namedMapPath == null) {
                 return XmlBindingCapture.Failed(
@@ -846,11 +892,13 @@ object XmlMapperPreparationEngine {
             mappingCounts[requirement.id] = (mappingCounts[requirement.id] ?: 0) + 1
         }
 
-        val expectedMappingCounts = request.parameterContract.requirements.associate { requirement ->
-            requirement.id to requirement.provenance.evidence
-                .filterIsInstance<InputEvidence.Placeholder>()
-                .count { it.kind == InputKind.BOUND }
-        }
+        val expectedMappingCounts = request.parameterContract.requirements
+            .filter { it.id !in foreach?.collectionRequirementIds.orEmpty() }
+            .associate { requirement ->
+                requirement.id to requirement.provenance.evidence
+                    .filterIsInstance<InputEvidence.Placeholder>()
+                    .count { it.kind == InputKind.BOUND }
+            }
         if (
             expectedMappingCounts.values.any { it == 0 } ||
             mappingCounts != expectedMappingCounts
@@ -1047,16 +1095,8 @@ object XmlMapperPreparationEngine {
         }.lastOrNull()?.javaClass?.name ?: failure.javaClass.name
 
     private fun rethrowFatal(failure: Throwable) {
-        if (failure is VirtualMachineError || failure is LinkageError) {
-            throw failure
-        }
-
-        var type: Class<*>? = failure.javaClass
-        while (type != null) {
-            if (type.name == "java.lang.ThreadDeath") {
-                throw failure
-            }
-            type = type.superclass
-        }
+        generateSequence(failure) { it.cause }
+            .firstOrNull { it !is Exception || it is CancellationException }
+            ?.let { throw it }
     }
 }
