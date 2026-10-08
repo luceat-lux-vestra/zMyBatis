@@ -17,8 +17,8 @@ import com.algorist.zMyBatis.core.source.XmlStatementId
  * Rebuilding the producer contract preserves its naming/type rules, including unused parameters
  * that can suppress a generated alias. Evidence supplied in a contract cannot prove itself.
  * The mapper capture is an input from the source authority boundary, not reconstructed from aliases.
- * The producer admits flat Boolean-if siblings directly or inside one attribute-free direct where,
- * or set for UPDATE declarations.
+ * The producer admits flat Boolean-if siblings directly or inside attribute-free direct wrappers:
+ * one where, one set for UPDATE declarations, or both for UPDATE.
  * Rebuilding also authenticates each placeholder's immediate condition and rejects nested/mixed tags.
  * This proof neither evaluates OGNL nor enables XML dynamic preparation or execution.
  */

@@ -18,6 +18,29 @@ import org.junit.Test
 
 class XmlBooleanIfParameterContractTest {
     @Test
+    fun updateSetAndWhereRetainIndependentAndRepeatedGuardProvenanceInSourceOrder() {
+        val set = "<set>base = #{id},<if test=\"enabled\">a = #{id},</if><if test=\"param2\">b = #{id},</if></set>"
+        val where = "<where>AND base = #{id}<if test=\"other\">AND b = #{id}</if><if test=\"enabled\">AND a = #{id}</if></where>"
+        for ((body, scopes) in listOf(
+            "$set $where" to listOf(null, "enabled", "param2", null, "other", "enabled"),
+            "$where $set" to listOf(null, "other", "enabled", null, "enabled", "param2"),
+        )) {
+            val graph = graph("UPDATE t $body", StatementKind.UPDATE)
+            val sourceOnly = XmlStatementParameterContractFactory.build(graph)
+            assertTrue(sourceOnly.isPreparationBlocked)
+            assertTrue(sourceOnly.requirements.isEmpty())
+            val contract = build(graph, parameter(0, "boolean", "enabled"), parameter(1, "java.lang.Boolean", "other"), parameter(2, "long", "id"))
+            assertFalse(body, contract.isPreparationBlocked)
+            assertEquals(3, contract.requirements.size)
+            assertTrue(contract.requirements.all { it.requiredness == InputRequiredness.REQUIRED })
+            assertEquals(scopes, contract.requirements[2].provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().map { it.enclosingOgnlExpression })
+            assertEquals(setOf("param2", "other"), conditions(contract.requirements[1]).toSet())
+            assertTrue(contract.aliases.none { it.name == "set" || it.name == "where" })
+            assertTrue(contract.internalBindings.isEmpty())
+        }
+    }
+
+    @Test
     fun setPreservesConditionalAndUnconditionalUsesWithoutCreatingASetCaller() {
         val graph = graph(
             "UPDATE t <set>base = #{id},<if test=\"enabled\">a = #{id},</if><if test=\"param2\">b = #{id},</if></set> WHERE id = #{id}",
@@ -48,8 +71,18 @@ class XmlBooleanIfParameterContractTest {
             "<x:set xmlns:x=\"urn:unsupported\">$condition</x:set>",
             "<set><set>$condition</set></set>",
             "<set><where>$condition</where></set>",
-            "<set>$condition</set><where>$condition</where>",
-            "<where>$condition</where><set>$condition</set>",
+            "<set>$condition</set><where/>",
+            "<set>$condition</set><where>AND id = #{id}</where>",
+            "<where>$condition</where><set/>",
+            "<where>$condition</where><set>a = #{id},</set>",
+            "<set>$condition</set><where>$condition</where><where>$condition</where>",
+            "<where>$condition</where><set>$condition</set><set>$condition</set>",
+            "<set>$condition</set>$condition<where>$condition</where>",
+            "<where>$condition</where>$condition<set>$condition</set>",
+            "<set>$condition</set><where extra=\"ignored\">$condition</where>",
+            "<set>$condition</set><where xmlns=\"urn:unsupported\">$condition</where>",
+            "<where>$condition</where><set extra=\"ignored\">$condition</set>",
+            "<set>$condition</set><where><if test=\"enabled != null\">AND id = #{id}</if></where>",
             "<set>$condition</set><set>$condition</set>",
             "$condition<set>$condition</set>", "<set>$condition</set>$condition",
             "<if test=\"enabled\"><set>a = #{id},</set></if>",

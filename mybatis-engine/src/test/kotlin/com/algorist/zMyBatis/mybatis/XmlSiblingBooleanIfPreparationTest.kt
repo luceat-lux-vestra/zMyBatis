@@ -46,6 +46,100 @@ import org.junit.Test
 
 class XmlSiblingBooleanIfPreparationTest {
     @Test
+    fun allEightCombinedUpdateCombinationsKeepStockSqlMetadataAndGuardedMappingCounts() {
+        for (staticAssignment in listOf("", "base = #{id},")) {
+            for (staticPredicate in listOf("", "AND base = #{id}")) {
+                val fixture = fixture(
+                    "UPDATE t <set>$staticAssignment<if test=\"enabled\">a = #{id},</if><if test=\"third\">flag = #{third,jdbcType=BOOLEAN},</if></set><where>$staticPredicate<if test=\"other\">OR id = #{id}</if><if test=\"third\">AND flag = #{third,jdbcType=BOOLEAN}</if></where> RETURNING #{id}",
+                    kind = StatementKind.UPDATE,
+                )
+                for (mask in 0..7) {
+                    val before = Thread.currentThread().contextClassLoader
+                    val execution = success(prepare(fixture, mask))
+                    assertStockParity(fixture, mask, execution)
+                    val properties = buildList {
+                        if (staticAssignment.isNotEmpty()) add("id")
+                        if (flag(mask, 0)) add("id")
+                        if (flag(mask, 2)) add("third")
+                        if (staticPredicate.isNotEmpty()) add("id")
+                        if (flag(mask, 1)) add("id")
+                        if (flag(mask, 2)) add("third")
+                        add("id")
+                    }
+                    assertEquals(properties, execution.orderedBindings.map { it.property })
+                    assertEquals(properties.map { if (it == "third") InputValue.BooleanValue(true) else integer(42) }, execution.orderedBindings.map { it.value })
+                    assertEquals(staticAssignment.isNotEmpty() || flag(mask, 0) || flag(mask, 2), execution.sqlWithPlaceholders.contains("SET"))
+                    assertEquals(staticPredicate.isNotEmpty() || flag(mask, 1) || flag(mask, 2), execution.sqlWithPlaceholders.contains("WHERE"))
+                    if (mask == 0 && staticAssignment.isEmpty() && staticPredicate.isEmpty()) assertEquals("UPDATE t RETURNING ?", normalize(execution.sqlWithPlaceholders))
+                    assertEquals(StatementKind.UPDATE, execution.statementKind)
+                    assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
+                    assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
+                    assertSame(before, Thread.currentThread().contextClassLoader)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun combinedWrappersPreserveGenericRepeatedGuardsCommentsAndSourceOrder() {
+        val set = "<set>\n<!-- ignored --><if test=\"enabled\"><![CDATA[a = #{id},\t]]></if><if test=\"param1\">b = #{param4},</if></set>"
+        val where = "<where><if test=\"enabled\">\nor\tid = #{id}</if><if test=\"param2\">AND other = #{param4}</if></where>"
+        for (body in listOf("$set $where", "$where $set")) {
+            val fixture = fixture("UPDATE t $body", kind = StatementKind.UPDATE)
+            for (mask in 0..3) {
+                val execution = success(prepare(fixture, mask))
+                assertStockParity(fixture, mask, execution)
+                assertEquals((if (flag(mask, 0)) 3 else 0) + (if (flag(mask, 1)) 1 else 0), execution.orderedBindings.size)
+            }
+        }
+    }
+
+    @Test
+    fun combinedUpdateMapLeavesStayPresenceAwareAcrossBothWrappers() {
+        val fixture = fixture("UPDATE t <set><if test=\"enabled\">a = #{id.first},</if></set><where><if test=\"other\">AND b = #{id.second}</if></where>", "java.util.Map<java.lang.String,java.lang.Long>", StatementKind.UPDATE)
+        val partial = InputValue.MapValue(mapOf("first" to InputValue.NullValue))
+        assertEquals(InputValue.NullValue, success(prepare(fixture, 1, replacements = mapOf(3 to partial))).orderedBindings.single().value)
+        assertTrue(success(prepare(fixture, 0, replacements = mapOf(3 to partial))).orderedBindings.isEmpty())
+        for (mask in listOf(2, 3)) {
+            assertEquals("xml-preparation-named-map-property-missing", (prepare(fixture, mask, replacements = mapOf(3 to partial)) as PreparationResult.Failed).failure.code)
+        }
+        val complete = InputValue.MapValue(mapOf("first" to integer(5), "second" to InputValue.NullValue))
+        assertEquals(listOf(integer(5), InputValue.NullValue), success(prepare(fixture, 3, replacements = mapOf(3 to complete))).orderedBindings.map { it.value })
+    }
+
+    @Test
+    fun combinedWrappersCannotSynthesizeMappingsOrHideUnsupportedSourceWhileFalse() {
+        val valid = fixture("UPDATE t <set><if test=\"enabled\">a = #{id},</if></set><where><if test=\"other\">AND id = #{id}</if></where>", kind = StatementKind.UPDATE)
+        val original = contract(valid)
+        val inputs = original.requirements.map { requirement ->
+            ProvidedInput(requirement.id, if (indexOf(requirement.provenance.evidence) == 3) integer(42) else InputValue.BooleanValue(false), ExecutionInputOrigin.USER_ENTERED)
+        }
+        val environment = (InputEnvironment.validate(original, inputs) as InputEnvironmentResult.Success).environment
+        val request = (MyBatisPreparationRequest.create(XmlMapperPreparationSource(valid.graph, additionalAuthoritySnapshots = listOf(valid.mapper.mapperSource)), original, environment) as PreparationRequestResult.Ready).request
+        assertEquals("xml-preparation-dynamic-sql-unsupported", (XmlMapperPreparationEngine.prepare(request) as PreparationResult.Failed).failure.code)
+        for (where in listOf(
+            "<where/>", "<where>AND id = #{id}</where>",
+            "<where extra=\"ignored\"><if test=\"other\">AND id = #{id}</if></where>",
+            "<where><if test=\"other\">AND id = \${id}</if></where>",
+            "<where><if test=\"other\">AND id = #{id}</if><include refid=\"fragment\"/></where>",
+            "<where><if test=\"other\">AND id = #{id}</if></where><where><if test=\"other\">AND 1 = 1</if></where>",
+        )) {
+            val changed = fixture("UPDATE t <set><if test=\"enabled\">a = #{id},</if></set>$where", kind = StatementKind.UPDATE)
+            assertEquals(where, "xml-boolean-if-preparation-source-unsupported", (prepare(changed, 0, supplied = original) as PreparationResult.Failed).failure.code)
+        }
+        for (body in listOf(
+            "UPDATE t <set><if test=\"enabled\">a = #{id},</if>#</set><where><if test=\"other\">{id}</if></where>",
+            "UPDATE t <set><if test=\"enabled\">a = #{id},</if>\\</set><where><if test=\"other\">AND id = #{id}</if></where>",
+        )) {
+            val fixture = fixture(body, kind = StatementKind.UPDATE)
+            assertFalse(contract(fixture).isPreparationBlocked)
+            for (mask in 0..3) assertEquals("xml-boolean-if-bound-token-topology-unsupported", (prepare(fixture, mask) as PreparationResult.Failed).failure.code)
+        }
+        val empty = fixture("<set><if test=\"enabled\">a = #{id},</if></set><where><if test=\"other\">AND id = #{id}</if></where>", kind = StatementKind.UPDATE)
+        assertEquals("mybatis-prepared-sql-empty", (prepare(empty, 0) as PreparationResult.Failed).failure.code)
+    }
+
+    @Test
     fun allEightSetCombinationsKeepStockSqlOrderedMetadataAndUnconditionalBindings() {
         for (staticAssignment in listOf("", "base = #{id},")) {
             val fixture = fixture(
@@ -111,7 +205,7 @@ class XmlSiblingBooleanIfPreparationTest {
             "<set><if test=\"enabled != null\">a = #{id},</if></set>",
             "<set><if test=\"enabled\">a = #{id},</if><include refid=\"fragment\"/></set>",
             "<set><if test=\"enabled\">a = \${id},</if></set>",
-            "<set><if test=\"enabled\">a = #{id},</if></set><where><if test=\"other\">id = #{id}</if></where>",
+            "<set><if test=\"enabled\">a = #{id},</if></set><where>id = #{id}</where>",
         )) {
             val changed = fixture("UPDATE t $set WHERE id = #{id}", kind = StatementKind.UPDATE)
             assertEquals(set, "xml-boolean-if-preparation-source-unsupported", (prepare(changed, 0, supplied = original) as PreparationResult.Failed).failure.code)
@@ -289,6 +383,7 @@ class XmlSiblingBooleanIfPreparationTest {
         val poison = Proxy.newProxyInstance(loader, arrayOf(accessor)) { _, _, _ -> throw AssertionError("parent OGNL was invoked") }
         val siblings = fixture("SELECT #{id}<where><if test=\"enabled\">AND a = #{id}</if><if test=\"other\">AND b = #{id}</if><if test=\"third\">AND c = #{id}</if></where>")
         val setFixture = fixture("UPDATE t <set><if test=\"enabled\">a = #{id},</if><if test=\"other\">b = #{id},</if><if test=\"third\">c = #{id},</if></set> WHERE id = #{id}", kind = StatementKind.UPDATE)
+        val combined = fixture("UPDATE t <set><if test=\"enabled\">a = #{id},</if><if test=\"third\">c = #{id},</if></set><where><if test=\"other\">AND id = #{id}</if><if test=\"third\">AND c = #{id}</if></where>", kind = StatementKind.UPDATE)
         val foreach = fixture("SELECT <foreach collection=\"id\" item=\"item\" separator=\",\">#{item}</foreach>", "java.util.List<java.lang.Long>")
         val executor = Executors.newFixedThreadPool(4)
         set.invoke(null, context, poison)
@@ -302,6 +397,9 @@ class XmlSiblingBooleanIfPreparationTest {
                 assertEquals(1 + Integer.bitCount(mask), updated.orderedBindings.size)
                 assertTrue(updated.orderedBindings.all { it.value == integer(mask.toLong()) })
                 assertEquals(StatementKind.UPDATE, updated.statementKind)
+                val composed = success(prepare(combined, mask, id = mask.toLong()))
+                assertEquals(Integer.bitCount(mask) + (if (flag(mask, 2)) 1 else 0), composed.orderedBindings.size)
+                assertTrue(composed.orderedBindings.all { it.value == integer(mask.toLong()) })
                 val items = InputValue.ListValue(listOf(integer(mask.toLong()), integer(99)))
                 val repeated = success(prepare(foreach, 0, replacements = mapOf(3 to items)))
                 assertEquals(listOf(integer(mask.toLong()), integer(99)), repeated.orderedBindings.map { it.value })
