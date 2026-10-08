@@ -18,6 +18,77 @@ import org.junit.Test
 
 class XmlBooleanIfParameterContractTest {
     @Test
+    fun siblingConditionsPreserveEachPlaceholderScopeAndAllRequiredCallerRoots() {
+        for (wrapped in listOf(false, true)) {
+            val body = "#{id}<if test=\"enabled\">#{id}</if>#{id}<if test=\"other\">#{id}</if>#{id}"
+            val graph = graph("SELECT " + if (wrapped) "<where>$body</where>" else body)
+            val sourceOnly = XmlStatementParameterContractFactory.build(graph)
+            assertTrue(sourceOnly.isPreparationBlocked)
+            assertTrue(sourceOnly.requirements.isEmpty())
+            val contract = build(graph, parameter(0, "boolean", "enabled"), parameter(1, "java.lang.Boolean", "other"), parameter(2, "long", "id"))
+            assertFalse(contract.isPreparationBlocked)
+            assertEquals(3, contract.requirements.size)
+            assertTrue(contract.requirements.all { it.requiredness == InputRequiredness.REQUIRED })
+            val id = contract.requirement(contract.aliases.single { it.name == "id" }.requirementId)!!
+            assertEquals(listOf(null, "enabled", null, "other", null), id.provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().map { it.enclosingOgnlExpression })
+            assertEquals(listOf("enabled"), conditions(contract.requirements[0]))
+            assertEquals(listOf("other"), conditions(contract.requirements[1]))
+            assertTrue(contract.internalBindings.isEmpty())
+        }
+    }
+
+    @Test
+    fun repeatedAndGenericConditionAliasesKeepOccurrencesWithoutDuplicatingCallerInputs() {
+        val contract = build(
+            graph("SELECT #{id} <if test=\"enabled\">#{id}</if><if test=\"param1\">#{id}</if><if test=\"enabled\">#{id}</if>"),
+            parameter(0, "boolean", "enabled"), parameter(1, "long", "id"),
+        )
+        assertFalse(contract.isPreparationBlocked)
+        assertEquals(2, contract.requirements.size)
+        assertEquals(listOf("enabled", "enabled", "param1"), conditions(contract.requirements[0]))
+        val id = contract.requirements[1]
+        assertEquals(listOf(null, "enabled", "param1", "enabled"), id.provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().map { it.enclosingOgnlExpression })
+        assertEquals(contract.aliases.single { it.name == "enabled" }.requirementId, contract.aliases.single { it.name == "param1" }.requirementId)
+    }
+
+    @Test
+    fun conditionalScopeChangeIsVisibleEvenWhenAliasAndPlaceholderCountsDoNotChange() {
+        val outside = build(graph("SELECT #{id}<if test=\"enabled\">WHERE 1 = 1</if>"), parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
+        val inside = build(graph("SELECT 1<if test=\"enabled\">WHERE id = #{id}</if>"), parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
+        assertEquals(outside.aliases, inside.aliases)
+        val outsideUse = outside.requirements[1].provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().single()
+        val insideUse = inside.requirements[1].provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().single()
+        assertEquals(outsideUse.expression, insideUse.expression)
+        assertEquals(null, outsideUse.enclosingOgnlExpression)
+        assertEquals("enabled", insideUse.enclosingOgnlExpression)
+    }
+
+    @Test
+    fun everySiblingConditionNeedsBooleanMapperAuthority() {
+        val graph = graph("SELECT 1<if test=\"enabled\">WHERE 1 = 1</if><if test=\"other\">AND 2 = 2</if>")
+        for (other in listOf(parameter(1, "long", "other"), parameter(1, "boolean", "different"))) {
+            assertTrue(build(graph, parameter(0, "boolean", "enabled"), other).isPreparationBlocked)
+        }
+        val mixed = graph("SELECT 1<if test=\"enabled\">WHERE 1 = 1</if><if test=\"other\">\${table}</if>")
+        assertEquals("xml-if-raw-input-unsupported", build(mixed, parameter(0, "boolean", "enabled"), parameter(1, "boolean", "other"), parameter(2, "java.lang.String", "table")).blockingProblems.single().code)
+    }
+
+    @Test
+    fun unsupportedLaterSiblingCannotLeaveAPartialContract() {
+        for (later in listOf(
+            "<if test=\"other\"><if test=\"enabled\">#{id}</if></if>",
+            "<if test=\"other != null\">#{id}</if>",
+            "<if test=\"other\" extra=\"ignored\">#{id}</if>",
+            "<if xmlns=\"urn:unsupported\" test=\"other\">#{id}</if>",
+            "<choose><when test=\"other\">#{id}</when></choose>",
+        )) {
+            val contract = build(graph("SELECT #{id}<if test=\"enabled\">#{id}</if>$later"), parameter(0, "boolean", "enabled"), parameter(1, "boolean", "other"), parameter(2, "long", "id"))
+            assertTrue(later, contract.isPreparationBlocked)
+            assertTrue(later, contract.requirements.isEmpty())
+            assertTrue(later, contract.aliases.isEmpty())
+        }
+    }
+    @Test
     fun whereConditionStillNeedsMapperAuthorityAndNeverCreatesAWhereInput() {
         val graph = graph("SELECT 1 <where><if test=\"enabled\">AND id = #{id}</if></where>")
         val sourceOnly = XmlStatementParameterContractFactory.build(graph)
@@ -89,7 +160,6 @@ class XmlBooleanIfParameterContractTest {
             "<where xmlns=\"urn:unsupported\">$condition</where>",
             "<x:where xmlns:x=\"urn:unsupported\">$condition</x:where>",
             "<where><where>$condition</where></where>",
-            "<where>$condition$condition</where>",
             "<where>$condition</where><where>$condition</where>",
             "$condition<where>$condition</where>",
             "<where>$condition</where>$condition",
@@ -226,10 +296,9 @@ class XmlBooleanIfParameterContractTest {
     }
 
     @Test
-    fun nestedMultipleMixedOrComplexDynamicSourcesCannotLeakPartialRequirements() {
+    fun nestedMixedOrComplexDynamicSourcesCannotLeakPartialRequirements() {
         val bodies = listOf(
             "<if test=\"enabled\"><if test=\"other\">#{id}</if></if>",
-            "<if test=\"enabled\">#{id}</if><if test=\"enabled\">#{id}</if>",
             "<if test=\"enabled\">#{id}</if><foreach collection=\"ids\" item=\"id\">#{id}</foreach>",
             "<foreach collection=\"ids\" item=\"id\">#{id}</foreach><if test=\"enabled\">#{id}</if>",
             "<if test=\"enabled\"><include refid=\"fragment\"/></if>",

@@ -31,8 +31,9 @@ import org.apache.ibatis.session.Configuration
  * The complete captured mapper documents are parsed by an isolated stock MyBatis 3.5.19 runtime.
  * Static zero-input statements and the deliberately narrow proven scalar/temporal bound-input
  * island and source-proven foreach/Boolean-if contracts are admitted. Dynamic preparation owns
- * a fresh runtime; Boolean-if directly or inside one where additionally requires complete mapper
- * capture. Stock MyBatis owns evaluation and WHERE trimming. No MyBatis object crosses the boundary.
+ * a fresh runtime; flat Boolean-if siblings directly or inside one where additionally require
+ * complete mapper capture. Stock MyBatis owns evaluation and WHERE trimming. No MyBatis object
+ * crosses the child-classloader boundary.
  */
 object XmlMapperPreparationEngine {
     private const val ENGINE_ID = "org.mybatis:mybatis"
@@ -915,24 +916,30 @@ object XmlMapperPreparationEngine {
         }
 
         if (booleanIf != null) {
-            // Static whole-source counts do not describe an inactive conditional branch. Every
-            // emitted property must remain source-proven; TRUE retains all source occurrences.
-            // FALSE may omit occurrences under stock MyBatis semantics. The pre-runtime topology
-            // gate prevents text fragments from synthesizing or escaping mappings across nodes.
-            val condition = parameterPayload.namedValues[booleanIf.conditionAlias] as? Boolean
-                ?: return XmlBindingCapture.Failed(
-                    PreparationFailure(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE),
-                )
-            val expected = request.parameterContract.requirements
+            // Proven flat Boolean guards determine which source occurrences may produce mappings.
+            // This counts provenance only; stock MyBatis still owns all SQL and OGNL evaluation.
+            // The topology gate prevents cross-node synthesis/escaping of new mapping tokens.
+            val conditions = booleanIf.conditions.associate { condition ->
+                val value = parameterPayload.namedValues[condition.conditionAlias] as? Boolean
+                    ?: return XmlBindingCapture.Failed(
+                        PreparationFailure(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE),
+                    )
+                condition.conditionAlias to value
+            }
+            val placeholders = request.parameterContract.requirements
                 .flatMap { it.provenance.evidence }
                 .filterIsInstance<InputEvidence.Placeholder>()
                 .filter { it.kind == InputKind.BOUND }
+            if (placeholders.any { it.enclosingOgnlExpression != null && it.enclosingOgnlExpression !in conditions }) {
+                return XmlBindingCapture.Failed(
+                    PreparationFailure(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE),
+                )
+            }
+            val expected = placeholders
+                .filter { it.enclosingOgnlExpression == null || conditions[it.enclosingOgnlExpression] == true }
                 .groupingBy { it.expression }.eachCount()
             val actual = bindings.groupingBy { it.property }.eachCount()
-            val coherent = if (condition) actual == expected else actual.all { (property, count) ->
-                count <= (expected[property] ?: 0)
-            }
-            if (!coherent) {
+            if (actual != expected) {
                 return XmlBindingCapture.Failed(
                     PreparationFailure(PreparationFailureKind.PARAMETER_MAPPING_MISMATCH, MAPPING_CARDINALITY_MISMATCH),
                 )

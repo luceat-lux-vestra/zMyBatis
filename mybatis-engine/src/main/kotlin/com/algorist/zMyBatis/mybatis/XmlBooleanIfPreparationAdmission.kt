@@ -17,8 +17,8 @@ import com.algorist.zMyBatis.core.source.XmlStatementId
  * Rebuilding the producer contract preserves its naming/type rules, including unused parameters
  * that can suppress a generated alias. Evidence supplied in a contract cannot prove itself.
  * The mapper capture is an input from the source authority boundary, not reconstructed from aliases.
- * The producer admits one Boolean-if directly or inside one attribute-free direct where. Rebuilding
- * also rejects unsupported wrappers and siblings before inspecting caller evidence.
+ * The producer admits flat Boolean-if siblings directly or inside one attribute-free direct where.
+ * Rebuilding also authenticates each placeholder's immediate condition and rejects nested/mixed tags.
  * This proof neither evaluates OGNL nor enables XML dynamic preparation or execution.
  */
 internal object XmlBooleanIfPreparationAdmission {
@@ -61,7 +61,7 @@ internal object XmlBooleanIfPreparationAdmission {
             addAll(contract.internalBindings.flatMap { it.provenance.evidence })
         }.filterIsInstance<InputEvidence.OgnlExpression>()
         if (sourceConditions.isEmpty() && suppliedConditions.isEmpty()) return Result.NotPresent
-        if (sourceConditions.size != 1) return mismatch()
+        if (sourceConditions.isEmpty()) return mismatch()
 
         val sourceRevisions = sourceGraph.sourceSnapshots.associate { it.fileId to it.revision }
         if (mapperMethod.mapperSource.fileId in sourceRevisions) {
@@ -85,11 +85,13 @@ internal object XmlBooleanIfPreparationAdmission {
             return mismatch()
         }
 
-        val condition = sourceConditions.single()
-        val requirement = expected.requirements.singleOrNull {
-            condition in it.provenance.evidence
-        } ?: return mismatch()
-        return Result.Admitted(requirement.id, condition.expression)
+        val conditions = sourceConditions.distinct().map { condition ->
+            val requirement = expected.requirements.singleOrNull {
+                condition in it.provenance.evidence
+            } ?: return mismatch()
+            Result.Condition(requirement.id, condition.expression)
+        }
+        return Result.Admitted(conditions)
     }
 
     private fun mismatch(): Result.Failed =
@@ -101,10 +103,16 @@ internal object XmlBooleanIfPreparationAdmission {
     sealed interface Result {
         object NotPresent : Result
 
-        data class Admitted(
+        data class Condition(
             val conditionRequirementId: InputRequirementId,
             val conditionAlias: String,
-        ) : Result
+        )
+
+        class Admitted(conditions: List<Condition>) : Result {
+            private val conditionSnapshot = conditions.toList()
+            val conditions: List<Condition>
+                get() = conditionSnapshot.toList()
+        }
 
         data class Failed(val failure: PreparationFailure) : Result
     }

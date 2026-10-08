@@ -35,6 +35,47 @@ import org.junit.Test
 
 class XmlBooleanIfPreparationAdmissionTest {
     @Test
+    fun independentAndRepeatedSiblingConditionsRetainEveryDistinctAliasAuthority() {
+        val fixture = fixture(
+            "SELECT #{id}<where><if test=\"enabled\">AND id = #{id}</if><if test=\"param2\">AND id = #{id}</if><if test=\"enabled\">AND 1 = 1</if></where>",
+            listOf(parameter(0, "boolean", "enabled"), parameter(1, "boolean", "other"), parameter(2, "long", "id")),
+        )
+        val result = inspect(fixture) as XmlBooleanIfPreparationAdmission.Result.Admitted
+        assertEquals(mapOf("enabled" to "xml-java-param:0", "param2" to "xml-java-param:1"), result.conditions.associate { it.conditionAlias to it.conditionRequirementId.value })
+    }
+
+    @Test
+    fun forgedMissingOrMovedPlaceholderScopeCannotAuthenticateItself() {
+        val fixture = fixture(
+            "SELECT #{id}<if test=\"enabled\">, #{id}</if><if test=\"other\">, #{id}</if>",
+            listOf(parameter(0, "boolean", "enabled"), parameter(1, "boolean", "other"), parameter(2, "long", "id")),
+        )
+        val original = contract(fixture)
+        val id = original.requirements.single { it.id.value == "xml-java-param:2" }
+        for (replacement in listOf(null, "other", "forged")) {
+            val changed = id.copy(provenance = InputProvenance(id.provenance.evidence.map {
+                if (it is InputEvidence.Placeholder && it.enclosingOgnlExpression == "enabled") it.copy(enclosingOgnlExpression = replacement) else it
+            }))
+            assertFailure(inspect(fixture, copyContract(original, requirements = original.requirements.map { if (it.id == id.id) changed else it })))
+        }
+        val moved = graph("SELECT 1<if test=\"enabled\">, #{id}, #{id}</if><if test=\"other\">, #{id}</if>")
+        assertFailure(XmlBooleanIfPreparationAdmission.inspect(moved, mapper(moved, fixture.mapper.parameters), original))
+    }
+
+    @Test
+    fun missingOneSiblingConditionOrItsCallerAliasBlocksTheWholeAdmission() {
+        val fixture = fixture(
+            "SELECT 1<if test=\"enabled\">WHERE 1 = 1</if><if test=\"other\">AND 2 = 2</if>",
+            listOf(parameter(0, "boolean", "enabled"), parameter(1, "boolean", "other")),
+        )
+        val original = contract(fixture)
+        val other = original.requirements[1]
+        val stripped = other.copy(provenance = InputProvenance(other.provenance.evidence.filterNot { it is InputEvidence.OgnlExpression }))
+        assertFailure(inspect(fixture, copyContract(original, requirements = listOf(original.requirements[0], stripped))))
+        assertFailure(inspect(fixture, copyContract(original, aliases = original.aliases.filterNot { it.name == "other" })))
+    }
+
+    @Test
     fun whereWrappedConditionIsAdmittedOnlyWithCompleteMapperEvidence() {
         val fixture = fixture(
             "SELECT #{id} <where><if test=\"param1\">AND id = #{id}</if></where>",
@@ -42,10 +83,10 @@ class XmlBooleanIfPreparationAdmissionTest {
         )
         val original = contract(fixture)
         val admitted = inspect(fixture, original) as XmlBooleanIfPreparationAdmission.Result.Admitted
-        assertEquals("param1", admitted.conditionAlias)
-        assertEquals("xml-java-param:0", admitted.conditionRequirementId.value)
+        assertEquals("param1", admitted.conditions.single().conditionAlias)
+        assertEquals("xml-java-param:0", admitted.conditions.single().conditionRequirementId.value)
 
-        val condition = original.requirement(admitted.conditionRequirementId)!!
+        val condition = original.requirement(admitted.conditions.single().conditionRequirementId)!!
         val stripped = condition.copy(provenance = InputProvenance(condition.provenance.evidence.filterNot { it is InputEvidence.OgnlExpression }))
         assertFailure(inspect(fixture, copyContract(original, requirements = original.requirements.map { if (it.id == condition.id) stripped else it })))
         val suppressed = mapper(fixture.graph, listOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"), parameter(2, "boolean", "param1")))
@@ -68,7 +109,6 @@ class XmlBooleanIfPreparationAdmissionTest {
             "<where prefixOverrides=\"AND\">$condition</where>",
             "<where xmlns=\"urn:unsupported\">$condition</where>",
             "<where><where>$condition</where></where>",
-            "<where>$condition$condition</where>",
             "<where>$condition</where>$condition",
             "<where><include refid=\"fragment\"/>$condition</where>",
         )) {
@@ -84,8 +124,8 @@ class XmlBooleanIfPreparationAdmissionTest {
             val contract = contract(fixture)
             val result = inspect(fixture, contract) as XmlBooleanIfPreparationAdmission.Result.Admitted
 
-            assertEquals(contract.requirements.single().id, result.conditionRequirementId)
-            assertEquals("enabled", result.conditionAlias)
+            assertEquals(contract.requirements.single().id, result.conditions.single().conditionRequirementId)
+            assertEquals("enabled", result.conditions.single().conditionAlias)
         }
     }
 
@@ -97,7 +137,7 @@ class XmlBooleanIfPreparationAdmissionTest {
         )
         val contract = contract(fixture)
         val result = inspect(fixture, contract) as XmlBooleanIfPreparationAdmission.Result.Admitted
-        assertEquals("param1", result.conditionAlias)
+        assertEquals("param1", result.conditions.single().conditionAlias)
         assertEquals(InputAliasKind.GENERIC_PARAM, contract.aliases.single().kind)
 
         // This otherwise unused declaration now owns param1 and suppresses the generated alias.
@@ -117,7 +157,7 @@ class XmlBooleanIfPreparationAdmissionTest {
         )
         val contract = contract(fixture)
         val result = inspect(fixture, contract) as XmlBooleanIfPreparationAdmission.Result.Admitted
-        assertEquals("xml-java-param:0", result.conditionRequirementId.value)
+        assertEquals("xml-java-param:0", result.conditions.single().conditionRequirementId.value)
         assertEquals(InputAliasKind.EXPLICIT_PARAM, contract.aliases.single().kind)
     }
 
@@ -130,7 +170,7 @@ class XmlBooleanIfPreparationAdmissionTest {
         val contract = contract(fixture)
         assertFalse(contract.isPreparationBlocked)
         val result = inspect(fixture, contract) as XmlBooleanIfPreparationAdmission.Result.Admitted
-        assertEquals(contract.requirements.first().id, result.conditionRequirementId)
+        assertEquals(contract.requirements.first().id, result.conditions.single().conditionRequirementId)
         assertEquals(2, contract.requirements.size)
         assertEquals(2, contract.requirements.first().provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().size)
     }
@@ -188,7 +228,6 @@ class XmlBooleanIfPreparationAdmissionTest {
         val bodies = listOf(
             "<if test=\"enabled != null\">1</if>",
             "<if test=\"enabled\"><if test=\"enabled\">1</if></if>",
-            "<if test=\"enabled\">1</if><if test=\"enabled\">2</if>",
             "<if test=\"enabled\"><include refid=\"fragment\"/></if>",
             "<if test=\"enabled\">\${table}</if>",
             "<if test=\"enabled\" extra=\"ignored\">1</if>",

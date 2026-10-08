@@ -141,7 +141,6 @@ class XmlBooleanIfRuntimePreparationTest {
         val condition = "<if test=\"enabled\">AND id = #{id}</if>"
         for (body in listOf(
             "<where prefixOverrides=\"AND\">$condition</where>",
-            "<where>$condition$condition</where>",
             "<where><include refid=\"fragment\"/>$condition</where>",
             "<where><if test=\"enabled != null\">AND id = #{id}</if></where>",
             "<where><if test=\"enabled\">AND \${table} = #{id}</if></where>",
