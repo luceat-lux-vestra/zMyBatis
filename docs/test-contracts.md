@@ -437,3 +437,20 @@ those broader lifecycle obligations remain #67.
 E2E applicability: the maintained packaged-plugin happy path, mandatory-preview cancellation paths
 and no-datasource refusal apply on the exact final HEAD because the platform and production console
 validity checks changed. Their IDE/artifact manifest must name 2026.2.3 and the tested final commit.
+
+Unit/PSI fixture JVMs explicitly run headless so macOS desktop registration does not
+prevent their execution; Starter/Driver remains a separate real UI process.
+The unit fixture sandbox excludes only the unrelated `com.intellij.modules.ultimate`
+startup wrapper (alongside the already documented Vue exclusion in Java/Kotlin fixtures).
+In 2026.2.3 its `Z.Z.Z.Z.Z` activity collides with a different platform class when
+Gradle flattens the SDK classpath; all 37 Java fixtures otherwise fail before their
+product assertions run. Database Tools and Java remain enabled, every fixture/assertion
+and strict test-logger check remains present. This aligns the fixture profile with
+Starter's existing no-license sandbox: its 2026.2.3 logs likewise show that wrapper
+disabled while real Database Tools scenarios run. Packaged process-level E2E remains
+strict and applicable to this change; neither fixture profile proves licensed Ultimate
+activation/startup. This is fixture compatibility, not a licensed-startup claim.
+Platform evidence owner #67 must remove this isolation when the SDK/test loader can
+preserve the two namespaces. The Java annotation and XML mapper-method fixtures permit
+VFS access only to their actual MyBatis dependency JAR, scoped to each fixture disposable, so they also work
+when the checkout/sandbox is outside the user's home directory.

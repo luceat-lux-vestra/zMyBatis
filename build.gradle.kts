@@ -4,6 +4,7 @@ import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 
 plugins {
     id("java") // Java support
@@ -249,6 +250,7 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
     testFramework(TestFrameworkType.Plugin.Java)
     plugins {
         disablePlugin("org.jetbrains.plugins.vue")
+        disablePlugin("com.intellij.modules.ultimate")
     }
     task {
         filter {
@@ -274,6 +276,7 @@ val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundar
     plugins {
         bundledPlugin("org.jetbrains.kotlin")
         disablePlugin("org.jetbrains.plugins.vue")
+        disablePlugin("com.intellij.modules.ultimate")
     }
     task {
         filter {
@@ -337,6 +340,23 @@ kover {
 tasks.withType<Test>().configureEach {
     systemProperty("LowMemoryWatcherManager.REGULAR_TRACKER_UPDATE_PERIOD_MS", "-1")
     systemProperty("intellij.platform.log.sync", "true")
+}
+
+// Unit fixtures share SDK classes through the Gradle test loader. IDEA 2026.2.3
+// reuses an obfuscated platform class name in the unrelated Ultimate startup
+// wrapper, which resolves to the wrong class in this flattened test environment.
+// Align fixtures with Starter's existing sandbox profile for this wrapper;
+// Database Tools remains enabled and packaged process-level E2E stays strict.
+tasks.named<PrepareSandboxTask>("prepareTestSandbox") {
+    disabledPlugins.add("com.intellij.modules.ultimate")
+}
+
+// Keep the unit/PSI fixtures independent of a desktop session on every host.
+// The separate Starter/Driver launcher retains its real UI process.
+tasks.withType<Test>().configureEach {
+    if (name != "integrationTest") {
+        systemProperty("java.awt.headless", "true")
+    }
 }
 
 tasks {
