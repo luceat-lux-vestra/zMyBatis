@@ -22,7 +22,7 @@ jobs:
   starterDriver:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Starter / Driver E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 75
     steps:
       - name: Maximize Build Space
