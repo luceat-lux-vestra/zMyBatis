@@ -31,10 +31,10 @@ sourceSets {
     }
 }
 
-val integrationTestImplementation by configurations.getting {
+val integrationTestImplementation = configurations.getByName("integrationTestImplementation") {
     extendsFrom(configurations.testImplementation.get())
 }
-val integrationTestRuntimeOnly by configurations.getting {
+val integrationTestRuntimeOnly = configurations.getByName("integrationTestRuntimeOnly") {
     extendsFrom(configurations.testRuntimeOnly.get())
 }
 
@@ -288,7 +288,7 @@ val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundar
 
 // Launch an actual IDE process with the exact buildPlugin archive installed. Keep this task
 // separate from `check`: #130 requires process-level evidence to remain independently visible.
-val integrationTest by intellijPlatformTesting.testIdeUi.register("integrationTest") {
+intellijPlatformTesting.testIdeUi.register("integrationTest") {
     task {
         dependsOn(verifyStarterSecurityGraph)
         val integrationTestSourceSet = sourceSets.getByName("integrationTest")
