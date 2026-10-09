@@ -437,7 +437,7 @@ class XmlSiblingBooleanIfPreparationTest {
             "<if test=\"other\"><if test=\"enabled\">#{id}</if></if>",
             "<if test=\"other != null\">#{id}</if>",
             "<if test=\"other\">\${table}</if>",
-            "<foreach collection=\"id\" item=\"item\">#{item}</foreach>",
+            "<foreach collection=\"id\" item=\"item\"><if test=\"other\">#{item}</if></foreach>",
             "<choose><when test=\"other\">#{id}</when></choose>",
         )) {
             val changed = fixture("SELECT 1<if test=\"enabled\">#{id}</if>$later")

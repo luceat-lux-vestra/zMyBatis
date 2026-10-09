@@ -24,10 +24,11 @@ import javax.xml.stream.XMLStreamReader
  * bounded trim forms with literal WHERE/SET prefixes share those wrapper limits. Native where/set
  * accept no attributes; trim accepts only the exact prefix/override pairs checked below.
  * Mapper metadata must separately prove every Boolean caller alias. This scanner discovers source
- * uses, never evaluates conditions or WHERE/SET trimming semantics. One bounded foreach may instead
- * be direct or a direct child of a where-role wrapper (set-role for UPDATE). UPDATE may combine
- * both roles around exactly one foreach; its other wrapper contains only static text/caller bindings.
- * Boolean-if/foreach composition and additional loops remain unsupported.
+ * uses, never evaluates conditions or WHERE/SET trimming semantics. One bounded foreach may be
+ * direct or a direct child of a where-role wrapper (set-role for UPDATE). A direct foreach may also
+ * coexist with flat direct Boolean-if siblings. UPDATE may combine both wrapper roles around exactly
+ * one foreach only when the other wrapper is static. Wrapped Boolean-if/foreach composition and
+ * additional loops remain unsupported.
  */
 object XmlStatementParameterContractFactory {
     private const val DEPENDENCY_PROVENANCE_PROBLEM = "xml-dependent-fragment-provenance-unsupported"
@@ -348,7 +349,10 @@ object XmlStatementParameterContractFactory {
                                 isUnqualifiedElement(reader) &&
                                 foreachDepth < 0 &&
                                 foreachDeclaration == null &&
-                                ifConditions.isEmpty()
+                                (
+                                    ifConditions.isEmpty() ||
+                                        (depth == targetDepth + 1 && wrappersSeen.isEmpty())
+                                    )
                             ) {
                                 val declaration = parseForeachDeclaration(reader)
                                     ?: return StatementScan.Failed(
@@ -364,7 +368,11 @@ object XmlStatementParameterContractFactory {
                                     (depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
                                         (wrapperDepth >= 0 && depth == wrapperDepth + 1)
                                     ) && localName == "if" &&
-                                isUnqualifiedElement(reader) && foreachDeclaration == null &&
+                                isUnqualifiedElement(reader) &&
+                                (
+                                    foreachDeclaration == null ||
+                                        (depth == targetDepth + 1 && wrappersSeen.isEmpty())
+                                    ) &&
                                 ifDepth < 0
                             ) {
                                 val condition = reader.getAttributeValue(null, "test")?.trim()

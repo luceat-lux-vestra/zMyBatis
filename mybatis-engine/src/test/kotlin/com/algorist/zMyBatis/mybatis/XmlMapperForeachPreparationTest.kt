@@ -50,6 +50,95 @@ import org.junit.Test
 
 class XmlMapperForeachPreparationTest {
     @Test
+    fun directBooleanIfAndForeachSiblingsMatchStockAcrossAllStatesAndOrders() {
+        val parameters = listOf(
+            parameter(0, "boolean", "enabled"),
+            parameter(1, "long", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids"),
+        )
+        val conditional = "<if test=\"enabled\"> + #{id,jdbcType=BIGINT}</if>"
+        val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\" open=\" + (\" separator=\" + \" close=\")\">#{item,jdbcType=BIGINT} + #{idx}</foreach>"
+
+        for (parts in listOf(listOf(conditional, loop), listOf(loop, conditional))) {
+            val fixture = fixture("SELECT #{id,jdbcType=BIGINT}" + parts.joinToString(" "), parameters)
+            for (enabled in listOf(false, true)) {
+                for (ids in listOf(emptyList<Long>(), listOf(7L, 9L))) {
+                    val execution = success(
+                        request(
+                            fixture,
+                            mapOf(
+                                0 to InputValue.BooleanValue(enabled),
+                                1 to integer(3),
+                                2 to InputValue.ListValue(ids.map(::integer)),
+                            ),
+                        ),
+                    )
+
+                    assertStockParity(
+                        fixture,
+                        mapOf("enabled" to enabled, "id" to 3L, "ids" to ids),
+                        execution,
+                    )
+                    val callerBindings = execution.orderedBindings.filter {
+                        it.origin is PreparedBindingOrigin.CallerInput
+                    }
+                    val additionalBindings = execution.orderedBindings.filter {
+                        it.origin is PreparedBindingOrigin.MyBatisAdditional
+                    }
+                    assertEquals(if (enabled) 2 else 1, callerBindings.size)
+                    assertEquals(ids.size * 2, additionalBindings.size)
+                    assertEquals(
+                        List(ids.size) { listOf("item", "idx") }.flatten(),
+                        additionalBindings.map {
+                            (it.origin as PreparedBindingOrigin.MyBatisAdditional).internalBinding.name
+                        },
+                    )
+                    assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
+                    assertEquals(
+                        MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
+                        (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind,
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun falseBooleanSiblingCannotHideUnsupportedNestedForeachSource() {
+        val parameters = listOf(
+            parameter(0, "boolean", "enabled"),
+            parameter(1, "long", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids"),
+        )
+        val supported = fixture(
+            "SELECT #{id} <if test=\"enabled\"> + #{id}</if> " +
+                "<foreach collection=\"ids\" item=\"item\" separator=\",\">#{item}</foreach>",
+            parameters,
+        )
+        val authentic = contract(supported)
+        val changed = fixture(
+            "SELECT #{id} <if test=\"enabled\">" +
+                "<foreach collection=\"ids\" item=\"item\">#{item}</foreach></if>",
+            parameters,
+        )
+
+        val failure = XmlMapperPreparationEngine.prepare(
+            request(
+                changed,
+                mapOf(
+                    0 to InputValue.BooleanValue(false),
+                    1 to integer(3),
+                    2 to listValue(7, 9),
+                ),
+                authentic,
+            ),
+        ) as PreparationResult.Failed
+
+        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, failure.failure.kind)
+        assertEquals("xml-foreach-preparation-source-unsupported", failure.failure.code)
+    }
+
+    @Test
     fun combinedUpdateWrappersWithOneLoopMatchStockSqlMappingsAndValues() {
         val parameters = listOf(parameter(0, "long", "status"), parameter(1, "java.util.List<java.lang.Long>", "ids"))
         for ((setOpen, setClose) in setWrappers()) {
