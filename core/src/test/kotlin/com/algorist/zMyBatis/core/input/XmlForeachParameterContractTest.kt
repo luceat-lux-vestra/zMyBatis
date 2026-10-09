@@ -18,6 +18,45 @@ import org.junit.Test
 
 class XmlForeachParameterContractTest {
     @Test
+    fun directBooleanIfAndForeachSiblingsRetainIndependentAuthoritiesInBothOrders() {
+        val conditional = "<if test=\"enabled\">#{id}</if>"
+        val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\" separator=\",\">#{item},#{idx}</foreach>"
+        for (parts in listOf(listOf(conditional, loop), listOf(loop, conditional))) {
+            val graph = graph("SELECT #{id}, " + parts.joinToString(", "))
+            val contract = XmlMapperMethodParameterContractFactory.build(
+                graph,
+                mapper(
+                    graph,
+                    listOf(
+                        parameter(0, "boolean", "enabled", "enabled"),
+                        parameter(1, "long", "id", "id"),
+                        parameter(2, "java.util.List<java.lang.Long>", "ids", "ids"),
+                    ),
+                ),
+            )
+
+            assertFalse(parts.toString(), contract.isPreparationBlocked)
+            assertEquals(setOf("enabled", "id", "ids"), contract.aliases.map { it.name }.toSet())
+            assertEquals(listOf("item", "idx"), contract.internalBindings.map { it.name })
+
+            val conditions = contract.requirements.flatMap { it.provenance.evidence }
+                .filterIsInstance<InputEvidence.OgnlExpression>()
+            assertEquals(listOf("enabled"), conditions.map { it.expression }.distinct())
+
+            val collections = contract.requirements.flatMap { it.provenance.evidence }
+                .filterIsInstance<InputEvidence.ForeachCollection>()
+            assertEquals(listOf("ids"), collections.map { it.expression }.distinct())
+
+            val placeholders = contract.requirements.flatMap { it.provenance.evidence }
+                .filterIsInstance<InputEvidence.Placeholder>()
+            assertEquals(2, placeholders.count { it.expression == "id" })
+            assertEquals(1, placeholders.count {
+                it.expression == "id" && it.enclosingOgnlExpression == "enabled"
+            })
+        }
+    }
+
+    @Test
     fun updateSetAndWhereShareOneForeachWithoutInventingStaticWrapperLocals() {
         val loop = "<foreach collection=\"param2\" item=\"item\" index=\"idx\" separator=\",\">#{item},#{idx}</foreach>"
         for (set in listOf("<set>%s</set>", "<trim prefix=\"SET\" suffixOverrides=\",\">%s</trim>")) {
