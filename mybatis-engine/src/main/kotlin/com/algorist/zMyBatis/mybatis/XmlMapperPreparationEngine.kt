@@ -146,14 +146,21 @@ object XmlMapperPreparationEngine {
             is XmlForeachPreparationAdmission.Result.Failed -> return PreparationResult.Failed(admission.failure)
             XmlForeachPreparationAdmission.Result.NotPresent -> null
         }
-        val booleanIf = source.mapperMethod?.let { mapper ->
-            when (val admission = XmlBooleanIfPreparationAdmission.inspect(
-                source.sourceGraph, mapper, request.parameterContract,
-            )) {
-                is XmlBooleanIfPreparationAdmission.Result.Admitted -> admission
-                is XmlBooleanIfPreparationAdmission.Result.Failed -> return PreparationResult.Failed(admission.failure)
-                XmlBooleanIfPreparationAdmission.Result.NotPresent -> null
+        val hasBooleanIfEvidence = request.parameterContract.requirements.any { requirement ->
+            requirement.provenance.evidence.any { it is InputEvidence.OgnlExpression }
+        }
+        val booleanIf = if (hasBooleanIfEvidence) {
+            source.mapperMethod?.let { mapper ->
+                when (val admission = XmlBooleanIfPreparationAdmission.inspect(
+                    source.sourceGraph, mapper, request.parameterContract,
+                )) {
+                    is XmlBooleanIfPreparationAdmission.Result.Admitted -> admission
+                    is XmlBooleanIfPreparationAdmission.Result.Failed -> return PreparationResult.Failed(admission.failure)
+                    XmlBooleanIfPreparationAdmission.Result.NotPresent -> null
+                }
             }
+        } else {
+            null
         }
 
         val foreachRequirementIds = foreach?.collectionRequirementIds.orEmpty()
