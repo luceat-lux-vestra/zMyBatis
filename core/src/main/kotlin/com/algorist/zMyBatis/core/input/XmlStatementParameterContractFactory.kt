@@ -25,7 +25,8 @@ import javax.xml.stream.XMLStreamReader
  * accept no attributes; trim accepts only the exact prefix/override pairs checked below.
  * Mapper metadata must separately prove every Boolean caller alias. This scanner discovers source
  * uses, never evaluates conditions or WHERE/SET trimming semantics. One bounded foreach may instead
- * be the direct child of the sole where-role wrapper, without any if/set/other dynamic nodes.
+ * be the direct child of the sole where-role wrapper or, for UPDATE, the sole set-role wrapper,
+ * without any Boolean-if, multiple-wrapper or other dynamic composition.
  */
 object XmlStatementParameterContractFactory {
     private const val DEPENDENCY_PROVENANCE_PROBLEM = "xml-dependent-fragment-provenance-unsupported"
@@ -339,7 +340,7 @@ object XmlStatementParameterContractFactory {
                             }
                             if (
                                 ((depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
-                                    (activeWrapperKind == "where" && depth == wrapperDepth + 1)) &&
+                                    (activeWrapperKind != null && wrappersSeen.size == 1 && depth == wrapperDepth + 1)) &&
                                 localName == "foreach" &&
                                 isUnqualifiedElement(reader) &&
                                 foreachDepth < 0 &&

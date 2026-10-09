@@ -29,6 +29,26 @@ import org.junit.Test
 
 class XmlForeachPreparationAdmissionTest {
     @Test
+    fun updateSetRebuildsCompleteMapperAndRejectsWrapperOrLocalAuthorityDrift() {
+        val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\">v=#{item},i=#{idx}</foreach>"
+        for ((open, close) in listOf("<set>" to "</set>", "<trim prefix=\"SET\" suffixOverrides=\",\">" to "</trim>")) {
+            val body = "UPDATE t $open$loop$close WHERE id=1"
+            val fixture = fixture(body, listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", "ids")), StatementKind.UPDATE)
+            val original = contract(fixture)
+            val admitted = XmlForeachPreparationAdmission.inspect(fixture.graph, fixture.mapper, original) as XmlForeachPreparationAdmission.Result.Admitted
+            assertEquals(setOf(original.requirements.single().id), admitted.collectionRequirementIds)
+            assertEquals(mapOf("item" to InternalBindingKind.FOREACH_ITEM, "idx" to InternalBindingKind.FOREACH_INDEX), admitted.locals)
+            assertFailure(XmlForeachPreparationAdmission.inspect(fixture.graph, null, original), PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-mapper-authority-unproven")
+            val local = original.internalBindings.first()
+            val forged = copyContract(original, internalBindings = listOf(InternalBinding("forged", local.kind, local.provenance)) + original.internalBindings.drop(1))
+            assertFailure(XmlForeachPreparationAdmission.inspect(fixture.graph, fixture.mapper, forged), PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-preparation-source-contract-mismatch")
+            for (changed in listOf(body.replace(loop, "$loop<if test=\"enabled\">v=#{id},</if>"), body.replace(open, if (open == "<set>") "<set bogus=\"x\">" else "<trim prefix=\"SET\" suffixOverrides=\";\">"))) {
+                assertFailure(XmlForeachPreparationAdmission.inspect(graph(changed, XML_REVISION, kind = StatementKind.UPDATE), fixture.mapper, original), PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-source-unsupported")
+            }
+        }
+    }
+
+    @Test
     fun completeMapperIdentityAndRevisionCannotBeReplacedByContractEvidence() {
         val fixture = fixture("SELECT <foreach collection=\"ids\" item=\"item\">#{item}</foreach>", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", "ids")))
         val original = contract(fixture)
@@ -346,8 +366,9 @@ class XmlForeachPreparationAdmissionTest {
     private fun fixture(
         body: String,
         parameters: List<JavaMethodParameterMetadata>,
+        kind: StatementKind = StatementKind.SELECT,
     ): Fixture {
-        val graph = graph(body, XML_REVISION)
+        val graph = graph(body, XML_REVISION, kind = kind)
         return Fixture(
             graph,
             XmlMapperMethodCapture(
@@ -363,20 +384,22 @@ class XmlForeachPreparationAdmissionTest {
         body: String,
         revision: SourceRevision,
         statementName: String = "find",
+        kind: StatementKind = StatementKind.SELECT,
     ): StatementSourceGraph {
         val statementId = XmlStatementId(XML_FILE, "example.Mapper", statementName)
-        val declaration = "<select id=\"$statementName\">$body</select>"
+        val element = kind.name.lowercase()
+        val declaration = "<$element id=\"$statementName\">$body</$element>"
         val xml = """
             <mapper namespace="example.Mapper">
               $declaration
             </mapper>
         """.trimIndent()
-        val start = xml.indexOf("<select id=\"$statementName\">")
+        val start = xml.indexOf("<$element id=\"$statementName\">")
         val end = xml.indexOf('>', start) + 1
         return StatementSourceGraph(
             rootStatement = CapturedStatement(
                 id = statementId,
-                kind = StatementKind.SELECT,
+                kind = kind,
                 sourceRange = SourceRange(start, end),
             ),
             sourceSnapshots = listOf(SourceSnapshot(XML_FILE, revision, xml)),

@@ -18,6 +18,58 @@ import org.junit.Test
 
 class XmlForeachParameterContractTest {
     @Test
+    fun updateSetAndLiteralTrimRetainCallerCollectionAndLocalAuthority() {
+        val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\" separator=\",\">v=#{item},seq=#{idx}</foreach>"
+        for ((open, close) in listOf(
+            "<set>" to "</set>",
+            "<trim prefix=\"SET\" suffixOverrides=\",\">" to "</trim>",
+            "<trim suffixOverrides=\"&#44;\" prefix=\"&#83;ET\">" to "</trim>",
+        )) {
+            val graph = graph("UPDATE t $open base=#{status}, $loop, tail=#{status}, $close WHERE id=#{status}", StatementKind.UPDATE)
+            val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper(graph, listOf(
+                parameter(0, "long", "status", "status"),
+                parameter(1, "java.util.List<java.lang.Long>", "ids", "ids"),
+            )))
+            assertFalse(open, contract.isPreparationBlocked)
+            assertEquals(listOf("status", "ids"), contract.aliases.map { it.name })
+            assertEquals(listOf("item", "idx"), contract.internalBindings.map { it.name })
+            assertEquals(listOf("status", "status", "status"), contract.requirements.flatMap { it.provenance.evidence }.filterIsInstance<InputEvidence.Placeholder>().map { it.expression })
+            assertEquals(listOf("ids"), contract.requirements.flatMap { it.provenance.evidence }.filterIsInstance<InputEvidence.ForeachCollection>().map { it.expression })
+        }
+    }
+
+    @Test
+    fun foreachSetRequiresUpdateAndOneExactWrapperWithoutComposition() {
+        val loop = "<foreach collection=\"ids\" item=\"item\">v=#{item},</foreach>"
+        for (kind in StatementKind.entries.filterNot { it == StatementKind.UPDATE }) {
+            for (body in listOf("<set>$loop</set>", "<trim prefix=\"SET\" suffixOverrides=\",\">$loop</trim>")) {
+                val contract = XmlStatementParameterContractFactory.build(graph(body, kind))
+                assertTrue("$kind: $body", contract.isPreparationBlocked)
+                assertTrue(contract.requirements.isEmpty() && contract.aliases.isEmpty())
+            }
+        }
+        for (body in listOf(
+            "<set/>", "<set>v=1,</set>", "<set bogus=\"x\">$loop</set>",
+            "<set xmlns=\"urn:unsupported\">$loop</set>",
+            """<trim prefix="SET" suffixOverrides=", ">$loop</trim>""",
+            "<trim prefix=\"SET\" suffixOverrides=\",\" suffix=\"tail\">$loop</trim>",
+            "<set>$loop$loop</set>", "<set><set>$loop</set></set>",
+            "<set>$loop<if test=\"enabled\">v=#{status},</if></set>",
+            "<set><if test=\"enabled\">v=#{status},</if>$loop</set>",
+            "<set>$loop</set><where><if test=\"enabled\">AND 1=1</if></where>",
+            "<where><if test=\"enabled\">AND 1=1</if></where><set>$loop</set>",
+            "<set>$loop</set><trim prefix=\"SET\" suffixOverrides=\",\">$loop</trim>",
+            "<set>$loop</set> WHERE id=#{item}",
+            "<set>$loop<bind name=\"x\" value=\"1\"/></set>",
+            "<set>$loop<include refid=\"fragment\"/></set>",
+        )) {
+            val contract = XmlStatementParameterContractFactory.build(graph(body, StatementKind.UPDATE))
+            assertTrue(body, contract.isPreparationBlocked)
+            assertTrue(body, contract.requirements.isEmpty() && contract.aliases.isEmpty())
+        }
+    }
+
+    @Test
     fun whereAndLiteralTrimRetainCollectionAndLocalAuthority() {
         val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\" open=\"(\" separator=\",\" close=\")\">#{idx},#{item}</foreach>"
         for ((open, close) in listOf(
@@ -76,7 +128,6 @@ class XmlForeachParameterContractTest {
             "<where><foreach collection=\"ids\" item=\"item\">#{item.id}</foreach></where>",
             "<where><foreach collection=\"ids\" item=\"item\">${raw("item")}</foreach></where>",
             "<where>$loop AND id = #{item}</where>",
-            "<set>$loop</set>", "<trim prefix=\"SET\" suffixOverrides=\",\">$loop</trim>",
             "<set>$condition</set><where>$loop</where>",
             "<where>$loop</where><set>$condition</set>",
         )
