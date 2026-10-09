@@ -471,8 +471,6 @@ class XmlBooleanIfParameterContractTest {
     fun nestedMixedOrComplexDynamicSourcesCannotLeakPartialRequirements() {
         val bodies = listOf(
             "<if test=\"enabled\"><if test=\"other\">#{id}</if></if>",
-            "<where><if test=\"enabled\">#{id}</if><foreach collection=\"ids\" item=\"item\">#{item}</foreach></where>",
-            "<where><foreach collection=\"ids\" item=\"item\">#{item}</foreach><if test=\"enabled\">#{id}</if></where>",
             "<if test=\"enabled\"><include refid=\"fragment\"/></if>",
             "<if test=\"enabled\" extra=\"ignored\">#{id}</if>",
             "<if xmlns:x=\"urn:unsupported\" x:test=\"enabled\">#{id}</if>",
@@ -485,6 +483,33 @@ class XmlBooleanIfParameterContractTest {
             assertTrue(body, contract.isPreparationBlocked)
             assertTrue(body, contract.requirements.isEmpty())
             assertTrue(body, contract.aliases.isEmpty())
+        }
+    }
+
+    @Test
+    fun selectWhereMixedSourcesRequireFullCollectionMapperAuthority() {
+        val conditional = """<if test="enabled">AND flag = #{id}</if>"""
+        val loop = """<foreach collection="ids" item="item">#{item}</foreach>"""
+        for (parts in listOf(listOf(conditional, loop), listOf(loop, conditional))) {
+            val graph = graph("SELECT #{id} <where>${parts.joinToString(" ")}</where>")
+            val missing = build(graph, parameter(0, "long", "id"), parameter(1, "boolean", "enabled"))
+            assertTrue(missing.isPreparationBlocked)
+            assertTrue(missing.blockingProblems.any { it.code == "xml-caller-input-authority-unproven" })
+            assertTrue(missing.aliases.none { it.name == "ids" })
+
+            val complete = build(
+                graph,
+                parameter(0, "long", "id"),
+                parameter(1, "boolean", "enabled"),
+                parameter(2, "java.util.List<java.lang.Long>", "ids"),
+            )
+            assertFalse(complete.isPreparationBlocked)
+            assertTrue(complete.internalBindings.any {
+                it.kind == InternalBindingKind.FOREACH_ITEM && it.name == "item"
+            })
+            assertTrue(complete.requirements.any { requirement ->
+                requirement.provenance.evidence.any { it is InputEvidence.ForeachCollection }
+            })
         }
     }
 
