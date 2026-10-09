@@ -50,6 +50,64 @@ import org.junit.Test
 
 class XmlMapperForeachPreparationTest {
     @Test
+    fun strippingEveryForeachRequirementCannotSkipAdmissionEvenForAnEmptyLoop() {
+        val fixture = fixture("SELECT 1 <foreach collection=\"ids\" item=\"item\">#{item}</foreach>", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
+        val original = contract(fixture)
+        val stripped = ParameterContract(original.statementId, emptyList(), emptyList(), emptyList(), emptyList(), original.sourceRevisions)
+        val prepared = XmlMapperPreparationEngine.prepare(request(fixture, emptyMap(), stripped))
+        assertTrue(prepared is PreparationResult.Failed)
+        assertEquals("xml-foreach-preparation-source-contract-mismatch", (prepared as PreparationResult.Failed).failure.code)
+    }
+
+    @Test
+    fun missingCompleteMapperCaptureRefusesForeachEvenWithMatchingSourceRevision() {
+        val fixture = fixture("SELECT <foreach collection=\"ids\" item=\"item\">#{item}</foreach>", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
+        for (items in listOf(listValue(), listValue(7))) {
+            val prepared = XmlMapperPreparationEngine.prepare(request(fixture, mapOf(0 to items), includeMapperCapture = false))
+            assertTrue(prepared is PreparationResult.Failed)
+            assertEquals("xml-foreach-preparation-mapper-authority-unproven", (prepared as PreparationResult.Failed).failure.code)
+        }
+    }
+
+    @Test
+    fun unusedMapperParametersCanSuppressCollectionAliasesOrShadowLocals() {
+        for ((open, close) in wrappers() + ("" to "")) {
+            val fixture = fixture("SELECT 1 $open<foreach collection=\"param1\" item=\"item\">#{item}</foreach>$close", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
+            for (alias in listOf("param1", "item")) {
+                val mapper = XmlMapperMethodCapture(fixture.mapper.statementId, fixture.mapper.mapperSource, fixture.mapper.methodSourceRange,
+                    fixture.mapper.parameters + parameter(1, "long", alias))
+                val changed = fixture.copy(mapper = mapper)
+                assertTrue(contract(changed).isPreparationBlocked)
+                for (items in listOf(listValue(), listValue(7))) {
+                    val prepared = XmlMapperPreparationEngine.prepare(request(changed, mapOf(0 to items), contract(fixture)))
+                    assertTrue(prepared is PreparationResult.Failed)
+                    assertEquals("xml-foreach-preparation-mapper-unsupported", (prepared as PreparationResult.Failed).failure.code)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun coherentForgedMapperEvidenceCannotAuthorizeCollectionOrOutsideCallerValues() {
+        val body = "SELECT #{status}, <foreach collection=\"param2\" item=\"item\">#{item}</foreach>, #{status}"
+        val fixture = fixture(body, listOf(parameter(0, "long", "status"), parameter(1, "java.util.List<java.lang.Long>", "ids")))
+        val variants = listOf(
+            listOf(parameter(0, "java.lang.String", "status"), parameter(1, "java.util.List<java.lang.Long>", "ids")),
+            listOf(parameter(0, "long", "status"), parameter(1, "java.util.List<java.lang.String>", "ids")),
+            listOf(parameter(0, "long", "status"), parameter(1, "java.util.List<java.lang.Long>", "param2")),
+        )
+        for ((index, parameters) in variants.withIndex()) {
+            val forged = contract(fixture(body, parameters))
+            assertTrue(!forged.isPreparationBlocked)
+            val values = mapOf(0 to if (index == 0) InputValue.Text("different type") else integer(3),
+                1 to if (index == 1) InputValue.ListValue(listOf(InputValue.Text("different element type"))) else listValue(7))
+            val prepared = XmlMapperPreparationEngine.prepare(request(fixture, values, forged))
+            assertTrue(prepared is PreparationResult.Failed)
+            assertEquals("xml-foreach-preparation-source-contract-mismatch", (prepared as PreparationResult.Failed).failure.code)
+        }
+    }
+
+    @Test
     fun wrappedForeachPreservesStockSqlOrderMetadataAndValues() {
         val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\" open=\"AND id IN (\" close=\")\" separator=\",\">#{idx},#{item,jdbcType=BIGINT},#{item}</foreach>"
         for ((open, close) in wrappers()) {
@@ -365,7 +423,7 @@ class XmlMapperForeachPreparationTest {
             listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")),
         )
         val request = request(fixture, mapOf(0 to listValue(7)))
-        val admission = XmlForeachPreparationAdmission.inspect(fixture.graph, request.parameterContract) as XmlForeachPreparationAdmission.Result.Admitted
+        val admission = XmlForeachPreparationAdmission.inspect(fixture.graph, fixture.mapper, request.parameterContract) as XmlForeachPreparationAdmission.Result.Admitted
         val mapping = MyBatisParameterMappingSnapshot(
             "__frch_item_0", true, MyBatisGeneratedLocalSnapshot("item", InternalBindingKind.FOREACH_ITEM, 0),
             MyBatisRuntimeValueSnapshot.Ready(7L), "java.lang.Long", null, "org.apache.ibatis.type.LongTypeHandler", "IN", null,
@@ -481,7 +539,7 @@ class XmlMapperForeachPreparationTest {
         is PreparationResult.Failed -> throw AssertionError("${result.failure.kind}: ${result.failure.code} (${result.failure.diagnosticType})")
     }
 
-    private fun request(fixture: Fixture, values: Map<Int, InputValue>, contract: ParameterContract = contract(fixture)): MyBatisPreparationRequest {
+    private fun request(fixture: Fixture, values: Map<Int, InputValue>, contract: ParameterContract = contract(fixture), includeMapperCapture: Boolean = true): MyBatisPreparationRequest {
         val provided = contract.requirements.map { requirement ->
             val index = requirement.provenance.evidence.filterIsInstance<InputEvidence.MapperMethodParameter>().first().index
             ProvidedInput(requirement.id, values.getValue(index), ExecutionInputOrigin.USER_ENTERED)
@@ -490,7 +548,8 @@ class XmlMapperForeachPreparationTest {
         assertTrue("Input validation: $validated; contract problems: ${contract.blockingProblems}", validated is InputEnvironmentResult.Success)
         val environment = (validated as InputEnvironmentResult.Success).environment
         return (MyBatisPreparationRequest.create(
-            XmlMapperPreparationSource(fixture.graph, additionalAuthoritySnapshots = listOf(fixture.mapper.mapperSource)),
+            if (includeMapperCapture) XmlMapperPreparationSource(fixture.graph, mapperMethod = fixture.mapper)
+            else XmlMapperPreparationSource(fixture.graph, additionalAuthoritySnapshots = listOf(fixture.mapper.mapperSource)),
             contract, environment,
         ) as PreparationRequestResult.Ready).request
     }
