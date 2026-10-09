@@ -445,11 +445,15 @@ startup wrapper (alongside the already documented Vue exclusion in Java/Kotlin f
 In 2026.2.3 its `Z.Z.Z.Z.Z` activity collides with a different platform class when
 Gradle flattens the SDK classpath; all 37 Java fixtures otherwise fail before their
 product assertions run. Database Tools and Java remain enabled, every fixture/assertion
-and strict test-logger check remains present. This aligns the fixture profile with
-Starter's existing no-license sandbox: its 2026.2.3 logs likewise show that wrapper
-disabled while real Database Tools scenarios run. Packaged process-level E2E remains
-strict and applicable to this change; neither fixture profile proves licensed Ultimate
-activation/startup. This is fixture compatibility, not a licensed-startup claim.
+and strict test-logger check remains present. This unit-fixture profile does not prove
+licensed Ultimate activation/startup. Packaged process-level E2E independently retains
+the full IDE plugin graph through Starter's `doNotDisablePaidPluginsOnStartup()`.
+Otherwise 2026.2.3 initially disables Ultimate and its normal trial activation dynamically
+re-enables it: observed scheme reloads raced project-tree color reads and raised
+`ConcurrentModificationException` before the product assertions. Preserving the initial
+graph avoids that unnecessary reconfiguration; the normal license/trial flow and strict
+exception checks remain active, with no new error exemption or retry. Broader licensing,
+dynamic-plugin and DataGrip evidence remains owned by #67.
 Platform evidence owner #67 must remove this isolation when the SDK/test loader can
 preserve the two namespaces. The Java annotation and XML mapper-method fixtures permit
 VFS access only to their actual MyBatis dependency JAR, scoped to each fixture disposable, so they also work

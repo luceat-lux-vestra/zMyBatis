@@ -345,8 +345,8 @@ tasks.withType<Test>().configureEach {
 // Unit fixtures share SDK classes through the Gradle test loader. IDEA 2026.2.3
 // reuses an obfuscated platform class name in the unrelated Ultimate startup
 // wrapper, which resolves to the wrong class in this flattened test environment.
-// Align fixtures with Starter's existing sandbox profile for this wrapper;
-// Database Tools remains enabled and packaged process-level E2E stays strict.
+// Database Tools remains enabled; packaged process-level E2E separately tests
+// the full IDE plugin graph with its normal plugin classloader boundaries.
 tasks.named<PrepareSandboxTask>("prepareTestSandbox") {
     disabledPlugins.add("com.intellij.modules.ultimate")
 }

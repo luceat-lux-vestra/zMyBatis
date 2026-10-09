@@ -418,6 +418,9 @@ class ZMyBatisStarterDriverE2ETest {
             testName,
             TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(projectDir)).useRelease(IDE_RELEASE),
         ).apply {
+            // Keep the licensed feature graph stable across Starter's activation flow.
+            // A disable/enable cycle races scheme reload with project-tree color reads in 2026.2.3.
+            doNotDisablePaidPluginsOnStartup()
             System.getenv("LICENSE_KEY")
                 ?.takeIf { it.isNotBlank() }
                 ?.let { setLicense(it) }
