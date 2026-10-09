@@ -71,6 +71,15 @@ jobs:
             echo "plugin_sha256=$artifact_sha256"
           } | tee e2e-artifact-manifest.txt
 
+      - name: Install ARM64 EGL runtime for IntelliJ Skiko
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "aarch64"
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libegl1
+          ldconfig -p | grep -F 'libEGL.so.1'
+
       - name: Run Starter / Driver E2E
         shell: bash
         run: |
