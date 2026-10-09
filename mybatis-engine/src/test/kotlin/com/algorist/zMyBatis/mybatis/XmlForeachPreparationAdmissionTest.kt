@@ -114,7 +114,10 @@ class XmlForeachPreparationAdmissionTest {
                     XmlForeachPreparationAdmission.inspect(fixture.graph, fixture.mapper, forged),
                     PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-preparation-source-contract-mismatch",
                 )
-                val missingBoolean = fixture.copy(mapper = fixture.mapper.copy(parameters = parameters.drop(1)))
+                val missingBoolean = fixture.copy(mapper = XmlMapperMethodCapture(
+                    fixture.mapper.statementId, fixture.mapper.mapperSource, fixture.mapper.methodSourceRange,
+                    parameters.filterNot { it.index == 0 },
+                ))
                 assertFailure(
                     XmlForeachPreparationAdmission.inspect(missingBoolean.graph, missingBoolean.mapper, authentic),
                     PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-mapper-unsupported",
