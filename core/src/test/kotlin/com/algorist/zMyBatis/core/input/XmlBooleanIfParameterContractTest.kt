@@ -471,8 +471,8 @@ class XmlBooleanIfParameterContractTest {
     fun nestedMixedOrComplexDynamicSourcesCannotLeakPartialRequirements() {
         val bodies = listOf(
             "<if test=\"enabled\"><if test=\"other\">#{id}</if></if>",
-            "<if test=\"enabled\">#{id}</if><foreach collection=\"ids\" item=\"id\">#{id}</foreach>",
-            "<foreach collection=\"ids\" item=\"id\">#{id}</foreach><if test=\"enabled\">#{id}</if>",
+            "<where><if test=\"enabled\">#{id}</if><foreach collection=\"ids\" item=\"item\">#{item}</foreach></where>",
+            "<where><foreach collection=\"ids\" item=\"item\">#{item}</foreach><if test=\"enabled\">#{id}</if></where>",
             "<if test=\"enabled\"><include refid=\"fragment\"/></if>",
             "<if test=\"enabled\" extra=\"ignored\">#{id}</if>",
             "<if xmlns:x=\"urn:unsupported\" x:test=\"enabled\">#{id}</if>",
