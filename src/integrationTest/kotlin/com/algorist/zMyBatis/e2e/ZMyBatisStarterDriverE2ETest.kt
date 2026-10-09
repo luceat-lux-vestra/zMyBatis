@@ -60,7 +60,10 @@ interface JTextComponentRemote {
     fun getText(): String
 }
 
-@Remote("com.intellij.platform.trialPromotion.common.TrialStateService")
+@Remote(
+    "com.intellij.platform.trialPromotion.common.TrialStateService",
+    plugin = "com.intellij/intellij.platform.trialPromotion.common",
+)
 interface TrialStateServiceRemote {
     fun getTrialAvailable(): TrialAvailabilityRemote
 }
