@@ -75,12 +75,58 @@ class XmlForeachPreparationAdmissionTest {
             val local = original.internalBindings.first()
             val forged = copyContract(original, internalBindings = listOf(InternalBinding("forged", local.kind, local.provenance)) + original.internalBindings.drop(1))
             assertFailure(XmlForeachPreparationAdmission.inspect(fixture.graph, fixture.mapper, forged), PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-preparation-source-contract-mismatch")
-            for (changed in listOf(body.replace(loop, "$loop<if test=\"enabled\">v=#{id},</if>"), body.replace(open, if (open == "<set>") "<set bogus=\"x\">" else "<trim prefix=\"SET\" suffixOverrides=\";\">"))) {
-                assertFailure(XmlForeachPreparationAdmission.inspect(graph(changed, XML_REVISION, kind = StatementKind.UPDATE), fixture.mapper, original), PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-source-unsupported")
-            }
+            val missingCaller = body.replace(loop, "$loop<if test=\"enabled\">v=#{id},</if>")
+            assertFailure(
+                XmlForeachPreparationAdmission.inspect(graph(missingCaller, XML_REVISION, kind = StatementKind.UPDATE), fixture.mapper, original),
+                PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-mapper-unsupported",
+            )
+            val malformed = body.replace(open, if (open == "<set>") "<set bogus=\"x\">" else "<trim prefix=\"SET\" suffixOverrides=\";\">")
+            assertFailure(
+                XmlForeachPreparationAdmission.inspect(graph(malformed, XML_REVISION, kind = StatementKind.UPDATE), fixture.mapper, original),
+                PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-source-unsupported",
+            )
         }
     }
 
+    @Test
+    fun updateSingleSetMixedAdmissionRebuildsMapperAndRejectsForgedConditionOrLocals() {
+        val loop = """<foreach collection="ids" item="item" index="idx">v=#{item},ord=#{idx},</foreach>"""
+        val condition = """<if test="enabled">status=#{id},</if>"""
+        val parameters = listOf(
+            parameter(0, "boolean", "enabled", "enabled"),
+            parameter(1, "long", "id", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids", "ids"),
+        )
+        for ((open, close) in listOf("<set>" to "</set>", """<trim prefix="SET" suffixOverrides=",">""" to "</trim>")) {
+            for (bodyParts in listOf(listOf(condition, loop), listOf(loop, condition))) {
+                val body = "UPDATE t $open" + bodyParts.joinToString(" ") + "$close WHERE row_id=#{id}"
+                val fixture = fixture(body, parameters, StatementKind.UPDATE)
+                val authentic = contract(fixture)
+                assertTrue(!authentic.isPreparationBlocked)
+                val admitted = XmlForeachPreparationAdmission.inspect(fixture.graph, fixture.mapper, authentic) as XmlForeachPreparationAdmission.Result.Admitted
+                assertEquals(setOf(authentic.requirements.single { it.id.value == "xml-java-param:2" }.id), admitted.collectionRequirementIds)
+                assertEquals(mapOf("item" to InternalBindingKind.FOREACH_ITEM, "idx" to InternalBindingKind.FOREACH_INDEX), admitted.locals)
+                val local = authentic.internalBindings.first()
+                val forged = copyContract(authentic, internalBindings = listOf(
+                    InternalBinding("forged", local.kind, local.provenance),
+                ) + authentic.internalBindings.drop(1))
+                assertFailure(
+                    XmlForeachPreparationAdmission.inspect(fixture.graph, fixture.mapper, forged),
+                    PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-preparation-source-contract-mismatch",
+                )
+                val missingBoolean = fixture.copy(mapper = fixture.mapper.copy(parameters = parameters.drop(1)))
+                assertFailure(
+                    XmlForeachPreparationAdmission.inspect(missingBoolean.graph, missingBoolean.mapper, authentic),
+                    PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-mapper-unsupported",
+                )
+                val swapped = body.replace("status=#{id}", "status=1")
+                assertFailure(
+                    XmlForeachPreparationAdmission.inspect(graph(swapped, XML_REVISION, kind = StatementKind.UPDATE), fixture.mapper, authentic),
+                    PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-preparation-source-contract-mismatch",
+                )
+            }
+        }
+    }
     @Test
     fun completeMapperIdentityAndRevisionCannotBeReplacedByContractEvidence() {
         val fixture = fixture("SELECT <foreach collection=\"ids\" item=\"item\">#{item}</foreach>", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids", "ids")))
