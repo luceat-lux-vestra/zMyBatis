@@ -116,7 +116,7 @@ class XmlForeachPreparationAdmissionTest {
                 )
                 val missingBoolean = fixture.copy(mapper = XmlMapperMethodCapture(
                     fixture.mapper.statementId, fixture.mapper.mapperSource, fixture.mapper.methodSourceRange,
-                    parameters.filterNot { it.index == 0 },
+                    listOf(parameter(0, "boolean", "other", "other"), parameters[1], parameters[2]),
                 ))
                 assertFailure(
                     XmlForeachPreparationAdmission.inspect(missingBoolean.graph, missingBoolean.mapper, authentic),
