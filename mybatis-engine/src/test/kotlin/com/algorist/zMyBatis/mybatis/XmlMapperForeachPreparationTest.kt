@@ -103,6 +103,99 @@ class XmlMapperForeachPreparationTest {
         }
     }
 
+
+    @Test
+    fun selectWhereMixedSiblingsMatchStockForAllOrdersAndStates() {
+        val parameters = listOf(
+            parameter(0, "boolean", "enabled"),
+            parameter(1, "long", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids"),
+        )
+        val conditional = """<if test="enabled"> OR flag = #{id,jdbcType=BIGINT}</if>"""
+        val loop = """<foreach collection="ids" item="item" index="idx" open="AND (id, ord) IN (" separator="," close=")">(#{item,jdbcType=BIGINT}, #{idx})</foreach>"""
+        for ((open, close) in wrappers()) {
+            for (parts in listOf(listOf(conditional, loop), listOf(loop, conditional))) {
+                val fixture = fixture("SELECT #{id} $open${parts.joinToString(" ")}$close", parameters)
+                for (enabled in listOf(false, true)) {
+                    for (ids in listOf(emptyList<Long>(), listOf(7L, 9L))) {
+                        val values = mapOf(
+                            0 to InputValue.BooleanValue(enabled),
+                            1 to integer(3),
+                            2 to InputValue.ListValue(ids.map(::integer)),
+                        )
+                        val before = Thread.currentThread().contextClassLoader
+                        val execution = success(request(fixture, values))
+                        assertSame(before, Thread.currentThread().contextClassLoader)
+                        assertStockParity(
+                            fixture,
+                            mapOf("enabled" to enabled, "id" to 3L, "ids" to ids),
+                            execution,
+                        )
+                        val caller = execution.orderedBindings.filter {
+                            it.origin is PreparedBindingOrigin.CallerInput
+                        }
+                        val additional = execution.orderedBindings.filter {
+                            it.origin is PreparedBindingOrigin.MyBatisAdditional
+                        }
+                        assertEquals(if (enabled) 2 else 1, caller.size)
+                        assertEquals(ids.size * 2, additional.size)
+                        assertEquals(
+                            List(ids.size) { listOf("item", "idx") }.flatten(),
+                            additional.map {
+                                (it.origin as PreparedBindingOrigin.MyBatisAdditional).internalBinding.name
+                            },
+                        )
+                        assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
+                        assertEquals(
+                            MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
+                            (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun selectWhereMixedSiblingsRefuseIncompleteMapperAndSourceDriftEvenIfFalseAndEmpty() {
+        val parameters = listOf(
+            parameter(0, "boolean", "enabled"),
+            parameter(1, "long", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids"),
+        )
+        val loop = """<foreach collection="ids" item="item">#{item}</foreach>"""
+        val condition = """<if test="enabled">AND flag=#{id}</if>"""
+        val body = "SELECT #{id} <where>$condition $loop</where>"
+        val original = fixture(body, parameters)
+        val values = mapOf(
+            0 to InputValue.BooleanValue(false),
+            1 to integer(3),
+            2 to listValue(),
+        )
+        val baseline = contract(original)
+        val missingMapper = XmlMapperPreparationEngine.prepare(
+            request(original, values, includeMapperCapture = false),
+        ) as PreparationResult.Failed
+        assertEquals("xml-foreach-preparation-mapper-authority-unproven", missingMapper.failure.code)
+        for (changed in listOf(
+            body.replace(loop, "$loop$loop"),
+            body.replace(loop, """<foreach collection="ids" item="item"><if test="enabled">#{item}</if></foreach>"""),
+            body.replace(condition, """<if test="enabled">$loop</if>"""),
+            body.replace(loop, """<foreach collection="ids" item="item" nullable="true">#{item}</foreach>"""),
+            body.replace(condition, """<if test="enabled != null">AND flag=#{id}</if>"""),
+        )) {
+            val changedFixture = fixture(changed, parameters)
+            val outcome = XmlMapperPreparationEngine.prepare(request(changedFixture, values, baseline))
+            assertTrue("Unproven mixed source was prepared: $changed", outcome is PreparationResult.Failed)
+        }
+        val moved = fixture(body.replace("AND flag=#{id}", "AND flag=1"), parameters)
+        assertTrue(XmlMapperPreparationEngine.prepare(request(moved, values, baseline)) is PreparationResult.Failed)
+
+        // A SELECT-only island must not authorize mixed dynamics in UPDATE SET/WHERE.
+        val update = fixture("UPDATE t <set>v=#{id},</set><where>$condition $loop</where>", parameters, StatementKind.UPDATE)
+        assertTrue(contract(update).isPreparationBlocked)
+    }
+
     @Test
     fun falseBooleanSiblingCannotHideUnsupportedNestedForeachSource() {
         val parameters = listOf(
