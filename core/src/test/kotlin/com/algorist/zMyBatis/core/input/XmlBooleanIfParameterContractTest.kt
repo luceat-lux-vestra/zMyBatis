@@ -560,6 +560,40 @@ class XmlBooleanIfParameterContractTest {
         }
     }
     @Test
+    fun deleteWhereMixedSourceRequiresCompleteBooleanAndCollectionAuthority() {
+        val condition = """<if test="enabled">AND flag=#{id,jdbcType=BIGINT}</if>"""
+        val loop = """<foreach collection="ids" item="item" index="idx" open="AND (id, ord) IN (" separator="," close=")">(#{item},#{idx})</foreach>"""
+        val parameters = arrayOf(
+            parameter(0, "boolean", "enabled"),
+            parameter(1, "long", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids"),
+        )
+        for ((open, close) in listOf(
+            "<where>" to "</where>",
+            """<trim prefix="WHERE" prefixOverrides="AND |OR ">""" to "</trim>",
+            """<trim prefixOverrides="AND &#124;OR " prefix="&#87;HERE">""" to "</trim>",
+        )) {
+            for (parts in listOf(listOf(condition, loop), listOf(loop, condition))) {
+                val graph = graph("DELETE FROM t $open AND tenant_id=#{id} ${parts.joinToString(" ")} $close", StatementKind.DELETE)
+                val complete = build(graph, *parameters)
+                assertFalse(complete.isPreparationBlocked)
+                assertEquals(3, complete.requirements.size)
+                assertTrue(complete.requirements.any { it.provenance.evidence.any { evidence -> evidence is InputEvidence.ForeachCollection } })
+                assertTrue(complete.requirements.any { it.provenance.evidence.any { evidence -> evidence is InputEvidence.OgnlExpression } })
+                assertTrue(complete.internalBindings.any { it.kind == InternalBindingKind.FOREACH_ITEM && it.name == "item" })
+                assertTrue(complete.internalBindings.any { it.kind == InternalBindingKind.FOREACH_INDEX && it.name == "idx" })
+
+                val incomplete = build(graph, *parameters.dropLast(1).toTypedArray())
+                assertTrue(incomplete.isPreparationBlocked)
+                assertTrue(incomplete.blockingProblems.any { it.code == "xml-caller-input-authority-unproven" })
+                assertTrue(incomplete.aliases.none { it.name == "ids" })
+                val wrongBoolean = build(graph, parameter(0, "long", "enabled"), parameters[1], parameters[2])
+                assertTrue(wrongBoolean.isPreparationBlocked)
+                assertTrue(wrongBoolean.blockingProblems.any { it.code == "xml-if-condition-type-unsupported" })
+            }
+        }
+    }
+    @Test
     fun rawInterpolationInIfIslandRemainsBlocked() {
         for (body in listOf(
             "<if test=\"enabled\">\${table}</if>",
