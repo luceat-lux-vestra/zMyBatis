@@ -17,8 +17,8 @@ import com.algorist.zMyBatis.core.source.XmlStatementId
  *
  * The producer contract is rebuilt from independent source captures, including unused parameters
  * that can suppress collection aliases or shadow locals. Contract evidence cannot authenticate itself.
- * One direct foreach or a sole bounded where-role wrapper (set-role for UPDATE) is admitted
- * without Boolean-if or multiple-wrapper composition.
+ * One direct foreach or one inside bounded where/set-role wrappers is admitted. UPDATE may
+ * combine both roles with exactly one foreach and a static other wrapper, without Boolean-if.
  * This proves consistency with supplied captures, not Java parsing, live-source validity or execution.
  */
 internal object XmlForeachPreparationAdmission {

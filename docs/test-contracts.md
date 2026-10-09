@@ -205,7 +205,8 @@ without attributes, or `<trim prefix="WHERE" prefixOverrides="AND |OR ">` with t
 unqualified XML-decoded attributes. Wrapper text may contain static SQL and caller bindings before
 and after the loop. The loop must retain the bounded collection/item/index rules: foreach locals
 never become caller requirements, and a local outside the loop is rejected. Empty/static-only
-wrappers, Boolean-if or multiple-wrapper composition, other dynamic tags, nested or duplicate loops/wrappers, arbitrary
+wrappers without an admitted foreach, Boolean-if composition, unsupported multiple-wrapper composition,
+other dynamic tags, nested or duplicate loops/wrappers, arbitrary
 trim attributes, qualified elements, raw interpolation and explicit nullable remain refused.
 This is separate from the Boolean-if wrapper island; foreach and if still cannot compose.
 
@@ -238,8 +239,8 @@ or outside it. Foreach locals remain internal and cannot escape the loop.
 
 `XmlForeachParameterContractTest` and `XmlForeachPreparationAdmissionTest` prove this bounded
 source shape and rebuild its complete independent mapper contract. SET foreach in SELECT/INSERT/
-DELETE declarations, empty/static-only wrappers, modified/extra/qualified attributes, nested/repeated
-loops or wrappers, Boolean-if/multiple-wrapper composition, local escape and other dynamic nodes
+DELETE declarations, wrappers without an admitted foreach, modified/extra/qualified attributes, nested/repeated
+loops or wrappers, Boolean-if/unsupported multiple-wrapper composition, local escape and other dynamic nodes
 remain blocked. Missing complete mapper capture and forged local authority are still typed refusals.
 
 `XmlMapperForeachPreparationTest` compares exact stock SQL bytes, ordered mapping properties,
@@ -260,6 +261,36 @@ remains standalone/unpackaged and no production action, target/console or execut
 E2E applicability: not applicable to this pure source-contract/isolated-preparation invariant.
 The source factories have no shipping action consumer and the engine remains unpackaged. Existing
 Starter/Driver runs provide packaged-plugin regression evidence, not SET foreach execution proof.
+
+## XML foreach combined UPDATE SET/WHERE evidence
+
+UPDATE may combine one set-role wrapper and one where-role wrapper with exactly one direct foreach
+inside either role. The other wrapper contains only static text and caller bindings and may be empty.
+Both source orders and native/trim combinations retain the exact wrapper attributes above; duplicate
+roles, nested wrappers, a second loop, direct loops outside the wrappers, Boolean-if composition,
+raw interpolation and foreach locals escaping into the other wrapper remain refused. A statement
+with no foreach still needs the separately admitted Boolean-if shape: empty/static-only wrappers
+do not acquire authority from this extension.
+
+The source scanner defers the static wrapper's admission until the complete statement proves the
+single loop, so a static wrapper before the loop has the same authority as one after it. Complete
+mapper capture remains mandatory. Admission rebuilds caller placeholder inventory in both wrappers
+and rejects missing/forged caller evidence or source drift before runtime, including empty collections.
+
+`XmlForeachParameterContractTest`, `XmlForeachPreparationAdmissionTest` and
+`XmlMapperForeachPreparationTest` cover these positive and negative boundaries. The independent stock
+mapper-parser oracle compares unmodified SQL bytes, ordered properties, Java/JDBC/handler/mode/scale
+metadata and values across both loop positions and source orders, all maintained native/trim combinations,
+XML-decoded/reordered attributes, empty/single/multiple/null items, repeated item/index mappings,
+generic/stock collection aliases, arrays and temporal Map values. Comments/CDATA and empty wrappers
+retain stock semantics. Empty collections may omit SET, WHERE or both; no assignment/predicate or
+SQL grammar validity is invented. Empty final SQL is a typed failure. Source-bound token synthesis
+across the two wrappers is rejected even for an empty collection. Concurrent direct/single-wrapper/
+combined-wrapper invocations under poisoned parent OGNL retain fresh runtime ownership and TCCL.
+
+E2E applicability: not applicable to this pure source-contract/isolated-preparation invariant. The
+engine remains unpackaged and the shipping action has no consumer of these source factories.
+Non-zero bindings remain `BOUND_EXECUTION_REQUIRED`; #258's production cutover gate is unchanged.
 
 ## XML Boolean-if preparation admission evidence
 
@@ -379,7 +410,8 @@ Two literal `<trim>` forms share these wrapper limits:
 
 Both attributes must be unqualified, with those exact XML-decoded values and no other attributes.
 The element must be unqualified. In the Boolean-if island each trim requires a direct simple
-Boolean-if child; the separate foreach island above permits a sole direct foreach in WHERE trim or, for UPDATE, SET trim. Native and
+Boolean-if child; the separate foreach island above permits one direct foreach inside WHERE trim or,
+for UPDATE, SET trim, optionally with a static wrapper of the other role. Native and
 trim forms may compose for UPDATE, but two wrappers of the same role are rejected even when their
 element names differ. Empty/static-only trim, nested/duplicate/outside-condition structures, arbitrary
 prefix/suffix/override values, property-substituted or bound attributes, raw interpolation and other

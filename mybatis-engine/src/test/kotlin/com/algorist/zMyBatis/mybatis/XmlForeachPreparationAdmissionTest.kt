@@ -29,6 +29,39 @@ import org.junit.Test
 
 class XmlForeachPreparationAdmissionTest {
     @Test
+    fun combinedWrappersRebuildStaticCallerAndLoopAuthorityFromCompleteMapper() {
+        val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\">#{item},#{idx}</foreach>"
+        val parameters = listOf(parameter(0, "long", "status", "status"), parameter(1, "java.util.List<java.lang.Long>", "ids", "ids"))
+        for (body in listOf(
+            "UPDATE t <set>v=#{status},$loop</set><where>AND id=#{status}</where>",
+            "UPDATE t <where>AND id=#{status}</where><set>v=#{status},$loop</set>",
+            "UPDATE t <set>v=#{status}</set><where>AND id=#{status}$loop</where>",
+            "UPDATE t <where>AND id=#{status}$loop</where><set>v=#{status}</set>",
+        )) {
+            val fixture = fixture(body, parameters, StatementKind.UPDATE)
+            val authentic = contract(fixture)
+            val admitted = XmlForeachPreparationAdmission.inspect(fixture.graph, fixture.mapper, authentic) as XmlForeachPreparationAdmission.Result.Admitted
+            assertEquals(setOf(authentic.requirements.single { it.id.value == "xml-java-param:1" }.id), admitted.collectionRequirementIds)
+            assertEquals(mapOf("item" to InternalBindingKind.FOREACH_ITEM, "idx" to InternalBindingKind.FOREACH_INDEX), admitted.locals)
+            assertFailure(XmlForeachPreparationAdmission.inspect(fixture.graph, null, authentic), PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-mapper-authority-unproven")
+            val status = authentic.requirements.single { it.id.value == "xml-java-param:0" }
+            val forged = copyContract(authentic, requirements = authentic.requirements.map {
+                if (it.id == status.id) it.copy(provenance = InputProvenance(it.provenance.evidence.filterNot { evidence -> evidence is InputEvidence.Placeholder })) else it
+            })
+            assertFailure(XmlForeachPreparationAdmission.inspect(fixture.graph, fixture.mapper, forged), PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-preparation-source-contract-mismatch")
+            for (changed in listOf(
+                body.replace("id=#{status}", "id=1"),
+                body.replace("id=#{status}", "id=#{status} AND other=#{status}"),
+            )) {
+                assertFailure(XmlForeachPreparationAdmission.inspect(graph(changed, XML_REVISION, kind = StatementKind.UPDATE), fixture.mapper, authentic), PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-preparation-source-contract-mismatch")
+            }
+            for (changed in listOf(body.replace(loop, "$loop$loop"), body.replace("<where>", "<where bogus=\"x\">"), body.replace(loop, "$loop<if test=\"enabled\">v=1</if>"))) {
+                assertFailure(XmlForeachPreparationAdmission.inspect(graph(changed, XML_REVISION, kind = StatementKind.UPDATE), fixture.mapper, authentic), PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-source-unsupported")
+            }
+        }
+    }
+
+    @Test
     fun updateSetRebuildsCompleteMapperAndRejectsWrapperOrLocalAuthorityDrift() {
         val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\">v=#{item},i=#{idx}</foreach>"
         for ((open, close) in listOf("<set>" to "</set>", "<trim prefix=\"SET\" suffixOverrides=\",\">" to "</trim>")) {

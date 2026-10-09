@@ -25,8 +25,9 @@ import javax.xml.stream.XMLStreamReader
  * accept no attributes; trim accepts only the exact prefix/override pairs checked below.
  * Mapper metadata must separately prove every Boolean caller alias. This scanner discovers source
  * uses, never evaluates conditions or WHERE/SET trimming semantics. One bounded foreach may instead
- * be the direct child of the sole where-role wrapper or, for UPDATE, the sole set-role wrapper,
- * without any Boolean-if, multiple-wrapper or other dynamic composition.
+ * be direct or a direct child of a where-role wrapper (set-role for UPDATE). UPDATE may combine
+ * both roles around exactly one foreach; its other wrapper contains only static text/caller bindings.
+ * Boolean-if/foreach composition and additional loops remain unsupported.
  */
 object XmlStatementParameterContractFactory {
     private const val DEPENDENCY_PROVENANCE_PROBLEM = "xml-dependent-fragment-provenance-unsupported"
@@ -267,6 +268,7 @@ object XmlStatementParameterContractFactory {
         var activeWrapperKind: String? = null
         val wrappersSeen = mutableSetOf<String>()
         var wrapperConditionStart = 0
+        var wrapperWithoutCondition = false
         var ifDepth = -1
         var activeIfCondition: String? = null
         val ifConditions = mutableListOf<String>()
@@ -330,7 +332,8 @@ object XmlStatementParameterContractFactory {
                                 wrapperKind != null && wrapperKind !in wrappersSeen &&
                                 (ifConditions.isEmpty() ||
                                     (statementKind == StatementKind.UPDATE && wrappersSeen.isNotEmpty())) &&
-                                foreachDeclaration == null
+                                (foreachDeclaration == null ||
+                                    (statementKind == StatementKind.UPDATE && wrappersSeen.isNotEmpty()))
                             ) {
                                 wrappersSeen += wrapperKind
                                 wrapperDepth = depth
@@ -340,7 +343,7 @@ object XmlStatementParameterContractFactory {
                             }
                             if (
                                 ((depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
-                                    (activeWrapperKind != null && wrappersSeen.size == 1 && depth == wrapperDepth + 1)) &&
+                                    (activeWrapperKind != null && depth == wrapperDepth + 1)) &&
                                 localName == "foreach" &&
                                 isUnqualifiedElement(reader) &&
                                 foreachDepth < 0 &&
@@ -406,12 +409,9 @@ object XmlStatementParameterContractFactory {
                             activeIfCondition = null
                         }
                         if (wrapperDepth == depth) {
-                            if (ifConditions.size == wrapperConditionStart && foreachDeclaration == null) {
-                                return StatementScan.Failed(
-                                    InputContractProblemKind.UNSUPPORTED,
-                                    NESTED_ELEMENT_PROBLEM,
-                                )
-                            }
+                            // A static wrapper may precede UPDATE's sole foreach in the other role.
+                            // Defer refusal until the complete statement proves that loop exists.
+                            if (ifConditions.size == wrapperConditionStart) wrapperWithoutCondition = true
                             wrapperDepth = -1
                             activeWrapperKind = null
                         }
@@ -435,6 +435,8 @@ object XmlStatementParameterContractFactory {
 
             if (!mapperSeen || targetMatches != 1 || !targetClosed || depth != 0) {
                 StatementScan.Failed(InputContractProblemKind.UNKNOWN, ROOT_MISMATCH_PROBLEM)
+            } else if (wrapperWithoutCondition && foreachDeclaration == null) {
+                StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
             } else {
                 StatementScan.Ready(textSegments, foreachDeclaration, ifConditions)
             }
