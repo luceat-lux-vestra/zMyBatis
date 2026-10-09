@@ -32,7 +32,8 @@ import org.apache.ibatis.session.Configuration
  * Static zero-input statements and the deliberately narrow proven scalar/temporal bound-input
  * island and source-proven foreach/Boolean-if contracts are admitted. Dynamic preparation owns
  * a fresh runtime; flat Boolean-if siblings directly or inside bounded where/set/trim wrappers require
- * complete mapper capture. A single foreach may be direct or inside the sole where-role wrapper.
+ * complete mapper capture. A single foreach requires the same capture and may be direct or inside
+ * the sole where-role wrapper.
  * Stock MyBatis owns evaluation and WHERE/SET trimming. No MyBatis object
  * crosses the child-classloader boundary.
  */
@@ -136,19 +137,24 @@ object XmlMapperPreparationEngine {
         val statementId = source.sourceGraph.rootStatement.id as? XmlStatementId
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
 
-        val booleanIf = source.mapperMethod?.let { mapper ->
-            when (val admission = XmlBooleanIfPreparationAdmission.inspect(source.sourceGraph, mapper, request.parameterContract)) {
-                is XmlBooleanIfPreparationAdmission.Result.Admitted -> admission
-                is XmlBooleanIfPreparationAdmission.Result.Failed -> return PreparationResult.Failed(admission.failure)
-                XmlBooleanIfPreparationAdmission.Result.NotPresent -> null
-            }
-        }
-
-        val foreach = when (val admission = XmlForeachPreparationAdmission.inspect(source.sourceGraph, request.parameterContract)) {
+        val foreach = when (val admission = XmlForeachPreparationAdmission.inspect(
+            source.sourceGraph, source.mapperMethod, request.parameterContract,
+        )) {
             is XmlForeachPreparationAdmission.Result.Admitted -> admission
             is XmlForeachPreparationAdmission.Result.Failed -> return PreparationResult.Failed(admission.failure)
             XmlForeachPreparationAdmission.Result.NotPresent -> null
         }
+        // The producer admits mutually exclusive foreach and Boolean-if islands.
+        val booleanIf = if (foreach == null) {
+            source.mapperMethod?.let { mapper ->
+                when (val admission = XmlBooleanIfPreparationAdmission.inspect(source.sourceGraph, mapper, request.parameterContract)) {
+                    is XmlBooleanIfPreparationAdmission.Result.Admitted -> admission
+                    is XmlBooleanIfPreparationAdmission.Result.Failed -> return PreparationResult.Failed(admission.failure)
+                    XmlBooleanIfPreparationAdmission.Result.NotPresent -> null
+                }
+            }
+        } else null
+
         val foreachRequirementIds = foreach?.collectionRequirementIds.orEmpty()
         inputContractFailure(request, foreachRequirementIds)?.let { return PreparationResult.Failed(it) }
 

@@ -150,8 +150,13 @@ class XmlMapperPreparationEngineAdversarialTest {
         dynamicNodes.forEachIndexed { index, node ->
             val graph = graph("<select id=\"find\">SELECT * FROM users $node</select>", "vfs:/dynamic-$index.xml")
             val failure = (prepare(graph, contract(graph)) as PreparationResult.Failed).failure
-            assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, failure.kind)
-            assertEquals("xml-preparation-dynamic-sql-unsupported", failure.code)
+            if (node.startsWith("<foreach")) {
+                assertEquals(PreparationFailureKind.BINDING_RESOLUTION, failure.kind)
+                assertEquals("xml-foreach-preparation-source-contract-mismatch", failure.code)
+            } else {
+                assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, failure.kind)
+                assertEquals("xml-preparation-dynamic-sql-unsupported", failure.code)
+            }
         }
     }
 
