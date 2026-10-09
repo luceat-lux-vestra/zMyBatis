@@ -81,7 +81,7 @@
 <h2>Requirements and Compatibility Evidence</h2>
 <ul>
   <li><b>Declared minimum IDE build:</b> 262 (2026.2 line)</li>
-  <li><b>Maintained automated Plugin Verifier target:</b> IntelliJ IDEA Ultimate 2026.2</li>
+  <li><b>Maintained automated Plugin Verifier targets:</b> IntelliJ IDEA Ultimate 2026.2.3, plus 2026.2 for the declared minimum build</li>
   <li>The JetBrains Database Tools plugin (<code>com.intellij.database</code>) and a configured data source are required</li>
   <li><b>DataGrip:</b> a product integration target whose policy was frozen by completed Track #61; a separate maintained DataGrip verifier/runtime evidence line remains a #67 obligation</li>
   <li>The declared minimum build does not by itself prove every later IDE build or other JetBrains host compatible; broader claims require explicit maintained evidence</li>

@@ -10,7 +10,7 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
 
 ## Maintained process scenarios
 
-`ZMyBatisStarterDriverE2ETest` maintains three process-level scenarios against the maintained IntelliJ IDEA Ultimate target:
+`ZMyBatisStarterDriverE2ETest` maintains three process-level scenarios against the maintained IntelliJ IDEA Ultimate 2026.2.3 target on JDK 25:
 
 1. **Packaged-plugin / production-service happy path**
    - installs the exact `buildPlugin` archive into a separate IDE process;
@@ -49,6 +49,7 @@ The first local run can download IDE/Starter artifacts. Semantic correctness of 
 - each test receives a fresh JUnit temporary directory;
 - the checked-in `src/integrationTest/testProject` sample is copied into that directory before IDE startup, so IDE metadata cannot mutate the repository fixture or a later scenario;
 - each scenario starts and closes its own IDE process through `runIdeWithDriver().useDriverAndCloseIde`;
+- before opening the project, a separate no-project launch completes the supplied-license or native `StartTrial` activation in that scenario's isolated config, waits for Ultimate/plugin initialization, and proves activation state was persisted; the project launch then uses that config without overlapping project-tree reads with activation's dynamic scheme reload;
 - the database golden path generates project-local `.idea/dataSources.xml` / `dataSources.local.xml` only inside that test's temporary project, and uses an in-memory H2 datasource as deterministic process-test infrastructure; its JDBC JAR is copied only into the isolated Starter IDE config and registered as a local Database Tools driver library, while the exact normal plugin ZIP remains unchanged;
 - datasource choice, parameter input, preview confirmation, and result-table observation use maintained Driver component APIs rather than screen coordinates or correctness sleeps;
 - readiness uses Driver `waitForIndicators` / bounded component waits, not correctness sleeps;

@@ -10,6 +10,7 @@ import com.algorist.zMyBatis.core.source.StatementKind
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.vfs.newvfs.impl.VfsRootAccess
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.PsiTestUtil
@@ -34,6 +35,7 @@ class JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest : LightJav
         PsiTestUtil.addSourceRoot(module, tempRoot)
 
         val myBatisJar = File(PathUtil.getJarPathForClass(Select::class.java))
+        VfsRootAccess.allowRootAccess(testRootDisposable, myBatisJar.absolutePath)
         PsiTestUtil.addLibrary(module, "mybatis-3.5.19", myBatisJar.parent, myBatisJar.name)
     }
 

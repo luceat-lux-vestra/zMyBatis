@@ -66,7 +66,7 @@ jobs:
             echo "tested_commit=$tested_commit"
             echo "workflow_sha=$GITHUB_SHA"
             echo "java_target=25"
-            echo "ide_release=2026.2"
+            echo "ide_release=2026.2.3"
             echo "plugin_artifact=$artifact"
             echo "plugin_sha256=$artifact_sha256"
           } | tee e2e-artifact-manifest.txt

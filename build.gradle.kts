@@ -4,6 +4,7 @@ import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 
 plugins {
     id("java") // Java support
@@ -31,10 +32,10 @@ sourceSets {
     }
 }
 
-val integrationTestImplementation by configurations.getting {
+val integrationTestImplementation = configurations.getByName("integrationTestImplementation") {
     extendsFrom(configurations.testImplementation.get())
 }
-val integrationTestRuntimeOnly by configurations.getting {
+val integrationTestRuntimeOnly = configurations.getByName("integrationTestRuntimeOnly") {
     extendsFrom(configurations.testRuntimeOnly.get())
 }
 
@@ -71,8 +72,13 @@ dependencies {
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
     intellijPlatform {
-        intellijIdea(providers.gradleProperty("platformVersion")) {
-            type.set(providers.gradleProperty("platformType").map(IntelliJPlatformType::valueOf))
+        val localPlatformPath = providers.gradleProperty("localPlatformPath")
+        if (localPlatformPath.isPresent) {
+            local(localPlatformPath.get())
+        } else {
+            intellijIdea(providers.gradleProperty("platformVersion")) {
+                type.set(providers.gradleProperty("platformType").map(IntelliJPlatformType::valueOf))
+            }
         }
 
         bundledPlugins(providers.gradleProperty("platformBundledPlugins").map { it.split(',') })
@@ -226,9 +232,11 @@ intellijPlatform {
     // Keep compatibility verification deterministic. `recommended()` drifts as
     // JetBrains publishes new IDE builds and can turn the merge gate into a
     // moving target. Broader IDEA/DataGrip coverage must be added explicitly
-    // with evidence rather than inferred from this single maintained target.
+    // with evidence rather than inferred from the maintained IDEA targets.
     pluginVerification {
         ides {
+            create(IntelliJPlatformType.IntellijIdeaUltimate, providers.gradleProperty("platformVersion").get())
+            // Preserve evidence for the declared minimum 262 line after compiling on the patch baseline.
             create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.2")
         }
     }
@@ -242,6 +250,7 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
     testFramework(TestFrameworkType.Plugin.Java)
     plugins {
         disablePlugin("org.jetbrains.plugins.vue")
+        disablePlugin("com.intellij.modules.ultimate")
     }
     task {
         filter {
@@ -267,6 +276,7 @@ val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundar
     plugins {
         bundledPlugin("org.jetbrains.kotlin")
         disablePlugin("org.jetbrains.plugins.vue")
+        disablePlugin("com.intellij.modules.ultimate")
     }
     task {
         filter {
@@ -281,7 +291,7 @@ val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundar
 
 // Launch an actual IDE process with the exact buildPlugin archive installed. Keep this task
 // separate from `check`: #130 requires process-level evidence to remain independently visible.
-val integrationTest by intellijPlatformTesting.testIdeUi.register("integrationTest") {
+intellijPlatformTesting.testIdeUi.register("integrationTest") {
     task {
         dependsOn(verifyStarterSecurityGraph)
         val integrationTestSourceSet = sourceSets.getByName("integrationTest")
@@ -330,6 +340,23 @@ kover {
 tasks.withType<Test>().configureEach {
     systemProperty("LowMemoryWatcherManager.REGULAR_TRACKER_UPDATE_PERIOD_MS", "-1")
     systemProperty("intellij.platform.log.sync", "true")
+}
+
+// Unit fixtures share SDK classes through the Gradle test loader. IDEA 2026.2.3
+// reuses an obfuscated platform class name in the unrelated Ultimate startup
+// wrapper, which resolves to the wrong class in this flattened test environment.
+// Database Tools remains enabled; packaged process-level E2E separately tests
+// the full IDE plugin graph with its normal plugin classloader boundaries.
+tasks.named<PrepareSandboxTask>("prepareTestSandbox") {
+    disabledPlugins.add("com.intellij.modules.ultimate")
+}
+
+// Keep the unit/PSI fixtures independent of a desktop session on every host.
+// The separate Starter/Driver launcher retains its real UI process.
+tasks.withType<Test>().configureEach {
+    if (name != "integrationTest") {
+        systemProperty("java.awt.headless", "true")
+    }
 }
 
 tasks {

@@ -54,7 +54,7 @@ class ConsoleCacheOwnedResourceDisposalContractTest {
             .substringAfter("if (cache.get(resourceKey, targetId) !== console) {")
             .substringBefore("console = null")
 
-        assertTrue(registrationCheck.contains("if (!Disposer.isDisposed(console)) {"))
+        assertTrue(registrationCheck.contains("if (!consoleLifetime.isDisposed) {"))
         assertTrue(registrationCheck.contains("Disposer.dispose(console)"))
     }
 
@@ -63,8 +63,8 @@ class ConsoleCacheOwnedResourceDisposalContractTest {
         val source = serviceSource()
 
         assertTrue(source.contains("disposeOwnedResourcesPreservingFailureSemantics("))
-        assertTrue(source.contains("isDisposed = { Disposer.isDisposed(it) }"))
-        assertTrue(source.contains("disposeResource = { Disposer.dispose(it) }"))
+        assertTrue(source.contains("isDisposed = { it.sentinel.isDisposed }"))
+        assertTrue(source.contains("disposeResource = { Disposer.dispose(it.console) }"))
         assertTrue(
             "stale sentinel callback must not remove a replacement entry",
             source.contains("cache.remove(mapperKey, entry)"),
