@@ -1,12 +1,15 @@
 package com.algorist.zMyBatis.e2e
 
 import com.intellij.driver.client.Remote
+import com.intellij.driver.sdk.arePluginsInitialized
 import com.intellij.driver.sdk.invokeAction
+import com.intellij.driver.sdk.isPluginLoaded
 import com.intellij.driver.sdk.openFile
 import com.intellij.driver.sdk.ui.Finder
 import com.intellij.driver.sdk.ui.components.ComponentData
 import com.intellij.driver.sdk.ui.components.UiComponent
 import com.intellij.driver.sdk.ui.components.common.ideFrame
+import com.intellij.driver.sdk.ui.components.common.dialogs.licenseDialog
 import com.intellij.driver.sdk.ui.components.elements.accessibleTable
 import com.intellij.driver.sdk.ui.components.elements.button
 import com.intellij.driver.sdk.ui.components.elements.dialog
@@ -27,6 +30,8 @@ import com.intellij.ide.starter.models.TestCase
 import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
+import com.intellij.ide.starter.runner.startIdeWithoutProject
+import com.intellij.ide.starter.ide.IDETestContext
 import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTestKind
 import com.intellij.tools.ide.starter.product.idea.ultimate.IdeaUltimate
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -418,14 +423,35 @@ class ZMyBatisStarterDriverE2ETest {
             testName,
             TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(projectDir)).useRelease(IDE_RELEASE),
         ).apply {
-            // Keep the licensed feature graph stable across Starter's activation flow.
-            // A disable/enable cycle races scheme reload with project-tree color reads in 2026.2.3.
-            doNotDisablePaidPluginsOnStartup()
             System.getenv("LICENSE_KEY")
                 ?.takeIf { it.isNotBlank() }
                 ?.let { setLicense(it) }
             PluginConfigurator(this).installPluginFromPath(pluginArchive)
+            activateBeforeOpeningProject(this)
         }
+
+    private fun activateBeforeOpeningProject(context: IDETestContext) {
+        // Keep the normal license/trial flow, but complete it before project-tree reads begin.
+        // On 2026.2.3 activation dynamically reloads schemes; overlapping project startup races them.
+        context.runIdeWithDriver(commandLine = ::startIdeWithoutProject, launchName = "activation")
+            .useDriverAndCloseIde {
+                waitFor("application plugins initialized", timeout = 2.minutes) { arePluginsInitialized() }
+                if (!isPluginLoaded("com.intellij.modules.ultimate")) {
+                    invokeAction("Register", now = false)
+                    licenseDialog {
+                        startTrialTab.click()
+                        startTrialButton.click()
+                    }
+                }
+                waitFor("Ultimate activation complete before project startup", timeout = 2.minutes) {
+                    isPluginLoaded("com.intellij.modules.ultimate") && arePluginsInitialized()
+                }
+            }
+        assertTrue(
+            Files.isRegularFile(context.paths.configDir.resolve("idea.key")),
+            "activation must persist its state before the project run",
+        )
+    }
 
     private fun writeH2DatabaseToolsDriverFixture(configDir: Path, h2Jar: Path) {
         // Database Tools does not use the IDE process classpath as its JDBC driver library.

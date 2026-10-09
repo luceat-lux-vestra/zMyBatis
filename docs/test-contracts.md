@@ -446,12 +446,13 @@ In 2026.2.3 its `Z.Z.Z.Z.Z` activity collides with a different platform class wh
 Gradle flattens the SDK classpath; all 37 Java fixtures otherwise fail before their
 product assertions run. Database Tools and Java remain enabled, every fixture/assertion
 and strict test-logger check remains present. This unit-fixture profile does not prove
-licensed Ultimate activation/startup. Packaged process-level E2E independently retains
-the full IDE plugin graph through Starter's `doNotDisablePaidPluginsOnStartup()`.
-Otherwise 2026.2.3 initially disables Ultimate and its normal trial activation dynamically
+licensed Ultimate activation/startup. Packaged process-level E2E first starts without a
+project and completes the normal supplied-license/trial activation before restarting
+that same isolated config with the test project. 2026.2.3 initially disables Ultimate
+without a license and its normal trial activation dynamically
 re-enables it: observed scheme reloads raced project-tree color reads and raised
-`ConcurrentModificationException` before the product assertions. Preserving the initial
-graph avoids that unnecessary reconfiguration; the normal license/trial flow and strict
+`ConcurrentModificationException` before the product assertions. Completing activation
+before opening the project avoids that overlap; the normal license/trial flow and strict
 exception checks remain active, with no new error exemption or retry. Broader licensing,
 dynamic-plugin and DataGrip evidence remains owned by #67.
 Platform evidence owner #67 must remove this isolation when the SDK/test loader can
