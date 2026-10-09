@@ -26,10 +26,10 @@ import javax.xml.stream.XMLStreamReader
  * Mapper metadata must separately prove every Boolean caller alias. This scanner discovers source
  * uses, never evaluates conditions or WHERE/SET trimming semantics. One bounded foreach may be
  * direct or a direct child of a where-role wrapper (set-role for UPDATE). A direct foreach may also
- * coexist with flat direct Boolean-if siblings. SELECT may also combine one foreach with flat
- * Boolean-if siblings inside a single where-role wrapper. UPDATE may combine both wrapper roles
- * around exactly one foreach only when the other wrapper is static. Other wrapped mixed dynamic
- * compositions and additional loops remain unsupported.
+ * coexist with flat direct Boolean-if siblings. SELECT may combine one foreach with flat
+ * Boolean-if siblings in one WHERE-role wrapper; UPDATE may combine them in one SET-role wrapper.
+ * UPDATE can separately combine both wrapper roles around exactly one foreach only if the other
+ * wrapper is static. Multi-wrapper mixed dynamics and additional loops remain unsupported.
  */
 object XmlStatementParameterContractFactory {
     private const val DEPENDENCY_PROVENANCE_PROBLEM = "xml-dependent-fragment-provenance-unsupported"
@@ -353,8 +353,9 @@ object XmlStatementParameterContractFactory {
                                 (
                                     ifConditions.isEmpty() ||
                                         (depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
-                                        (statementKind == StatementKind.SELECT &&
-                                            activeWrapperKind == "where" && wrappersSeen.size == 1)
+                                        (wrappersSeen.size == 1 &&
+                                            ((statementKind == StatementKind.SELECT && activeWrapperKind == "where") ||
+                                                (statementKind == StatementKind.UPDATE && activeWrapperKind == "set")))
                                     )
                             ) {
                                 val declaration = parseForeachDeclaration(reader)
@@ -375,8 +376,9 @@ object XmlStatementParameterContractFactory {
                                 (
                                     foreachDeclaration == null ||
                                         (depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
-                                        (statementKind == StatementKind.SELECT &&
-                                            activeWrapperKind == "where" && wrappersSeen.size == 1)
+                                        (wrappersSeen.size == 1 &&
+                                            ((statementKind == StatementKind.SELECT && activeWrapperKind == "where") ||
+                                                (statementKind == StatementKind.UPDATE && activeWrapperKind == "set")))
                                     ) &&
                                 ifDepth < 0
                             ) {
@@ -449,6 +451,12 @@ object XmlStatementParameterContractFactory {
             if (!mapperSeen || targetMatches != 1 || !targetClosed || depth != 0) {
                 StatementScan.Failed(InputContractProblemKind.UNKNOWN, ROOT_MISMATCH_PROBLEM)
             } else if (wrapperWithoutCondition && foreachDeclaration == null) {
+                StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
+            } else if (
+                statementKind == StatementKind.UPDATE &&
+                foreachDeclaration != null && ifConditions.isNotEmpty() && wrappersSeen.size > 1
+            ) {
+                // A SET mixed island does not authorize a second dynamic wrapper role.
                 StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
             } else {
                 StatementScan.Ready(textSegments, foreachDeclaration, ifConditions)

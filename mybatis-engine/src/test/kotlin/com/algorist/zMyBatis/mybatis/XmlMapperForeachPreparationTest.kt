@@ -196,6 +196,86 @@ class XmlMapperForeachPreparationTest {
     }
 
     @Test
+    fun updateSingleSetMixedSiblingsMatchStockForAllOrdersAndStates() {
+        val parameters = listOf(
+            parameter(0, "boolean", "enabled"),
+            parameter(1, "long", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids"),
+        )
+        val conditional = """<if test="enabled">status=#{id,jdbcType=BIGINT},</if>"""
+        val loop = """<foreach collection="ids" item="item" index="idx" separator="," close=",">v=#{item,jdbcType=BIGINT},ord=#{idx}</foreach>"""
+        for ((open, close) in setWrappers()) {
+            for (parts in listOf(listOf(conditional, loop), listOf(loop, conditional))) {
+                val fixture = fixture("UPDATE t $open" + parts.joinToString(" ") + "$close WHERE record_id=#{id}", parameters, StatementKind.UPDATE)
+                for (enabled in listOf(false, true)) {
+                    for (ids in listOf(emptyList<Long>(), listOf(7L, 9L))) {
+                        val values = mapOf(
+                            0 to InputValue.BooleanValue(enabled),
+                            1 to integer(3),
+                            2 to InputValue.ListValue(ids.map(::integer)),
+                        )
+                        val before = Thread.currentThread().contextClassLoader
+                        val execution = success(request(fixture, values))
+                        assertSame(before, Thread.currentThread().contextClassLoader)
+                        assertStockParity(fixture, mapOf("enabled" to enabled, "id" to 3L, "ids" to ids), execution)
+                        assertEquals(StatementKind.UPDATE, execution.statementKind)
+                        val caller = execution.orderedBindings.filter { it.origin is PreparedBindingOrigin.CallerInput }
+                        val additional = execution.orderedBindings.filter { it.origin is PreparedBindingOrigin.MyBatisAdditional }
+                        assertEquals(if (enabled) 2 else 1, caller.size)
+                        assertEquals(ids.size * 2, additional.size)
+                        assertEquals(
+                            List(ids.size) { listOf("item", "idx") }.flatten(),
+                            additional.map { (it.origin as PreparedBindingOrigin.MyBatisAdditional).internalBinding.name },
+                        )
+                        assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
+                        assertEquals(
+                            MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
+                            (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun updateSingleSetMixedSiblingsRefuseMapperSourceAndSecondRoleDriftEvenWhenInactive() {
+        val parameters = listOf(
+            parameter(0, "boolean", "enabled"),
+            parameter(1, "long", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids"),
+        )
+        val loop = """<foreach collection="ids" item="item">v=#{item},</foreach>"""
+        val condition = """<if test="enabled">status=#{id},</if>"""
+        val body = "UPDATE t <set>$condition $loop</set> WHERE record_id=#{id}"
+        val fixture = fixture(body, parameters, StatementKind.UPDATE)
+        val values = mapOf(0 to InputValue.BooleanValue(false), 1 to integer(3), 2 to listValue())
+        val baseline = contract(fixture)
+        val missingMapper = XmlMapperPreparationEngine.prepare(
+            request(fixture, values, includeMapperCapture = false),
+        ) as PreparationResult.Failed
+        assertEquals("xml-foreach-preparation-mapper-authority-unproven", missingMapper.failure.code)
+        for (changed in listOf(
+            body.replace(loop, "$loop$loop"),
+            body.replace(loop, """<foreach collection="ids" item="item"><if test="enabled">v=#{item}</if></foreach>"""),
+            body.replace(condition, """<if test="enabled">$loop</if>"""),
+            body.replace(condition, """<if test="enabled != null">status=#{id},</if>"""),
+            body.replace(condition, """<if test="enabled">${'$'}{table}</if>"""),
+            body.replace("<set>", """<set extra="x">"""),
+            body.replace(loop, """<foreach collection="ids" item="item" nullable="true">v=#{item},</foreach>"""),
+            "UPDATE t <set>$condition $loop</set><where>AND record_id=#{id}</where>",
+            "UPDATE t <where>AND record_id=#{id}</where><set>$condition $loop</set>",
+            "UPDATE t <where>$condition $loop</where><set>v=#{id},</set>",
+            "UPDATE t <where>$condition $loop</where>",
+        )) {
+            val changedFixture = fixture(changed, parameters, StatementKind.UPDATE)
+            val result = XmlMapperPreparationEngine.prepare(request(changedFixture, values, baseline))
+            assertTrue("Unsupported UPDATE mixed source was prepared: $changed", result is PreparationResult.Failed)
+        }
+        val unprovenMapper = fixture(body, parameters.dropLast(1), StatementKind.UPDATE)
+        assertTrue(contract(unprovenMapper).isPreparationBlocked)
+    }
+    @Test
     fun falseBooleanSiblingCannotHideUnsupportedNestedForeachSource() {
         val parameters = listOf(
             parameter(0, "boolean", "enabled"),
@@ -469,7 +549,6 @@ class XmlMapperForeachPreparationTest {
                 val missing = XmlMapperPreparationEngine.prepare(request(original, mapOf(0 to items), includeMapperCapture = false)) as PreparationResult.Failed
                 assertEquals("xml-foreach-preparation-mapper-authority-unproven", missing.failure.code)
                 for (changed in listOf(
-                    body.replace(loop, "$loop<if test=\"enabled\">v=#{id},</if>"),
                     body.replace(loop, "$loop$loop"),
                     "$body<where><if test=\"enabled\">AND 1=1</if></where>",
                     body.replace(open, if (open == "<set>") "<set bogus=\"x\">" else "<trim prefix=\"SET\" suffixOverrides=\";\">"),
