@@ -6,6 +6,8 @@ import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAdapter
 import com.algorist.zMyBatis.execution.DatabaseToolsSqlExecutionFailure
 import com.intellij.database.console.JdbcConsole
+import com.intellij.database.dataSource.LocalDataSource
+import com.intellij.database.dataSource.LocalDataSourceManager
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.LightVirtualFile
@@ -137,8 +139,20 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
     private fun newIsolatedCache(): ConsoleCacheService =
         ConsoleCacheService(project).also { Disposer.register(testRootDisposable, it) }
 
-    private fun newConsole(): JdbcConsole =
-        JdbcConsole.newConsole(project)
+    private fun newConsole(): JdbcConsole {
+        // Console validity includes registered datasource authority, even without a connection.
+        val dataSource = LocalDataSource().apply {
+            name = "zMyBatis lifetime fixture"
+            driverClass = "org.h2.Driver"
+            url = "jdbc:h2:mem:zmybatis_lifetime"
+            isAutoSynchronize = false
+        }
+        val manager = LocalDataSourceManager.getInstance(project)
+        manager.addDataSource(dataSource)
+        Disposer.register(testRootDisposable) { manager.removeDataSource(dataSource) }
+        return JdbcConsole.newConsole(project)
+            .fromDataSource(dataSource)
             .forFile(LightVirtualFile("lifetime.sql", FileTypeManager.getInstance().getFileTypeByExtension("sql"), ""))
             .build()
+    }
 }
