@@ -263,7 +263,7 @@ class XmlMapperForeachPreparationTest {
             body.replace(loop, """<foreach collection="ids" item="item"><if test="enabled">#{item}</if></foreach>"""),
             body.replace(condition, """<if test="enabled">$loop</if>"""),
             body.replace(condition, """<if test="enabled != null">AND flag=#{id}</if>"""),
-            body.replace(condition, """<if test="enabled">${'{table}</if>"""),
+            body.replace(condition, """<if test="enabled">${'$'}{table}</if>"""),
             body.replace("<where>", """<where bogus="x">"""),
             body.replace(loop, """<foreach collection="ids" item="item" nullable="true">#{item}</foreach>"""),
             "$body<where>AND tenant_id=#{id}</where>",
