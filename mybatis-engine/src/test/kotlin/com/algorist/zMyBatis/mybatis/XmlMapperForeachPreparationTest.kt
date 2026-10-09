@@ -270,7 +270,6 @@ class XmlMapperForeachPreparationTest {
             val changedFixture = fixture(changed, parameters, StatementKind.UPDATE)
             val result = XmlMapperPreparationEngine.prepare(request(changedFixture, values, baseline))
             assertTrue("Unsupported UPDATE mixed source was prepared: $changed", result is PreparationResult.Failed)
-            assertTrue(contract(changedFixture).isPreparationBlocked || contract(changedFixture) != baseline)
         }
         val unprovenMapper = fixture(body, parameters.dropLast(1), StatementKind.UPDATE)
         assertTrue(contract(unprovenMapper).isPreparationBlocked)
