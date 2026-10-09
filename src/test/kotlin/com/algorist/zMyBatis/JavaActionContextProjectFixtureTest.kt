@@ -14,9 +14,8 @@ import com.intellij.openapi.ui.TestDialogManager
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiJavaFile
-import com.intellij.testFramework.EdtTestUtil
+import com.intellij.testFramework.runInEdtAndWait
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
-import com.intellij.util.ThrowableRunnable
 
 class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase() {
 
@@ -315,11 +314,9 @@ class JavaActionContextProjectFixtureTest : LightJavaCodeInsightFixtureTestCase(
                 )
 
                 val noticeCountBeforeAction = notices.size
-                EdtTestUtil.runInEdtAndWait(
-                    ThrowableRunnable<Throwable> {
-                        action.actionPerformed(event)
-                    }
-                )
+                runInEdtAndWait {
+                    action.actionPerformed(event)
+                }
                 assertEquals(
                     "provider action must stop at exactly one unsupported notice",
                     noticeCountBeforeAction + 1,

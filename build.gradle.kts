@@ -71,8 +71,13 @@ dependencies {
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
     intellijPlatform {
-        intellijIdea(providers.gradleProperty("platformVersion")) {
-            type.set(providers.gradleProperty("platformType").map(IntelliJPlatformType::valueOf))
+        val localPlatformPath = providers.gradleProperty("localPlatformPath")
+        if (localPlatformPath.isPresent) {
+            local(localPlatformPath.get())
+        } else {
+            intellijIdea(providers.gradleProperty("platformVersion")) {
+                type.set(providers.gradleProperty("platformType").map(IntelliJPlatformType::valueOf))
+            }
         }
 
         bundledPlugins(providers.gradleProperty("platformBundledPlugins").map { it.split(',') })
@@ -226,9 +231,11 @@ intellijPlatform {
     // Keep compatibility verification deterministic. `recommended()` drifts as
     // JetBrains publishes new IDE builds and can turn the merge gate into a
     // moving target. Broader IDEA/DataGrip coverage must be added explicitly
-    // with evidence rather than inferred from this single maintained target.
+    // with evidence rather than inferred from the maintained IDEA targets.
     pluginVerification {
         ides {
+            create(IntelliJPlatformType.IntellijIdeaUltimate, providers.gradleProperty("platformVersion").get())
+            // Preserve evidence for the declared minimum 262 line after compiling on the patch baseline.
             create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.2")
         }
     }

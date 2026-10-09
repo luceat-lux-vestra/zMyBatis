@@ -29,6 +29,20 @@ Run the narrowest evidence capable of falsifying the changed contract and record
 
 CI green is necessary, not sufficient. UNKNOWN/UNVERIFIED evidence is not a PASS.
 
+## Local IDE SDK
+
+Build and test with JDK 25. The default SDK is the vendor-distributed IDEA Ultimate
+version in `gradle.properties` (currently 2026.2.3). If a local environment cannot
+mount the macOS installer, use an existing installation of that exact version:
+
+```sh
+./gradlew check buildPlugin -PlocalPlatformPath='/path/to/IntelliJ IDEA.app'
+```
+
+Record its `product-info.json` version/build and the JDK used with local evidence.
+This developer override does not change the CI SDK, Plugin Verifier targets or
+Starter/Driver IDE release; those checks still use the declared vendor versions.
+
 ## Changing CI/workflow policy
 
 - Never weaken `.github/workflow-policy/check_trust_boundary.py`, `check_pins.py`, required-context/live-settings/release-provenance checks, actionlint, or zizmor to make a finding disappear. Fix the underlying state.

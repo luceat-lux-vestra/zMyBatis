@@ -16,7 +16,7 @@ class DatabaseToolsExecutionResourceValidityContractTest {
             .substringAfter("fun executeSql(")
             .substringBefore("@Suppress(\"UsePropertyAccessSyntax\", \"TooGenericExceptionCaught\"")
 
-        val disposedCheck = executeSql.indexOf("Disposer.isDisposed(console)")
+        val disposedCheck = executeSql.indexOf("!console.isValid")
         val documentAccess = executeSql.indexOf("val consoleDoc = console.document")
         val fileAccess = executeSql.indexOf("val consolePsiFile = console.file")
 
@@ -41,7 +41,7 @@ class DatabaseToolsExecutionResourceValidityContractTest {
             .substringAfter("ApplicationManager.getApplication().invokeLater({")
             .substringBefore("}, ModalityState.any())")
 
-        val disposedCheck = retry.indexOf("Disposer.isDisposed(console)")
+        val disposedCheck = retry.indexOf("!console.isValid")
         val editorLookup = retry.indexOf("EditorFactory.getInstance().getEditors")
 
         assertTrue("retry callback must re-check console disposal", disposedCheck >= 0)
@@ -63,12 +63,12 @@ class DatabaseToolsExecutionResourceValidityContractTest {
             .substringAfter("private fun performExecution(")
             .substringBefore("@Suppress(\"UsePropertyAccessSyntax\")\n    private fun restoreConsoleDocument")
 
-        val firstDisposedCheck = perform.indexOf("Disposer.isDisposed(console)")
+        val firstDisposedCheck = perform.indexOf("!console.isValid")
         val documentAccess = perform.indexOf("val consoleDoc = console.document")
         val firstEditorCheck = perform.indexOf("consoleEditor.isDisposed")
         val nativeQuery = perform.indexOf("JdbcConsoleProvider.doRunQueryInConsole")
         val lastProjectCheck = perform.lastIndexOf("if (isProjectUnavailable())")
-        val lastDisposedCheck = perform.lastIndexOf("Disposer.isDisposed(console)")
+        val lastDisposedCheck = perform.lastIndexOf("!console.isValid")
         val lastEditorCheck = perform.lastIndexOf("consoleEditor.isDisposed")
 
         assertTrue("performExecution must check console before document access", firstDisposedCheck >= 0)

@@ -10,7 +10,7 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
 
 ## Maintained process scenarios
 
-`ZMyBatisStarterDriverE2ETest` maintains three process-level scenarios against the maintained IntelliJ IDEA Ultimate target:
+`ZMyBatisStarterDriverE2ETest` maintains three process-level scenarios against the maintained IntelliJ IDEA Ultimate 2026.2.3 target on JDK 25:
 
 1. **Packaged-plugin / production-service happy path**
    - installs the exact `buildPlugin` archive into a separate IDE process;

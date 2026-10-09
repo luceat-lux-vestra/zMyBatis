@@ -81,6 +81,8 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 .fromDataSource(dataSource)
                 .forFile(lightFile)
                 .build()
+            // Keep disposal authority with this resource, independently of Disposer diagnostics.
+            val consoleLifetime = Disposer.newCheckedDisposable(console)
             LOG.info("zMyBatis: console created for ${dataSource.name} (name=$consoleName)")
 
             if (schema != null && !switchSchemaOnConsole(console, schema)) {
@@ -102,7 +104,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 )
                 if (cache.get(resourceKey, targetId) !== console) {
                     LOG.warn("zMyBatis: console was not live after cache registration for $resourceKey — skipping query")
-                    if (!Disposer.isDisposed(console)) {
+                    if (!consoleLifetime.isDisposed) {
                         Disposer.dispose(console)
                     }
                     console = null
@@ -178,7 +180,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
             return
         }
-        if (Disposer.isDisposed(console)) {
+        if (!console.isValid) {
             LOG.warn("zMyBatis: console unavailable before SQL execution")
             onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
             return
@@ -204,7 +206,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                         onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
                         return@invokeLater
                     }
-                    if (Disposer.isDisposed(console)) {
+                    if (!console.isValid) {
                         LOG.warn("zMyBatis: console unavailable after editor-open scheduling")
                         onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
                         return@invokeLater
@@ -254,7 +256,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
             return
         }
-        if (Disposer.isDisposed(console)) {
+        if (!console.isValid) {
             LOG.warn("zMyBatis: console unavailable before execution preparation")
             onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
             return
@@ -303,7 +305,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
                 return
             }
-            if (Disposer.isDisposed(console)) {
+            if (!console.isValid) {
                 LOG.warn("zMyBatis: console unavailable before native query invocation")
                 restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
                 onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)

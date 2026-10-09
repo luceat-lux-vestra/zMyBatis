@@ -67,7 +67,7 @@ private fun Finder.textArea(): JTextAreaUi =
 class ZMyBatisStarterDriverE2ETest {
 
     companion object {
-        private const val IDE_RELEASE = "2026.2"
+        private const val IDE_RELEASE = "2026.2.3"
         private const val E2E_DATA_SOURCE_UUID = "4c6e150e-3d84-4a71-9d85-0a6d05d42e01"
         private const val KNOWN_ISLANDS_ISSUE = "IJPL-222870"
         private const val ISLANDS_FAILURE_PREFIX = "Theme Islands Dark refers to unknown color scheme"
@@ -111,7 +111,7 @@ class ZMyBatisStarterDriverE2ETest {
             }
 
         /**
-         * IDEA 2026.2 currently reports IJPL-222870 while initializing the bundled Islands Dark
+         * IDEA 2026.2 reported IJPL-222870 while initializing the bundled Islands Dark
          * theme: the UI theme can refer to a color scheme that has not been registered yet. This
          * is an upstream platform startup defect, not a zMyBatis exception.
          *
