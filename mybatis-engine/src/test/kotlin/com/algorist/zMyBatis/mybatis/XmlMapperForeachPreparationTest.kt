@@ -196,6 +196,108 @@ class XmlMapperForeachPreparationTest {
     }
 
     @Test
+    fun deleteSingleWhereMixedSiblingsMatchStockWithProvenTenantPredicate() {
+        val parameters = listOf(
+            parameter(0, "boolean", "enabled"),
+            parameter(1, "long", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids"),
+        )
+        val conditional = """<if test="enabled">AND flag=#{id,jdbcType=BIGINT}</if>"""
+        val loop = """<foreach collection="ids" item="item" index="idx" open="AND (id, ord) IN (" separator="," close=")">(#{item,jdbcType=BIGINT},#{idx})</foreach>"""
+        for ((open, close) in wrappers()) {
+            for (parts in listOf(listOf(conditional, loop), listOf(loop, conditional))) {
+                val fixture = fixture(
+                    "DELETE FROM t $open AND tenant_id=#{id,jdbcType=BIGINT} ${parts.joinToString(" ")} $close",
+                    parameters, StatementKind.DELETE,
+                )
+                for (enabled in listOf(false, true)) {
+                    for (ids in listOf(emptyList<Long>(), listOf(7L, 9L))) {
+                        val values = mapOf(
+                            0 to InputValue.BooleanValue(enabled),
+                            1 to integer(3),
+                            2 to InputValue.ListValue(ids.map(::integer)),
+                        )
+                        val contextLoader = Thread.currentThread().contextClassLoader
+                        val execution = success(request(fixture, values))
+                        assertSame(contextLoader, Thread.currentThread().contextClassLoader)
+                        assertStockParity(fixture, mapOf("enabled" to enabled, "id" to 3L, "ids" to ids), execution)
+                        assertEquals(StatementKind.DELETE, execution.statementKind)
+                        assertTrue(execution.sqlWithPlaceholders.contains("tenant_id"))
+                        assertEquals(if (enabled) 2 else 1, execution.orderedBindings.count { it.origin is PreparedBindingOrigin.CallerInput })
+                        val additional = execution.orderedBindings.filter { it.origin is PreparedBindingOrigin.MyBatisAdditional }
+                        assertEquals(ids.size * 2, additional.size)
+                        assertEquals(
+                            List(ids.size) { listOf("item", "idx") }.flatten(),
+                            additional.map { (it.origin as PreparedBindingOrigin.MyBatisAdditional).internalBinding.name },
+                        )
+                        assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
+                        assertEquals(
+                            MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
+                            (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun deleteWhereMixedRefusesMissingMapperAndInactiveUnprovenSourceDrift() {
+        val parameters = listOf(
+            parameter(0, "boolean", "enabled"),
+            parameter(1, "long", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids"),
+        )
+        val condition = """<if test="enabled">AND flag=#{id}</if>"""
+        val loop = """<foreach collection="ids" item="item">#{item}</foreach>"""
+        val body = "DELETE FROM t <where>AND tenant_id=#{id} $condition $loop</where>"
+        val original = fixture(body, parameters, StatementKind.DELETE)
+        val values = mapOf(0 to InputValue.BooleanValue(false), 1 to integer(3), 2 to listValue())
+        val baseline = contract(original)
+        val noCapture = XmlMapperPreparationEngine.prepare(
+            request(original, values, includeMapperCapture = false),
+        ) as PreparationResult.Failed
+        assertEquals("xml-foreach-preparation-mapper-authority-unproven", noCapture.failure.code)
+        for (changed in listOf(
+            body.replace(loop, "$loop$loop"),
+            body.replace(loop, """<foreach collection="ids" item="item"><if test="enabled">#{item}</if></foreach>"""),
+            body.replace(condition, """<if test="enabled">$loop</if>"""),
+            body.replace(condition, """<if test="enabled != null">AND flag=#{id}</if>"""),
+            body.replace(condition, """<if test="enabled">${'{table}</if>"""),
+            body.replace("<where>", """<where bogus="x">"""),
+            body.replace(loop, """<foreach collection="ids" item="item" nullable="true">#{item}</foreach>"""),
+            "$body<where>AND tenant_id=#{id}</where>",
+            body.replace(loop, """<include refid="unknown"/>"""),
+        )) {
+            val drifted = fixture(changed, parameters, StatementKind.DELETE)
+            assertTrue(
+                "DELETE source drift was prepared: $changed",
+                XmlMapperPreparationEngine.prepare(request(drifted, values, baseline)) is PreparationResult.Failed,
+            )
+        }
+        val noCollection = fixture(body, parameters.dropLast(1), StatementKind.DELETE)
+        assertTrue(contract(noCollection).isPreparationBlocked)
+        val altered = fixture(body.replace("tenant_id=#{id}", "tenant_id=3"), parameters, StatementKind.DELETE)
+        assertTrue(XmlMapperPreparationEngine.prepare(request(altered, values, baseline)) is PreparationResult.Failed)
+    }
+}{table}</if>"""),
+            body.replace("<where>", """<where bogus="x">"""),
+            body.replace(loop, """<foreach collection="ids" item="item" nullable="true">#{item}</foreach>"""),
+            "$body<where>AND tenant_id=#{id}</where>",
+            body.replace(loop, """<include refid="unknown"/>"""),
+        )) {
+            val drifted = fixture(changed, parameters, StatementKind.DELETE)
+            assertTrue(
+                "DELETE source drift was prepared: $changed",
+                XmlMapperPreparationEngine.prepare(request(drifted, values, baseline)) is PreparationResult.Failed,
+            )
+        }
+        val noCollection = fixture(body, parameters.dropLast(1), StatementKind.DELETE)
+        assertTrue(contract(noCollection).isPreparationBlocked)
+        val altered = fixture(body.replace("tenant_id=#{id}", "tenant_id=3"), parameters, StatementKind.DELETE)
+        assertTrue(XmlMapperPreparationEngine.prepare(request(altered, values, baseline)) is PreparationResult.Failed)
+    }
+    @Test
     fun updateSingleSetMixedSiblingsMatchStockForAllOrdersAndStates() {
         val parameters = listOf(
             parameter(0, "boolean", "enabled"),
