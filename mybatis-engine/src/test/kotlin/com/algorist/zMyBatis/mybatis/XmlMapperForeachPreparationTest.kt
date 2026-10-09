@@ -103,7 +103,6 @@ class XmlMapperForeachPreparationTest {
         }
     }
 
-
     @Test
     fun selectWhereMixedSiblingsMatchStockForAllOrdersAndStates() {
         val parameters = listOf(
