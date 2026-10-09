@@ -203,7 +203,7 @@ class XmlMapperForeachPreparationTest {
             parameter(2, "java.util.List<java.lang.Long>", "ids"),
         )
         val conditional = """<if test="enabled">status=#{id,jdbcType=BIGINT},</if>"""
-        val loop = """<foreach collection="ids" item="item" index="idx" separator=",">v=#{item,jdbcType=BIGINT},ord=#{idx}</foreach>"""
+        val loop = """<foreach collection="ids" item="item" index="idx" separator="," close=",">v=#{item,jdbcType=BIGINT},ord=#{idx}</foreach>"""
         for ((open, close) in setWrappers()) {
             for (parts in listOf(listOf(conditional, loop), listOf(loop, conditional))) {
                 val fixture = fixture("UPDATE t $open" + parts.joinToString(" ") + "$close WHERE record_id=#{id}", parameters, StatementKind.UPDATE)
