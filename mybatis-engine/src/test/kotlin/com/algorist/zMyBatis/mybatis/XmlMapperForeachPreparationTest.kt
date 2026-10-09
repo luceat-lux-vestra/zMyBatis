@@ -662,7 +662,6 @@ class XmlMapperForeachPreparationTest {
         val original = fixture("SELECT 1 <where>$loop</where>", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
         for (body in listOf(
             "SELECT 1 <where bogus=\"x\">$loop</where>",
-            "SELECT 1 <where>$loop<if test=\"enabled\">AND id = #{id}</if></where>",
             "SELECT 1 <where>$loop</where><where>$loop</where>",
             "SELECT 1 <trim prefix=\"WHERE\" prefixOverrides=\"AND|OR\">$loop</trim>",
         )) {
@@ -670,6 +669,12 @@ class XmlMapperForeachPreparationTest {
             val failure = XmlMapperPreparationEngine.prepare(request(drifted, mapOf(0 to listValue(7)), contract(original))) as PreparationResult.Failed
             assertEquals("xml-foreach-preparation-source-unsupported", failure.failure.code)
         }
+        // A valid SELECT WHERE source with unproven caller inputs must still fail.
+        val mixed = fixture("SELECT 1 <where>$loop<if test=\"enabled\">AND id = #{id}</if></where>", original.mapper.parameters)
+        val mixedFailure = XmlMapperPreparationEngine.prepare(
+            request(mixed, mapOf(0 to listValue(7)), contract(original)),
+        ) as PreparationResult.Failed
+        assertEquals("xml-foreach-preparation-mapper-unsupported", mixedFailure.failure.code)
         val raw = fixture("SELECT 1 <where><foreach collection=\"ids\" item=\"item\" open=\"${'$'}{ids}\">#{item}</foreach></where>", original.mapper.parameters)
         val failure = XmlMapperPreparationEngine.prepare(request(raw, mapOf(0 to listValue(7)))) as PreparationResult.Failed
         assertEquals("xml-preparation-raw-input-unsupported", failure.failure.code)
