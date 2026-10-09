@@ -33,8 +33,9 @@ import org.apache.ibatis.session.Configuration
  * island and source-proven foreach/Boolean-if contracts are admitted. Dynamic preparation owns
  * a fresh runtime; flat Boolean-if siblings directly or inside bounded where/set/trim wrappers require
  * complete mapper capture. A single foreach requires the same capture and may be direct or inside
- * a where-role wrapper, or a set-role wrapper for UPDATE. UPDATE may combine both wrappers
- * with exactly one foreach and only static text/caller bindings in the other wrapper.
+ * a where-role wrapper, or a set-role wrapper for UPDATE. Direct foreach and direct Boolean-if
+ * siblings may coexist. UPDATE wrapper composition still allows exactly one foreach only when the
+ * other wrapper contains static text/caller bindings.
  * Stock MyBatis owns evaluation and WHERE/SET trimming. No MyBatis object
  * crosses the child-classloader boundary.
  */
@@ -145,16 +146,15 @@ object XmlMapperPreparationEngine {
             is XmlForeachPreparationAdmission.Result.Failed -> return PreparationResult.Failed(admission.failure)
             XmlForeachPreparationAdmission.Result.NotPresent -> null
         }
-        // The producer admits mutually exclusive foreach and Boolean-if islands.
-        val booleanIf = if (foreach == null) {
-            source.mapperMethod?.let { mapper ->
-                when (val admission = XmlBooleanIfPreparationAdmission.inspect(source.sourceGraph, mapper, request.parameterContract)) {
-                    is XmlBooleanIfPreparationAdmission.Result.Admitted -> admission
-                    is XmlBooleanIfPreparationAdmission.Result.Failed -> return PreparationResult.Failed(admission.failure)
-                    XmlBooleanIfPreparationAdmission.Result.NotPresent -> null
-                }
+        val booleanIf = source.mapperMethod?.let { mapper ->
+            when (val admission = XmlBooleanIfPreparationAdmission.inspect(
+                source.sourceGraph, mapper, request.parameterContract,
+            )) {
+                is XmlBooleanIfPreparationAdmission.Result.Admitted -> admission
+                is XmlBooleanIfPreparationAdmission.Result.Failed -> return PreparationResult.Failed(admission.failure)
+                XmlBooleanIfPreparationAdmission.Result.NotPresent -> null
             }
-        } else null
+        }
 
         val foreachRequirementIds = foreach?.collectionRequirementIds.orEmpty()
         inputContractFailure(request, foreachRequirementIds)?.let { return PreparationResult.Failed(it) }
@@ -952,7 +952,10 @@ object XmlMapperPreparationEngine {
             val expected = placeholders
                 .filter { it.enclosingOgnlExpression == null || conditions[it.enclosingOgnlExpression] == true }
                 .groupingBy { it.expression }.eachCount()
-            val actual = bindings.groupingBy { it.property }.eachCount()
+            val actual = bindings
+                .filter { it.origin is PreparedBindingOrigin.CallerInput }
+                .groupingBy { it.property }
+                .eachCount()
             if (actual != expected) {
                 return XmlBindingCapture.Failed(
                     PreparationFailure(PreparationFailureKind.PARAMETER_MAPPING_MISMATCH, MAPPING_CARDINALITY_MISMATCH),
