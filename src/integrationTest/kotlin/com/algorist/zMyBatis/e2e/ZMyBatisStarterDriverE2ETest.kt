@@ -9,7 +9,6 @@ import com.intellij.driver.sdk.ui.Finder
 import com.intellij.driver.sdk.ui.components.ComponentData
 import com.intellij.driver.sdk.ui.components.UiComponent
 import com.intellij.driver.sdk.ui.components.common.ideFrame
-import com.intellij.driver.sdk.ui.components.common.dialogs.licenseDialog
 import com.intellij.driver.sdk.ui.components.elements.accessibleTable
 import com.intellij.driver.sdk.ui.components.elements.button
 import com.intellij.driver.sdk.ui.components.elements.dialog
@@ -59,6 +58,16 @@ interface ZMyBatisSettingsRemote {
 @Remote("javax.swing.text.JTextComponent")
 interface JTextComponentRemote {
     fun getText(): String
+}
+
+@Remote("com.intellij.platform.trialPromotion.common.TrialStateService")
+interface TrialStateServiceRemote {
+    fun getTrialAvailable(): TrialAvailabilityRemote
+}
+
+@Remote("kotlinx.coroutines.flow.StateFlow")
+interface TrialAvailabilityRemote {
+    fun getValue(): Boolean?
 }
 
 private class JTextAreaUi(data: ComponentData) : UiComponent(data) {
@@ -437,11 +446,12 @@ class ZMyBatisStarterDriverE2ETest {
             .useDriverAndCloseIde {
                 waitFor("application plugins initialized", timeout = 2.minutes) { arePluginsInitialized() }
                 if (!isPluginLoaded("com.intellij.modules.ultimate")) {
-                    invokeAction("Register", now = false)
-                    licenseDialog {
-                        startTrialTab.click()
-                        startTrialButton.click()
+                    waitFor("native trial action available", timeout = 2.minutes) {
+                        service(TrialStateServiceRemote::class).getTrialAvailable().getValue() == true
                     }
+                    // The release's native action starts its normal trial without a project.
+                    // Register opens subscription management, which has no trial tab in 2026.2.3.
+                    invokeAction("StartTrial", now = false)
                 }
                 waitFor("Ultimate activation complete before project startup", timeout = 2.minutes) {
                     isPluginLoaded("com.intellij.modules.ultimate") && arePluginsInitialized()
