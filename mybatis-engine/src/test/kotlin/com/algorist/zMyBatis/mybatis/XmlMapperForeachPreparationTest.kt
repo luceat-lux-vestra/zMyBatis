@@ -280,23 +280,6 @@ class XmlMapperForeachPreparationTest {
         val altered = fixture(body.replace("tenant_id=#{id}", "tenant_id=3"), parameters, StatementKind.DELETE)
         assertTrue(XmlMapperPreparationEngine.prepare(request(altered, values, baseline)) is PreparationResult.Failed)
     }
-}{table}</if>"""),
-            body.replace("<where>", """<where bogus="x">"""),
-            body.replace(loop, """<foreach collection="ids" item="item" nullable="true">#{item}</foreach>"""),
-            "$body<where>AND tenant_id=#{id}</where>",
-            body.replace(loop, """<include refid="unknown"/>"""),
-        )) {
-            val drifted = fixture(changed, parameters, StatementKind.DELETE)
-            assertTrue(
-                "DELETE source drift was prepared: $changed",
-                XmlMapperPreparationEngine.prepare(request(drifted, values, baseline)) is PreparationResult.Failed,
-            )
-        }
-        val noCollection = fixture(body, parameters.dropLast(1), StatementKind.DELETE)
-        assertTrue(contract(noCollection).isPreparationBlocked)
-        val altered = fixture(body.replace("tenant_id=#{id}", "tenant_id=3"), parameters, StatementKind.DELETE)
-        assertTrue(XmlMapperPreparationEngine.prepare(request(altered, values, baseline)) is PreparationResult.Failed)
-    }
     @Test
     fun updateSingleSetMixedSiblingsMatchStockForAllOrdersAndStates() {
         val parameters = listOf(
