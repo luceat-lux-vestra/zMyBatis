@@ -50,6 +50,135 @@ import org.junit.Test
 
 class XmlMapperForeachPreparationTest {
     @Test
+    fun combinedUpdateWrappersWithOneLoopMatchStockSqlMappingsAndValues() {
+        val parameters = listOf(parameter(0, "long", "status"), parameter(1, "java.util.List<java.lang.Long>", "ids"))
+        for ((setOpen, setClose) in setWrappers()) {
+            for ((whereOpen, whereClose) in wrappers()) {
+                for (loopInSet in listOf(false, true)) {
+                    val loop = if (loopInSet) {
+                        "<foreach collection=\"param2\" item=\"item\" index=\"idx\" separator=\",\">v=#{item,jdbcType=BIGINT},i=#{idx},repeat=#{item},</foreach>"
+                    } else {
+                        "<foreach collection=\"param2\" item=\"item\" index=\"idx\" open=\"AND id IN (\" close=\")\" separator=\",\">#{item,jdbcType=BIGINT},#{idx},#{item}</foreach>"
+                    }
+                    val parts = listOf("$setOpen base=#{status}, ${if (loopInSet) loop else ""} $setClose",
+                        "$whereOpen AND status=#{status} ${if (loopInSet) "" else loop} $whereClose")
+                    for (ordered in listOf(parts, parts.reversed())) {
+                        val fixture = fixture("UPDATE t " + ordered.joinToString(" ") + " RETURNING #{status}", parameters, StatementKind.UPDATE)
+                        for (ids in listOf(emptyList<Long?>(), listOf(7L), listOf(null, 9L))) {
+                            val input = InputValue.ListValue(ids.map { it?.let(::integer) ?: InputValue.NullValue })
+                            val before = Thread.currentThread().contextClassLoader
+                            val execution = success(request(fixture, mapOf(0 to integer(3), 1 to input)))
+                            assertStockParity(fixture, mapOf("status" to 3L, "param2" to ids), execution)
+                            assertEquals(3 + ids.size * 3, execution.orderedBindings.size)
+                            assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
+                            assertTrue(execution.rawInterpolations.isEmpty())
+                            val locals = contract(fixture).internalBindings.associateBy { it.name }
+                            for (binding in execution.orderedBindings.filter { it.additionalParameter }) {
+                                val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
+                                assertEquals(locals.getValue(origin.internalBinding.name), origin.internalBinding)
+                                assertEquals(origin.internalBinding.provenance, binding.provenance)
+                            }
+                            assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
+                                (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
+                            assertSame(before, Thread.currentThread().contextClassLoader)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun combinedWrappersRetainStockCollectionAliasesArrayAndTemporalMapTypes() {
+        val date = LocalDate.of(2026, 10, 9)
+        val cases = listOf(
+            CollectionCase("list", "java.util.List<java.lang.Long>", listValue(4, 6), listOf(4L, 6L)),
+            CollectionCase("collection", "java.util.Collection<java.lang.Long>", listValue(4, 6), listOf(4L, 6L)),
+            CollectionCase("array", "long[]", InputValue.ArrayValue(listOf(integer(4), integer(6))), longArrayOf(4, 6)),
+            CollectionCase("entries", "java.util.Map<java.lang.String,java.time.LocalDate>", InputValue.MapValue(linkedMapOf("a" to InputValue.DateValue(date))), linkedMapOf("a" to date)),
+        )
+        for ((setOpen, setClose) in setWrappers()) {
+            for ((whereOpen, whereClose) in wrappers()) {
+                for (loopInSet in listOf(false, true)) {
+                    for ((alias, type, input, runtime) in cases) {
+                        val loop = "<foreach collection=\"$alias\" item=\"item\" index=\"idx\" separator=\",\">#{idx},#{item}</foreach>"
+                        val body = "UPDATE t $setOpen${if (loopInSet) loop else "v=1"}$setClose $whereOpen${if (loopInSet) "id=1" else loop}$whereClose"
+                        val fixture = fixture(body, listOf(parameter(0, type, if (alias == "entries") alias else null)), StatementKind.UPDATE)
+                        assertStockParity(fixture, mapOf(alias to runtime), success(request(fixture, mapOf(0 to input))))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun combinedWrappersRefuseMissingMapperUnsupportedSourceAndCrossWrapperTokens() {
+        val parameters = listOf(parameter(0, "long", "status"), parameter(1, "java.util.List<java.lang.Long>", "ids"))
+        val loop = "<foreach collection=\"ids\" item=\"item\">v=#{item},</foreach>"
+        val body = "UPDATE t <set>$loop</set><where>AND id=#{status}</where>"
+        val original = fixture(body, parameters, StatementKind.UPDATE)
+        for (items in listOf(listValue(), listValue(7, 9))) {
+            val values = mapOf(0 to integer(3), 1 to items)
+            val missing = XmlMapperPreparationEngine.prepare(request(original, values, includeMapperCapture = false)) as PreparationResult.Failed
+            assertEquals("xml-foreach-preparation-mapper-authority-unproven", missing.failure.code)
+            for (changed in listOf(
+                body.replace("AND id=#{status}", loop),
+                body.replace("AND id=#{status}", "<if test=\"enabled\">AND id=#{status}</if>"),
+                body.replace("AND id=#{status}", "AND id=#{item}"),
+                "$body<set>v=1</set>",
+                body.replace("<set>", "<set bogus=\"x\">"),
+                body.replace("<where>", "<trim prefix=\"WHERE\" prefixOverrides=\"AND|OR\">").replace("</where>", "</trim>"),
+                body.replace("AND id=#{status}", "<bind name=\"x\" value=\"1\"/>"),
+            )) {
+                val changedFixture = fixture(changed, parameters, StatementKind.UPDATE)
+                val failure = XmlMapperPreparationEngine.prepare(request(changedFixture, values, contract(original))) as PreparationResult.Failed
+                assertEquals(changed, "xml-foreach-preparation-source-unsupported", failure.failure.code)
+            }
+            for (changed in listOf(
+                "UPDATE t #<set>$loop</set><where>{status}</where>",
+                "UPDATE t <set>$loop#</set><where>{status}</where>",
+                "UPDATE t <where>AND id=#{status}#</where><set>$loop</set>",
+                "UPDATE t <set>v=#{status},</set><where><foreach collection=\"ids\" item=\"item\" open=\"#{\">item}</foreach></where>",
+            )) {
+                val changedFixture = fixture(changed, parameters, StatementKind.UPDATE)
+                val before = Thread.currentThread().contextClassLoader
+                val failure = XmlMapperPreparationEngine.prepare(request(changedFixture, values)) as PreparationResult.Failed
+                assertEquals(changed, "xml-foreach-bound-token-topology-unsupported", failure.failure.code)
+                assertSame(before, Thread.currentThread().contextClassLoader)
+            }
+        }
+    }
+
+    @Test
+    fun combinedEmptyWrappersKeepStockOmissionAndEmptySqlRefusal() {
+        val parameters = listOf(parameter(0, "java.util.List<java.lang.Long>", "ids"))
+        for ((setOpen, setClose) in setWrappers()) {
+            for ((whereOpen, whereClose) in wrappers()) {
+                for (loopInSet in listOf(false, true)) {
+                    val loop = "<foreach collection=\"ids\" item=\"item\" separator=\",\"><![CDATA[#{item},]]></foreach>"
+                    val parts = listOf("$setOpen<!-- no static assignment -->${if (loopInSet) loop else ""}$setClose",
+                        "$whereOpen${if (loopInSet) "" else loop}$whereClose")
+                    for (ordered in listOf(parts, parts.reversed())) {
+                        val body = ordered.joinToString(" ")
+                        val fixture = fixture("UPDATE t $body", parameters, StatementKind.UPDATE)
+                        for (ids in listOf(emptyList<Long>(), listOf(7L, 9L))) {
+                            val execution = success(request(fixture, mapOf(0 to listValue(*ids.toLongArray()))))
+                            assertStockParity(fixture, mapOf("ids" to ids), execution)
+                            if (ids.isEmpty()) {
+                                assertEquals("UPDATEt", compact(execution.sqlWithPlaceholders))
+                                assertTrue(execution.orderedBindings.isEmpty())
+                            }
+                        }
+                        val empty = fixture(body, parameters, StatementKind.UPDATE)
+                        val failure = XmlMapperPreparationEngine.prepare(request(empty, mapOf(0 to listValue()))) as PreparationResult.Failed
+                        assertEquals("mybatis-prepared-sql-empty", failure.failure.code)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     fun updateSetForeachPreservesStockTrimmingOrderedBindingsAndLocalProvenance() {
         val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\" separator=\",\">v=#{item,jdbcType=BIGINT},seq=#{idx},repeated=#{item}</foreach>"
         for ((open, close) in setWrappers()) {
@@ -609,7 +738,16 @@ class XmlMapperForeachPreparationTest {
                 val setFixture = fixture("UPDATE t $open<foreach collection=\"ids\" item=\"item\" separator=\",\">v=#{item}</foreach>$close", fixture.mapper.parameters, StatementKind.UPDATE)
                 request(setFixture, mapOf(0 to listValue(7, 9)))
             }
-            val requests = listOf(direct) + wrapped + set
+            val combined = setWrappers().flatMap { (setOpen, setClose) ->
+                wrappers().flatMap { (whereOpen, whereClose) ->
+                    listOf(false, true).map { loopInSet ->
+                        val loop = "<foreach collection=\"ids\" item=\"item\" separator=\",\">#{item}</foreach>"
+                        val combinedFixture = fixture("UPDATE t $setOpen${if (loopInSet) loop else "v=1"}$setClose $whereOpen${if (loopInSet) "id=1" else loop}$whereClose", fixture.mapper.parameters, StatementKind.UPDATE)
+                        request(combinedFixture, mapOf(0 to listValue(7, 9)))
+                    }
+                }
+            }
+            val requests = listOf(direct) + wrapped + set + combined
             Executors.newFixedThreadPool(4).use { executor ->
                 val futures = executor.invokeAll((0 until requests.size * 2).map { index ->
                     Callable {

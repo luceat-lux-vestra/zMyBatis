@@ -33,7 +33,8 @@ import org.apache.ibatis.session.Configuration
  * island and source-proven foreach/Boolean-if contracts are admitted. Dynamic preparation owns
  * a fresh runtime; flat Boolean-if siblings directly or inside bounded where/set/trim wrappers require
  * complete mapper capture. A single foreach requires the same capture and may be direct or inside
- * the sole where-role wrapper, or a sole set-role wrapper for UPDATE.
+ * a where-role wrapper, or a set-role wrapper for UPDATE. UPDATE may combine both wrappers
+ * with exactly one foreach and only static text/caller bindings in the other wrapper.
  * Stock MyBatis owns evaluation and WHERE/SET trimming. No MyBatis object
  * crosses the child-classloader boundary.
  */

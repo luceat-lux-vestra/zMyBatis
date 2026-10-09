@@ -18,6 +18,67 @@ import org.junit.Test
 
 class XmlForeachParameterContractTest {
     @Test
+    fun updateSetAndWhereShareOneForeachWithoutInventingStaticWrapperLocals() {
+        val loop = "<foreach collection=\"param2\" item=\"item\" index=\"idx\" separator=\",\">#{item},#{idx}</foreach>"
+        for (set in listOf("<set>%s</set>", "<trim prefix=\"SET\" suffixOverrides=\",\">%s</trim>")) {
+            for (where in listOf("<where>%s</where>", "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">%s</trim>")) {
+                for (loopInSet in listOf(false, true)) {
+                    val parts = listOf(set.format("v=#{status}," + if (loopInSet) loop else ""),
+                        where.format("AND id=#{status}" + if (loopInSet) "" else loop))
+                    for (ordered in listOf(parts, parts.reversed())) {
+                        val graph = graph("UPDATE t " + ordered.joinToString(" "), StatementKind.UPDATE)
+                        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper(graph, listOf(
+                            parameter(0, "long", "status", "status"),
+                            parameter(1, "java.util.List<java.lang.Long>", "ids", "ids"),
+                        )))
+                        assertFalse(ordered.toString(), contract.isPreparationBlocked)
+                        assertEquals(setOf("status", "param2"), contract.aliases.map { it.name }.toSet())
+                        assertEquals(listOf("item", "idx"), contract.internalBindings.map { it.name })
+                        assertEquals(listOf("status", "status"), contract.requirements.flatMap { it.provenance.evidence }
+                            .filterIsInstance<InputEvidence.Placeholder>().map { it.expression })
+                        assertEquals("param2", contract.requirements.flatMap { it.provenance.evidence }
+                            .filterIsInstance<InputEvidence.ForeachCollection>().single().expression)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun combinedForeachWrappersRetainSingleLoopUpdateAndScopeLimits() {
+        val loop = "<foreach collection=\"ids\" item=\"item\">#{item}</foreach>"
+        val invalid = listOf(
+            "<set>v=1</set><where>AND id=1</where>",
+            "<set/><where/>",
+            "<set>$loop</set><where>$loop</where>",
+            "<where>$loop</where><set>$loop</set>",
+            "$loop<set>v=1</set><where>id=1</where>",
+            "<set>v=1</set><where>id=1</where>$loop",
+            "<set>$loop</set><where>id=#{item}</where>",
+            "<set>v=#{item}</set><where>$loop</where>",
+            "<set>$loop</set><where><if test=\"enabled\">id=1</if></where>",
+            "<set><if test=\"enabled\">v=1</if></set><where>$loop</where>",
+            "<set>$loop</set><where>id=1</where><trim prefix=\"SET\" suffixOverrides=\",\">v=2</trim>",
+            "<set>v=1</set><where>$loop<where>id=1</where></where>",
+            "<set>$loop</set><where bogus=\"x\">id=1</where>",
+            "<trim prefix=\"SET\" suffixOverrides=\", \">v=1</trim><where>$loop</where>",
+            "<set>v=${raw("status")}</set><where>$loop</where>",
+        )
+        for (body in invalid) {
+            val contract = XmlStatementParameterContractFactory.build(graph(body, StatementKind.UPDATE))
+            assertTrue(body, contract.isPreparationBlocked)
+            assertTrue(body, contract.requirements.isEmpty() && contract.aliases.isEmpty())
+        }
+        for (kind in StatementKind.entries.filterNot { it == StatementKind.UPDATE }) {
+            for (body in listOf("<set>v=1</set><where>$loop</where>", "<where>id=1</where><set>$loop</set>")) {
+                val contract = XmlStatementParameterContractFactory.build(graph(body, kind))
+                assertTrue("$kind $body", contract.isPreparationBlocked)
+                assertTrue(contract.requirements.isEmpty() && contract.aliases.isEmpty())
+            }
+        }
+    }
+
+    @Test
     fun updateSetAndLiteralTrimRetainCallerCollectionAndLocalAuthority() {
         val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\" separator=\",\">v=#{item},seq=#{idx}</foreach>"
         for ((open, close) in listOf(
