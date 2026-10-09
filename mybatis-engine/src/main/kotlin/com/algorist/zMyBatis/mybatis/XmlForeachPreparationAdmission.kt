@@ -17,7 +17,8 @@ import com.algorist.zMyBatis.core.source.StatementSourceGraph
  *
  * This object does not execute MyBatis or authorize DynamicSqlSource. It only establishes that the
  * supplied consumer contract is the same foreach authority that the authoritative XML source
- * currently proves through the #321 source contract factory.
+ * currently proves through the source contract factory: one direct foreach, optionally inside
+ * the sole bounded where-role wrapper, with no if/set or other dynamic composition.
  */
 internal object XmlForeachPreparationAdmission {
     private const val CALLER_AUTHORITY_PROBLEM = "xml-caller-input-authority-unproven"

@@ -20,11 +20,12 @@ import javax.xml.stream.XMLStreamReader
  * is retained as provenance while caller-input authority remains blocked. A placeholder-free static
  * root statement can produce an empty non-blocking contract. Flat simple-name if siblings, either
  * direct or inside direct wrappers (one where, plus one set for UPDATE), carry
- * OGNL and placeholder-scope provenance. Each wrapper must contain a Boolean-if sibling;
+ * OGNL and placeholder-scope provenance. Each Boolean wrapper must contain a Boolean-if sibling;
  * bounded trim forms with literal WHERE/SET prefixes share those wrapper limits. Native where/set
  * accept no attributes; trim accepts only the exact prefix/override pairs checked below.
  * Mapper metadata must separately prove every Boolean caller alias. This scanner discovers source
- * uses, never evaluates conditions or WHERE/SET trimming semantics.
+ * uses, never evaluates conditions or WHERE/SET trimming semantics. One bounded foreach may instead
+ * be the direct child of the sole where-role wrapper, without any if/set/other dynamic nodes.
  */
 object XmlStatementParameterContractFactory {
     private const val DEPENDENCY_PROVENANCE_PROBLEM = "xml-dependent-fragment-provenance-unsupported"
@@ -262,6 +263,7 @@ object XmlStatementParameterContractFactory {
         var targetClosed = false
         var foreachDepth = -1
         var wrapperDepth = -1
+        var activeWrapperKind: String? = null
         val wrappersSeen = mutableSetOf<String>()
         var wrapperConditionStart = 0
         var ifDepth = -1
@@ -321,7 +323,7 @@ object XmlStatementParameterContractFactory {
                         }
 
                         if (targetDepth >= 0) {
-                            val wrapperKind = booleanWrapperKind(reader, statementKind)
+                            val wrapperKind = wrapperKind(reader, statementKind)
                             if (
                                 depth == targetDepth + 1 &&
                                 wrapperKind != null && wrapperKind !in wrappersSeen &&
@@ -331,16 +333,18 @@ object XmlStatementParameterContractFactory {
                             ) {
                                 wrappersSeen += wrapperKind
                                 wrapperDepth = depth
+                                activeWrapperKind = wrapperKind
                                 wrapperConditionStart = ifConditions.size
                                 continue
                             }
                             if (
-                                depth == targetDepth + 1 &&
+                                ((depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
+                                    (activeWrapperKind == "where" && depth == wrapperDepth + 1)) &&
                                 localName == "foreach" &&
                                 isUnqualifiedElement(reader) &&
                                 foreachDepth < 0 &&
                                 foreachDeclaration == null &&
-                                ifConditions.isEmpty() && wrappersSeen.isEmpty()
+                                ifConditions.isEmpty()
                             ) {
                                 val declaration = parseForeachDeclaration(reader)
                                     ?: return StatementScan.Failed(
@@ -401,13 +405,14 @@ object XmlStatementParameterContractFactory {
                             activeIfCondition = null
                         }
                         if (wrapperDepth == depth) {
-                            if (ifConditions.size == wrapperConditionStart) {
+                            if (ifConditions.size == wrapperConditionStart && foreachDeclaration == null) {
                                 return StatementScan.Failed(
                                     InputContractProblemKind.UNSUPPORTED,
                                     NESTED_ELEMENT_PROBLEM,
                                 )
                             }
                             wrapperDepth = -1
+                            activeWrapperKind = null
                         }
                         if (foreachDepth == depth) {
                             foreachDepth = -1
@@ -569,8 +574,8 @@ object XmlStatementParameterContractFactory {
         return ForeachDeclaration(collection, item, index)
     }
 
-    /** Classifies wrapper limits only; stock MyBatis still owns every trim operation. */
-    private fun booleanWrapperKind(reader: XMLStreamReader, kind: StatementKind): String? {
+    /** Classifies where/set roles only; stock MyBatis still owns every trim operation. */
+    private fun wrapperKind(reader: XMLStreamReader, kind: StatementKind): String? {
         if (!isUnqualifiedElement(reader)) return null
         return when (reader.localName) {
             "where" -> "where".takeIf { reader.attributeCount == 0 }

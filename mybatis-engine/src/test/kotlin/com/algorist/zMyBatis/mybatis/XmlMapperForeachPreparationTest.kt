@@ -32,6 +32,7 @@ import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
 import com.algorist.zMyBatis.core.source.XmlMapperMethodCapture
 import com.algorist.zMyBatis.core.source.XmlStatementId
+import java.io.ByteArrayInputStream
 import java.lang.reflect.Proxy
 import java.math.BigInteger
 import java.net.URLClassLoader
@@ -40,6 +41,7 @@ import java.util.concurrent.Callable
 import java.util.concurrent.CancellationException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import org.apache.ibatis.builder.xml.XMLMapperBuilder
 import org.apache.ibatis.session.Configuration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -47,6 +49,138 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class XmlMapperForeachPreparationTest {
+    @Test
+    fun wrappedForeachPreservesStockSqlOrderMetadataAndValues() {
+        val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\" open=\"AND id IN (\" close=\")\" separator=\",\">#{idx},#{item,jdbcType=BIGINT},#{item}</foreach>"
+        for ((open, close) in wrappers()) {
+            for (kind in StatementKind.entries) {
+                val fixture = fixture("SELECT #{status} $open AND status = #{status} $loop $close RETURNING #{status}",
+                    listOf(parameter(0, "long", "status"), parameter(1, "java.util.List<java.lang.Long>", "ids")), kind)
+                for (ids in listOf(emptyList(), listOf(7L), listOf(7L, 9L))) {
+                    val before = Thread.currentThread().contextClassLoader
+                    val execution = success(request(fixture, mapOf(0 to integer(3), 1 to listValue(*ids.toLongArray()))))
+                    assertStockParity(fixture, mapOf("status" to 3L, "ids" to ids), execution)
+                    assertEquals(listOf(integer(3), integer(3)) + ids.flatMapIndexed { index, item -> listOf(integer(index.toLong()), integer(item), integer(item)) } + integer(3), execution.orderedBindings.map { it.value })
+                    assertEquals(kind, execution.statementKind)
+                    assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
+                    assertTrue(execution.rawInterpolations.isEmpty())
+                    val locals = contract(fixture).internalBindings.associateBy { it.name }
+                    for (binding in execution.orderedBindings.filter { it.additionalParameter }) {
+                        val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
+                        assertEquals(locals.getValue(origin.internalBinding.name), origin.internalBinding)
+                        assertEquals(origin.internalBinding.provenance, binding.provenance)
+                    }
+                    assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
+                    assertSame(before, Thread.currentThread().contextClassLoader)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun wrappedEmptyCollectionsNullItemsAndWhitespaceRemainStockSemantics() {
+        for ((open, close) in wrappers()) {
+            for (loopOpen in listOf("AND id IN (", "AND\nid IN (", "AND&#10;id IN (", "ANDROID IN (")) {
+                val fixture = fixture("SELECT 1 $open<!-- ignored --><foreach collection=\"ids\" item=\"item\" open=\"$loopOpen\" close=\")\" separator=\",\"><![CDATA[#{item}]]></foreach>$close", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
+                for (ids in listOf(emptyList<Long?>(), listOf(7L), listOf(null, 9L))) {
+                    val input = InputValue.ListValue(ids.map { it?.let(::integer) ?: InputValue.NullValue })
+                    val execution = success(request(fixture, mapOf(0 to input)))
+                    assertStockParity(fixture, mapOf("ids" to ids), execution)
+                    assertEquals(input.elements, execution.orderedBindings.map { it.value })
+                    if (ids.isEmpty()) {
+                        assertEquals("SELECT1", compact(execution.sqlWithPlaceholders))
+                        assertTrue(execution.orderedBindings.isEmpty())
+                    }
+                }
+            }
+            val only = fixture("$open<foreach collection=\"ids\" item=\"item\">#{item}</foreach>$close", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
+            val empty = XmlMapperPreparationEngine.prepare(request(only, mapOf(0 to listValue()))) as PreparationResult.Failed
+            assertEquals("mybatis-prepared-sql-empty", empty.failure.code)
+        }
+    }
+
+    @Test
+    fun wrappedStockAliasesArraysAndMapKeysRetainRuntimeTypes() {
+        data class CollectionCase(val alias: String, val type: String, val input: InputValue, val runtime: Any)
+        for ((open, close) in wrappers()) {
+            for ((alias, type, input, runtime) in listOf(
+                CollectionCase("list", "java.util.List<java.lang.Long>", listValue(4, 6), listOf(4L, 6L)),
+                CollectionCase("collection", "java.util.Collection<java.lang.Long>", listValue(4, 6), listOf(4L, 6L)),
+                CollectionCase("array", "long[]", InputValue.ArrayValue(listOf(integer(4), integer(6))), longArrayOf(4, 6)),
+            )) {
+                val fixture = fixture("SELECT 1 $open<foreach collection=\"$alias\" item=\"item\" open=\"AND id IN (\" close=\")\" separator=\",\">#{item}</foreach>$close", listOf(parameter(0, type, null)))
+                assertStockParity(fixture, mapOf(alias to runtime), success(request(fixture, mapOf(0 to input))))
+            }
+            val date = LocalDate.of(2026, 10, 9)
+            val fixture = fixture("SELECT 1 $open<foreach collection=\"entries\" item=\"item\" index=\"key\" separator=\",\">#{key},#{item}</foreach>$close", listOf(parameter(0, "java.util.Map<java.lang.String,java.time.LocalDate>", "entries")))
+            val execution = success(request(fixture, mapOf(0 to InputValue.MapValue(linkedMapOf("a" to InputValue.DateValue(date))))))
+            assertStockParity(fixture, mapOf("entries" to linkedMapOf("a" to date)), execution)
+            assertEquals(listOf(InputValue.Text("a"), InputValue.DateValue(date)), execution.orderedBindings.map { it.value })
+            val generic = fixture("SELECT 1 $open<foreach collection=\"param2\" item=\"item\">#{item}</foreach>$close", listOf(parameter(0, "long", "unused"), parameter(1, "java.util.List<java.lang.Long>", "ids")))
+            assertStockParity(generic, mapOf("param2" to listOf(7L)), success(request(generic, mapOf(1 to listValue(7)))))
+        }
+    }
+
+    @Test
+    fun foreachTokenSynthesisAndEscapingAreRefusedEvenForEmptyCollections() {
+        for ((open, close) in wrappers() + ("" to "")) {
+            for (body in listOf(
+                "SELECT $open<foreach collection=\"ids\" item=\"item\" open=\"#{\">item}</foreach>$close",
+                "SELECT $open<foreach collection=\"ids\" item=\"item\" separator=\"#\">#{item}</foreach>$close",
+                "SELECT $open<foreach collection=\"ids\" item=\"item\" close=\"\\\">#{item}</foreach>$close",
+                "SELECT #$open<foreach collection=\"ids\" item=\"item\">{item}</foreach>$close",
+            )) {
+                val fixture = fixture(body, listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
+                for (input in listOf(listValue(), listValue(7, 9))) {
+                    val before = Thread.currentThread().contextClassLoader
+                    val failure = XmlMapperPreparationEngine.prepare(request(fixture, mapOf(0 to input))) as PreparationResult.Failed
+                    assertEquals(body, PreparationFailureKind.UNSUPPORTED_SEMANTIC, failure.failure.kind)
+                    assertEquals(body, "xml-foreach-bound-token-topology-unsupported", failure.failure.code)
+                    assertSame(before, Thread.currentThread().contextClassLoader)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun topologyChecksEveryCapturedMapperWithoutAssumingASingleSnapshot() {
+        for ((open, close) in wrappers() + ("" to "")) {
+            val original = fixture("SELECT 1 $open<foreach collection=\"ids\" item=\"item\">#{item}</foreach>$close", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
+            val other = original.graph.sourceSnapshots.single().copy(
+                fileId = SourceFileId("vfs:/Other.xml"),
+                content = original.graph.sourceSnapshots.single().content.replace("example.Mapper", "example.Other"),
+            )
+            val graph = StatementSourceGraph(original.graph.rootStatement, original.graph.sourceSnapshots + other, emptyList())
+            val captured = original.copy(graph = graph)
+            val prepared = success(request(captured, mapOf(0 to listValue(7))))
+            assertEquals(contract(captured).sourceRevisions, prepared.sourceRevisions)
+            assertEquals(listOf(integer(7)), prepared.orderedBindings.map { it.value })
+            val unsafe = other.copy(content = other.content.replace("#{item}", "\\#{item}"))
+            val drifted = original.copy(graph = StatementSourceGraph(original.graph.rootStatement, original.graph.sourceSnapshots + unsafe, emptyList()))
+            val failure = XmlMapperPreparationEngine.prepare(request(drifted, mapOf(0 to listValue(7)))) as PreparationResult.Failed
+            assertEquals("xml-foreach-bound-token-topology-unsupported", failure.failure.code)
+        }
+    }
+
+    @Test
+    fun wrapperDriftAndRawStructuralAttributesCannotReuseOldAuthority() {
+        val loop = "<foreach collection=\"ids\" item=\"item\">#{item}</foreach>"
+        val original = fixture("SELECT 1 <where>$loop</where>", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
+        for (body in listOf(
+            "SELECT 1 <where bogus=\"x\">$loop</where>",
+            "SELECT 1 <where>$loop<if test=\"enabled\">AND id = #{id}</if></where>",
+            "SELECT 1 <where>$loop</where><where>$loop</where>",
+            "SELECT 1 <trim prefix=\"WHERE\" prefixOverrides=\"AND|OR\">$loop</trim>",
+        )) {
+            val drifted = fixture(body, original.mapper.parameters)
+            val failure = XmlMapperPreparationEngine.prepare(request(drifted, mapOf(0 to listValue(7)), contract(original))) as PreparationResult.Failed
+            assertEquals("xml-foreach-preparation-source-unsupported", failure.failure.code)
+        }
+        val raw = fixture("SELECT 1 <where><foreach collection=\"ids\" item=\"item\" open=\"${'$'}{ids}\">#{item}</foreach></where>", original.mapper.parameters)
+        val failure = XmlMapperPreparationEngine.prepare(request(raw, mapOf(0 to listValue(7)))) as PreparationResult.Failed
+        assertEquals("xml-preparation-raw-input-unsupported", failure.failure.code)
+    }
+
     @Test
     fun sourceDerivedListCapturesOrderedRepeatedItemsAndIndexProvenance() {
         val fixture = fixture(
@@ -282,24 +416,63 @@ class XmlMapperForeachPreparationTest {
                 """SELECT <foreach collection="ids" item="item" separator=",">#{item}</foreach>""",
                 listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")),
             )
-            val request = request(fixture, mapOf(0 to listValue(7, 9)))
+            val direct = request(fixture, mapOf(0 to listValue(7, 9)))
+            val wrapped = wrappers().map { (open, close) ->
+                val wrappedFixture = fixture("SELECT 1 $open<foreach collection=\"ids\" item=\"item\" separator=\",\">#{item}</foreach>$close", fixture.mapper.parameters)
+                request(wrappedFixture, mapOf(0 to listValue(7, 9)))
+            }
+            val requests = listOf(direct) + wrapped
             Executors.newFixedThreadPool(4).use { executor ->
-                val futures = executor.invokeAll((0 until 12).map {
+                val futures = executor.invokeAll((0 until 12).map { index ->
                     Callable {
                         val thread = Thread.currentThread()
                         val contextLoader = thread.contextClassLoader
-                        val prepared = success(request)
+                        val prepared = success(requests[index % requests.size])
                         assertSame(contextLoader, thread.contextClassLoader)
+                        assertEquals(listOf(integer(7), integer(9)), prepared.orderedBindings.map { it.value })
                         prepared
                     }
                 }, 60, TimeUnit.SECONDS)
                 val executions = futures.map { it.get(1, TimeUnit.SECONDS) }
-                assertTrue(executions.all { it == executions.first() })
+                for (index in executions.indices) assertEquals(executions[index % requests.size], executions[index])
                 assertEquals(listOf("__frch_item_0", "__frch_item_1"), executions.first().orderedBindings.map { it.property })
             }
             assertSame(poison, get.invoke(null, contextMap))
         } finally {
             set.invoke(null, contextMap, original)
+        }
+    }
+
+    private fun wrappers() = listOf(
+        "<where>" to "</where>",
+        "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">" to "</trim>",
+        "<trim prefixOverrides=\"AND &#124;OR \" prefix=\"&#87;HERE\">" to "</trim>",
+    )
+
+    private fun assertStockParity(fixture: Fixture, values: Map<String, Any?>, execution: PreparedExecution) {
+        val configuration = Configuration()
+        ByteArrayInputStream(fixture.graph.sourceSnapshots.single().content.toByteArray(Charsets.UTF_8)).use {
+            XMLMapperBuilder(it, configuration, "stock-wrapped-foreach-oracle", configuration.sqlFragments).parse()
+        }
+        val stock = configuration.getMappedStatement("example.Mapper.find").getBoundSql(values)
+        assertEquals(stock.sql, execution.sqlWithPlaceholders)
+        assertEquals(stock.parameterMappings.map { it.property }, execution.orderedBindings.map { it.property })
+        stock.parameterMappings.zip(execution.orderedBindings).forEach { (mapping, binding) ->
+            assertEquals(mapping.javaType.name, binding.metadata.mappingJavaTypeIdentity)
+            assertEquals(mapping.jdbcType?.name, binding.metadata.jdbcTypeIdentity)
+            assertEquals(mapping.typeHandler.javaClass.name, binding.metadata.typeHandlerIdentity)
+            assertEquals(mapping.mode.name, binding.metadata.parameterMode)
+            assertEquals(mapping.numericScale, binding.metadata.numericScale)
+            val runtime = if (stock.hasAdditionalParameter(mapping.property)) stock.getAdditionalParameter(mapping.property) else values[mapping.property]
+            val value = when (runtime) {
+                null -> InputValue.NullValue
+                is Long -> integer(runtime)
+                is Int -> integer(runtime.toLong())
+                is String -> InputValue.Text(runtime)
+                is LocalDate -> InputValue.DateValue(runtime)
+                else -> throw AssertionError("Unexpected stock oracle value type")
+            }
+            assertEquals(value, binding.value)
         }
     }
 
@@ -313,7 +486,9 @@ class XmlMapperForeachPreparationTest {
             val index = requirement.provenance.evidence.filterIsInstance<InputEvidence.MapperMethodParameter>().first().index
             ProvidedInput(requirement.id, values.getValue(index), ExecutionInputOrigin.USER_ENTERED)
         }
-        val environment = (InputEnvironment.validate(contract, provided) as InputEnvironmentResult.Success).environment
+        val validated = InputEnvironment.validate(contract, provided)
+        assertTrue("Input validation: $validated; contract problems: ${contract.blockingProblems}", validated is InputEnvironmentResult.Success)
+        val environment = (validated as InputEnvironmentResult.Success).environment
         return (MyBatisPreparationRequest.create(
             XmlMapperPreparationSource(fixture.graph, additionalAuthoritySnapshots = listOf(fixture.mapper.mapperSource)),
             contract, environment,
@@ -322,16 +497,17 @@ class XmlMapperForeachPreparationTest {
 
     private fun contract(fixture: Fixture) = XmlMapperMethodParameterContractFactory.build(fixture.graph, fixture.mapper)
 
-    private fun fixture(body: String, parameters: List<JavaMethodParameterMetadata>): Fixture {
+    private fun fixture(body: String, parameters: List<JavaMethodParameterMetadata>, kind: StatementKind = StatementKind.SELECT): Fixture {
         val file = SourceFileId("vfs:/foreach.xml")
         val id = XmlStatementId(file, "example.Mapper", "find")
+        val element = kind.name.lowercase()
         val xml = """
             <?xml version="1.0" encoding="UTF-8" ?>
             <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-            <mapper namespace="example.Mapper"><select id="find">$body</select></mapper>
-        """.trimIndent()
+            <mapper namespace="example.Mapper"><$element id="find">$body</$element></mapper>
+        """.trimIndent().trimStart()
         val graph = StatementSourceGraph(
-            CapturedStatement(id, StatementKind.SELECT, SourceRange(0, xml.length)),
+            CapturedStatement(id, kind, SourceRange(0, xml.length)),
             listOf(SourceSnapshot(file, SourceRevision("xml-foreach-r1"), xml)), emptyList(),
         )
         val mapper = XmlMapperMethodCapture(
