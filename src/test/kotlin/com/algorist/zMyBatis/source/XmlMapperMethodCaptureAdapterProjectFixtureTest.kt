@@ -5,6 +5,7 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.XmlStatementId
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.vfs.newvfs.impl.VfsRootAccess
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.PsiTestUtil
@@ -28,6 +29,7 @@ class XmlMapperMethodCaptureAdapterProjectFixtureTest : LightJavaCodeInsightFixt
         PsiTestUtil.addSourceRoot(module, tempRoot)
 
         val myBatisJar = File(PathUtil.getJarPathForClass(Param::class.java))
+        VfsRootAccess.allowRootAccess(testRootDisposable, myBatisJar.absolutePath)
         PsiTestUtil.addLibrary(module, "mybatis-3.5.19", myBatisJar.parent, myBatisJar.name)
     }
 

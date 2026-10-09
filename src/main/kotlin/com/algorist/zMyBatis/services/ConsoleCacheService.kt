@@ -154,9 +154,9 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             entry.console
         }
 
-        rejectedEntry?.console?.let { staleConsole ->
-            if (!Disposer.isDisposed(staleConsole)) {
-                Disposer.dispose(staleConsole)
+        rejectedEntry?.let { staleEntry ->
+            if (!staleEntry.sentinel.isDisposed) {
+                Disposer.dispose(staleEntry.console)
             }
         }
         return result
@@ -167,7 +167,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             cache.remove(mapperKey)
         } ?: return
 
-        if (!Disposer.isDisposed(entry.console)) {
+        if (!entry.sentinel.isDisposed) {
             Disposer.dispose(entry.console)
         }
     }
@@ -324,9 +324,9 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
 
     private fun disposeDetachedEntries(entries: Iterable<Entry>) {
         disposeOwnedResourcesPreservingFailureSemantics(
-            resources = entries.map { it.console },
-            isDisposed = { Disposer.isDisposed(it) },
-            disposeResource = { Disposer.dispose(it) },
+            resources = entries,
+            isDisposed = { it.sentinel.isDisposed },
+            disposeResource = { Disposer.dispose(it.console) },
         )
     }
 

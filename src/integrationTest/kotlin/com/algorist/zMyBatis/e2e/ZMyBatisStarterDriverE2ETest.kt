@@ -1,7 +1,9 @@
 package com.algorist.zMyBatis.e2e
 
 import com.intellij.driver.client.Remote
+import com.intellij.driver.sdk.arePluginsInitialized
 import com.intellij.driver.sdk.invokeAction
+import com.intellij.driver.sdk.isPluginLoaded
 import com.intellij.driver.sdk.openFile
 import com.intellij.driver.sdk.ui.Finder
 import com.intellij.driver.sdk.ui.components.ComponentData
@@ -27,6 +29,8 @@ import com.intellij.ide.starter.models.TestCase
 import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
+import com.intellij.ide.starter.runner.startIdeWithoutProject
+import com.intellij.ide.starter.ide.IDETestContext
 import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTestKind
 import com.intellij.tools.ide.starter.product.idea.ultimate.IdeaUltimate
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -56,6 +60,19 @@ interface JTextComponentRemote {
     fun getText(): String
 }
 
+@Remote(
+    "com.intellij.platform.trialPromotion.common.TrialStateService",
+    plugin = "com.intellij/intellij.platform.trialPromotion.common",
+)
+interface TrialStateServiceRemote {
+    fun getTrialAvailable(): TrialAvailabilityRemote
+}
+
+@Remote("kotlinx.coroutines.flow.StateFlow")
+interface TrialAvailabilityRemote {
+    fun getValue(): Boolean?
+}
+
 private class JTextAreaUi(data: ComponentData) : UiComponent(data) {
     val text: String
         get() = driver.cast(component, JTextComponentRemote::class).getText()
@@ -67,7 +84,7 @@ private fun Finder.textArea(): JTextAreaUi =
 class ZMyBatisStarterDriverE2ETest {
 
     companion object {
-        private const val IDE_RELEASE = "2026.2"
+        private const val IDE_RELEASE = "2026.2.3"
         private const val E2E_DATA_SOURCE_UUID = "4c6e150e-3d84-4a71-9d85-0a6d05d42e01"
         private const val KNOWN_ISLANDS_ISSUE = "IJPL-222870"
         private const val ISLANDS_FAILURE_PREFIX = "Theme Islands Dark refers to unknown color scheme"
@@ -111,7 +128,7 @@ class ZMyBatisStarterDriverE2ETest {
             }
 
         /**
-         * IDEA 2026.2 currently reports IJPL-222870 while initializing the bundled Islands Dark
+         * IDEA 2026.2 reported IJPL-222870 while initializing the bundled Islands Dark
          * theme: the UI theme can refer to a color scheme that has not been registered yet. This
          * is an upstream platform startup defect, not a zMyBatis exception.
          *
@@ -422,7 +439,32 @@ class ZMyBatisStarterDriverE2ETest {
                 ?.takeIf { it.isNotBlank() }
                 ?.let { setLicense(it) }
             PluginConfigurator(this).installPluginFromPath(pluginArchive)
+            activateBeforeOpeningProject(this)
         }
+
+    private fun activateBeforeOpeningProject(context: IDETestContext) {
+        // Keep the normal license/trial flow, but complete it before project-tree reads begin.
+        // On 2026.2.3 activation dynamically reloads schemes; overlapping project startup races them.
+        context.runIdeWithDriver(commandLine = ::startIdeWithoutProject, launchName = "activation")
+            .useDriverAndCloseIde {
+                waitFor("application plugins initialized", timeout = 2.minutes) { arePluginsInitialized() }
+                if (!isPluginLoaded("com.intellij.modules.ultimate")) {
+                    waitFor("native trial action available", timeout = 2.minutes) {
+                        service(TrialStateServiceRemote::class).getTrialAvailable().getValue() == true
+                    }
+                    // The release's native action starts its normal trial without a project.
+                    // Register opens subscription management, which has no trial tab in 2026.2.3.
+                    invokeAction("StartTrial", now = false)
+                }
+                waitFor("Ultimate activation complete before project startup", timeout = 2.minutes) {
+                    isPluginLoaded("com.intellij.modules.ultimate") && arePluginsInitialized()
+                }
+            }
+        assertTrue(
+            Files.isRegularFile(context.paths.configDir.resolve("idea.key")),
+            "activation must persist its state before the project run",
+        )
+    }
 
     private fun writeH2DatabaseToolsDriverFixture(configDir: Path, h2Jar: Path) {
         // Database Tools does not use the IDE process classpath as its JDBC driver library.

@@ -6,11 +6,10 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.PsiDocumentManager
-import com.intellij.testFramework.EdtTestUtil
+import com.intellij.testFramework.runInEdtAndWait
 import com.intellij.testFramework.fixtures.IdeaTestFixtureFactory
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
 import com.intellij.testFramework.fixtures.TempDirTestFixture
-import com.intellij.util.ThrowableRunnable
 import java.lang.reflect.Proxy
 import java.nio.file.Files
 import java.nio.file.Path
@@ -105,17 +104,15 @@ class ActiveEditorSourceSnapshotAdapterProjectFixtureTest : LightJavaCodeInsight
     fun testCaptureFailsClosedWhenDocumentHasNoVirtualFile() {
         var result: ActiveEditorSourceCaptureResult? = null
 
-        EdtTestUtil.runInEdtAndWait(
-            ThrowableRunnable<Throwable> {
-                val editorFactory = EditorFactory.getInstance()
-                val editor = editorFactory.createEditor(editorFactory.createDocument("SELECT 1"), project)
-                try {
-                    result = ActiveEditorSourceSnapshotAdapter.capture(editor)
-                } finally {
-                    editorFactory.releaseEditor(editor)
-                }
-            },
-        )
+        runInEdtAndWait {
+            val editorFactory = EditorFactory.getInstance()
+            val editor = editorFactory.createEditor(editorFactory.createDocument("SELECT 1"), project)
+            try {
+                result = ActiveEditorSourceSnapshotAdapter.capture(editor)
+            } finally {
+                editorFactory.releaseEditor(editor)
+            }
+        }
 
         assertSame(ActiveEditorSourceCaptureResult.MissingVirtualFile, result)
     }
