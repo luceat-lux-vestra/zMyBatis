@@ -135,10 +135,18 @@ class XmlForeachPreparationAdmissionTest {
             val local = authentic.internalBindings.first()
             val forged = copyContract(authentic, internalBindings = listOf(InternalBinding("forged", local.kind, local.provenance)) + authentic.internalBindings.drop(1))
             assertFailure(XmlForeachPreparationAdmission.inspect(fixture.graph, fixture.mapper, forged), PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-preparation-source-contract-mismatch")
-            for (drift in listOf(body.replace("<where>", "<where bogus=\"x\">"), body.replace("AND |OR ", "AND|OR"), body.replace(loop, "$loop<if test=\"enabled\">AND id = #{id}</if>"))) {
+            for (drift in listOf(body.replace("<where>", "<where bogus=\"x\">"), body.replace("AND |OR ", "AND|OR"))) {
                 if (drift == body) continue
                 assertFailure(XmlForeachPreparationAdmission.inspect(graph(drift, XML_REVISION), fixture.mapper, authentic), PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-source-unsupported")
             }
+            // Flat SELECT WHERE siblings have valid topology but the original mapper
+            // cannot supply their Boolean condition or additional caller binding.
+            val mixed = body.replace(loop, "$loop<if test=\"enabled\">AND id = #{id}</if>")
+            assertFailure(
+                XmlForeachPreparationAdmission.inspect(graph(mixed, XML_REVISION), fixture.mapper, authentic),
+                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                "xml-foreach-preparation-mapper-unsupported",
+            )
         }
     }
 
