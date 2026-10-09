@@ -155,7 +155,6 @@ class XmlBooleanIfParameterContractTest {
             "<if test=\"enabled\"><set>a = #{id},</set></if>",
             "<set>$condition<bind name=\"x\" value=\"1\"/></set>",
             "<set>$condition<include refid=\"fragment\"/></set>",
-            "<set>$condition<foreach collection=\"ids\" item=\"item\">#{item}</foreach></set>",
             "<foreach collection=\"ids\" item=\"item\">#{item}</foreach><set>$condition</set>",
             "<set>$condition</set><foreach collection=\"ids\" item=\"item\">#{item}</foreach>",
         )) {
@@ -166,6 +165,18 @@ class XmlBooleanIfParameterContractTest {
         }
     }
 
+    @Test
+    fun structurallyValidUpdateSetMixedInputCannotInventMissingCollectionAuthority() {
+        val body = """UPDATE t <set><if test="enabled">status=#{id},</if><foreach collection="ids" item="item">v=#{item},</foreach></set> WHERE id=#{id}"""
+        val graph = graph(body, StatementKind.UPDATE)
+        val missing = build(graph, parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
+        assertTrue(missing.isPreparationBlocked)
+        assertTrue(missing.blockingProblems.any { it.code == "xml-caller-input-authority-unproven" })
+        assertTrue(missing.aliases.none { it.name == "ids" })
+        val complete = build(graph, parameter(0, "boolean", "enabled"), parameter(1, "long", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids"))
+        assertFalse(complete.isPreparationBlocked)
+    }
     @Test
     fun setCannotGrantUnprovenNonBooleanOrRawInputAuthority() {
         val body = "UPDATE t <set><if test=\"enabled\">a = #{id},</if></set> WHERE id = #{id}"
