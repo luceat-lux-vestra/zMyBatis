@@ -218,7 +218,8 @@ object XmlStatementParameterContractFactory {
         }
 
         statementScan.ifConditions.forEach { condition ->
-            usesByRoot.getOrPut(condition) { mutableListOf() } += CallerUse(
+            // Caller identity is the proven Boolean alias; provenance keeps full OGNL expression.
+            usesByRoot.getOrPut(condition.removePrefix("!")) { mutableListOf() } += CallerUse(
                 kind = InputKind.BOUND,
                 evidence = InputEvidence.OgnlExpression(condition, statementSource),
             )
@@ -397,10 +398,19 @@ object XmlStatementParameterContractFactory {
                                 ifDepth < 0
                             ) {
                                 val condition = reader.getAttributeValue(null, "test")?.trim()
+                                val root = condition?.removePrefix("!")
+                                // Negation is admitted only for one direct SELECT guard.
+                                val directSelectNegation =
+                                    condition != null && condition.startsWith('!') &&
+                                        statementKind == StatementKind.SELECT &&
+                                        depth == targetDepth + 1 && wrappersSeen.isEmpty() &&
+                                        foreachDeclaration == null && ifConditions.isEmpty() &&
+                                        root != null && simpleRoot.matches(root)
                                 if (
-                                    condition != null && simpleRoot.matches(condition) &&
-                                    condition !in reservedInternalRoots &&
-                                    condition !in ognlKeywords &&
+                                    condition != null && root != null &&
+                                    (simpleRoot.matches(condition) || directSelectNegation) &&
+                                    root !in reservedInternalRoots &&
+                                    root !in ognlKeywords &&
                                     reader.attributeCount == 1 &&
                                     reader.getAttributeNamespace(0).isNullOrEmpty()
                                 ) {
@@ -472,6 +482,12 @@ object XmlStatementParameterContractFactory {
             if (!mapperSeen || targetMatches != 1 || !targetClosed || depth != 0) {
                 StatementScan.Failed(InputContractProblemKind.UNKNOWN, ROOT_MISMATCH_PROBLEM)
             } else if (wrapperWithoutCondition && foreachDeclaration == null) {
+                StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
+            } else if (
+                ifConditions.any { it.startsWith("!") } &&
+                (statementKind != StatementKind.SELECT || wrappersSeen.isNotEmpty() ||
+                    foreachDeclaration != null || ifConditions.size != 1)
+            ) {
                 StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
             } else if (
                 statementKind == StatementKind.UPDATE &&
