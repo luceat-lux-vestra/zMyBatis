@@ -536,7 +536,7 @@ class XmlBooleanIfParameterContractTest {
             "<if test=\"enabled\" extra=\"ignored\">#{id}</if>",
             "<if xmlns:x=\"urn:unsupported\" x:test=\"enabled\">#{id}</if>",
             "<if xmlns=\"urn:unsupported\" test=\"enabled\">#{id}</if>",
-        ) + listOf("enabled != null", "enabled.value", "enabled[0]", "enabled()", "!enabled", "true", "false", "null", "and", "or", "new", "not", "eq", "instanceof", "_parameter", "_databaseId", "").map {
+        ) + listOf("enabled != null", "enabled.value", "enabled[0]", "enabled()", "!!enabled", "true", "false", "null", "and", "or", "new", "not", "eq", "instanceof", "_parameter", "_databaseId", "").map {
             "<if test=\"$it\">#{id}</if>"
         }
         bodies.forEach { body ->
