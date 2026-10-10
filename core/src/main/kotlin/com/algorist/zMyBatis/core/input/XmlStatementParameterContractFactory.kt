@@ -27,7 +27,8 @@ import javax.xml.stream.XMLStreamReader
  * uses, never evaluates conditions or WHERE/SET trimming semantics. One bounded foreach may be
  * direct or a direct child of a where-role wrapper (set-role for UPDATE). A direct foreach may also
  * coexist with flat direct Boolean-if siblings. SELECT may combine one foreach with flat
- * Boolean-if siblings in one WHERE-role wrapper on SELECT or DELETE; UPDATE may combine them in one SET-role wrapper.
+ * Boolean-if siblings in one WHERE-role wrapper on SELECT, UPDATE or DELETE; UPDATE may combine them in one SET-role wrapper.
+ * UPDATE with mixed WHERE siblings permits only static SET text, not a second SET wrapper.
  * UPDATE can separately combine both wrapper roles around exactly one foreach only if the other
  * wrapper is static. Multi-wrapper mixed dynamics and additional loops remain unsupported.
  */
@@ -47,6 +48,16 @@ object XmlStatementParameterContractFactory {
     private const val FOREACH_LOCAL_SHADOWING_PROBLEM = "xml-foreach-local-shadowing-unsupported"
     private const val IF_RAW_INPUT_PROBLEM = "xml-if-raw-input-unsupported"
     private const val UNSAFE_DTD_PROBLEM = "xml-parameter-contract-unsafe-dtd"
+
+    // A deliberately narrow UPDATE island: one static SET assignment and an unconditional
+    // WHERE predicate must survive false Boolean guards and empty foreach collections.
+    // This is lexical admission only; stock MyBatis still owns binding and SQL evaluation.
+    private val mixedUpdateStaticSet = Regex(
+        """(?i)^\s*UPDATE\s+[A-Za-z_][A-Za-z0-9_]*\s+SET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*#\{\s*[A-Za-z_][A-Za-z0-9_]*(?:,\s*jdbcType\s*=\s*[A-Za-z_][A-Za-z0-9_]*)?\s*}\s*$""",
+    )
+    private val mixedUpdateWhereAnchor = Regex(
+        """(?i)^\s*AND\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*#\{\s*[A-Za-z_][A-Za-z0-9_]*(?:,\s*jdbcType\s*=\s*[A-Za-z_][A-Za-z0-9_]*)?\s*}\s*$""",
+    )
 
     private val simpleRoot = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val simpleNamedProperty = Regex("[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*")
@@ -276,6 +287,9 @@ object XmlStatementParameterContractFactory {
         val ifConditions = mutableListOf<String>()
         var foreachDeclaration: ForeachDeclaration? = null
         val textSegments = mutableListOf<StatementTextSegment>()
+        val staticBeforeWrapper = StringBuilder()
+        val unconditionalWhereText = StringBuilder()
+        var trailingStaticText = false
 
         return try {
             while (reader.hasNext()) {
@@ -354,7 +368,7 @@ object XmlStatementParameterContractFactory {
                                     ifConditions.isEmpty() ||
                                         (depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
                                         (wrappersSeen.size == 1 &&
-                                            ((statementKind in setOf(StatementKind.SELECT, StatementKind.DELETE) && activeWrapperKind == "where") ||
+                                            ((statementKind in setOf(StatementKind.SELECT, StatementKind.UPDATE, StatementKind.DELETE) && activeWrapperKind == "where") ||
                                                 (statementKind == StatementKind.UPDATE && activeWrapperKind == "set")))
                                     )
                             ) {
@@ -377,7 +391,7 @@ object XmlStatementParameterContractFactory {
                                     foreachDeclaration == null ||
                                         (depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
                                         (wrappersSeen.size == 1 &&
-                                            ((statementKind in setOf(StatementKind.SELECT, StatementKind.DELETE) && activeWrapperKind == "where") ||
+                                            ((statementKind in setOf(StatementKind.SELECT, StatementKind.UPDATE, StatementKind.DELETE) && activeWrapperKind == "where") ||
                                                 (statementKind == StatementKind.UPDATE && activeWrapperKind == "set")))
                                     ) &&
                                 ifDepth < 0
@@ -408,6 +422,13 @@ object XmlStatementParameterContractFactory {
                     -> if (targetDepth >= 0) {
                         val text = reader.text
                         if (text.isNotEmpty()) {
+                            if (depth == targetDepth) {
+                                if (wrappersSeen.isEmpty()) staticBeforeWrapper.append(text)
+                                else if (text.isNotBlank()) trailingStaticText = true
+                            }
+                            if (activeWrapperKind == "where" && depth == wrapperDepth) {
+                                unconditionalWhereText.append(text)
+                            }
                             val locals = if (foreachDepth >= 0) {
                                 val declaration = requireNotNull(foreachDeclaration)
                                 listOfNotNull(declaration.item, declaration.index).toSet()
@@ -456,7 +477,16 @@ object XmlStatementParameterContractFactory {
                 statementKind == StatementKind.UPDATE &&
                 foreachDeclaration != null && ifConditions.isNotEmpty() && wrappersSeen.size > 1
             ) {
-                // A SET mixed island does not authorize a second dynamic wrapper role.
+                // No mixed Boolean/foreach UPDATE may have a second wrapper role.
+                StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
+            } else if (
+                statementKind == StatementKind.UPDATE && foreachDeclaration != null &&
+                ifConditions.isNotEmpty() && wrappersSeen == setOf("where") &&
+                (!mixedUpdateStaticSet.matches(staticBeforeWrapper.toString()) ||
+                    !mixedUpdateWhereAnchor.matches(unconditionalWhereText.toString()) ||
+                    trailingStaticText)
+            ) {
+                // Never admit an UPDATE whose guards may remove the entire WHERE predicate.
                 StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
             } else {
                 StatementScan.Ready(textSegments, foreachDeclaration, ifConditions)

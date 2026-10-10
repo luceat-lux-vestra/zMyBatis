@@ -560,6 +560,62 @@ class XmlBooleanIfParameterContractTest {
         }
     }
     @Test
+    fun updateStaticSetWhereMixedSourceRetainsCallerScopeAndRejectsUnprovenAliases() {
+        val condition = """<if test="enabled">AND flag=#{id,jdbcType=BIGINT}</if>"""
+        val loop = """<foreach collection="ids" item="item" index="idx" open="AND (id, ord) IN (" separator="," close=")">(#{item},#{idx})</foreach>"""
+        val parameters = arrayOf(
+            parameter(0, "boolean", "enabled"),
+            parameter(1, "long", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids"),
+        )
+        for ((open, close) in listOf(
+            "<where>" to "</where>",
+            """<trim prefix="WHERE" prefixOverrides="AND |OR ">""" to "</trim>",
+            """<trim prefixOverrides="AND &#124;OR " prefix="&#87;HERE">""" to "</trim>",
+        )) {
+            for (parts in listOf(listOf(condition, loop), listOf(loop, condition))) {
+                val xml = graph("UPDATE t SET status=#{id} $open AND tenant_id=#{id} ${parts.joinToString(" ")} $close", StatementKind.UPDATE)
+                val contract = build(xml, *parameters)
+                assertFalse(contract.isPreparationBlocked)
+                assertEquals(3, contract.requirements.size)
+                assertEquals(2, contract.requirements.single { it.id.value == "xml-java-param:1" }
+                    .provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().count { it.enclosingOgnlExpression == null })
+                assertTrue(contract.requirements.any { it.provenance.evidence.any { evidence -> evidence is InputEvidence.ForeachCollection } })
+                assertTrue(contract.requirements.any { it.provenance.evidence.any { evidence -> evidence is InputEvidence.OgnlExpression } })
+                assertEquals(mapOf("item" to InternalBindingKind.FOREACH_ITEM, "idx" to InternalBindingKind.FOREACH_INDEX),
+                    contract.internalBindings.associate { it.name to it.kind })
+                val missing = build(xml, *parameters.dropLast(1).toTypedArray())
+                assertTrue(missing.isPreparationBlocked)
+                assertTrue(missing.blockingProblems.any { it.code == "xml-caller-input-authority-unproven" })
+                val nonBoolean = build(xml, parameter(0, "long", "enabled"), parameters[1], parameters[2])
+                assertTrue(nonBoolean.isPreparationBlocked)
+            }
+        }
+    }
+
+    @Test
+    fun updateMixedWhereRequiresOneStaticSetAssignmentAndUnconditionalPredicate() {
+        val condition = """<if test="enabled">AND flag=#{id}</if>"""
+        val loop = """<foreach collection="ids" item="item">#{item}</foreach>"""
+        val where = "<where>AND tenant_id=#{id} $condition $loop</where>"
+        val candidates = listOf(
+            "UPDATE t <where>AND tenant_id=#{id} $condition $loop</where>",
+            "UPDATE t SET status=#{id} <where>$condition $loop</where>",
+            "UPDATE t SET status=#{id} <where>OR tenant_id=#{id} $condition $loop</where>",
+            "UPDATE t SET status=#{id}, extra=#{id} $where",
+            "UPDATE t SET status=#{id} $where RETURNING #{id}",
+            "UPDATE t <set>status=#{id},</set> $where",
+            "UPDATE t SET status=#{id} $where <where>AND other=#{id}</where>",
+        )
+        for (body in candidates) {
+            val source = XmlStatementParameterContractFactory.build(graph(body, StatementKind.UPDATE))
+            assertTrue(body, source.isPreparationBlocked)
+            assertTrue(body, source.requirements.isEmpty())
+            assertTrue(body, source.aliases.isEmpty())
+        }
+    }
+
+    @Test
     fun deleteWhereMixedSourceRequiresCompleteBooleanAndCollectionAuthority() {
         val condition = """<if test="enabled">AND flag=#{id,jdbcType=BIGINT}</if>"""
         val loop = """<foreach collection="ids" item="item" index="idx" open="AND (id, ord) IN (" separator="," close=")">(#{item},#{idx})</foreach>"""
