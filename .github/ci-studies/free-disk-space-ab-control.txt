@@ -1,2 +1,0 @@
-A/B control marker for zMyBatis #351; this file must be deleted before the final PR HEAD.
-This first commit leaves all workflows and product code unchanged.
