@@ -173,6 +173,44 @@ class XmlForeachPreparationAdmissionTest {
     }
 
     @Test
+    fun updateStaticSetWhereMixedAdmissionRebuildsMapperAndRejectsChangedCallerProvenance() {
+        val condition = """<if test="enabled">AND flag=#{id}</if>"""
+        val loop = """<foreach collection="ids" item="item" index="idx" open="AND id IN (" separator="," close=")">#{item},#{idx}</foreach>"""
+        val parameters = listOf(
+            parameter(0, "boolean", "enabled", "enabled"),
+            parameter(1, "long", "id", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids", "ids"),
+        )
+        for ((open, close) in listOf("<where>" to "</where>",
+            """<trim prefix="WHERE" prefixOverrides="AND |OR ">""" to "</trim>")) {
+            for (parts in listOf(listOf(condition, loop), listOf(loop, condition))) {
+                val body = "UPDATE t SET status=#{id} $open AND tenant_id=#{id} ${parts.joinToString(" ")} $close"
+                val f = fixture(body, parameters, StatementKind.UPDATE)
+                val authentic = contract(f)
+                assertTrue(!authentic.isPreparationBlocked)
+                val admitted = XmlForeachPreparationAdmission.inspect(f.graph, f.mapper, authentic) as XmlForeachPreparationAdmission.Result.Admitted
+                assertEquals(setOf(authentic.requirements.single { it.id.value == "xml-java-param:2" }.id), admitted.collectionRequirementIds)
+                assertEquals(mapOf("item" to InternalBindingKind.FOREACH_ITEM, "idx" to InternalBindingKind.FOREACH_INDEX), admitted.locals)
+                assertFailure(XmlForeachPreparationAdmission.inspect(f.graph, null, authentic),
+                    PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-mapper-authority-unproven")
+                val local = authentic.internalBindings.first()
+                val forged = copyContract(authentic, internalBindings = listOf(
+                    InternalBinding("forged", local.kind, local.provenance),
+                ) + authentic.internalBindings.drop(1))
+                assertFailure(XmlForeachPreparationAdmission.inspect(f.graph, f.mapper, forged),
+                    PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-preparation-source-contract-mismatch")
+                val modifiedMapper = XmlMapperMethodCapture(f.mapper.statementId, f.mapper.mapperSource,
+                    f.mapper.methodSourceRange, listOf(parameter(0, "boolean", "other", "other"), parameters[1], parameters[2]))
+                assertFailure(XmlForeachPreparationAdmission.inspect(f.graph, modifiedMapper, authentic),
+                    PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-mapper-unsupported")
+                val changed = graph(body.replace("SET status=#{id}", "SET status=1"), XML_REVISION, kind = StatementKind.UPDATE)
+                assertFailure(XmlForeachPreparationAdmission.inspect(changed, f.mapper, authentic),
+                    PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-preparation-source-contract-mismatch")
+            }
+        }
+    }
+
+    @Test
     fun deleteWhereMixedAdmissionAuthenticatesIndependentMapperAndLocalContracts() {
         val condition = """<if test="enabled">AND flag=#{id}</if>"""
         val loop = """<foreach collection="ids" item="item" index="idx" open="AND id IN (" separator="," close=")">#{item},#{idx}</foreach>"""
