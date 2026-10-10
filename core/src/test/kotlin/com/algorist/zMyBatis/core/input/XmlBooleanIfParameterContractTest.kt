@@ -18,6 +18,56 @@ import org.junit.Test
 
 class XmlBooleanIfParameterContractTest {
     @Test
+    fun directSelectSingleNegationProvesBooleanAliasWithoutLosingOgnlScope() {
+        val body = """SELECT #{id}<if test="!enabled"> + #{id}</if>"""
+        val graph = graph(body)
+        val sourceOnly = XmlStatementParameterContractFactory.build(graph)
+        assertTrue(sourceOnly.isPreparationBlocked)
+        assertTrue(sourceOnly.blockingProblems.any { problem ->
+            problem.provenance?.evidence?.any { it is InputEvidence.OgnlExpression && it.expression == "!enabled" } == true
+        })
+        for (type in listOf("boolean", "java.lang.Boolean")) {
+            val proven = build(graph, parameter(0, type, "enabled"), parameter(1, "long", "id"))
+            assertFalse(proven.isPreparationBlocked)
+            assertEquals(2, proven.requirements.size)
+            val enabled = proven.requirements.single { it.id.value == "xml-java-param:0" }
+            assertTrue(enabled.provenance.evidence.any { it is InputEvidence.OgnlExpression && it.expression == "!enabled" })
+            val id = proven.requirements.single { it.id.value == "xml-java-param:1" }
+            assertEquals(listOf(null, "!enabled"), id.provenance.evidence
+                .filterIsInstance<InputEvidence.Placeholder>().map { it.enclosingOgnlExpression })
+        }
+        assertTrue(build(graph, parameter(0, "long", "enabled"), parameter(1, "long", "id")).isPreparationBlocked)
+        assertTrue(build(graph, parameter(0, "boolean", "other"), parameter(1, "long", "id")).isPreparationBlocked)
+        assertTrue(build(graph, parameter(0, "boolean", "enabled"), parameter(1, "boolean", "enabled"),
+            parameter(2, "long", "id")).isPreparationBlocked)
+    }
+
+    @Test
+    fun selectNegationDoesNotWidenOtherDynamicOrUnprovenExpressions() {
+        val parameters = arrayOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
+        val variants = listOf(
+            """SELECT #{id}<if test="!!enabled"> + #{id}</if>""",
+            """SELECT #{id}<if test="!enabled || true"> + #{id}</if>""",
+            """SELECT #{id}<if test="!enabled == false"> + #{id}</if>""",
+            """SELECT #{id}<if test="!enabled.id"> + #{id}</if>""",
+            """SELECT #{id}<if test="!true"> + #{id}</if>""",
+            """SELECT #{id}<if test="!enabled"><if test="enabled"> + #{id}</if></if>""",
+            """SELECT #{id}<if test="!enabled"> + #{id}</if><if test="enabled"> + #{id}</if>""",
+            """SELECT #{id}<where><if test="!enabled">AND x=#{id}</if></where>""",
+            """SELECT #{id}<if test="!enabled"> + #{id}</if><where>AND x=#{id}</where>""",
+            """SELECT #{id}<if test="!enabled"> + #{id}</if><foreach collection="ids" item="item">#{item}</foreach>""",
+        )
+        for (body in variants) {
+            val result = build(graph(body), *parameters)
+            assertTrue(body, result.isPreparationBlocked)
+            assertTrue(body, result.requirements.isEmpty())
+        }
+        val update = build(graph("""UPDATE t SET x=#{id}<if test="!enabled">WHERE id=#{id}</if>""",
+            StatementKind.UPDATE), *parameters)
+        assertTrue(update.isPreparationBlocked)
+    }
+
+    @Test
     fun boundedTrimFormsPreserveSourceGuardScopesAndMapperCallerAuthority() {
         val setBody = "base = #{id},<if test=\"enabled\">a = #{id},</if>"
         val whereBody = "AND base = #{id}<if test=\"param2\">OR id = #{id}</if>"
