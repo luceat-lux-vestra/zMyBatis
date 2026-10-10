@@ -53,10 +53,10 @@ object XmlStatementParameterContractFactory {
     // WHERE predicate must survive false Boolean guards and empty foreach collections.
     // This is lexical admission only; stock MyBatis still owns binding and SQL evaluation.
     private val mixedUpdateStaticSet = Regex(
-        """(?i)^\s*UPDATE\s+[A-Za-z_][A-Za-z0-9_]*\s+SET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*#\{\s*[A-Za-z_][A-Za-z0-9_]*(?:,\s*jdbcType\s*=\s*[A-Za-z_][A-Za-z0-9_]*)?\s*\}\s*$""",
+        """(?i)^\s*UPDATE\s+[A-Za-z_][A-Za-z0-9_]*\s+SET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*#\{\s*[A-Za-z_][A-Za-z0-9_]*(?:,\s*jdbcType\s*=\s*[A-Za-z_][A-Za-z0-9_]*)?\s*}\s*$""",
     )
     private val mixedUpdateWhereAnchor = Regex(
-        """(?i)^\s*AND\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*#\{\s*[A-Za-z_][A-Za-z0-9_]*(?:,\s*jdbcType\s*=\s*[A-Za-z_][A-Za-z0-9_]*)?\s*\}\s*$""",
+        """(?i)^\s*AND\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*#\{\s*[A-Za-z_][A-Za-z0-9_]*(?:,\s*jdbcType\s*=\s*[A-Za-z_][A-Za-z0-9_]*)?\s*}\s*$""",
     )
 
     private val simpleRoot = Regex("[A-Za-z_][A-Za-z0-9_]*")
