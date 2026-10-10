@@ -66,9 +66,9 @@ dependencies {
     }
 
     testImplementation(libs.junit)
-    testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.6"))
-    testImplementation(platform("tools.jackson:jackson-bom:3.1.6"))
-    testImplementation(platform("io.opentelemetry:opentelemetry-bom:1.62.0"))
+    testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.3"))
+    testImplementation(platform("tools.jackson:jackson-bom:3.2.3"))
+    testImplementation(platform("io.opentelemetry:opentelemetry-bom:1.66.0"))
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
     intellijPlatform {
@@ -106,7 +106,7 @@ dependencies {
     integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
     // Process-E2E fixture only. The JAR is copied into the isolated Starter config
     // and registered as a local Database Tools driver; it is never part of the shipped plugin artifact.
-    integrationTestImplementation("com.h2database:h2:2.2.224")
+    integrationTestImplementation("com.h2database:h2:2.5.252")
     // JetBrains Starter's CommonScope loads kotlinx.coroutines.SupervisorKt at runtime, but
     // the Starter test framework does not supply coroutines transitively on this configuration.
     // Keep this explicit runtime prerequisite; removing it fails Starter / Driver E2E.
@@ -114,10 +114,10 @@ dependencies {
     // Security-align only the process-level Starter/E2E tooling graph. These are not plugin
     // runtime dependencies; remove the constraints when JetBrains' Starter graph carries
     // equivalent-or-newer fixed versions natively.
-    integrationTestImplementation(platform("io.netty:netty-bom:4.2.18.Final"))
-    integrationTestImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.6"))
-    integrationTestImplementation(platform("tools.jackson:jackson-bom:3.1.6"))
-    integrationTestImplementation(platform("io.opentelemetry:opentelemetry-bom:1.62.0"))
+    integrationTestImplementation(platform("io.netty:netty-bom:4.2.19.Final"))
+    integrationTestImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.3"))
+    integrationTestImplementation(platform("tools.jackson:jackson-bom:3.2.3"))
+    integrationTestImplementation(platform("io.opentelemetry:opentelemetry-bom:1.66.0"))
     constraints {
         add("integrationTestImplementation", "org.bouncycastle:bcprov-jdk18on:1.86") {
             because("Starter tooling currently resolves a security-affected 1.84")
@@ -128,7 +128,7 @@ dependencies {
         add("integrationTestImplementation", "org.bouncycastle:bcutil-jdk18on:1.86") {
             because("keep Bouncy Castle Starter tooling modules version-aligned")
         }
-        add("integrationTestImplementation", "at.yawk.lz4:lz4-java:1.11.4") {
+        add("integrationTestImplementation", "at.yawk.lz4:lz4-java:1.12.0") {
             because("1.11.3 includes the security fixes released in 1.11.2")
         }
         add("integrationTestImplementation", "org.jsoup:jsoup:1.23.2") {
@@ -156,16 +156,16 @@ val verifyStarterSecurityGraph = tasks.register("verifyStarterSecurityGraph") {
     doLast {
         val expected = mapOf(
             "org.jsoup:jsoup" to "1.23.2",
-            "com.fasterxml.jackson.core:jackson-core" to "2.21.6",
-            "com.fasterxml.jackson.core:jackson-databind" to "2.21.6",
-            "tools.jackson.core:jackson-core" to "3.1.6",
-            "tools.jackson.core:jackson-databind" to "3.1.6",
-            "io.netty:netty-handler" to "4.2.18.Final",
-            "io.netty:netty-codec-compression" to "4.2.18.Final",
+            "com.fasterxml.jackson.core:jackson-core" to "2.22.3",
+            "com.fasterxml.jackson.core:jackson-databind" to "2.22.3",
+            "tools.jackson.core:jackson-core" to "3.2.3",
+            "tools.jackson.core:jackson-databind" to "3.2.3",
+            "io.netty:netty-handler" to "4.2.19.Final",
+            "io.netty:netty-codec-compression" to "4.2.19.Final",
             "org.bouncycastle:bcprov-jdk18on" to "1.86",
             "org.bouncycastle:bcpkix-jdk18on" to "1.86",
             "org.bouncycastle:bcutil-jdk18on" to "1.86",
-            "at.yawk.lz4:lz4-java" to "1.11.4",
+            "at.yawk.lz4:lz4-java" to "1.12.0",
         )
         val resolved = configurations.getByName("integrationTestRuntimeClasspath")
             .incoming.resolutionResult.allComponents
