@@ -27,7 +27,8 @@ import javax.xml.stream.XMLStreamReader
  * uses, never evaluates conditions or WHERE/SET trimming semantics. One bounded foreach may be
  * direct or a direct child of a where-role wrapper (set-role for UPDATE). A direct foreach may also
  * coexist with flat direct Boolean-if siblings. SELECT may combine one foreach with flat
- * Boolean-if siblings in one WHERE-role wrapper on SELECT or DELETE; UPDATE may combine them in one SET-role wrapper.
+ * Boolean-if siblings in one WHERE-role wrapper on SELECT, UPDATE or DELETE; UPDATE may combine them in one SET-role wrapper.
+ * UPDATE with mixed WHERE siblings permits only static SET text, not a second SET wrapper.
  * UPDATE can separately combine both wrapper roles around exactly one foreach only if the other
  * wrapper is static. Multi-wrapper mixed dynamics and additional loops remain unsupported.
  */
@@ -354,7 +355,7 @@ object XmlStatementParameterContractFactory {
                                     ifConditions.isEmpty() ||
                                         (depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
                                         (wrappersSeen.size == 1 &&
-                                            ((statementKind in setOf(StatementKind.SELECT, StatementKind.DELETE) && activeWrapperKind == "where") ||
+                                            ((statementKind in setOf(StatementKind.SELECT, StatementKind.UPDATE, StatementKind.DELETE) && activeWrapperKind == "where") ||
                                                 (statementKind == StatementKind.UPDATE && activeWrapperKind == "set")))
                                     )
                             ) {
@@ -377,7 +378,7 @@ object XmlStatementParameterContractFactory {
                                     foreachDeclaration == null ||
                                         (depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
                                         (wrappersSeen.size == 1 &&
-                                            ((statementKind in setOf(StatementKind.SELECT, StatementKind.DELETE) && activeWrapperKind == "where") ||
+                                            ((statementKind in setOf(StatementKind.SELECT, StatementKind.UPDATE, StatementKind.DELETE) && activeWrapperKind == "where") ||
                                                 (statementKind == StatementKind.UPDATE && activeWrapperKind == "set")))
                                     ) &&
                                 ifDepth < 0
