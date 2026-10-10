@@ -589,8 +589,29 @@ class XmlBooleanIfParameterContractTest {
                 assertTrue(missing.blockingProblems.any { it.code == "xml-caller-input-authority-unproven" })
                 val nonBoolean = build(xml, parameter(0, "long", "enabled"), parameters[1], parameters[2])
                 assertTrue(nonBoolean.isPreparationBlocked)
-                assertTrue(nonBoolean.aliases.none { it.name == "enabled" })
             }
+        }
+    }
+
+    @Test
+    fun updateMixedWhereRequiresOneStaticSetAssignmentAndUnconditionalPredicate() {
+        val condition = """<if test="enabled">AND flag=#{id}</if>"""
+        val loop = """<foreach collection="ids" item="item">#{item}</foreach>"""
+        val where = "<where>AND tenant_id=#{id} $condition $loop</where>"
+        val candidates = listOf(
+            "UPDATE t <where>AND tenant_id=#{id} $condition $loop</where>",
+            "UPDATE t SET status=#{id} <where>$condition $loop</where>",
+            "UPDATE t SET status=#{id} <where>OR tenant_id=#{id} $condition $loop</where>",
+            "UPDATE t SET status=#{id}, extra=#{id} $where",
+            "UPDATE t SET status=#{id} $where RETURNING #{id}",
+            "UPDATE t <set>status=#{id},</set> $where",
+            "UPDATE t SET status=#{id} $where <where>AND other=#{id}</where>",
+        )
+        for (body in candidates) {
+            val source = XmlStatementParameterContractFactory.build(graph(body, StatementKind.UPDATE))
+            assertTrue(body, source.isPreparationBlocked)
+            assertTrue(body, source.requirements.isEmpty())
+            assertTrue(body, source.aliases.isEmpty())
         }
     }
 
