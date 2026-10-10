@@ -13,8 +13,12 @@ class StarterDatabaseE2EIsolationContractTest {
         val build = source("build.gradle.kts")
 
         assertTrue(
-            "real Database Tools E2E must declare H2 only on the integration-test graph",
-            build.contains("integrationTestImplementation(\"com.h2database:h2:2.2.224\")"),
+            "real Database Tools E2E must declare exactly one H2 driver on the integration-test graph",
+            build.lineSequence().count { line ->
+                val declaration = line.trim()
+                declaration.startsWith("integrationTestImplementation(\"com.h2database:h2:") &&
+                    declaration.endsWith("\")")
+            } == 1,
         )
         assertFalse(
             "H2 must never become a shipped plugin implementation dependency",
