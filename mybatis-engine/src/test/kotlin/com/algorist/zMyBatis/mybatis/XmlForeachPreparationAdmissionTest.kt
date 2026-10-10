@@ -204,8 +204,9 @@ class XmlForeachPreparationAdmissionTest {
                 assertFailure(XmlForeachPreparationAdmission.inspect(f.graph, modifiedMapper, authentic),
                     PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-mapper-unsupported")
                 val changed = graph(body.replace("SET status=#{id}", "SET status=1"), XML_REVISION, kind = StatementKind.UPDATE)
+                // The bounded static-SET grammar now refuses this source before contract comparison.
                 assertFailure(XmlForeachPreparationAdmission.inspect(changed, f.mapper, authentic),
-                    PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-preparation-source-contract-mismatch")
+                    PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-foreach-preparation-source-unsupported")
             }
         }
     }
