@@ -941,11 +941,15 @@ object XmlMapperPreparationEngine {
             // This counts provenance only; stock MyBatis still owns all SQL and OGNL evaluation.
             // The topology gate prevents cross-node synthesis/escaping of new mapping tokens.
             val conditions = booleanIf.conditions.associate { condition ->
-                val value = parameterPayload.namedValues[condition.conditionAlias] as? Boolean
+                // Preserve exact source OGNL as the condition scope. One authenticated
+                // direct SELECT negation inverts the proven Boolean caller value.
+                val expression = condition.conditionAlias
+                val callerAlias = expression.removePrefix("!")
+                val value = parameterPayload.namedValues[callerAlias] as? Boolean
                     ?: return XmlBindingCapture.Failed(
                         PreparationFailure(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE),
                     )
-                condition.conditionAlias to value
+                expression to (if (expression.startsWith('!')) !value else value)
             }
             val placeholders = request.parameterContract.requirements
                 .flatMap { it.provenance.evidence }
