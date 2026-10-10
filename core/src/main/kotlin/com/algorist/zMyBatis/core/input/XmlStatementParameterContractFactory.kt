@@ -49,6 +49,16 @@ object XmlStatementParameterContractFactory {
     private const val IF_RAW_INPUT_PROBLEM = "xml-if-raw-input-unsupported"
     private const val UNSAFE_DTD_PROBLEM = "xml-parameter-contract-unsafe-dtd"
 
+    // A deliberately narrow UPDATE island: one static SET assignment and an unconditional
+    // WHERE predicate must survive false Boolean guards and empty foreach collections.
+    // This is lexical admission only; stock MyBatis still owns binding and SQL evaluation.
+    private val mixedUpdateStaticSet = Regex(
+        """(?i)^\s*UPDATE\s+[A-Za-z_][A-Za-z0-9_]*\s+SET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*#\{\s*[A-Za-z_][A-Za-z0-9_]*(?:,\s*jdbcType\s*=\s*[A-Za-z_][A-Za-z0-9_]*)?\s*\}\s*$""",
+    )
+    private val mixedUpdateWhereAnchor = Regex(
+        """(?i)^\s*AND\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*#\{\s*[A-Za-z_][A-Za-z0-9_]*(?:,\s*jdbcType\s*=\s*[A-Za-z_][A-Za-z0-9_]*)?\s*\}\s*$""",
+    )
+
     private val simpleRoot = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val simpleNamedProperty = Regex("[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*")
     private val reservedInternalRoots = setOf("_parameter", "_databaseId")
@@ -277,6 +287,9 @@ object XmlStatementParameterContractFactory {
         val ifConditions = mutableListOf<String>()
         var foreachDeclaration: ForeachDeclaration? = null
         val textSegments = mutableListOf<StatementTextSegment>()
+        val staticBeforeWrapper = StringBuilder()
+        val unconditionalWhereText = StringBuilder()
+        var trailingStaticText = false
 
         return try {
             while (reader.hasNext()) {
@@ -409,6 +422,13 @@ object XmlStatementParameterContractFactory {
                     -> if (targetDepth >= 0) {
                         val text = reader.text
                         if (text.isNotEmpty()) {
+                            if (depth == targetDepth) {
+                                if (wrappersSeen.isEmpty()) staticBeforeWrapper.append(text)
+                                else if (text.isNotBlank()) trailingStaticText = true
+                            }
+                            if (activeWrapperKind == "where" && depth == wrapperDepth) {
+                                unconditionalWhereText.append(text)
+                            }
                             val locals = if (foreachDepth >= 0) {
                                 val declaration = requireNotNull(foreachDeclaration)
                                 listOfNotNull(declaration.item, declaration.index).toSet()
@@ -457,7 +477,16 @@ object XmlStatementParameterContractFactory {
                 statementKind == StatementKind.UPDATE &&
                 foreachDeclaration != null && ifConditions.isNotEmpty() && wrappersSeen.size > 1
             ) {
-                // A SET mixed island does not authorize a second dynamic wrapper role.
+                // No mixed Boolean/foreach UPDATE may have a second wrapper role.
+                StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
+            } else if (
+                statementKind == StatementKind.UPDATE && foreachDeclaration != null &&
+                ifConditions.isNotEmpty() && wrappersSeen == setOf("where") &&
+                (!mixedUpdateStaticSet.matches(staticBeforeWrapper.toString()) ||
+                    !mixedUpdateWhereAnchor.matches(unconditionalWhereText.toString()) ||
+                    trailingStaticText)
+            ) {
+                // Never admit an UPDATE whose guards may remove the entire WHERE predicate.
                 StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
             } else {
                 StatementScan.Ready(textSegments, foreachDeclaration, ifConditions)
