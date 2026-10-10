@@ -50,6 +50,57 @@ import org.junit.Test
 
 class XmlMapperForeachPreparationTest {
     @Test
+    fun directSelectNegatedBooleanMatchesStockAndMaintainsConditionalMappingCardinality() {
+        val parameters = listOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
+        val original = fixture(
+            """SELECT #{id,jdbcType=BIGINT}<if test="!enabled"> + #{id,jdbcType=BIGINT}</if>""",
+            parameters,
+        )
+        val authentic = contract(original)
+        assertTrue(!authentic.isPreparationBlocked)
+        for (enabled in listOf(false, true)) {
+            val before = Thread.currentThread().contextClassLoader
+            val prepared = success(request(original, mapOf(
+                0 to InputValue.BooleanValue(enabled),
+                1 to integer(7),
+            )))
+            assertSame(before, Thread.currentThread().contextClassLoader)
+            assertStockParity(original, mapOf("enabled" to enabled, "id" to 7L), prepared)
+            assertEquals(if (enabled) 1 else 2, prepared.orderedBindings.size)
+            assertTrue(prepared.orderedBindings.all { it.origin is PreparedBindingOrigin.CallerInput })
+            assertEquals(authentic.sourceRevisions, prepared.sourceRevisions)
+            assertEquals(
+                MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
+                (MaintainedExecutionMaterializer.materialize(prepared) as MaterializationResult.Failed).failure.kind,
+            )
+        }
+    }
+
+    @Test
+    fun directSelectNegationRejectsChangedXmlAndMapperAuthority() {
+        val parameters = listOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
+        val originalText = """SELECT #{id}<if test="!enabled"> + #{id}</if>"""
+        val original = fixture(originalText, parameters)
+        val baseline = contract(original)
+        val values = mapOf(0 to InputValue.BooleanValue(true), 1 to integer(7))
+        for (changed in listOf(
+            originalText.replace("!enabled", "!!enabled"),
+            originalText.replace("!enabled", "enabled || true"),
+            originalText.replace("!enabled", "!enabled.id"),
+            originalText.replace("</if>", """<if test="enabled">#{id}</if></if>"""),
+            originalText + """<if test="enabled"> + #{id}</if>""",
+            """SELECT #{id}<where><if test="!enabled">AND id=#{id}</if></where>""",
+        )) {
+            val altered = fixture(changed, parameters)
+            assertTrue(changed, XmlMapperPreparationEngine.prepare(request(altered, values, baseline)) is PreparationResult.Failed)
+        }
+        val changedMapper = fixture(originalText, listOf(
+            parameter(0, "boolean", "other"), parameters[1],
+        ))
+        assertTrue(XmlMapperPreparationEngine.prepare(request(changedMapper, values, baseline)) is PreparationResult.Failed)
+    }
+
+    @Test
     fun directBooleanIfAndForeachSiblingsMatchStockAcrossAllStatesAndOrders() {
         val parameters = listOf(
             parameter(0, "boolean", "enabled"),
