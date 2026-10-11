@@ -146,12 +146,11 @@ dependencies {
 val verifyStarterSecurityGraph = tasks.register("verifyStarterSecurityGraph") {
     group = "verification"
     description = "Fail if the executable Starter/E2E runtime resolves security-stale tooling dependencies."
-    // This proof intentionally resolves a live Gradle configuration during task execution.
-    // Gradle recommends explicitly opting such tasks out of configuration-cache storage
-    // rather than hiding serialization problems with configuration-cache warning mode.
-    notCompatibleWithConfigurationCache(
-        "Resolves integrationTestRuntimeClasspath at execution time for security evidence",
-    )
+    // ResolutionResult is configuration-cache compatible. Capture it in task configuration,
+    // not the surrounding build script/Project from the execution-time doLast action.
+    // The exact resolved runtime dependency graph is still checked on every invocation.
+    val securityResolutionResult = configurations.getByName("integrationTestRuntimeClasspath")
+        .incoming.resolutionResult
 
     doLast {
         val expected = mapOf(
@@ -167,8 +166,7 @@ val verifyStarterSecurityGraph = tasks.register("verifyStarterSecurityGraph") {
             "org.bouncycastle:bcutil-jdk18on" to "1.86",
             "at.yawk.lz4:lz4-java" to "1.12.0",
         )
-        val resolved = configurations.getByName("integrationTestRuntimeClasspath")
-            .incoming.resolutionResult.allComponents
+        val resolved = securityResolutionResult.allComponents
             .mapNotNull { component ->
                 component.moduleVersion?.let { id -> "${id.group}:${id.name}" to id.version }
             }
