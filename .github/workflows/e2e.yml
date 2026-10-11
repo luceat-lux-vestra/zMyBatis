@@ -1,3 +1,4 @@
+# Research-only first-PR Gradle cache restore probe; no execution or security policy changes.
 name: E2E
 
 on:
