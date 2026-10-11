@@ -115,3 +115,145 @@ jobs:
             build/test-results/integrationTest
             out/ide-tests/tests
           if-no-files-found: warn
+
+  # A/B experiment: retain the original whole-suite E2E job while running two
+  # isolated shards against the same immutable source and full packaged plugin.
+  shardExperiment:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - shard: service-refusal
+            methods: "registeredActionReachesProductionFailClosedPath packagedPluginLoadsAndProductionServiceIsCallable knownIslandsPlatformFailureIsNarrowlyMapped"
+          - shard: database-guards
+            methods: "registeredActionExecutesParameterizedQueryThroughRealDatabaseTools registeredRawInterpolationForcesPreviewWhenSettingDisabled registeredMutationDeclarationForcesPreviewWhenSettingDisabled"
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: E2E A/B shard (${{ matrix.shard }})
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 75
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup Java 25
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Build exact plugin artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_25_X64 buildPlugin
+
+          mapfile -t archives < <(find build/distributions -maxdepth 1 -type f -name '*.zip' -print)
+          if [[ ${#archives[@]} -ne 1 ]]; then
+            echo "::error::Expected exactly one plugin distribution, found ${#archives[@]}"
+            printf '%s\n' "${archives[@]}"
+            exit 1
+          fi
+
+          tested_commit="$(git rev-parse HEAD)"
+          artifact="${archives[0]}"
+          artifact_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
+          {
+            echo "tested_commit=$tested_commit"
+            echo "workflow_sha=$GITHUB_SHA"
+            echo "java_target=25"
+            echo "ide_release=2026.2.3"
+            echo "plugin_artifact=$artifact"
+            echo "plugin_sha256=$artifact_sha256"
+            echo "shard=${{ matrix.shard }}"
+            echo "test_methods=${{ matrix.methods }}"
+          } | tee e2e-artifact-manifest.txt
+
+      - name: Install ARM64 EGL runtime for IntelliJ Skiko
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "aarch64"
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libegl1
+          ldconfig -p | grep -F 'libEGL.so.1'
+
+      - name: Run Starter / Driver E2E
+        shell: bash
+        env:
+          E2E_SHARD_METHODS: ${{ matrix.methods }}
+        run: |
+          set -euo pipefail
+          read -r -a methods <<< "$E2E_SHARD_METHODS"
+          [[ ${#methods[@]} -eq 3 ]] || { echo "::error::Shard must contain exactly three tests"; exit 1; }
+          filters=()
+          for method in "${methods[@]}"; do
+            filters+=(--tests "com.algorist.zMyBatis.e2e.ZMyBatisStarterDriverE2ETest.$method")
+          done
+          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_25_X64 integrationTest --stacktrace "${filters[@]}" 2>&1 | tee e2e.log
+
+          # Guard against a silently missing, skipped, or extra process-level test.
+          python3 - "${methods[@]}" <<'PY'
+          import collections
+          import pathlib
+          import sys
+          import xml.etree.ElementTree as ET
+
+          expected = collections.Counter(sys.argv[1:])
+          reports = sorted(pathlib.Path("build/test-results/integrationTest").glob("TEST-*.xml"))
+          if not reports:
+              raise SystemExit("::error::No JUnit XML reports produced")
+          actual = []
+          bad = []
+          for report in reports:
+              tree = ET.parse(report)
+              for case in tree.iter("testcase"):
+                  actual.append(case.get("name", "").split("(", 1)[0])
+                  if any(case.find(tag) is not None for tag in ("failure", "error", "skipped")):
+                      bad.append(case.get("name", ""))
+          if bad or collections.Counter(actual) != expected:
+              raise SystemExit(f"::error::Shard result mismatch: expected={expected}, actual={collections.Counter(actual)}, invalid={bad}")
+          print(f"Verified exactly {sum(expected.values())} successful, unskipped JUnit test cases: {sorted(expected)}")
+          PY
+
+      - name: Surface real-database IDE diagnostics
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          mapfile -t logs < <(find out/ide-tests/tests -type f -path '*/action-real-database/log/idea.log' -print 2>/dev/null)
+          if [[ ${#logs[@]} -eq 0 ]]; then
+            echo "::warning::No action-real-database idea.log found"
+            exit 0
+          fi
+
+          for log in "${logs[@]}"; do
+            echo "===== $log ====="
+            grep -E -i 'zMyBatis|com[.]algorist[.]zMyBatis|org[.]h2|jdbc:h2|SQLException|SQLState|JDBC|JdbcConsole|DatabaseDriver|DataSource|connection|driver' "$log" | tail -n 600 || true
+          done
+
+      - name: Upload E2E artifact identity
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: e2e-ab-${{ matrix.shard }}-artifact-identity
+          path: e2e-artifact-manifest.txt
+          if-no-files-found: error
+
+      - name: Upload E2E failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: e2e-ab-${{ matrix.shard }}-failure-diagnostics
+          path: |
+            e2e.log
+            build/reports/tests/integrationTest
+            build/test-results/integrationTest
+            out/ide-tests/tests
+          if-no-files-found: warn
