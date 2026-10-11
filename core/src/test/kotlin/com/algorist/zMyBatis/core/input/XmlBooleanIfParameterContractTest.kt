@@ -37,8 +37,10 @@ class XmlBooleanIfParameterContractTest {
                 val proven = build(graph, parameter(0, type, "enabled"), parameter(1, "long", "id"))
                 assertFalse(body, proven.isPreparationBlocked)
                 assertEquals(2, proven.requirements.size)
-                assertEquals(listOf("!enabled"), proven.requirements.single { it.id.value == "xml-java-param:0" }
-                    .provenance.evidence.filterIsInstance<InputEvidence.OgnlExpression>().map { it.expression })
+                val guard = proven.requirements.single { it.id.value == "xml-java-param:0" }
+                    .provenance.evidence.filterIsInstance<InputEvidence.OgnlExpression>().single()
+                assertEquals("!enabled", guard.expression)
+                assertEquals("where", guard.negatedWhereRole)
                 assertEquals(listOf(null, "!enabled"), proven.requirements.single { it.id.value == "xml-java-param:1" }
                     .provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().map { it.enclosingOgnlExpression })
                 assertTrue(proven.internalBindings.isEmpty())
@@ -96,7 +98,9 @@ class XmlBooleanIfParameterContractTest {
             assertFalse(proven.isPreparationBlocked)
             assertEquals(2, proven.requirements.size)
             val enabled = proven.requirements.single { it.id.value == "xml-java-param:0" }
-            assertTrue(enabled.provenance.evidence.any { it is InputEvidence.OgnlExpression && it.expression == "!enabled" })
+            assertTrue(enabled.provenance.evidence.any {
+                it is InputEvidence.OgnlExpression && it.expression == "!enabled" && it.negatedWhereRole == null
+            })
             val id = proven.requirements.single { it.id.value == "xml-java-param:1" }
             assertEquals(listOf(null, "!enabled"), id.provenance.evidence
                 .filterIsInstance<InputEvidence.Placeholder>().map { it.enclosingOgnlExpression })
