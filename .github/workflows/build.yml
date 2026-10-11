@@ -357,6 +357,90 @@ jobs:
           path: ${{ github.workspace }}/build/reports/kover/report.xml
           if-no-files-found: error
 
+  # A/B only: compare this isolated project-parallel Gradle check with the unchanged
+  # canonical Test job on the same immutable PR HEAD. Not part of Merge Gate.
+  testParallelExperiment:
+    name: Test A/B Gradle parallel (2 workers)
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: true
+
+      - name: Run same full checks with project-level parallelism
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --parallel --max-workers=2 check :core:check :mybatis-engine:check 2>&1 | tee gradle-check-parallel.log
+
+      - name: Reject hidden IntelliJ test-harness failures
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s gradle-check-parallel.log || { echo "::error::Missing Gradle log"; exit 1; }
+          if grep -E 'AsyncLog\\.log|Worker exited due to exception|TestLoggerAssertionError|IllegalStateException: Check failed' gradle-check-parallel.log; then
+            echo "::error::Hidden IntelliJ test-harness failure detected"
+            exit 1
+          fi
+
+      - name: Verify coverage and test result artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build/reports/kover/report.xml || { echo "::error::Missing root Kover XML"; exit 1; }
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          task_roots = {
+              "root": Path("build/test-results"),
+              "core": Path("core/build/test-results"),
+              "mybatis-engine": Path("mybatis-engine/build/test-results"),
+          }
+          total = 0
+          for name, base in task_roots.items():
+              reports = list(base.rglob("TEST-*.xml"))
+              if not reports:
+                  raise SystemExit(f"::error::Missing {name} JUnit test results")
+              count, invalid = 0, 0
+              for report in reports:
+                  for case in ET.parse(report).iter("testcase"):
+                      count += 1
+                      invalid += any(case.find(tag) is not None for tag in ("failure", "error", "skipped"))
+              if not count or invalid:
+                  raise SystemExit(f"::error::{name} produced count={count}, invalid={invalid}")
+              total += count
+              print(f"{name}: {count} successful, unskipped JUnit cases")
+          print(f"A/B parallel JUnit total: {total}")
+          PY
+
+      - name: Upload failed A/B diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: test-parallel-ab-failure
+          path: |
+            gradle-check-parallel.log
+            build/test-results
+            core/build/test-results
+            mybatis-engine/build/test-results
+          if-no-files-found: warn
+
   inspectCode:
     name: Inspect code
     runs-on: ubuntu-24.04-arm
