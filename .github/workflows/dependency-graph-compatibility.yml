@@ -20,12 +20,28 @@ concurrency:
 
 jobs:
   compare-ready-graph:
-    name: Generate cacheless graph (no submission)
+    name: Graph parity (${{ matrix.mode }})
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: no-cache-x64
+            runner: ubuntu-latest
+            java: "21"
+            distribution: temurin
+            cache-disabled: true
+          - mode: shared-readonly-arm64
+            runner: ubuntu-24.04-arm
+            java: "25"
+            distribution: zulu
+            cache-disabled: false
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
       contents: read
+    env:
+      PROBE_MODE: ${{ matrix.mode }}
     steps:
       - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -36,13 +52,14 @@ jobs:
       - name: Setup managed-submission-compatible Java
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
-          distribution: temurin
-          java-version: 21
+          distribution: ${{ matrix.distribution }}
+          java-version: ${{ matrix.java }}
 
       - name: Generate graph without GitHub Actions caches or graph submission
         uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
-          cache-disabled: true
+          cache-disabled: ${{ matrix.cache-disabled }}
+          cache-read-only: true
           dependency-graph: generate-and-upload
           dependency-graph-continue-on-failure: false
           artifact-retention-days: 1
@@ -84,6 +101,7 @@ jobs:
               data.get("relationship") == "direct"
               for data in resolved.values()
           )
+          print(f"GRAPH_PROBE_MODE={__import__('os').environ['PROBE_MODE']}")
           print(f"GRAPH_PROBE_NO_SUBMISSION=1")
           print(f"GRAPH_PROBE_MANIFESTS={len(manifests)}")
           print(f"GRAPH_PROBE_NODES={len(resolved)}")
