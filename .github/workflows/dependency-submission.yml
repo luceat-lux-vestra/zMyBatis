@@ -1,0 +1,91 @@
+# Staged replacement for GitHub-managed Automatic Dependency Submission (Gradle).
+# This is inert until an administrator:
+# 1. disables *only* Automatic dependency submission (retaining Dependency graph
+#    and Dependabot alerts) in Settings > Advanced Security;
+# 2. sets repository Actions variable ZMYBATIS_ADS_CUTOVER_DONE=true;
+# 3. runs this workflow on main using workflow_dispatch and verifies submission.
+# Never activate while managed ADS is still enabled: that duplicates submissions.
+name: Gradle Dependency Submission
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: custom-gradle-dependency-submission-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  submitGraph:
+    name: Submit Gradle dependency graph
+    if: ${{ github.repository == 'luceat-lux-vestra/zMyBatis' && github.ref == 'refs/heads/main' && vars.ZMYBATIS_ADS_CUTOVER_DONE == 'true' }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact protected main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup supported Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Generate and submit exact main dependency graph (no cache writes)
+        uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: true
+          dependency-graph: generate-and-submit
+          dependency-graph-continue-on-failure: false
+
+      - name: Verify submitted graph coverage and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          reports = sorted(Path("dependency-graph-reports").glob("*.json"))
+          if len(reports) != 1:
+              raise SystemExit(f"Expected one dependency snapshot, got {len(reports)}: {reports}")
+          graph = json.loads(reports[0].read_text(encoding="utf-8"))
+          expected_sha = os.environ["GITHUB_SHA"]
+          if graph.get("sha") != expected_sha or graph.get("ref") != "refs/heads/main":
+              raise SystemExit("Dependency graph provenance is not exact main HEAD")
+          manifests = graph.get("manifests")
+          if not isinstance(manifests, dict) or not manifests:
+              raise SystemExit("Dependency graph has no manifests")
+          resolved = {}
+          for manifest in manifests.values():
+              resolved.update(manifest.get("resolved") or {})
+          if len(resolved) < 650:
+              raise SystemExit(f"Dependency graph lost required coverage: {len(resolved)} < 650")
+          required = {
+              "org.mybatis:mybatis:3.5.19",
+              "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:2.19.0",
+          }
+          if missing := required - resolved.keys():
+              raise SystemExit(f"Dependency graph lost required coordinates: {sorted(missing)}")
+          direct = sum(
+              node.get("relationship") == "direct" for node in resolved.values()
+          )
+          print(f"GRAPH_SUBMITTED_MAIN_SHA={expected_sha}")
+          print(f"GRAPH_SUBMITTED_MANIFESTS={len(manifests)}")
+          print(f"GRAPH_SUBMITTED_NODES={len(resolved)}")
+          print(f"GRAPH_SUBMITTED_DIRECT={direct}")
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary:
+              summary.write(
+                  f"Main Gradle dependency submission: {len(manifests)} manifest(s), "
+                  f"{len(resolved)} dependencies, {direct} direct. "
+                  "Gradle Actions cache read-only; no cache entries produced.\n"
+              )
+          PY
