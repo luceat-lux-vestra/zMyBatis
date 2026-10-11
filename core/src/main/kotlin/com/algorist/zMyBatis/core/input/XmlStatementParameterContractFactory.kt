@@ -399,11 +399,17 @@ object XmlStatementParameterContractFactory {
                             ) {
                                 val condition = reader.getAttributeValue(null, "test")?.trim()
                                 val root = condition?.removePrefix("!")
-                                // Negation is admitted only for one direct SELECT guard.
+                                // Single SELECT negation may be direct or immediately inside
+                                // one authenticated WHERE/identical-trim wrapper. This is only
+                                // caller-provenance admission; MyBatis still evaluates OGNL.
+                                val boundedNegationLocation =
+                                    (depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
+                                        (activeWrapperKind == "where" &&
+                                            depth == wrapperDepth + 1 && wrappersSeen == setOf("where"))
                                 val directSelectNegation =
                                     condition != null && condition.startsWith('!') &&
                                         statementKind == StatementKind.SELECT &&
-                                        depth == targetDepth + 1 && wrappersSeen.isEmpty() &&
+                                        boundedNegationLocation &&
                                         foreachDeclaration == null && ifConditions.isEmpty() &&
                                         root != null && simpleRoot.matches(root)
                                 if (
@@ -485,7 +491,8 @@ object XmlStatementParameterContractFactory {
                 StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
             } else if (
                 ifConditions.any { it.startsWith("!") } &&
-                (statementKind != StatementKind.SELECT || wrappersSeen.isNotEmpty() ||
+                (statementKind != StatementKind.SELECT ||
+                    (wrappersSeen.isNotEmpty() && wrappersSeen != setOf("where")) ||
                     foreachDeclaration != null || ifConditions.size != 1)
             ) {
                 StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
