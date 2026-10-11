@@ -467,7 +467,7 @@ class XmlBooleanIfParameterContractTest {
             "<where>$condition</where><foreach collection=\"ids\" item=\"id\">#{id}</foreach>",
             "<if test=\"enabled\"><where>AND id = #{id}</where></if>",
             "<trim>$condition</trim>", "<set>$condition</set>",
-        ) + listOf("enabled != null", "enabled.value", "!enabled", "true", "_parameter", "").map {
+        ) + listOf("enabled != null", "enabled.value", "!!enabled", "true", "_parameter", "").map {
             "<where><if test=\"$it\">AND id = #{id}</if></where>"
         }
         for (body in bodies) {
