@@ -426,6 +426,10 @@ jobs:
         uses: JetBrains/qodana-action@3e8d76ff0e0241618abd808682f426afe84bab3f # v2026.2.2
         with:
           args: --fail-threshold 0
+          # Both keys must match across main and PR refs so PR analysis can restore
+          # a trusted main cache; only the main workflow_dispatch run may write it.
+          primary-cache-key: qodana-jvm-community-2026.2.2-linux-arm64-${{ github.sha }}
+          additional-cache-key: qodana-jvm-community-2026.2.2-linux-arm64-
           cache-default-branch-only: true
           pr-mode: false
           upload-result: true
