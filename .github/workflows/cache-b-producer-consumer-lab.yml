@@ -2,7 +2,7 @@
 # The *same* workflow name, job id and matrix are used for trusted-main
 # cache WRITE and untrusted PR read-only CodeQL analysis. Do not infer a
 # successful A/B comparison until the B main-seeded entry is restored by a
-# later PR, with its exact key in both job summaries.
+# a subsequent PR (consumer proof cohort), with exact restored keys in both logs.
 name: Cache B Producer Consumer Lab
 
 on:
