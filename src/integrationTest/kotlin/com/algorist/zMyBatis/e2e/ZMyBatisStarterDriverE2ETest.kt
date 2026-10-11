@@ -35,6 +35,7 @@ import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTe
 import com.intellij.tools.ide.starter.product.idea.ultimate.IdeaUltimate
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.junit.jupiter.api.io.TempDir
@@ -142,6 +143,63 @@ class ZMyBatisStarterDriverE2ETest {
                 combined.contains("Islands Dark") &&
                 details.contains(ISLANDS_FAILURE_STACK)
         }
+        // Research-only A/B: seed the *normal* Ultimate activation on this runner once,
+        // then copy only its locally issued entitlement into fresh per-test IDE configs.
+        // No key is logged, cached between jobs, or uploaded by this code.
+        private val suiteActivationEnabled = System.getenv("ZMYBATIS_E2E_SUITE_ACTIVATION") == "1"
+        private var suiteActivationKey: ByteArray? = null
+
+        private fun configuredStarterContext(testName: String, projectDir: Path) =
+            Starter.newContext(
+                testName,
+                TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(projectDir)).useRelease(IDE_RELEASE),
+            ).apply {
+                System.getenv("LICENSE_KEY")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { setLicense(it) }
+                PluginConfigurator(this).installPluginFromPath(pluginArchive)
+            }
+
+        @JvmStatic
+        @BeforeAll
+        fun seedSuiteActivation(@TempDir suiteTempDir: Path) {
+            if (!suiteActivationEnabled) return
+
+            // The project path is never opened: registration runs in the real no-project IDE.
+            val unusedProject = Files.createDirectories(suiteTempDir.resolve("activation-seed"))
+            val seed = configuredStarterContext("suite-activation-seed", unusedProject)
+            activateBeforeOpeningProject(seed)
+            val key = Files.readAllBytes(seed.paths.configDir.resolve("idea.key"))
+            assertTrue(key.isNotEmpty(), "the real IDE must persist a nonempty activation key")
+            suiteActivationKey = key
+            println("Starter/Driver A/B: one real no-project Ultimate activation completed")
+        }
+
+        private fun activateBeforeOpeningProject(context: IDETestContext) {
+            // Keep the normal license/trial flow, but complete it before project-tree reads begin.
+            // On 2026.2.3 activation dynamically reloads schemes; overlapping project startup races them.
+            context.runIdeWithDriver(commandLine = ::startIdeWithoutProject, launchName = "activation")
+                .useDriverAndCloseIde {
+                    waitFor("application plugins initialized", timeout = 2.minutes) { arePluginsInitialized() }
+                    if (!isPluginLoaded("com.intellij.modules.ultimate")) {
+                        waitFor("native trial action available", timeout = 2.minutes) {
+                            service(TrialStateServiceRemote::class).getTrialAvailable().getValue() == true
+                        }
+                        // The release's native action starts its normal trial without a project.
+                        // Register opens subscription management, which has no trial tab in 2026.2.3.
+                        invokeAction("StartTrial", now = false)
+                    }
+                    waitFor("Ultimate activation complete before project startup", timeout = 2.minutes) {
+                        isPluginLoaded("com.intellij.modules.ultimate") && arePluginsInitialized()
+                    }
+                }
+            assertTrue(
+                Files.isRegularFile(context.paths.configDir.resolve("idea.key")),
+                "activation must persist its state before the project run",
+            )
+        }
+
+
     }
 
     @Test
@@ -174,6 +232,9 @@ class ZMyBatisStarterDriverE2ETest {
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
+                waitFor("Ultimate active in isolated project IDE", timeout = 2.minutes) {
+                    arePluginsInitialized() && isPluginLoaded("com.intellij.modules.ultimate")
+                }
 
                 // This is the shipping application service, reached over Driver JMX/RMI. No
                 // test-only production hook participates in the assertion.
@@ -194,6 +255,9 @@ class ZMyBatisStarterDriverE2ETest {
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
+                waitFor("Ultimate active in isolated project IDE", timeout = 2.minutes) {
+                    arePluginsInitialized() && isPluginLoaded("com.intellij.modules.ultimate")
+                }
 
                 service(ZMyBatisSettingsRemote::class).apply {
                     setAutoFormatSql(false)
@@ -280,6 +344,9 @@ class ZMyBatisStarterDriverE2ETest {
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
+                waitFor("Ultimate active in isolated project IDE", timeout = 2.minutes) {
+                    arePluginsInitialized() && isPluginLoaded("com.intellij.modules.ultimate")
+                }
 
                 service(ZMyBatisSettingsRemote::class).apply {
                     setAutoFormatSql(false)
@@ -355,6 +422,9 @@ class ZMyBatisStarterDriverE2ETest {
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
+                waitFor("Ultimate active in isolated project IDE", timeout = 2.minutes) {
+                    arePluginsInitialized() && isPluginLoaded("com.intellij.modules.ultimate")
+                }
 
                 service(ZMyBatisSettingsRemote::class).apply {
                     setAutoFormatSql(false)
@@ -411,6 +481,9 @@ class ZMyBatisStarterDriverE2ETest {
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
+                waitFor("Ultimate active in isolated project IDE", timeout = 2.minutes) {
+                    arePluginsInitialized() && isPluginLoaded("com.intellij.modules.ultimate")
+                }
                 openFile("Query.xml")
 
                 ideFrame {
@@ -430,41 +503,20 @@ class ZMyBatisStarterDriverE2ETest {
     private fun starterContext(
         testName: String,
         projectDir: Path,
-    ) =
-        Starter.newContext(
-            testName,
-            TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(projectDir)).useRelease(IDE_RELEASE),
-        ).apply {
-            System.getenv("LICENSE_KEY")
-                ?.takeIf { it.isNotBlank() }
-                ?.let { setLicense(it) }
-            PluginConfigurator(this).installPluginFromPath(pluginArchive)
+    ) = configuredStarterContext(testName, projectDir).apply {
+        if (suiteActivationEnabled) {
+            val key = requireNotNull(suiteActivationKey) {
+                "suite activation was not completed before per-test IDE creation"
+            }
+            val keyFile = paths.configDir.resolve("idea.key")
+            Files.createDirectories(keyFile.parent)
+            Files.write(keyFile, key)
+            // The following project IDE must still prove its actual Ultimate entitlement.
+        } else {
             activateBeforeOpeningProject(this)
         }
-
-    private fun activateBeforeOpeningProject(context: IDETestContext) {
-        // Keep the normal license/trial flow, but complete it before project-tree reads begin.
-        // On 2026.2.3 activation dynamically reloads schemes; overlapping project startup races them.
-        context.runIdeWithDriver(commandLine = ::startIdeWithoutProject, launchName = "activation")
-            .useDriverAndCloseIde {
-                waitFor("application plugins initialized", timeout = 2.minutes) { arePluginsInitialized() }
-                if (!isPluginLoaded("com.intellij.modules.ultimate")) {
-                    waitFor("native trial action available", timeout = 2.minutes) {
-                        service(TrialStateServiceRemote::class).getTrialAvailable().getValue() == true
-                    }
-                    // The release's native action starts its normal trial without a project.
-                    // Register opens subscription management, which has no trial tab in 2026.2.3.
-                    invokeAction("StartTrial", now = false)
-                }
-                waitFor("Ultimate activation complete before project startup", timeout = 2.minutes) {
-                    isPluginLoaded("com.intellij.modules.ultimate") && arePluginsInitialized()
-                }
-            }
-        assertTrue(
-            Files.isRegularFile(context.paths.configDir.resolve("idea.key")),
-            "activation must persist its state before the project run",
-        )
     }
+
 
     private fun writeH2DatabaseToolsDriverFixture(configDir: Path, h2Jar: Path) {
         // Database Tools does not use the IDE process classpath as its JDBC driver library.
