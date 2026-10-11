@@ -185,7 +185,6 @@ jobs:
 
   test:
     name: Test
-    needs: [ build ]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     steps:
