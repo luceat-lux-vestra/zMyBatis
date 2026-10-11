@@ -31,6 +31,49 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
+      # Research-only overlap of the pinned IDEA archive install with existing
+      # Java/Gradle/package/EGL work. No persistent cache or additional runner.
+      - name: Start pinned IDEA installer prefetch
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/zmybatis-idea-prefetch"
+          mkdir -p "$root"
+          cat > "$root/worker.sh" <<'PREFETCH_WORKER'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          root="$RUNNER_TEMP/zmybatis-idea-prefetch"
+          status="$root/status"
+          trap 'rc=$?; printf "%s\n" "$rc" >"$root/status.tmp"; mv -f "$root/status.tmp" "$status"' EXIT
+          url="https://download.jetbrains.com/idea/idea-2026.2.3-aarch64.tar.gz"
+          installer="$GITHUB_WORKSPACE/out/ide-tests/installers/IU/ideaIU-262.10968.63-aarch64.tar.gz"
+          build_dir="$GITHUB_WORKSPACE/out/ide-tests/cache/builds/IU-262.10968.63"
+          stage="$root/unpacked"
+          archive="$root/archive.part"
+          test "$(uname -m)" = aarch64
+          # JetBrains publishes the official checksum beside the pinned installer.
+          checksum="$(curl -fLsS --retry 1 --max-time 25 "$url.sha256" | grep -Eom1 '[[:xdigit:]]{64}' || true)"
+          [[ "$checksum" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "Official IDEA checksum unavailable"; exit 1; }
+          curl -fLsS --retry 1 --max-time 110 "$url" -o "$archive"
+          printf '%s  %s\n' "$checksum" "$archive" | sha256sum -c --status
+          mkdir -p "$stage"
+          tar -xzf "$archive" -C "$stage"
+          test "$(find "$stage" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 1
+          app="$(find "$stage" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -f "$app/build.txt"
+          grep -Fxq 'IU-262.10968.63' "$app/build.txt"
+          test -x "$app/bin/idea" || test -x "$app/bin/idea.sh"
+          mkdir -p "$(dirname "$installer")" "$(dirname "$build_dir")"
+          test ! -e "$installer" && test ! -e "$build_dir"
+          # Publish only verified complete objects, then Starter's stock
+          # StandardInstaller skips its own download and extraction.
+          mv "$archive" "$installer"
+          mv "$stage" "$build_dir"
+          echo "IDEA_PREFETCH_PUBLISHED=1"
+          PREFETCH_WORKER
+          nohup bash "$root/worker.sh" >"$root/worker.log" 2>&1 </dev/null &
+          echo "$!" >"$root/pid"
+
       - name: Setup Java 25
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
@@ -73,6 +116,31 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libegl1
           ldconfig -p | grep -F 'libEGL.so.1'
+
+      - name: Read back pinned IDEA installer prefetch
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/zmybatis-idea-prefetch"
+          for i in $(seq 1 120); do
+            test -f "$root/status" && break
+            sleep 1
+          done
+          if ! test -f "$root/status"; then
+            echo "::error::IDE prefetch worker did not finish; do not run Starter against a potentially incomplete installation"
+            exit 1
+          fi
+          if test "$(cat "$root/status")" = 0; then
+            test -s "$GITHUB_WORKSPACE/out/ide-tests/installers/IU/ideaIU-262.10968.63-aarch64.tar.gz"
+            test -d "$GITHUB_WORKSPACE/out/ide-tests/cache/builds/IU-262.10968.63"
+            echo "IDEA_PREFETCH=HIT"
+          else
+            # No partially downloaded/extracted IDEA was published. Full real
+            # Starter suite falls back to vendor downloader/installer unchanged.
+            echo "::warning::IDEA prefetch not used; stock Starter will download/install the pinned release"
+            tail -n 15 "$root/worker.log"
+            echo "IDEA_PREFETCH=FALLBACK"
+          fi
 
       - name: Run Starter / Driver E2E
         shell: bash
