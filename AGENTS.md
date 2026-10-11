@@ -230,3 +230,13 @@ Review the exact final PR HEAD for:
 For Leap architecture work, additionally review dependency direction, whether a legacy component is being preserved by inertia, whether a bridge has a deletion point, and whether an adapter is leaking platform objects into core models.
 
 A PASS applies only to the reviewed HEAD SHA. Any HEAD movement invalidates it. Merge by squash only after fresh HEAD/main readback and exact-head approval. Post-merge workflows are reserved for checks or actions that require merged/default-branch state; ordinary product validation is not repeated merely because main advanced.
+
+## Crash-recoverable agent work
+
+For non-trivial repository work that may span sessions, follow `docs/engineering/agent-recovery.md`.
+
+Current GitHub Issue/branch/commit/PR/check/review/merge state is authoritative for execution recovery. A durable Issue checkpoint is a compact resume hint only. At session start, discover any existing production PR first, fresh-read authoritative state, reconcile the checkpoint, and derive one safe next action before mutating.
+
+After a material external mutation, verify the resulting GitHub postcondition before advancing the checkpoint. If a response or session is lost, never blindly repeat the mutation merely because the checkpoint is behind. Re-read and classify the result as matching, stale-but-reconcilable, retryable-absent, conflicting, or `UNKNOWN`.
+
+Checkpoint updates must not move the production PR HEAD. Any actual HEAD movement invalidates prior exact-HEAD evidence under this repository's normal merge gate. Deliberately stale checkpoints are a test technique only; normal work updates the checkpoint after every verified durable boundary.
