@@ -349,6 +349,65 @@ jobs:
             ${{ github.workspace }}/core/build/reports/tests
             ${{ github.workspace }}/mybatis-engine/build/reports/tests
 
+      # TEMPORARY one-PR proof. Delete this step after confirming logs; not intended for main.
+      - name: Temporary CC reuse and security negative proofs (PR 365 only)
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 365 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          first="$RUNNER_TEMP/security-cc-first.log"
+          reused="$RUNNER_TEMP/security-cc-reused.log"
+          drift="$RUNNER_TEMP/security-cc-version-drift.log"
+          missing="$RUNNER_TEMP/security-cc-missing-module.log"
+          backup="$RUNNER_TEMP/build.gradle.kts.security-proof.original"
+          cp build.gradle.kts "$backup"
+          trap 'cp "$backup" build.gradle.kts' EXIT
+
+          echo "::group::First invocation stores the security task CC graph"
+          ./gradlew --configuration-cache --console=plain verifyStarterSecurityGraph >"$first" 2>&1 || { cat "$first"; exit 1; }
+          grep -F "Configuration cache entry stored." "$first" || { cat "$first"; exit 1; }
+          echo "::endgroup::"
+
+          echo "::group::Second identical invocation reuses the same CC graph"
+          ./gradlew --configuration-cache --console=plain verifyStarterSecurityGraph >"$reused" 2>&1 || { cat "$reused"; exit 1; }
+          grep -F "Reusing configuration cache." "$reused" || { cat "$reused"; exit 1; }
+          grep -F "BUILD SUCCESSFUL" "$reused" || { cat "$reused"; exit 1; }
+          echo "::endgroup::"
+
+          echo "::group::Fail-closed when jsoup version drifts"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("build.gradle.kts")
+          s = p.read_text()
+          old = '"org.jsoup:jsoup" to "1.23.2",'
+          assert s.count(old) == 1
+          p.write_text(s.replace(old, '"org.jsoup:jsoup" to "0.0.0-negative-proof",', 1))
+          PY
+          if ./gradlew --configuration-cache --console=plain verifyStarterSecurityGraph >"$drift" 2>&1; then
+            echo "::error::Security graph unexpectedly accepted invalid jsoup version"
+            exit 1
+          fi
+          grep -F "Starter security graph drift for org.jsoup:jsoup: expected 0.0.0-negative-proof, resolved 1.23.2" "$drift" || { cat "$drift"; exit 1; }
+          cp "$backup" build.gradle.kts
+          echo "::endgroup::"
+
+          echo "::group::Fail-closed when mandatory module is absent"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("build.gradle.kts")
+          s = p.read_text()
+          old = '"org.jsoup:jsoup" to "1.23.2",'
+          assert s.count(old) == 1
+          p.write_text(s.replace(old, '"com.example:missing-security-proof" to "1.23.2",', 1))
+          PY
+          if ./gradlew --configuration-cache --console=plain verifyStarterSecurityGraph >"$missing" 2>&1; then
+            echo "::error::Security graph unexpectedly accepted missing module"
+            exit 1
+          fi
+          grep -F "Starter security graph is missing expected module com.example:missing-security-proof" "$missing" || { cat "$missing"; exit 1; }
+          cp "$backup" build.gradle.kts
+          echo "::endgroup::"
+
       - name: Upload Coverage Artifact
         if: ${{ steps.scope.outputs.docs_only != 'true' && (github.event_name != 'pull_request' || github.event.action != 'ready_for_review' || steps.fast-evidence.outputs.reuse != 'true') }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
