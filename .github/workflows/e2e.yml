@@ -122,7 +122,7 @@ jobs:
         run: |
           set -euo pipefail
           root="$RUNNER_TEMP/zmybatis-idea-prefetch"
-          for i in $(seq 1 120); do
+          for _ in $(seq 1 120); do
             test -f "$root/status" && break
             sleep 1
           done
