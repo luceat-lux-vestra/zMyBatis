@@ -116,20 +116,10 @@ jobs:
             out/ide-tests/tests
           if-no-files-found: warn
 
-  # A/B experiment: retain the original whole-suite E2E job while running two
-  # isolated shards against the same immutable source and full packaged plugin.
-  shardExperiment:
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        include:
-          - shard: service-refusal
-            methods: "registeredActionReachesProductionFailClosedPath packagedPluginLoadsAndProductionServiceIsCallable knownIslandsPlatformFailureIsNarrowlyMapped"
-          - shard: database-guards
-            methods: "registeredActionExecutesParameterizedQueryThroughRealDatabaseTools registeredRawInterpolationForcesPreviewWhenSettingDisabled registeredMutationDeclarationForcesPreviewWhenSettingDisabled"
+  # A/B: unchanged full-suite serial control alongside JUnit-method parallelism=2.
+  methodParallelExperiment:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: E2E A/B shard (${{ matrix.shard }})
+    name: E2E A/B JUnit parallel (2)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 75
     steps:
@@ -171,8 +161,6 @@ jobs:
             echo "ide_release=2026.2.3"
             echo "plugin_artifact=$artifact"
             echo "plugin_sha256=$artifact_sha256"
-            echo "shard=${{ matrix.shard }}"
-            echo "test_methods=${{ matrix.methods }}"
           } | tee e2e-artifact-manifest.txt
 
       - name: Install ARM64 EGL runtime for IntelliJ Skiko
@@ -186,40 +174,33 @@ jobs:
 
       - name: Run Starter / Driver E2E
         shell: bash
-        env:
-          E2E_SHARD_METHODS: ${{ matrix.methods }}
         run: |
-          set -euo pipefail
-          read -r -a methods <<< "$E2E_SHARD_METHODS"
-          [[ ${#methods[@]} -eq 3 ]] || { echo "::error::Shard must contain exactly three tests"; exit 1; }
-          filters=()
-          for method in "${methods[@]}"; do
-            filters+=(--tests "com.algorist.zMyBatis.e2e.ZMyBatisStarterDriverE2ETest.$method")
-          done
-          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_25_X64 integrationTest --stacktrace "${filters[@]}" 2>&1 | tee e2e.log
+          set -o pipefail
+          ./gradlew -Pe2eMethodParallel=true -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_25_X64 integrationTest --stacktrace 2>&1 | tee e2e.log
 
-          # Guard against a silently missing, skipped, or extra process-level test.
-          python3 - "${methods[@]}" <<'PY'
+          # All six real-IDE and fail-closed methods must be present and successful.
+          python3 - <<'PY'
           import collections
           import pathlib
-          import sys
+          import re
           import xml.etree.ElementTree as ET
 
-          expected = collections.Counter(sys.argv[1:])
+          source = pathlib.Path("src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt").read_text()
+          expected = re.findall(r"@Test\s+fun\s+(\w+)\s*\(", source)
+          if len(expected) != 6 or len(set(expected)) != 6:
+              raise SystemExit(f"::error::Unexpected source E2E discovery: {expected}")
           reports = sorted(pathlib.Path("build/test-results/integrationTest").glob("TEST-*.xml"))
           if not reports:
-              raise SystemExit("::error::No JUnit XML reports produced")
-          actual = []
-          bad = []
+              raise SystemExit("::error::Missing E2E JUnit XML")
+          actual, bad = [], []
           for report in reports:
-              tree = ET.parse(report)
-              for case in tree.iter("testcase"):
+              for case in ET.parse(report).iter("testcase"):
                   actual.append(case.get("name", "").split("(", 1)[0])
                   if any(case.find(tag) is not None for tag in ("failure", "error", "skipped")):
                       bad.append(case.get("name", ""))
-          if bad or collections.Counter(actual) != expected:
-              raise SystemExit(f"::error::Shard result mismatch: expected={expected}, actual={collections.Counter(actual)}, invalid={bad}")
-          print(f"Verified exactly {sum(expected.values())} successful, unskipped JUnit test cases: {sorted(expected)}")
+          if bad or collections.Counter(actual) != collections.Counter(expected):
+              raise SystemExit(f"::error::JUnit coverage mismatch: expected={expected}, actual={actual}, invalid={bad}")
+          print(f"Verified all {len(expected)} passing unskipped JUnit cases under JUnit parallel=2")
           PY
 
       - name: Surface real-database IDE diagnostics
@@ -242,7 +223,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: e2e-ab-${{ matrix.shard }}-artifact-identity
+          name: e2e-ab-parallel-artifact-identity
           path: e2e-artifact-manifest.txt
           if-no-files-found: error
 
@@ -250,7 +231,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: e2e-ab-${{ matrix.shard }}-failure-diagnostics
+          name: e2e-ab-parallel-failure-diagnostics
           path: |
             e2e.log
             build/reports/tests/integrationTest
