@@ -62,7 +62,8 @@ jobs:
         with:
           # Untrusted PR runs restore only. Trusted default-branch runs seed
           # the architecture-isolated Linux-ARM64 Gradle cache.
-          cache-read-only: ${{ github.event_name == 'pull_request' }}
+          # Weekly default-branch scanning must not create a second Gradle cache family.
+          cache-read-only: true
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
