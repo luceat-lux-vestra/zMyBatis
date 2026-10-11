@@ -221,7 +221,10 @@ object XmlStatementParameterContractFactory {
             // Caller identity is the proven Boolean alias; provenance keeps full OGNL expression.
             usesByRoot.getOrPut(condition.removePrefix("!")) { mutableListOf() } += CallerUse(
                 kind = InputKind.BOUND,
-                evidence = InputEvidence.OgnlExpression(condition, statementSource),
+                evidence = InputEvidence.OgnlExpression(
+                    condition, statementSource,
+                    negatedWhereRole = if (condition.startsWith('!')) statementScan.negatedIfWrapper else null,
+                ),
             )
         }
 
@@ -286,6 +289,7 @@ object XmlStatementParameterContractFactory {
         var ifDepth = -1
         var activeIfCondition: String? = null
         val ifConditions = mutableListOf<String>()
+        var negatedIfWrapper: String? = null
         var foreachDeclaration: ForeachDeclaration? = null
         val textSegments = mutableListOf<StatementTextSegment>()
         val staticBeforeWrapper = StringBuilder()
@@ -421,6 +425,7 @@ object XmlStatementParameterContractFactory {
                                     reader.getAttributeNamespace(0).isNullOrEmpty()
                                 ) {
                                     ifConditions += condition
+                                    if (condition.startsWith('!')) negatedIfWrapper = activeWrapperKind
                                     ifDepth = depth
                                     activeIfCondition = condition
                                     continue
@@ -512,7 +517,7 @@ object XmlStatementParameterContractFactory {
                 // Never admit an UPDATE whose guards may remove the entire WHERE predicate.
                 StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
             } else {
-                StatementScan.Ready(textSegments, foreachDeclaration, ifConditions)
+                StatementScan.Ready(textSegments, foreachDeclaration, ifConditions, negatedIfWrapper)
             }
         } catch (_: XMLStreamException) {
             StatementScan.Failed(InputContractProblemKind.UNKNOWN, MALFORMED_XML_PROBLEM)
@@ -713,6 +718,7 @@ object XmlStatementParameterContractFactory {
             val textSegments: List<StatementTextSegment>,
             val foreach: ForeachDeclaration?,
             val ifConditions: List<String>,
+            val negatedIfWrapper: String?,
         ) : StatementScan
 
         data class Failed(
