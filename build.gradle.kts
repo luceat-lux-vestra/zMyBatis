@@ -299,6 +299,15 @@ intellijPlatformTesting.testIdeUi.register("integrationTest") {
             languageVersion = JavaLanguageVersion.of(25)
         }
         useJUnitPlatform()
+        // Opt-in only for the concurrent E2E A/B runner; ordinary IDE tests remain serial.
+        // JUnit manages method concurrency inside one Test JVM (not Gradle test forks).
+        if (providers.gradleProperty("e2eMethodParallel").orElse("false").get().toBooleanStrict()) {
+            systemProperty("junit.jupiter.execution.parallel.enabled", "true")
+            systemProperty("junit.jupiter.execution.parallel.mode.default", "concurrent")
+            systemProperty("junit.jupiter.execution.parallel.config.strategy", "fixed")
+            systemProperty("junit.jupiter.execution.parallel.config.fixed.parallelism", "2")
+            systemProperty("junit.jupiter.execution.parallel.config.fixed.max-pool-size", "2")
+        }
         testLogging {
             events("passed", "failed")
             showStandardStreams = true
