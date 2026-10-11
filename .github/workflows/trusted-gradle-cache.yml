@@ -16,7 +16,6 @@ on:
       - "AGENTS.md"
       - "docs/*.md"
       - "docs/**/*.md"
-  workflow_dispatch:
 
 permissions: {}
 
