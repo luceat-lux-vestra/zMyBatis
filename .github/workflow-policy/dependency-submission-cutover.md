@@ -10,7 +10,7 @@ enable both publishers.
 - [Custom run #38264975914](https://github.com/luceat-lux-vestra/zMyBatis/actions/runs/38264975914) on protected main SHA `674b153504d4abcbee3d5f6297a4aeadb3bf033f`: submission accepted; 1 manifest, 761 resolved, 67 direct dependencies; cache read-only and no new cache writes.
 - [Earlier custom run #38263463638](https://github.com/luceat-lux-vestra/zMyBatis/actions/runs/38263463638) also passed submission and provenance checks.
 - Last observed managed ADS run: [#38143997993](https://github.com/luceat-lux-vestra/zMyBatis/actions/runs/38143997993) on 2026-10-11 UTC. No later managed submission was observed in the queried dynamic-run feed, but this is not a substitute for administrator confirmation that the setting is disabled.
-- The custom workflow now runs on dependency/build-definition changes to `main` or manual `workflow_dispatch` (main only), rather than on every push. Historical parity testing is complete; the non-submitting compatibility probe remains present and is not part of routine `main` submission. Its deletion is deferred pending separately permitted repository maintenance.
+- The custom workflow now runs on dependency/build-definition changes to `main` or manual `workflow_dispatch` (main only), rather than on every push. Historical parity testing is complete; the non-submitting compatibility probe has been retired from `main`. PR #381 and its archived Actions runs remain the immutable parity evidence.
 - The repository cutover variable has been demonstrated as active by real successful job execution. Keep this fail-closed guard, independent of the managed setting.
 
 
@@ -41,8 +41,8 @@ of these conditions hold:
 2. The repository Actions variable `ZMYBATIS_ADS_CUTOVER_DONE` is exactly
    `true` (case-sensitive).
 
-The variable must remain **unset/false** until managed ADS is disabled.
-Unlike the research job, the activated job uses `contents: write` and
+During the original cutover, the variable had to remain **unset/false** until managed ADS was disabled. In the current active state it must remain `true`; set it back to `false` first if rollback is required.
+Unlike the retired research job, the activated job uses `contents: write` and
 `dependency-graph: generate-and-submit`; it must not execute on pull
 requests. It retains `cache-read-only: true`, full dependency resolution,
 fail-closed submission, provenance and node-coverage assertions, and one
@@ -99,9 +99,10 @@ remove either cached dependency baseline before replacement has been verified.
 
 - This cutover does not reduce the **contents** of Qodana's 4.39GB index or
   Gradle's 1.58GB transforms cache. It eliminates a *separate cache producer*.
-- The new workflow's warm Gradle cache is read-only. As configured since
-  [#380](https://github.com/luceat-lux-vestra/zMyBatis/pull/380), only an
-  explicitly dispatched E2E job on trusted `main` may seed new Gradle state.
+- The dependency-submission workflow's Gradle cache is read-only. As configured by
+  [#389](https://github.com/luceat-lux-vestra/zMyBatis/pull/389), the existing
+  trusted-main E2E job may seed Gradle state on dependency/build-definition changes
+  or explicit main dispatch; pull-request consumers remain read-only.
 - Managed ADS setting and cache inventory are administrator-controlled; a
   GitHub repository content PR **cannot change them**. Do not claim an
   operating cost or retained capacity saving until actual cache inventory
