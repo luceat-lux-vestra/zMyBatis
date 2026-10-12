@@ -218,21 +218,13 @@ object XmlStatementParameterContractFactory {
         }
 
         statementScan.ifConditions.forEach { condition ->
-            // Caller identity is the proven Boolean alias; provenance keeps full OGNL expression.
-            val callerAlias = if (condition.startsWith('!')) {
-                condition.removePrefix("!")
-            } else {
-                condition.removeSuffix(" == false")
-            }
-            usesByRoot.getOrPut(callerAlias) { mutableListOf() } += CallerUse(
+            // Source classification identifies the caller; stock MyBatis still owns OGNL evaluation.
+            val guard = requireNotNull(XmlBooleanGuardSyntax.parse(condition))
+            usesByRoot.getOrPut(guard.callerAlias) { mutableListOf() } += CallerUse(
                 kind = InputKind.BOUND,
                 evidence = InputEvidence.OgnlExpression(
                     condition, statementSource,
-                    negatedWhereRole = if (condition.startsWith('!') || condition.endsWith(" == false")) {
-                        statementScan.negatedIfWrapper
-                    } else {
-                        null
-                    },
+                    boundedWhereRole = if (guard.requiresSingleSelect) statementScan.boundedIfWrapper else null,
                 ),
             )
         }
@@ -298,7 +290,7 @@ object XmlStatementParameterContractFactory {
         var ifDepth = -1
         var activeIfCondition: String? = null
         val ifConditions = mutableListOf<String>()
-        var negatedIfWrapper: String? = null
+        var boundedIfWrapper: String? = null
         var foreachDeclaration: ForeachDeclaration? = null
         val textSegments = mutableListOf<StatementTextSegment>()
         val staticBeforeWrapper = StringBuilder()
@@ -410,37 +402,28 @@ object XmlStatementParameterContractFactory {
                                     ) &&
                                 ifDepth < 0
                             ) {
-                                val condition = reader.getAttributeValue(null, "test")?.trim()
-                                val root = condition?.let { expression ->
-                                    if (expression.startsWith('!')) expression.removePrefix("!")
-                                    else expression.removeSuffix(" == false")
-                                }
-                                // Single SELECT negation may be direct or immediately inside
-                                // one authenticated WHERE/identical-trim wrapper. This is only
-                                // caller-provenance admission; MyBatis still evaluates OGNL.
-                                val boundedNegationLocation =
+                                val condition = reader.getAttributeValue(null, "test")?.trim().orEmpty()
+                                val guard = XmlBooleanGuardSyntax.parse(condition)
+                                // Restricted forms have one source-authenticated SELECT guard.
+                                // This is input admission, not SQL/OGNL interpretation.
+                                val boundedSelectLocation =
                                     (depth == targetDepth + 1 && wrappersSeen.isEmpty()) ||
                                         (activeWrapperKind == "where" &&
                                             depth == wrapperDepth + 1 && wrappersSeen == setOf("where"))
-                                val directSelectNegation =
-                                    condition != null &&
-                                        (condition.startsWith('!') || condition.endsWith(" == false")) &&
-                                        statementKind == StatementKind.SELECT &&
-                                        boundedNegationLocation &&
-                                        foreachDeclaration == null && ifConditions.isEmpty() &&
-                                        root != null && simpleRoot.matches(root)
+                                val boundedSelectProven =
+                                    statementKind == StatementKind.SELECT &&
+                                        boundedSelectLocation && foreachDeclaration == null &&
+                                        ifConditions.isEmpty()
                                 if (
-                                    condition != null && root != null &&
-                                    (simpleRoot.matches(condition) || directSelectNegation) &&
-                                    root !in reservedInternalRoots &&
-                                    root !in ognlKeywords &&
+                                    guard != null &&
+                                    (!guard.requiresSingleSelect || boundedSelectProven) &&
+                                    guard.callerAlias !in reservedInternalRoots &&
+                                    guard.callerAlias !in ognlKeywords &&
                                     reader.attributeCount == 1 &&
                                     reader.getAttributeNamespace(0).isNullOrEmpty()
                                 ) {
                                     ifConditions += condition
-                                    if (condition.startsWith('!') || condition.endsWith(" == false")) {
-                                        negatedIfWrapper = activeWrapperKind
-                                    }
+                                    if (guard.requiresSingleSelect) boundedIfWrapper = activeWrapperKind
                                     ifDepth = depth
                                     activeIfCondition = condition
                                     continue
@@ -510,7 +493,7 @@ object XmlStatementParameterContractFactory {
             } else if (wrapperWithoutCondition && foreachDeclaration == null) {
                 StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
             } else if (
-                ifConditions.any { it.startsWith("!") || it.endsWith(" == false") } &&
+                ifConditions.any { XmlBooleanGuardSyntax.parse(it)?.requiresSingleSelect == true } &&
                 (statementKind != StatementKind.SELECT ||
                     (wrappersSeen.isNotEmpty() && wrappersSeen != setOf("where")) ||
                     foreachDeclaration != null || ifConditions.size != 1)
@@ -532,7 +515,7 @@ object XmlStatementParameterContractFactory {
                 // Never admit an UPDATE whose guards may remove the entire WHERE predicate.
                 StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
             } else {
-                StatementScan.Ready(textSegments, foreachDeclaration, ifConditions, negatedIfWrapper)
+                StatementScan.Ready(textSegments, foreachDeclaration, ifConditions, boundedIfWrapper)
             }
         } catch (_: XMLStreamException) {
             StatementScan.Failed(InputContractProblemKind.UNKNOWN, MALFORMED_XML_PROBLEM)
@@ -733,7 +716,7 @@ object XmlStatementParameterContractFactory {
             val textSegments: List<StatementTextSegment>,
             val foreach: ForeachDeclaration?,
             val ifConditions: List<String>,
-            val negatedIfWrapper: String?,
+            val boundedIfWrapper: String?,
         ) : StatementScan
 
         data class Failed(

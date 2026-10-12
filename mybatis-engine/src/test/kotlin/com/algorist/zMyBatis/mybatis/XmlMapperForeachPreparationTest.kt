@@ -50,6 +50,38 @@ import org.junit.Test
 
 class XmlMapperForeachPreparationTest {
     @Test
+    fun exactSelectBooleanComparisonFamilyMatchesStockAndRemainsUnexecutableWhenBound() {
+        val parameters = listOf(parameter(0, "java.lang.Boolean", "enabled"), parameter(1, "long", "id"))
+        val placements = listOf(
+            "" to "",
+            "<where>" to "</where>",
+            """<trim prefix="WHERE" prefixOverrides="AND |OR ">""" to "</trim>",
+        )
+        for (expression in listOf("enabled == true", "enabled == false", "enabled != true", "enabled != false")) {
+            val guard = requireNotNull(com.algorist.zMyBatis.core.input.XmlBooleanGuardSyntax.parse(expression))
+            for ((open, close) in placements) {
+                val source = """SELECT #{id,jdbcType=BIGINT} $open<if test="$expression">AND id = #{id,jdbcType=BIGINT}</if>$close"""
+                val original = fixture(source, parameters)
+                val proven = contract(original)
+                assertTrue(source, !proven.isPreparationBlocked)
+                for (enabled in listOf(false, true)) {
+                    val before = Thread.currentThread().contextClassLoader
+                    val prepared = success(request(original, mapOf(0 to InputValue.BooleanValue(enabled), 1 to integer(7))))
+                    assertSame(before, Thread.currentThread().contextClassLoader)
+                    assertStockParity(original, mapOf("enabled" to enabled, "id" to 7L), prepared)
+                    val expectedCount = if (guard.isActive(enabled)) 2 else 1
+                    assertEquals(source, expectedCount, prepared.orderedBindings.size)
+                    assertEquals(List(expectedCount) { "id" }, prepared.orderedBindings.map { it.property })
+                    assertTrue(prepared.orderedBindings.all { it.origin is PreparedBindingOrigin.CallerInput })
+                    assertEquals(proven.sourceRevisions, prepared.sourceRevisions)
+                    assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
+                        (MaintainedExecutionMaterializer.materialize(prepared) as MaterializationResult.Failed).failure.kind)
+                }
+            }
+        }
+    }
+
+    @Test
     fun exactSelectFalseComparisonRetainsStockSqlBindingAndMaterializationPolicy() {
         val parameters = listOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
         val placements = listOf(
