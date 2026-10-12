@@ -8,6 +8,7 @@ when those tools do not model the invariant.
 """
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
@@ -367,9 +368,52 @@ def check_zizmor(failures: list[str]) -> None:
     expect("zizmor accepts every real workflow", real_rc == 0, failures)
 
 
+
+def check_main_e2e_cache_seed(failures: list[str]) -> None:
+    """Guard dependency-only cache production without a second writer/job key."""
+    workflow = (WORKFLOWS_DIR / "e2e.yml").read_text(encoding="utf-8")
+    trigger = re.search(
+        r"(?m)^  push:\n    branches: \[main\]\n    paths:\n(?P<items>(?:      - '[^']+'\n)+)",
+        workflow,
+    )
+    expected = {
+        "build.gradle.kts", "settings.gradle.kts", "gradle.properties",
+        "gradlew", "gradle/**", "**/build.gradle.kts",
+        "**/settings.gradle.kts", "**/gradle.properties",
+        ".github/workflows/e2e.yml", ".github/workflows/build.yml",
+    }
+    actual = (
+        set(re.findall(r"(?m)^      - '([^']+)'$", trigger["items"]))
+        if trigger else set()
+    )
+    expect("main push seed matches exact Gradle input allowlist", actual == expected, failures)
+    expect("seed never gates on all-source, docs, or every push", not (
+        {"src/**", "**", "docs/**", "**/*.kt", "**/*.java"} & actual
+    ), failures)
+    expect("existing E2E cache job identity remains unchanged",
+           "  starterDriver:" in workflow and "    name: Starter / Driver E2E" in workflow,
+           failures)
+    expect("PRs are always read-only and main only may publish caches",
+           "github.ref != 'refs/heads/main' || (github.event_name != 'push' && github.event_name != 'workflow_dispatch')" in workflow,
+           failures)
+    expect("main-only prime verifies exact checkout",
+           'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in workflow,
+           failures)
+    expect("postmerge seed skips real product IDE E2E",
+           all(
+               f"      - name: {step}\n        if: ${{{{ github.event_name != 'push' }}}}" in workflow
+               for step in (
+                   "Build exact plugin artifact",
+                   "Install ARM64 EGL runtime for IntelliJ Skiko",
+                   "Run Starter / Driver E2E",
+               )
+           ), failures)
+
+
 def main() -> int:
     failures: list[str] = []
     check_local_policy(failures)
+    check_main_e2e_cache_seed(failures)
     check_actionlint(failures)
     check_zizmor(failures)
 

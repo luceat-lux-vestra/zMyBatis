@@ -9,6 +9,21 @@ on:
       - "AGENTS.md"
       - "docs/*.md"
       - "docs/**/*.md"
+  # Same trusted-main cache owner as manual E2E; only actual Gradle inputs
+  # schedule a bounded cache prime. Product-source merges do not launch E2E.
+  push:
+    branches: [main]
+    paths:
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
+      - 'gradle/**'
+      - '**/build.gradle.kts'
+      - '**/settings.gradle.kts'
+      - '**/gradle.properties'
+      - '.github/workflows/e2e.yml'
+      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 concurrency:
@@ -20,7 +35,7 @@ permissions:
 
 jobs:
   starterDriver:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) }}
     name: Starter / Driver E2E
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 75
@@ -40,10 +55,22 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
-          # Only an explicit trusted-main manual E2E run seeds shared Gradle state.
-          cache-read-only: ${{ github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main' }}
+          # A dependency-scoped main push or explicit main dispatch alone may
+          # write. Forks and all PR validation remain cache read-only.
+          cache-read-only: ${{ github.ref != 'refs/heads/main' || (github.event_name != 'push' && github.event_name != 'workflow_dispatch') }}
+
+      - name: Prime existing trusted-main Gradle cache
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          # Reuse this E2E job's cache identity; never start the IDE E2E,
+          # Qodana, or a competing Gradle cache writer on post-merge push.
+          ./gradlew --no-daemon -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_25_X64 buildPlugin :mybatis-engine:compileKotlin
 
       - name: Build exact plugin artifact
+        if: ${{ github.event_name != 'push' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -69,6 +96,7 @@ jobs:
           } | tee e2e-artifact-manifest.txt
 
       - name: Install ARM64 EGL runtime for IntelliJ Skiko
+        if: ${{ github.event_name != 'push' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -78,13 +106,14 @@ jobs:
           ldconfig -p | grep -F 'libEGL.so.1'
 
       - name: Run Starter / Driver E2E
+        if: ${{ github.event_name != 'push' }}
         shell: bash
         run: |
           set -o pipefail
           ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_25_X64 integrationTest --stacktrace 2>&1 | tee e2e.log
 
       - name: Surface real-database IDE diagnostics
-        if: ${{ failure() }}
+        if: ${{ failure() && github.event_name != 'push' }}
         shell: bash
         run: |
           set -uo pipefail
@@ -100,7 +129,7 @@ jobs:
           done
 
       - name: Upload E2E artifact identity
-        if: ${{ always() }}
+        if: ${{ always() && github.event_name != 'push' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: e2e-artifact-identity
@@ -108,7 +137,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload E2E failure diagnostics
-        if: ${{ failure() }}
+        if: ${{ failure() && github.event_name != 'push' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: e2e-failure-diagnostics
