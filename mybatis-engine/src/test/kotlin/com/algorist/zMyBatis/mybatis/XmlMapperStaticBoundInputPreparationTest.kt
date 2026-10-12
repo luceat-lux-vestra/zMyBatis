@@ -11,12 +11,21 @@ import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
 import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
+import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
+import com.algorist.zMyBatis.core.execution.ExecutionTargetId
+import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
+import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
+import com.algorist.zMyBatis.core.execution.StableDataSourceId
+import com.algorist.zMyBatis.core.materialization.MaterializationResult
+import com.algorist.zMyBatis.core.materialization.PostgreSqlBigintExecutionMaterializer
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationResult
 import com.algorist.zMyBatis.core.preparation.XmlMapperPreparationSource
 import com.algorist.zMyBatis.core.source.CapturedStatement
+import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
 import com.algorist.zMyBatis.core.source.JavaMethodParameterMetadata
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
 import com.algorist.zMyBatis.core.source.SourceFileId
@@ -34,6 +43,39 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class XmlMapperStaticBoundInputPreparationTest {
+    @Test
+    fun preparedLongBindingMaterializesAsPostgresqlBigintArtifact() {
+        val fixture = fixture(
+            "SELECT #{id,jdbcType=BIGINT}::BIGINT AS RESULT_VALUE",
+            listOf(parameter(0, "long", "sourceId", "id")),
+        )
+        val prepared = success(
+            prepare(fixture, listOf(InputValue.IntegerValue(BigInteger.valueOf(42)))),
+        )
+        val binding = prepared.orderedBindings.single()
+        assertEquals("java.lang.Object", binding.metadata.mappingJavaTypeIdentity)
+        assertEquals("BIGINT", binding.metadata.jdbcTypeIdentity)
+        assertEquals("org.apache.ibatis.type.UnknownTypeHandler", binding.metadata.typeHandlerIdentity)
+
+        val targetId = ExecutionTargetId(
+            StableDataSourceId("postgres-proof"),
+            ExplicitSchemaIdentity("public"),
+        )
+        val target = ResolvedExecutionTarget(
+            ExecutionTargetDescriptor(targetId, "PostgreSQL proof"),
+            MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+        )
+
+        val result = PostgreSqlBigintExecutionMaterializer(target).materialize(prepared)
+        val artifact = (result as MaterializationResult.Success).execution
+
+        assertEquals("SELECT 42::BIGINT AS RESULT_VALUE", normalize(artifact.executionSql))
+        assertEquals(targetId, artifact.executionTargetId)
+        assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, artifact.executionDialectId)
+        assertEquals(prepared.statementId, artifact.statementId)
+        assertEquals(prepared.sourceRevisions, artifact.sourceRevisions)
+    }
+
     @Test
     fun explicitParamScalarProducesProvenOrderedBinding() {
         val fixture = fixture(
