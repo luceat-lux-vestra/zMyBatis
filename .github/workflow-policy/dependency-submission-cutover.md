@@ -1,7 +1,19 @@
 # Gradle dependency-submission cutover runbook
 
-Status: **STAGED / NOT ACTIVE**. Do **not** enable the new submission job
-while GitHub-managed Automatic Dependency Submission is enabled.
+Status: **ACTIVE — EXACT-MAIN SUBMISSION VERIFIED (2026-10-12)**.
+The ARM64 workflow actually submitted a full protected-main dependency snapshot.
+Administrative readback of the managed ADS toggle is still pending; do not
+enable both publishers.
+
+## Current operating evidence
+
+- [Custom run #38264975914](https://github.com/luceat-lux-vestra/zMyBatis/actions/runs/38264975914) on protected main SHA `674b153504d4abcbee3d5f6297a4aeadb3bf033f`: submission accepted; 1 manifest, 761 resolved, 67 direct dependencies; cache read-only and no new cache writes.
+- [Earlier custom run #38263463638](https://github.com/luceat-lux-vestra/zMyBatis/actions/runs/38263463638) also passed submission and provenance checks.
+- Last observed managed ADS run: [#38143997993](https://github.com/luceat-lux-vestra/zMyBatis/actions/runs/38143997993) on 2026-10-11 UTC. No later managed submission was observed in the queried dynamic-run feed, but this is not a substitute for administrator confirmation that the setting is disabled.
+- The custom workflow now runs on dependency/build-definition changes to `main` or manual `workflow_dispatch` (main only), rather than on every push. Historical parity testing is complete; the non-submitting compatibility probe remains present and is not part of routine `main` submission. Its deletion is deferred pending separately permitted repository maintenance.
+- The repository cutover variable has been demonstrated as active by real successful job execution. Keep this fail-closed guard, independent of the managed setting.
+
+
 
 ## Verified baseline
 
@@ -21,8 +33,8 @@ while GitHub-managed Automatic Dependency Submission is enabled.
 
 ## Deployment guards
 
-`.github/workflows/dependency-submission.yml` runs only on `push: main`
-or manual `workflow_dispatch`, and **skips its submission job** unless both
+`.github/workflows/dependency-submission.yml` runs on dependency-input-scoped
+`push: main` or manual `workflow_dispatch`, and **skips its submission job** unless both
 of these conditions hold:
 
 1. It is running on the genuine `luceat-lux-vestra/zMyBatis` protected `main`;
@@ -37,7 +49,12 @@ fail-closed submission, provenance and node-coverage assertions, and one
 main-branch concurrency group. No Qodana, Gradle, Dependabot or code-scanning
 gates are relaxed.
 
-## Ordered activation — repository administrator
+## Historical activation procedure — repository administrator
+
+The following is retained for recovery/reference. Do not repeat the cutover
+on the currently active custom publisher. Verify the managed ADS toggle and
+Dependabot coverage separately before declaring administrative closure.
+
 
 1. Confirm the new workflow exists on `main` and the repository variable
    `ZMYBATIS_ADS_CUTOVER_DONE` is **absent or false**. Confirm recent

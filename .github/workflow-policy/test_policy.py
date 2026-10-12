@@ -410,10 +410,45 @@ def check_main_e2e_cache_seed(failures: list[str]) -> None:
            ), failures)
 
 
+
+def check_dependency_submission_main_scope(failures: list[str]) -> None:
+    """Guard dependency-scoped default-branch graph submission."""
+    workflow = (WORKFLOWS_DIR / "dependency-submission.yml").read_text(
+        encoding="utf-8"
+    )
+    trigger = re.search(
+        r"(?m)^  push:\n    branches: \[main\]\n    paths:\n(?P<items>(?:      - '[^']+'\n)+)",
+        workflow,
+    )
+    expected = {
+        "**/*.gradle", "**/*.gradle.kts", "**/gradle.properties",
+        "**/gradle.lockfile", "**/gradle/dependency-locks/**",
+        "**/*.versions.toml", "gradle/**", "buildSrc/**", "build-logic/**",
+        "gradlew", "gradlew.bat", ".github/workflows/dependency-submission.yml",
+    }
+    actual = (
+        set(re.findall(r"(?m)^      - '([^']+)'$", trigger["items"]))
+        if trigger else set()
+    )
+    expect("dependency submission is limited to Gradle graph inputs",
+           actual == expected, failures)
+    expect("source and docs changes do not trigger graph submission",
+           not ({"src/**", "docs/**", "**", "**/*.kt", "**/*.java"} & actual),
+           failures)
+    expect("manual submission stays main-only",
+           "  workflow_dispatch:" in workflow
+           and "github.ref == 'refs/heads/main'" in workflow, failures)
+    expect("submission remains cutover-gated and cache read-only",
+           "vars.ZMYBATIS_ADS_CUTOVER_DONE == 'true'" in workflow
+           and "cache-read-only: true" in workflow
+           and "dependency-graph: generate-and-submit" in workflow, failures)
+
+
 def main() -> int:
     failures: list[str] = []
     check_local_policy(failures)
     check_main_e2e_cache_seed(failures)
+    check_dependency_submission_main_scope(failures)
     check_actionlint(failures)
     check_zizmor(failures)
 
