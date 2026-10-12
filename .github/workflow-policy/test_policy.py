@@ -399,6 +399,14 @@ def check_main_e2e_cache_seed(failures: list[str]) -> None:
     expect("main-only prime verifies exact checkout",
            'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in workflow,
            failures)
+    toolchain_envs = set(re.findall(
+        r"-Dorg[.]gradle[.]java[.]installations[.]fromEnv=([A-Za-z0-9_]+)",
+        workflow,
+    ))
+    expect("ARM64 E2E Gradle invocations use setup-java JAVA_HOME",
+           toolchain_envs == {"JAVA_HOME"}, failures)
+    expect("ARM64 E2E never references an x64 Java-home variable",
+           "JAVA_HOME_25_X64" not in workflow, failures)
     expect("postmerge seed skips real product IDE E2E",
            all(
                f"      - name: {step}\n        if: ${{{{ github.event_name != 'push' }}}}" in workflow
