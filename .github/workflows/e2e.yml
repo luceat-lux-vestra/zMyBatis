@@ -67,14 +67,14 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           # Reuse this E2E job's cache identity; never start the IDE E2E,
           # Qodana, or a competing Gradle cache writer on post-merge push.
-          ./gradlew --no-daemon -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_25_X64 buildPlugin :mybatis-engine:compileKotlin
+          ./gradlew --no-daemon -Dorg.gradle.java.installations.fromEnv=JAVA_HOME buildPlugin :mybatis-engine:compileKotlin
 
       - name: Build exact plugin artifact
         if: ${{ github.event_name != 'push' }}
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_25_X64 buildPlugin
+          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME buildPlugin
 
           mapfile -t archives < <(find build/distributions -maxdepth 1 -type f -name '*.zip' -print)
           if [[ ${#archives[@]} -ne 1 ]]; then
@@ -110,7 +110,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_25_X64 integrationTest --stacktrace 2>&1 | tee e2e.log
+          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME integrationTest --stacktrace 2>&1 | tee e2e.log
 
       - name: Surface real-database IDE diagnostics
         if: ${{ failure() && github.event_name != 'push' }}
