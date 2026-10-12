@@ -1,15 +1,25 @@
-# Staged replacement for GitHub-managed Automatic Dependency Submission (Gradle).
-# This is inert until an administrator:
-# 1. disables *only* Automatic dependency submission (retaining Dependency graph
-#    and Dependabot alerts) in Settings > Advanced Security;
-# 2. sets repository Actions variable ZMYBATIS_ADS_CUTOVER_DONE=true;
-# 3. runs this workflow on main using workflow_dispatch and verifies submission.
-# Never activate while managed ADS is still enabled: that duplicates submissions.
+# Active replacement for GitHub-managed Automatic Dependency Submission (Gradle).
+# Submit only on dependency-affecting protected-main changes or manual dispatch.
+# Keep the cutover variable as a fail-closed safeguard, and Gradle cache read-only.
+# Never run this publisher in parallel with managed ADS.
 name: Gradle Dependency Submission
 
 on:
   push:
     branches: [main]
+    paths:
+      - '**/*.gradle'
+      - '**/*.gradle.kts'
+      - '**/gradle.properties'
+      - '**/gradle.lockfile'
+      - '**/gradle/dependency-locks/**'
+      - '**/*.versions.toml'
+      - 'gradle/**'
+      - 'buildSrc/**'
+      - 'build-logic/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - '.github/workflows/dependency-submission.yml'
   workflow_dispatch:
 
 permissions: {}
