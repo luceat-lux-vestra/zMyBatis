@@ -1,5 +1,7 @@
 # Leap target architecture
 
+**2026-10-13 rebaseline:** the target execution/materialization and implementation sequence are revised by [Leap execution rebaseline](leap-execution-rebaseline.md) (#391). This document remains useful for source/input/target/lifecycle boundaries; conflicts with the later dated decision are resolved below. #251 API observations remain historical facts and current shipping behavior is unchanged.
+
 Status: target architecture for Epic #60 / architecture task #101.
 
 Audit baseline: `main` `249d3a5058fee71b858cb7926dbb30864ee15858`.
@@ -211,13 +213,13 @@ Each ordered binding records enough metadata to let the execution adapter preser
 
 ### Execution artifact boundary
 
-`PreparedExecution` remains authoritative for non-zero bindings. #251 tested the maintained Database Tools 2026.2 surface and found no public/maintained path that simultaneously performs programmatic ordered binding through the configured session and preserves the native console result/history UX. The exact evidence and rejected candidates are recorded in [Database Tools parameterized execution proof](database-tools-parameterized-execution.md).
+Stock MyBatis produces structured `PreparedExecution` (SQL-with-placeholders and verified ordered bindings, additional variables, provenance). `PreparedExecution` is not executable SQL; a separate **proof-bounded dialect/type materializer** creates one immutable `ExecutableSqlArtifact` (exact executable SQL text, verified placeholder mapping, statement/source/target/approval identity, safety and fingerprint). This replaces the *target-policy* assumption that Leap must always execute via true ordered JDBC binding.
 
-#258 freezes the post-proof disposition for that maintained baseline: **there is no bound-execution fallback**. Non-zero bindings remain non-executable through the Leap adapter and fail closed with `BOUND_EXECUTION_REQUIRED` until a separately proven replacement execution contract exists.
+The verified SQL-text artifact is submitted through the existing maintained native Database Tools console path, preserving its result/history UI. It is a compatibility contract, **not JDBC/TypeHandler equivalence**. An unsupported DBMS/type/placeholder situation fails before execution; datasource selection itself remains DBMS-neutral.
 
-The execution boundary must preserve the exact SQL-with-placeholders plus ordered values; it must not rewrite those values into a vendor-specific SQL string merely because the selected datasource is PostgreSQL, Oracle, MySQL, or another DBMS. The #251/#258 decision also rejects console text-substitution/second-prompt execution, internal/reflection-based bridges, automatic per-DB literalizers, and a zMyBatis-owned custom result UI as implicit fallbacks.
+#251 still proves no demonstrated maintained 2026.2 API bridge for true JDBC binding *and* native console results/history. #258's strict no-fallback decision is a historical state for that earlier goal. #391 explicitly changes the product target after documentation merge; it does not magically implement the materializer. **Current** `MaintainedExecutionMaterializer` continues to return `BOUND_EXECUTION_REQUIRED` for nonzero bindings. A single full new execution path and runtime evidence are prerequisites for action cutover, with no old/new silent split.
 
-For zero-binding statements only, the existing immutable `MaterializedExecution` text artifact remains valid because no literalization occurs. A future display/copy projection may render values for humans, but that projection is not execution authority. The zero-binding subset is evidence for the replacement boundary, not permission to split the shipping action between Leap and legacy execution based on binding cardinality.
+Do not use regular-expression question-mark substitution, guessed null, unverified per-DB literalizers or undocumented integration. For mandatory envelope and proof cases see [Leap execution rebaseline](leap-execution-rebaseline.md).
 
 ### Execution target
 
@@ -328,22 +330,16 @@ It never returns diagnostic comments as SQL.
 
 ## 8. Execution boundary
 
-The shipping Database Tools integration already executes against a datasource configured by the user. Leap must preserve that DBMS-neutral product boundary rather than introduce a zMyBatis vendor allowlist.
+The user's configured Database Tools datasource/session, console and native result/history experience remain the execution destination. Leap does **not** require a new true-JDBC-binding adapter to replace its architecture: the selected **SQL-text compatibility** target preserves existing user-visible execution semantics, with correctness checked at an explicit materialization boundary.
 
-For zero-binding statements, SQL text may cross the existing immutable materialization boundary byte-for-byte.
+1. MyBatis captures SQL with placeholder mapping and actual resolved values.
+2. A dedicated materializer proves unambiguous bind locations plus DBMS/type/codec literal semantics. It returns an immutable exact executable SQL artifact or a typed unsupported/error result. A zero-binding case is trivially materializable without binding conversion.
+3. Confirmation previews the same artifact, and source/target/cancellation are rechecked before dispatch.
+4. The existing Database Tools console executes the exact text and provides native results/history. zMyBatis does not invent result rendering or a second parameter prompt.
 
-For non-zero bindings, #251 already performed the mandatory Database Tools parameterized-execution proof against the maintained 2026.2 baseline and returned NO-GO. #258 therefore keeps the gate closed rather than selecting an unsafe fallback.
+Target selection must remain DBMS-neutral, but **literal rendering is not**; a datasource may be valid while statement materialization for its family/type is unsupported. #251's NO-GO applies only to the previous stricter native JDBC-binding requirement; the underlying evidence is preserved. #258 historically refused any fallback under that goal; the new policy is an explicit rebaseline, not an undocumented exception.
 
-Any future re-probe must still prove an adapter that:
-
-- consumes the exact MyBatis-produced SQL placeholder order and prepared values;
-- uses the already-configured datasource/driver/session;
-- does not prompt for the same values again;
-- preserves native console/result/history behavior under the then-current product contract;
-- preserves cancellation and target/source revalidation;
-- keeps raw `${}` provenance and confirmation policy separate from `#{...}` bound values.
-
-Until that proof succeeds, authoritative Leap code returns `BOUND_EXECUTION_REQUIRED` for non-zero bindings and does not vendor-literalize them. PostgreSQL-specific literalization work remains non-authoritative historical evidence. The proof may be reopened when a maintained Database Tools baseline exposes relevant new public/maintained capability, or by a separately reviewed product change to the native result/history requirement.
+**Implementation stop:** current runtime materializer returns `BOUND_EXECUTION_REQUIRED` on nonzero mappings and the legacy action stays authoritative. No bypass/cutover until dialect/type/placeholder and actual console E2E proof pass. Do not keep adding standalone admission grammars while this boundary is unproven.
 
 ## 9. Target/session and Database Tools adapter
 
@@ -363,7 +359,7 @@ Execution behavior:
 3. re-check target validity after user/modality/background boundaries;
 4. acquire/reuse a console as an ephemeral resource according to policy;
 5. apply schema/search path and verify success;
-6. for zero-binding statements, supply the immutable SQL text directly; for bound statements, require the separately proven parameterized Database Tools execution path and fail with `BOUND_EXECUTION_REQUIRED` while that gate is closed;
+6. submit the single immutable, proved SQL-text artifact for both zero- and supported nonzero-binding statements; until the new materializer exists, current nonzero Leap preparations still fail with `BOUND_EXECUTION_REQUIRED` and no production cutover is allowed;
 7. invoke the native Database Tools execution path without introducing a zMyBatis DBMS allowlist;
 8. preserve/restore console document/editor state according to the adapter contract.
 
@@ -502,63 +498,39 @@ Only genuine internal invariants use fatal/error-level diagnostic reporting. Use
 
 A separate immediate safety patch may remove existing INFO leakage before full Leap cutover; doing so does not freeze the legacy architecture.
 
-## 14. Migration and deletion sequence
+## 14. Migration and deletion sequence (revised 2026-10-13)
 
-Implementation is incremental for reviewability, but the target is a replacement architecture.
+Original Phase-0 through Phase-4 experiments produced useful foundations: core/engine modules, canonical identity and input contracts, source graph capture, target v3 descriptors, console lifecycle isolation and multiple MyBatis/OGNL preparation islands. Most do **not** run in the packaged product; the root uses `:core` but does not depend on `:mybatis-engine`. Current production still calls the legacy evaluator, input extractor and dialog.
 
-### Phase 0 — architecture gate
+### Phase R0 — frozen baseline and product-policy reset (#391)
 
-- merge #101 documentation/decision PR;
-- close #61 once product contract and architecture are consistent;
-- create only the first PR-sized #62 implementation task.
+- Preserve legacy execution and the proven safety fixes. Freeze new standalone Boolean/foreach/OGNL grammar-admission expansion.
+- Rebaseline the shipping contract to verified SQL-text compatibility rather than mandatory true JDBC binding. Keep #251 API facts and #258 historical context.
 
-### Phase 1 — physical core boundary and source identity
+### Phase R1 — first complete execution proof
 
-- add `:core` and `:mybatis-engine` module skeletons with dependency-direction tests/build checks;
-- introduce immutable source/statement identity models;
-- implement authoritative snapshot capture + XML/Java adapters;
-- implement source graph / include dependency resolution;
-- keep the legacy execution path active until a new end-to-end executable path exists, but do not add features to it.
+- Select a named DBMS, scalar type and a real SELECT fixture with `#{id}` and a stock-OGNL `<if>`; capture one complete current-editor mapper source and explicit inputs.
+- Use stock MyBatis to produce `BoundSql`; create a testable strict SQL-text materializer with lexical placeholder proof and type/dialect support. Reuse the existing Database Tools native console adapter and target identity.
+- Demonstrate real result/history, matching preview/executed SQL, safety refusal for literals/operators/comments and unsupported values, cancellation and stale source/target. No production routing split.
+- **Stop if any core safety/API/IDE proof fails.** Do not create another independent syntax-admission feature instead.
 
-### Phase 2 — provenanced input
+### Phase R2 — supported product parity and simplification
 
-- introduce #63 contract/codecs;
-- migrate UI to consume the contract;
-- keep remembered input off until the new identity/privacy model is complete;
-- delete lexical extractor authority when no production caller depends on it.
+- Carry over actual shipping Mapper/XML/Java, `${}` confirmation, DML, UI/history, target/restart, source and lifecycle behavior using evidence rather than preserving every old class.
+- Replace duplicated source/provenance/Boolean grammar validators with the smallest correct source authority + MyBatis boundary. Keep OGNL runtime isolation only where global-state hostile tests justify it.
+- Extend dialect/type support only with explicitly named and falsifiable evidence; a valid but unsupported target/type fails closed.
 
-### Phase 3 — MyBatis engine and execution preparation
+### Phase R3 — single action cutover and cleanup
 
-- introduce isolated preparation and typed failures;
-- preserve SQL-with-placeholders plus ordered bindings as the authoritative non-zero-binding result;
-- feed proven target database-id authority into isolated MyBatis configuration where standard `databaseId` / `_databaseId` semantics require it;
-- keep only the DB-neutral zero-binding immutable SQL-text materialization bridge;
-- respect #251's NO-GO evidence and #258's no-fallback disposition; bound-statement and Phase-5 production cutover stay blocked until a later proof satisfies the execution contract;
-- build negative/hostile tests before enabling execution;
-- delete current `MyBatisEvaluator` only once the DB-neutral bound execution path is wired.
+- Only after R1/R2 pass, connect the new orchestration to the product action as one complete execution authority. No partial Leap-for-zero/legacy-for-nonzero split.
+- Delete old `MyBatisEvaluator`, `ParameterExtractor`, legacy dialog/history and temporary bridges as soon as their consumer is gone. Remove orphaned new admission implementations and their implementation-dependent tests only after equivalent regression/negative coverage exists.
+- Keep persisted v2 migration reader until a separately documented supported-upgrade window permits deletion.
 
-### Phase 4 — target/session adapter
+### Phase R4 — release/compatibility evidence
 
-Current progress: v3 target descriptors are persisted independently; provable v2 records migrate to v3; startup eager console recreation is removed; the shipping action performs exact target re-resolution and deferred console acquisition through a migration bridge; low-level Database Tools console creation/schema/editor/document/script-model/query mechanics are isolated behind `DatabaseToolsConsoleAdapter`.
+- #67 confirms real IDEA Ultimate/DataGrip target UX, unsupported/degraded cases, performance and clean resource disposal; release documentation/Marketplace must not claim true JDBC parameter binding or unsupported dialect fidelity.
 
-Remaining:
-- continue reducing legacy action resource/orchestration ownership without crossing #258's production cutover gate;
-- retire the migration-only v2 reader/cleanup path when the supported upgrade window permits;
-- keep console/resource policy independent from persisted target identity.
-
-### Phase 5 — orchestration cutover
-
-Prerequisite: a complete replacement execution contract must exist for both zero-binding and supported non-zero-binding statements. #258 explicitly forbids using the zero-binding subset to create a production split where other statements silently remain on legacy execution.
-
-- wire the thin action to the new use case only after that prerequisite is satisfied;
-- add mandatory mutation/raw confirmation and stale-source/target revalidation;
-- remove legacy action orchestration, old parameter/history/settings paths, and compatibility switches in the same cutover series with explicit deletion criteria.
-
-### Phase 6 — production-readiness closure
-
-- #67 closes host compatibility, DataGrip runtime evidence, diagnostics, performance/resource behavior, migration cleanup, docs/Marketplace claims, and dead legacy code.
-
-Temporary bridges must be named as migration-only and carry an owning issue + deletion phase. No permanent dual architecture.
+See [the dated architecture reset](leap-execution-rebaseline.md) for the fidelity envelope and GO/NO-GO gates. Temporary bridges need an owner and deletion phase; do not maintain two production execution authorities.
 
 ## 15. Evidence architecture
 
@@ -622,21 +594,21 @@ Every PR remains exact-HEAD proof-obligation gated. Any HEAD move invalidates ap
 
 Canonical Java overload identity is #62 work. Remembered-input isolation is #63 work. #67 validates these contracts; it does not own their design.
 
-## 17. First code-bearing task after #101
+## 17. First code-bearing task after #391
 
-After this architecture is merged and the reviewed merge result is read back from main, the first code task should be a #62 child that introduces the physical `:core` boundary plus canonical source/statement identity **without changing the production execution path**.
+The first implementation task is **not** another mapper/Boolean/foreach standalone proof. It is a full, testable **source+input → stock MyBatis BoundSql → verified SQL-text materialization → native Database Tools console/result** vertical path with a nonzero `#{id}` SELECT. The same fixture should include a basic OGNL `<if>` interpreted by MyBatis, not a homegrown conditional classifier.
 
-Its independent proof obligation is architectural: core compiles without IntelliJ/MyBatis/Database Tools dependencies, XML/Java canonical identities cannot collide, and current production behavior is untouched while the replacement foundation is established.
+Implementation cannot change the user-visible product until the chosen named DBMS/type slice, exact-preview artifact, supported Java/XML product behavior and fail-closed negative cases are proven. A test-only harness may exist until a single full production cutover is safe; a hidden dual production authority is forbidden. Read fresh main and one active PR before opening any new work.
 
-Do not create later speculative implementation tasks until that slice is merged and fresh-main is re-read.
+Separate subsequent work should consolidate/rewrite overbuilt components and remove legacy or redundant new implementation only after actual replacement. See [rebaseline](leap-execution-rebaseline.md).
 
 ## 18. Explicitly rejected approaches
 
 - **Refactor the god action in place:** rejected; it preserves the wrong ownership boundary.
 - **Improve `ParameterExtractor` regexes until tests pass:** rejected; syntax heuristics are not caller-input provenance.
 - **Keep `MyBatisEvaluator` and add more strict flags:** rejected; safety must not depend on settings and global semantic mutation remains unsound.
-- **Treat vendor-rendered final literal SQL as equivalent to bound JDBC/Database Tools execution:** rejected; non-zero bindings stay structured and #258 authorizes no fallback on the maintained 2026.2 baseline.
-- **Partially cut over the shipping action for zero-binding statements while bound statements silently use legacy execution:** rejected; it creates two production execution authorities and weakens preview/execution and deletion invariants.
+- **Claim a dialect-rendered SQL literal is equivalent to bound JDBC/TypeHandler execution:** rejected. A separately proven SQL-text compatibility artifact is the selected target and must disclose its fidelity envelope.
+- **Partially cut over the shipping action for zero-binding statements while bound statements silently use legacy execution:** rejected; one complete product execution authority must own the cutover.
 - **Couple persisted session truth to live `JdbcConsole` registration/reconstruction:** rejected; descriptor identity and platform resource lifetime are separate concerns.
 - **Format SQL and then execute the formatted output:** rejected; presentation cannot mutate execution meaning.
 - **Support Kotlin/providers/custom drivers now because tests can be written:** rejected for Leap v1; scope follows product value and maintainable evidence, not testability alone.
