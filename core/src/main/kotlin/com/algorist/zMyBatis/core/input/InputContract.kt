@@ -197,7 +197,8 @@ sealed interface InputEvidence {
     ) : InputEvidence {
         init {
             require(expression.isNotBlank()) { "OGNL expression must not be blank" }
-            require(negatedWhereRole == null || (expression.startsWith('!') && negatedWhereRole == "where")) {
+            require(negatedWhereRole == null ||
+                ((expression.startsWith('!') || expression.endsWith(" == false")) && negatedWhereRole == "where")) {
                 "only a source-proven negated WHERE guard may carry WHERE-role placement"
             }
         }

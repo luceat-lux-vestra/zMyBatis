@@ -219,11 +219,20 @@ object XmlStatementParameterContractFactory {
 
         statementScan.ifConditions.forEach { condition ->
             // Caller identity is the proven Boolean alias; provenance keeps full OGNL expression.
-            usesByRoot.getOrPut(condition.removePrefix("!")) { mutableListOf() } += CallerUse(
+            val callerAlias = if (condition.startsWith('!')) {
+                condition.removePrefix("!")
+            } else {
+                condition.removeSuffix(" == false")
+            }
+            usesByRoot.getOrPut(callerAlias) { mutableListOf() } += CallerUse(
                 kind = InputKind.BOUND,
                 evidence = InputEvidence.OgnlExpression(
                     condition, statementSource,
-                    negatedWhereRole = if (condition.startsWith('!')) statementScan.negatedIfWrapper else null,
+                    negatedWhereRole = if (condition.startsWith('!') || condition.endsWith(" == false")) {
+                        statementScan.negatedIfWrapper
+                    } else {
+                        null
+                    },
                 ),
             )
         }
@@ -402,7 +411,10 @@ object XmlStatementParameterContractFactory {
                                 ifDepth < 0
                             ) {
                                 val condition = reader.getAttributeValue(null, "test")?.trim()
-                                val root = condition?.removePrefix("!")
+                                val root = condition?.let { expression ->
+                                    if (expression.startsWith('!')) expression.removePrefix("!")
+                                    else expression.removeSuffix(" == false")
+                                }
                                 // Single SELECT negation may be direct or immediately inside
                                 // one authenticated WHERE/identical-trim wrapper. This is only
                                 // caller-provenance admission; MyBatis still evaluates OGNL.
@@ -411,7 +423,8 @@ object XmlStatementParameterContractFactory {
                                         (activeWrapperKind == "where" &&
                                             depth == wrapperDepth + 1 && wrappersSeen == setOf("where"))
                                 val directSelectNegation =
-                                    condition != null && condition.startsWith('!') &&
+                                    condition != null &&
+                                        (condition.startsWith('!') || condition.endsWith(" == false")) &&
                                         statementKind == StatementKind.SELECT &&
                                         boundedNegationLocation &&
                                         foreachDeclaration == null && ifConditions.isEmpty() &&
@@ -425,7 +438,9 @@ object XmlStatementParameterContractFactory {
                                     reader.getAttributeNamespace(0).isNullOrEmpty()
                                 ) {
                                     ifConditions += condition
-                                    if (condition.startsWith('!')) negatedIfWrapper = activeWrapperKind
+                                    if (condition.startsWith('!') || condition.endsWith(" == false")) {
+                                        negatedIfWrapper = activeWrapperKind
+                                    }
                                     ifDepth = depth
                                     activeIfCondition = condition
                                     continue
@@ -495,7 +510,7 @@ object XmlStatementParameterContractFactory {
             } else if (wrapperWithoutCondition && foreachDeclaration == null) {
                 StatementScan.Failed(InputContractProblemKind.UNSUPPORTED, NESTED_ELEMENT_PROBLEM)
             } else if (
-                ifConditions.any { it.startsWith("!") } &&
+                ifConditions.any { it.startsWith("!") || it.endsWith(" == false") } &&
                 (statementKind != StatementKind.SELECT ||
                     (wrappersSeen.isNotEmpty() && wrappersSeen != setOf("where")) ||
                     foreachDeclaration != null || ifConditions.size != 1)

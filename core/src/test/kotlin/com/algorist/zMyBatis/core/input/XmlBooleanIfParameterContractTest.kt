@@ -18,6 +18,75 @@ import org.junit.Test
 
 class XmlBooleanIfParameterContractTest {
     @Test
+    fun exactSelectFalseComparisonPreservesBooleanCallerAndOriginalOgnl() {
+        val wrappers = listOf(
+            "" to "",
+            "<where>" to "</where>",
+            """<trim prefix="WHERE" prefixOverrides="AND |OR ">""" to "</trim>",
+        )
+        for ((open, close) in wrappers) {
+            val body = """SELECT #{id} $open<if test="enabled == false">AND id = #{id,jdbcType=BIGINT}</if>$close"""
+            val source = graph(body)
+            val sourceOnly = XmlStatementParameterContractFactory.build(source)
+            assertTrue(body, sourceOnly.isPreparationBlocked)
+            assertTrue(sourceOnly.blockingProblems.any { problem ->
+                problem.provenance?.evidence?.any {
+                    it is InputEvidence.OgnlExpression && it.expression == "enabled == false"
+                } == true
+            })
+            for (type in listOf("boolean", "java.lang.Boolean")) {
+                val proven = build(source, parameter(0, type, "enabled"), parameter(1, "long", "id"))
+                assertFalse(body, proven.isPreparationBlocked)
+                assertEquals(2, proven.requirements.size)
+                val condition = proven.requirements.single { it.id.value == "xml-java-param:0" }
+                    .provenance.evidence.filterIsInstance<InputEvidence.OgnlExpression>().single()
+                assertEquals("enabled == false", condition.expression)
+                assertEquals(if (open.isEmpty()) null else "where", condition.negatedWhereRole)
+                assertEquals(listOf(null, "enabled == false"),
+                    proven.requirements.single { it.id.value == "xml-java-param:1" }
+                        .provenance.evidence.filterIsInstance<InputEvidence.Placeholder>()
+                        .map { it.enclosingOgnlExpression })
+            }
+            assertTrue(build(source, parameter(0, "long", "enabled"), parameter(1, "long", "id")).isPreparationBlocked)
+            assertTrue(build(source, parameter(0, "boolean", "other"), parameter(1, "long", "id")).isPreparationBlocked)
+            assertTrue(build(source, parameter(0, "boolean", "enabled"), parameter(1, "boolean", "enabled"),
+                parameter(2, "long", "id")).isPreparationBlocked)
+        }
+    }
+
+    @Test
+    fun falseComparisonDoesNotAdmitOtherOperatorsOrDynamicCompositions() {
+        val p = arrayOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"),
+            parameter(2, "java.util.List<java.lang.Long>", "ids"))
+        val condition = """<if test="enabled == false">AND id = #{id}</if>"""
+        val variants = listOf(
+            """SELECT 1 <if test="enabled==false"> #{id}</if>""",
+            """SELECT 1 <if test="enabled  == false"> #{id}</if>""",
+            """SELECT 1 <if test="enabled ==  false"> #{id}</if>""",
+            """SELECT 1 <if test="enabled == true"> #{id}</if>""",
+            """SELECT 1 <if test="enabled != false"> #{id}</if>""",
+            """SELECT 1 <if test="enabled eq false"> #{id}</if>""",
+            """SELECT 1 <if test="enabled == null"> #{id}</if>""",
+            """SELECT 1 <if test="!enabled == false"> #{id}</if>""",
+            """SELECT 1 <if test="enabled.id == false"> #{id}</if>""",
+            """SELECT 1 <where>$condition<if test="enabled">#{id}</if></where>""",
+            """SELECT 1 <where><if test="enabled">#{id}</if>$condition</where>""",
+            """SELECT 1 <where>$condition<foreach collection="ids" item="item">#{item}</foreach></where>""",
+            """SELECT 1 <where><if test="enabled == false"><if test="enabled">#{id}</if></if></where>""",
+            """SELECT 1 <where>$condition</where><where>$condition</where>""",
+            """SELECT 1 <trim prefix="WHERE" prefixOverrides="AND|OR">$condition</trim>""",
+        )
+        for (body in variants) {
+            val contract = build(graph(body), *p)
+            assertTrue(body, contract.isPreparationBlocked)
+            assertTrue(body, contract.requirements.isEmpty())
+        }
+        for (kind in listOf(StatementKind.UPDATE, StatementKind.INSERT, StatementKind.DELETE)) {
+            assertTrue(build(graph("UPDATE t <where>$condition</where>", kind), *p).isPreparationBlocked)
+        }
+    }
+
+    @Test
     fun singleSelectWhereNegationPreservesCallerAndConditionProvenance() {
         val wrappers = listOf(
             "<where>" to "</where>",
