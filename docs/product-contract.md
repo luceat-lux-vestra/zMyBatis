@@ -65,13 +65,13 @@ Known replacement targets include:
 
 Current positive evidence remains useful as regression/falsification evidence during migration, but it does not dictate the target class or package design.
 
-While the legacy shipping action remains authoritative under #258, XML statements containing a real `<include>` dependency are refused before extraction/evaluation/target work. The legacy evaluator does not own authoritative mapper-fragment resolution, and `Ignore Unknown Tags` must not turn an unresolved include into partial executable-looking SQL. This temporary refusal is not a change to the Leap v1 `<sql>/<include>` support target above; final support still requires the #62/#64 source-graph and MyBatis preparation path.
+While the legacy shipping action remains the only shipping execution authority pending #391's verified complete cutover, XML statements containing a real `<include>` dependency are refused before extraction/evaluation/target work. The legacy evaluator does not own authoritative mapper-fragment resolution, and `Ignore Unknown Tags` must not turn unresolved includes into partial executable-looking SQL. This temporary refusal does not change the target source graph/MyBatis preparation capability.
 
-The same temporary fail-closed rule now applies to legacy bound-value fallback shapes: direct `MyBatisEvaluator.evaluate(...)` compatibility may still expose List/Map marker-bearing `NULL` or arbitrary-object `toString()` rendering for characterization, but the shipping action's `evaluateForExecution(...)` path refuses those unsupported values before formatting, preview, console mutation, or native query execution. This does not make the remaining scalar legacy literalizer JDBC/TypeHandler-equivalent and does not authorize any #258 production cutover.
+The same temporary fail-closed rule applies to legacy bound-value fallback shapes: direct `MyBatisEvaluator.evaluate(...)` may still produce compatibility strings for characterization, but shipping `evaluateForExecution(...)` refuses direct List/Map marker-bearing NULL and arbitrary-object `toString()` before console mutation. This is not type/dialect-fidelity proof or permission to implement an unverified #391 renderer.
 
 Unknown-tag compatibility is likewise isolated from shipping evaluation: direct `evaluate(...)` may still honor `Ignore Unknown Tags` for characterization, but `evaluateForExecution(...)` explicitly disables regex stripping and treats unknown elements as non-executable evaluation failures. This is a temporary legacy safety guard, not the #62/#64 source/preparation architecture.
 
-Legacy OGNL map navigation no longer installs a process-global `PropertyAccessor` for `LinkedHashMap`. Qualified nested map/list paths are delegated to stock MyBatis OGNL; missing properties are not resolved by scanning unrelated nested Maps. This removes an application-global semantic side effect without authorizing any #258 production cutover.
+Legacy OGNL map navigation no longer installs process-global custom accessors; qualified nested map/list paths use stock MyBatis OGNL. This existing shipping safety fix remains required during #391 migration and does not demonstrate an executable new materializer.
 
 ## 4. Source authority and canonical identity
 
@@ -218,7 +218,7 @@ Preserve the proven #57 safety invariants:
 - malformed/interrupted persistence is cleaned safely;
 - restoration never executes SQL.
 
-Current v2 persistence already stores string records (`mapperKey`, stable datasource UUID, datasource display name, explicit schema); it does **not** serialize a live `JdbcConsole`. Leap changes the ownership and lifecycle boundary around that persisted identity.
+Current shipping v3 target persistence stores project-scoped canonical source-to-target descriptors (stable datasource UUID plus explicit named schema), not live `JdbcConsole` objects. A bounded migration-only v2 reader remains for supported upgrades; see [session persistence](session-persistence.md).
 
 Leap target rules:
 
@@ -235,7 +235,7 @@ Leap target rules:
 - action invocation captures IDE context and immediately converts it into adapter/application data; `AnActionEvent` never enters core.
 - editor/dialog/popup operations obey EDT requirements.
 - index/PSI source work obeys IntelliJ read-action requirements and emits immutable snapshots.
-- MyBatis preparation, zero-binding materialization, and bound-execution handoff work are background/cancellable.
+- MyBatis preparation, strict SQL-text materialization and execution handoff run in the appropriate cancellable background execution context.
 - project/source/target validity is rechecked after asynchronous or modal boundaries and before execution.
 - cancellation before query invocation means no query invocation.
 - stale callbacks cannot reuse a prior artifact or target.
@@ -289,7 +289,7 @@ Current settings are not automatically product guarantees.
 
 ## 18. Track ownership and closure
 
-- #61 — this product contract. Close after #101 architecture and this document are mutually consistent and merged.
+- #61 — original closed product-capability contract checkpoint; #391 updates the execution target while #60 owns the overall Leap completion.
 - #62 — source snapshots, dependency graph, canonical XML/Java statement identity.
 - #63 — input provenance/codecs/UI/retention.
 - #64 — stock-MyBatis preparation and a verified limited-fidelity SQL-text materialization contract, preserving structured ordered bindings until the proven executable artifact boundary.

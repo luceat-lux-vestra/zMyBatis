@@ -55,7 +55,7 @@ The current object still mixes MyBatis `XMLScriptBuilder`, regex source/OGNL rew
 
 **Disposition:** replace completely. No global OGNL mutation, no authoritative unknown-tag stripping, no error-as-SQL, no evaluator-owned guessed literalization.
 
-Until that replacement is permitted by #258, the legacy shipping adapter has bounded refusal guards: evaluator exceptions and direct unsupported List/Map/other-object literalization do not become execution candidates. Direct `evaluate(...)` compatibility strings remain characterization only; these guards do not turn the legacy scalar literalizer into the target materialization architecture.
+Until the new full execution path passes the #391 materialization/IDE acceptance gates, the shipping legacy evaluator remains necessary and its bounded refusal guards stay enforced. Direct `evaluate(...)` compatibility strings are characterization only; shipping `evaluateForExecution(...)` never turns unsupported values or evaluator failures into executable SQL.
 
 ### `SqlFormatter`
 
@@ -69,7 +69,7 @@ Hardening #57 established strong target-identity rules. #260 introduced independ
 
 The shipping legacy action now resolves a stored v3 target exactly on a live-console cache miss and acquires a console only for that explicit invocation. `REUSE` and `NEW_EACH` are resource policies over the same persisted target authority. Closing an ephemeral console no longer deletes v3 target identity. The old v2 reader/cleanup path is isolated in `LegacyV2ConsoleSessionMigrationStore`; `ConsoleCacheService` is persistence-neutral and owns only live-resource/selection/shutdown lifecycle.
 
-**Disposition:** continue isolating Database Tools console mechanics and delete `LegacyV2ConsoleSessionMigrationStore` when no supported upgrade path needs v2 compatibility. The live console lifecycle no longer owns persistence. This Phase-4 progress does not authorize Phase-5 Leap execution cutover; #258 still blocks that cutover until the bound-execution contract is satisfied.
+**Disposition:** continue isolating Database Tools console mechanics and delete `LegacyV2ConsoleSessionMigrationStore` only when no supported upgrade path needs v2 compatibility. Current v3 target identity is independent of live resource lifetime; this foundation does not itself authorize a #391 production action cutover.
 
 ### Settings
 
@@ -94,7 +94,7 @@ root IntelliJ plugin module
   -> Kotlin/JDK only
 ```
 
-This is a dependency DAG, not a linear root -> engine -> core chain. Root IntelliJ adapters consume core contracts directly, while `:mybatis-engine` depends on `:core` and MyBatis. The current repository includes both `:core` and `:mybatis-engine` in `settings.gradle.kts`, and CI runs both module checks. The root currently depends on `:core` only; the engine is a standalone preparation module and is absent from the packaged plugin. The module boundary is present, but the target root-to-engine edge and production consumer cutover remain future work under #258. #64 remains open because the semantic preparation/execution migration and legacy evaluator replacement are not complete merely because the module exists. The platform/core dependency direction does not invert.
+This is a dependency DAG, not a linear root → engine → core chain. Root plugin adapters consume core models; the MyBatis adapter depends on core and stock MyBatis. The repository includes both modules, but the root currently depends only on `:core`; `:mybatis-engine` is not packaged and its separate tests are not shipping UX proof. The #391 single-path integration gate must add the root-to-engine edge only after the selected execution contract is proven. The platform/core dependency direction does not invert.
 
 The root module remains the IntelliJ plugin module so existing `buildPlugin`, verifier, signing, publishing, and CI entry points do not need a repository-wide workflow rewrite merely to establish architecture.
 
@@ -543,7 +543,7 @@ See [the dated architecture reset](leap-execution-rebaseline.md) for the fidelit
 - parameter contract/provenance;
 - safety policy;
 - typed failure transitions;
-- zero-binding materialized-artifact identity plus structured bound-execution refusal/handoff rules independent of IDE.
+- immutable SQL-text artifact identity, structured mapping preservation, bounded supported dialect/type literalization and hostile refusal cases independent of IDE.
 
 `:mybatis-engine` tests cover:
 
@@ -587,7 +587,7 @@ Every PR remains exact-HEAD proof-obligation gated. Any HEAD move invalidates ap
 - #61 — target product/capability/safety decisions; closes after #101 consistency, not after all implementation.
 - #62 — source authority, dependency graph, canonical statement/method identity.
 - #63 — input provenance, codecs, UI contract, remembered-input policy.
-- #64 — isolated MyBatis preparation, `PreparedExecution`, DB-neutral zero-binding text bridge, and bound-execution handoff.
+- #64 — stock MyBatis preparation, typed `PreparedExecution`, strict supported dialect/type SQL-text materializer and single execution-artifact handoff.
 - #65 — stable target/session descriptors and Database Tools execution resources.
 - #66 — thin action, threading, cancellation, confirmation, UX orchestration.
 - #67 — diagnostics/privacy, compatibility, performance/resource evidence, documentation and legacy deletion closure.
