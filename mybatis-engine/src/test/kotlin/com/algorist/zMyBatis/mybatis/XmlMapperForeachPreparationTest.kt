@@ -50,6 +50,69 @@ import org.junit.Test
 
 class XmlMapperForeachPreparationTest {
     @Test
+    fun exactSelectFalseComparisonRetainsStockSqlBindingAndMaterializationPolicy() {
+        val parameters = listOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
+        val placements = listOf(
+            "" to "",
+            "<where>" to "</where>",
+            """<trim prefix="WHERE" prefixOverrides="AND |OR ">""" to "</trim>",
+        )
+        for ((open, close) in placements) {
+            val source = """SELECT #{id,jdbcType=BIGINT} $open<if test="enabled == false">AND id = #{id,jdbcType=BIGINT}</if>$close"""
+            val original = fixture(source, parameters)
+            val proven = contract(original)
+            assertTrue(!proven.isPreparationBlocked)
+            for (enabled in listOf(false, true)) {
+                val before = Thread.currentThread().contextClassLoader
+                val prepared = success(request(original,
+                    mapOf(0 to InputValue.BooleanValue(enabled), 1 to integer(7))))
+                assertSame(before, Thread.currentThread().contextClassLoader)
+                assertStockParity(original, mapOf("enabled" to enabled, "id" to 7L), prepared)
+                assertEquals(if (enabled) 1 else 2, prepared.orderedBindings.size)
+                assertEquals(List(if (enabled) 1 else 2) { "id" },
+                    prepared.orderedBindings.map { it.property })
+                assertTrue(prepared.orderedBindings.all { it.origin is PreparedBindingOrigin.CallerInput })
+                assertEquals(proven.sourceRevisions, prepared.sourceRevisions)
+                assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
+                    (MaintainedExecutionMaterializer.materialize(prepared) as MaterializationResult.Failed).failure.kind)
+            }
+        }
+    }
+
+    @Test
+    fun exactSelectFalseComparisonRefusesChangedSourceAndUnprovenMapper() {
+        val parameters = listOf(parameter(0, "java.lang.Boolean", "enabled"), parameter(1, "long", "id"))
+        val source = """SELECT 1 <where><if test="enabled == false">AND id = #{id}</if></where>"""
+        val original = fixture(source, parameters)
+        val authority = contract(original)
+        val inactive = success(request(original,
+            mapOf(0 to InputValue.BooleanValue(true), 1 to integer(7))))
+        assertEquals(emptyList<String>(), inactive.orderedBindings.map { it.property })
+        assertStockParity(original, mapOf("enabled" to true, "id" to 7L), inactive)
+        val active = success(request(original,
+            mapOf(0 to InputValue.BooleanValue(false), 1 to integer(7))))
+        assertEquals(listOf("id"), active.orderedBindings.map { it.property })
+        assertStockParity(original, mapOf("enabled" to false, "id" to 7L), active)
+        assertEquals("xml-preparation-dynamic-sql-unsupported",
+            (XmlMapperPreparationEngine.prepare(request(original,
+                mapOf(0 to InputValue.BooleanValue(true), 1 to integer(7)),
+                includeMapperCapture = false)) as PreparationResult.Failed).failure.code)
+        val values = mapOf(0 to InputValue.BooleanValue(true), 1 to integer(7))
+        for (changed in listOf(
+            source.replace("enabled == false", "enabled == true"),
+            source.replace("enabled == false", "enabled!=false"),
+            source.replace("enabled == false", "!enabled"),
+            source.replace("</if>", """<if test="enabled">#{id}</if></if>"""),
+            source.replace("AND id = #{id}", "AND id = #{id} AND x = #{id}"),
+        )) {
+            val altered = fixture(changed, parameters)
+            assertTrue(changed, XmlMapperPreparationEngine.prepare(request(altered, values, authority)) is PreparationResult.Failed)
+        }
+        val changedMapper = fixture(source, listOf(parameter(0, "java.lang.Boolean", "other"), parameters[1]))
+        assertTrue(XmlMapperPreparationEngine.prepare(request(changedMapper, values, authority)) is PreparationResult.Failed)
+    }
+
+    @Test
     fun singleNegatedSelectWhereMatchesStockForBothStatesAndAllAdmittedTrims() {
         val parameters = listOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
         for ((open, close) in wrappers()) {

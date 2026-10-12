@@ -159,7 +159,10 @@ object XmlMapperMethodParameterContractFactory {
             val mappingProperty = (
                 placeholders.map { it.expression } +
                     foreachCollections.map { it.expression } +
-                    conditions.map { it.expression.removePrefix("!") }
+                    conditions.map { expression ->
+                        if (expression.expression.startsWith('!')) expression.expression.removePrefix("!")
+                        else expression.expression.removeSuffix(" == false")
+                    }
                 ).distinct().singleOrNull()
                 ?: run {
                     problems += authorityProblem

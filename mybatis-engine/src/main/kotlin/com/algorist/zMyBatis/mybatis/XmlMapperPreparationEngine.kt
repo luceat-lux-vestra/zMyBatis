@@ -942,14 +942,16 @@ object XmlMapperPreparationEngine {
             // The topology gate prevents cross-node synthesis/escaping of new mapping tokens.
             val conditions = booleanIf.conditions.associate { condition ->
                 // Preserve exact source OGNL as the condition scope. One authenticated
-                // direct SELECT negation inverts the proven Boolean caller value.
+                // direct SELECT negation or exact false comparison inverts the proven Boolean caller value.
                 val expression = condition.conditionAlias
-                val callerAlias = expression.removePrefix("!")
+                val negative = expression.startsWith('!') || expression.endsWith(" == false")
+                val callerAlias = if (expression.startsWith('!')) expression.removePrefix("!")
+                    else expression.removeSuffix(" == false")
                 val value = parameterPayload.namedValues[callerAlias] as? Boolean
                     ?: return XmlBindingCapture.Failed(
                         PreparationFailure(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE),
                     )
-                expression to (if (expression.startsWith('!')) !value else value)
+                expression to (if (negative) !value else value)
             }
             val placeholders = request.parameterContract.requirements
                 .flatMap { it.provenance.evidence }
