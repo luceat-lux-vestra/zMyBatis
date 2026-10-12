@@ -378,7 +378,7 @@ def check_main_e2e_cache_seed(failures: list[str]) -> None:
     )
     expected = {
         "build.gradle.kts", "settings.gradle.kts", "gradle.properties",
-        "gradlew", "gradle/**", "**/build.gradle.kts",
+        "gradle/**", "**/build.gradle.kts",
         "**/settings.gradle.kts", "**/gradle.properties",
         ".github/workflows/e2e.yml", ".github/workflows/build.yml",
     }
@@ -390,6 +390,8 @@ def check_main_e2e_cache_seed(failures: list[str]) -> None:
     expect("seed never gates on all-source, docs, or every push", not (
         {"src/**", "**", "docs/**", "**/*.kt", "**/*.java"} & actual
     ), failures)
+    expect("launcher-only gradlew never triggers protected-main cache prime",
+           "gradlew" not in actual, failures)
     expect("existing E2E cache job identity remains unchanged",
            "  starterDriver:" in workflow and "    name: Starter / Driver E2E" in workflow,
            failures)

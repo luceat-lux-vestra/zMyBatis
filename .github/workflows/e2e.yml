@@ -17,7 +17,6 @@ on:
       - 'build.gradle.kts'
       - 'settings.gradle.kts'
       - 'gradle.properties'
-      - 'gradlew'
       - 'gradle/**'
       - '**/build.gradle.kts'
       - '**/settings.gradle.kts'
