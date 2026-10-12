@@ -18,6 +18,38 @@ import org.junit.Test
 
 class XmlBooleanIfParameterContractTest {
     @Test
+    fun selectBooleanComparisonFamilyKeepsIndependentMapperAuthorityAndOriginalOgnlScope() {
+        val placements = listOf(
+            "" to "",
+            "<where>" to "</where>",
+            """<trim prefix="WHERE" prefixOverrides="AND |OR ">""" to "</trim>",
+        )
+        for (expression in listOf("enabled == true", "enabled == false", "enabled != true", "enabled != false")) {
+            for ((open, close) in placements) {
+                val body = """SELECT #{id} $open<if test="$expression">AND id = #{id}</if>$close"""
+                val graph = graph(body)
+                assertTrue(body, XmlStatementParameterContractFactory.build(graph).isPreparationBlocked)
+                for (booleanType in listOf("boolean", "java.lang.Boolean")) {
+                    val contract = build(graph, parameter(0, booleanType, "enabled"), parameter(1, "long", "id"))
+                    assertFalse(body, contract.isPreparationBlocked)
+                    val condition = contract.requirements.single { it.id.value == "xml-java-param:0" }
+                        .provenance.evidence.filterIsInstance<InputEvidence.OgnlExpression>().single()
+                    assertEquals(expression, condition.expression)
+                    assertEquals(if (open.isEmpty()) null else "where", condition.boundedWhereRole)
+                    assertEquals(listOf(null, expression),
+                        contract.requirements.single { it.id.value == "xml-java-param:1" }
+                            .provenance.evidence.filterIsInstance<InputEvidence.Placeholder>()
+                            .map { it.enclosingOgnlExpression })
+                }
+                assertTrue(build(graph, parameter(0, "long", "enabled"), parameter(1, "long", "id")).isPreparationBlocked)
+                assertTrue(build(graph, parameter(0, "boolean", "other"), parameter(1, "long", "id")).isPreparationBlocked)
+                assertTrue(build(graph, parameter(0, "boolean", "enabled"), parameter(1, "boolean", "enabled"),
+                    parameter(2, "long", "id")).isPreparationBlocked)
+            }
+        }
+    }
+
+    @Test
     fun exactSelectFalseComparisonPreservesBooleanCallerAndOriginalOgnl() {
         val wrappers = listOf(
             "" to "",
@@ -41,7 +73,7 @@ class XmlBooleanIfParameterContractTest {
                 val condition = proven.requirements.single { it.id.value == "xml-java-param:0" }
                     .provenance.evidence.filterIsInstance<InputEvidence.OgnlExpression>().single()
                 assertEquals("enabled == false", condition.expression)
-                assertEquals(if (open.isEmpty()) null else "where", condition.negatedWhereRole)
+                assertEquals(if (open.isEmpty()) null else "where", condition.boundedWhereRole)
                 assertEquals(listOf(null, "enabled == false"),
                     proven.requirements.single { it.id.value == "xml-java-param:1" }
                         .provenance.evidence.filterIsInstance<InputEvidence.Placeholder>()
@@ -63,8 +95,8 @@ class XmlBooleanIfParameterContractTest {
             """SELECT 1 <if test="enabled==false"> #{id}</if>""",
             """SELECT 1 <if test="enabled  == false"> #{id}</if>""",
             """SELECT 1 <if test="enabled ==  false"> #{id}</if>""",
-            """SELECT 1 <if test="enabled == true"> #{id}</if>""",
-            """SELECT 1 <if test="enabled != false"> #{id}</if>""",
+            """SELECT 1 <if test="enabled == TRUE"> #{id}</if>""",
+            """SELECT 1 <if test="enabled !=false"> #{id}</if>""",
             """SELECT 1 <if test="enabled eq false"> #{id}</if>""",
             """SELECT 1 <if test="enabled == null"> #{id}</if>""",
             """SELECT 1 <if test="!enabled == false"> #{id}</if>""",
@@ -109,7 +141,7 @@ class XmlBooleanIfParameterContractTest {
                 val guard = proven.requirements.single { it.id.value == "xml-java-param:0" }
                     .provenance.evidence.filterIsInstance<InputEvidence.OgnlExpression>().single()
                 assertEquals("!enabled", guard.expression)
-                assertEquals("where", guard.negatedWhereRole)
+                assertEquals("where", guard.boundedWhereRole)
                 assertEquals(listOf(null, "!enabled"), proven.requirements.single { it.id.value == "xml-java-param:1" }
                     .provenance.evidence.filterIsInstance<InputEvidence.Placeholder>().map { it.enclosingOgnlExpression })
                 assertTrue(proven.internalBindings.isEmpty())
@@ -168,7 +200,7 @@ class XmlBooleanIfParameterContractTest {
             assertEquals(2, proven.requirements.size)
             val enabled = proven.requirements.single { it.id.value == "xml-java-param:0" }
             assertTrue(enabled.provenance.evidence.any {
-                it is InputEvidence.OgnlExpression && it.expression == "!enabled" && it.negatedWhereRole == null
+                it is InputEvidence.OgnlExpression && it.expression == "!enabled" && it.boundedWhereRole == null
             })
             val id = proven.requirements.single { it.id.value == "xml-java-param:1" }
             assertEquals(listOf(null, "!enabled"), id.provenance.evidence

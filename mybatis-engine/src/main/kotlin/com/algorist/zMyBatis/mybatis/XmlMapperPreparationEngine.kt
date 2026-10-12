@@ -2,6 +2,7 @@ package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.InputAliasKind
 import com.algorist.zMyBatis.core.input.InputEvidence
+import com.algorist.zMyBatis.core.input.XmlBooleanGuardSyntax
 import com.algorist.zMyBatis.core.input.InputKind
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InputShape
@@ -941,17 +942,18 @@ object XmlMapperPreparationEngine {
             // This counts provenance only; stock MyBatis still owns all SQL and OGNL evaluation.
             // The topology gate prevents cross-node synthesis/escaping of new mapping tokens.
             val conditions = booleanIf.conditions.associate { condition ->
-                // Preserve exact source OGNL as the condition scope. One authenticated
-                // direct SELECT negation or exact false comparison inverts the proven Boolean caller value.
+                // The shared source syntax determines only the expected occurrence count.
+                // MyBatis evaluates the original OGNL and emits SQL unchanged.
                 val expression = condition.conditionAlias
-                val negative = expression.startsWith('!') || expression.endsWith(" == false")
-                val callerAlias = if (expression.startsWith('!')) expression.removePrefix("!")
-                    else expression.removeSuffix(" == false")
-                val value = parameterPayload.namedValues[callerAlias] as? Boolean
+                val guard = XmlBooleanGuardSyntax.parse(expression)
                     ?: return XmlBindingCapture.Failed(
                         PreparationFailure(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE),
                     )
-                expression to (if (negative) !value else value)
+                val value = parameterPayload.namedValues[guard.callerAlias] as? Boolean
+                    ?: return XmlBindingCapture.Failed(
+                        PreparationFailure(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE),
+                    )
+                expression to guard.isActive(value)
             }
             val placeholders = request.parameterContract.requirements
                 .flatMap { it.provenance.evidence }

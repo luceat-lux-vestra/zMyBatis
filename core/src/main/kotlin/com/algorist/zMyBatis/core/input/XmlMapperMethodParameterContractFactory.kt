@@ -159,9 +159,8 @@ object XmlMapperMethodParameterContractFactory {
             val mappingProperty = (
                 placeholders.map { it.expression } +
                     foreachCollections.map { it.expression } +
-                    conditions.map { expression ->
-                        if (expression.expression.startsWith('!')) expression.expression.removePrefix("!")
-                        else expression.expression.removeSuffix(" == false")
+                    conditions.map { evidence ->
+                        XmlBooleanGuardSyntax.parse(evidence.expression)?.callerAlias.orEmpty()
                     }
                 ).distinct().singleOrNull()
                 ?: run {

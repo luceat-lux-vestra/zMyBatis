@@ -192,14 +192,15 @@ sealed interface InputEvidence {
     data class OgnlExpression(
         val expression: String,
         val source: SourceEvidence,
-        /** Source-proven WHERE-role placement for bounded negated XML Boolean guards; null means direct. */
-        val negatedWhereRole: String? = null,
+        /** Source-proven WHERE-role placement for a single bounded SELECT Boolean guard; null means direct. */
+        val boundedWhereRole: String? = null,
     ) : InputEvidence {
         init {
             require(expression.isNotBlank()) { "OGNL expression must not be blank" }
-            require(negatedWhereRole == null ||
-                ((expression.startsWith('!') || expression.endsWith(" == false")) && negatedWhereRole == "where")) {
-                "only a source-proven negated WHERE guard may carry WHERE-role placement"
+            require(boundedWhereRole == null ||
+                (boundedWhereRole == "where" &&
+                    XmlBooleanGuardSyntax.parse(expression)?.requiresSingleSelect == true)) {
+                "only a bounded SELECT Boolean guard may carry WHERE-role placement"
             }
         }
     }
