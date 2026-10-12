@@ -1,5 +1,33 @@
 package com.algorist.zMyBatis.e2e
 
+import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
+import com.algorist.zMyBatis.core.execution.ExecutionTargetId
+import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
+import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
+import com.algorist.zMyBatis.core.execution.StableDataSourceId
+import com.algorist.zMyBatis.core.input.InputEvidence
+import com.algorist.zMyBatis.core.input.InputKind
+import com.algorist.zMyBatis.core.input.InputProvenance
+import com.algorist.zMyBatis.core.input.InputRequirementId
+import com.algorist.zMyBatis.core.input.InputValue
+import com.algorist.zMyBatis.core.input.SourceEvidence
+import com.algorist.zMyBatis.core.materialization.MaterializationResult
+import com.algorist.zMyBatis.core.materialization.MaterializedExecution
+import com.algorist.zMyBatis.core.materialization.PostgreSqlBigintExecutionMaterializer
+import com.algorist.zMyBatis.core.preparation.PreparationMetadata
+import com.algorist.zMyBatis.core.preparation.PreparedBinding
+import com.algorist.zMyBatis.core.preparation.PreparedBindingMetadata
+import com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin
+import com.algorist.zMyBatis.core.preparation.PreparedExecution
+import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
+import com.algorist.zMyBatis.core.source.JavaTypeIdentity
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
+import com.algorist.zMyBatis.core.source.SourceFileId
+import com.algorist.zMyBatis.core.source.SourceRange
+import com.algorist.zMyBatis.core.source.SourceRevision
+import com.algorist.zMyBatis.core.source.StatementKind
+import com.algorist.zMyBatis.core.source.XmlStatementId
+import com.intellij.driver.client.Driver
 import com.intellij.driver.client.Remote
 import com.intellij.driver.sdk.arePluginsInitialized
 import com.intellij.driver.sdk.invokeAction
@@ -33,17 +61,27 @@ import com.intellij.ide.starter.runner.startIdeWithoutProject
 import com.intellij.ide.starter.ide.IDETestContext
 import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTestKind
 import com.intellij.tools.ide.starter.product.idea.ultimate.IdeaUltimate
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.junit.jupiter.api.io.TempDir
 import org.h2.Driver as H2Driver
+import org.postgresql.Driver as PostgreSqlDriver
+import org.apache.ibatis.builder.xml.XMLMapperBuilder
+import org.apache.ibatis.session.Configuration
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
+import java.awt.event.KeyEvent
+import java.io.ByteArrayInputStream
+import java.math.BigInteger
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.util.HexFormat
 import kotlin.io.path.Path as pathOf
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -86,6 +124,8 @@ class ZMyBatisStarterDriverE2ETest {
     companion object {
         private const val IDE_RELEASE = "2026.2.3"
         private const val E2E_DATA_SOURCE_UUID = "4c6e150e-3d84-4a71-9d85-0a6d05d42e01"
+        private const val POSTGRES_E2E_DATA_SOURCE_UUID = "8d90bdac-0d36-4cd1-9bca-c9be8271aeda"
+        private const val POSTGRES_E2E_DATA_SOURCE_NAME = "zMyBatis PostgreSQL E2E"
         private const val KNOWN_ISLANDS_ISSUE = "IJPL-222870"
         private const val ISLANDS_FAILURE_PREFIX = "Theme Islands Dark refers to unknown color scheme"
         private const val ISLANDS_FAILURE_STACK =
@@ -252,6 +292,152 @@ class ZMyBatisStarterDriverE2ETest {
                 }
                 ui.waitForNoOpenedDialogs()
             }
+    }
+
+    @Test
+    fun registeredActionExecutesExactStockMaterializedPostgreSqlArtifactWithNativeHistory(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-postgresql-project"))
+        val dynamicMapper = """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.QueryMapper">
+            <select id="ping">SELECT #{value,jdbcType=BIGINT}::BIGINT AS RESULT_VALUE<if test="value > 0">, 1::BIGINT AS POSITIVE_MARKER</if></select>
+            </mapper>
+        """.trimIndent()
+        Files.writeString(projectDir.resolve("PostgreSqlQuery.xml"), dynamicMapper)
+
+        // The proof artifact is built outside the IDE through stock MyBatis itself. No
+        // XmlBooleanGuardSyntax/admission classifier participates in either branch.
+        val positiveArtifact = stockPostgreSqlBigintArtifact(dynamicMapper, 7)
+        val negativeArtifact = stockPostgreSqlBigintArtifact(dynamicMapper, -7)
+        assertEquals(
+            "SELECT 7::BIGINT AS RESULT_VALUE , 1::BIGINT AS POSITIVE_MARKER",
+            positiveArtifact.executionSql,
+        )
+        assertEquals("SELECT -7::BIGINT AS RESULT_VALUE", negativeArtifact.executionSql)
+        assertEquals(positiveArtifact.executionTargetId, negativeArtifact.executionTargetId)
+        assertEquals(positiveArtifact.executionDialectId, negativeArtifact.executionDialectId)
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        writePostgreSqlDataSourceFixture(projectDir)
+
+        val context = starterContext("action-postgresql-bigint", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(true)
+                }
+
+                synchronizePostgreSqlDataSource()
+                executePostgreSqlMapperCase(
+                    fileName = "PostgreSqlQuery.xml",
+                    input = "7",
+                    expectedPreview = positiveArtifact.executionSql,
+                    expectedCells = setOf("7", "1"),
+                    chooseTarget = true,
+                )
+                executePostgreSqlMapperCase(
+                    fileName = "PostgreSqlQuery.xml",
+                    input = "-7",
+                    expectedPreview = negativeArtifact.executionSql,
+                    expectedCells = setOf("-7"),
+                    chooseTarget = false,
+                )
+
+                // Keep focus on the console/result context produced by the second proven execution.
+                ideFrame {
+                    invokeAction("Console.History.Browse", now = false)
+                }
+                ui.dialog(title = "PostgreSqlQuery.xml - zMyBatis History") {
+                    val history = list()
+                    history.clickItem(positiveArtifact.executionSql, fullMatch = false)
+                    history.clickItem(negativeArtifact.executionSql, fullMatch = false)
+                    keyboard { escape() }
+                }
+                ui.waitForNoOpenedDialogs()
+            }
+    }
+
+    @Suppress("OPT_IN_USAGE")
+    private fun Driver.synchronizePostgreSqlDataSource() {
+        ideFrame {
+            invokeAction("ActivateDatabaseToolWindow", now = false)
+            waitOneText(
+                POSTGRES_E2E_DATA_SOURCE_NAME,
+                message = "PostgreSQL datasource must be visible in Database Explorer",
+                timeout = 30.seconds,
+            ).click()
+            // DataGrip 2026.2 exposes database model refresh as Ctrl+F5 on the
+            // selected Database Explorer node. The historical
+            // DatabaseView.SynchronizeAction id is not registered in this IDE build.
+            keyboard { hotKeyWithDefaultModifierKey(KeyEvent.VK_F5) }
+        }
+        waitForIndicators(3.minutes)
+    }
+
+    private fun Driver.executePostgreSqlMapperCase(
+        fileName: String,
+        input: String,
+        expectedPreview: String,
+        expectedCells: Set<String>,
+        chooseTarget: Boolean,
+    ) {
+        openFile(fileName)
+        ideFrame {
+            // DTD + <mapper> occupy the first two lines; mirror the canonical Query.xml
+            // fixture and place the caret on the <select> line before invoking production action.
+            invokeAction("EditorDown")
+            invokeAction("EditorDown")
+            invokeAction("zMyBatis.Execute", now = false)
+        }
+
+        if (chooseTarget) {
+            waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
+                ui.popups().list().isNotEmpty()
+            }
+            val dataSourceList = ui.popup().list()
+            dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+            dataSourceList.setFocus()
+            dataSourceList.keyboard { right() }
+            waitFor("PostgreSQL explicit public schema submenu", timeout = 30.seconds) {
+                ui.popups().list().last().hasText("public")
+            }
+            ui.popups().list().last().waitOneText("public").click()
+        }
+
+        ui.dialog(title = "Enter MyBatis Parameters") {
+            textField().text = input
+            button("OK").click()
+        }
+
+        ui.dialog(title = "zMyBatis — SQL Preview") {
+            assertEquals(
+                expectedPreview,
+                textArea().text.trim(),
+                "preview must equal the exact SQL text submitted to Database Tools",
+            )
+            button("Execute").click()
+        }
+
+        waitFor(
+            message = "PostgreSQL Database Tools result grid contains the expected value",
+            timeout = 2.minutes,
+        ) {
+            try {
+                val values = ui.accessibleTable {
+                    byType("com.intellij.database.run.ui.table.TableResultView")
+                }.content().values.flatMap { row -> row.values }.map { it.trim() }.toSet()
+                expectedCells.all { it in values }
+            } catch (_: com.intellij.driver.sdk.WaitForException) {
+                false
+            }
+        }
+        ui.waitForNoOpenedDialogs()
     }
 
     @Test
@@ -463,6 +649,175 @@ class ZMyBatisStarterDriverE2ETest {
         assertTrue(
             Files.isRegularFile(context.paths.configDir.resolve("idea.key")),
             "activation must persist its state before the project run",
+        )
+    }
+
+    private fun stockPostgreSqlBigintArtifact(
+        mapperSource: String,
+        input: Long,
+    ): MaterializedExecution {
+        val configuration = Configuration().apply {
+            databaseId = ConventionalMyBatisDatabaseIds.POSTGRESQL
+        }
+        val resource = "zmybatis-e2e-postgresql.xml"
+        ByteArrayInputStream(mapperSource.toByteArray(StandardCharsets.UTF_8)).use { stream ->
+            XMLMapperBuilder(stream, configuration, resource, configuration.sqlFragments).parse()
+        }
+
+        val statement = configuration.getMappedStatement("fixture.QueryMapper.ping")
+        val boundSql = statement.getBoundSql(mapOf("value" to input))
+        val mapping = boundSql.parameterMappings.single()
+        assertEquals("value", mapping.property)
+        assertEquals("BIGINT", mapping.jdbcType?.name)
+        assertEquals("java.lang.Object", mapping.javaType.name)
+        assertEquals("org.apache.ibatis.type.UnknownTypeHandler", mapping.typeHandler.javaClass.name)
+
+        val fileId = SourceFileId("vfs:/PostgreSqlQuery.xml")
+        val revision = SourceRevision(
+            HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(mapperSource.toByteArray(StandardCharsets.UTF_8)),
+            ),
+        )
+        val token = "#{value,jdbcType=BIGINT}"
+        val tokenStart = mapperSource.indexOf(token)
+        check(tokenStart >= 0)
+        val provenance = InputProvenance(
+            listOf(
+                InputEvidence.Placeholder(
+                    kind = InputKind.BOUND,
+                    expression = "value",
+                    source = SourceEvidence(
+                        fileId,
+                        revision,
+                        SourceRange(tokenStart, tokenStart + token.length),
+                    ),
+                ),
+            ),
+        )
+        val prepared = PreparedExecution(
+            statementId = XmlStatementId(fileId, "fixture.QueryMapper", "ping"),
+            statementKind = StatementKind.SELECT,
+            sourceRevisions = mapOf(fileId to revision),
+            sqlWithPlaceholders = boundSql.sql,
+            orderedBindings = listOf(
+                PreparedBinding(
+                    index = 0,
+                    property = mapping.property,
+                    value = InputValue.IntegerValue(BigInteger.valueOf(input)),
+                    origin = PreparedBindingOrigin.CallerInput(
+                        InputRequirementId("e2e-postgresql:value"),
+                        provenance,
+                    ),
+                    metadata = PreparedBindingMetadata(
+                        declaredJavaTypeIdentity = JavaTypeIdentity("long"),
+                        mappingJavaTypeIdentity = mapping.javaType.name,
+                        jdbcTypeIdentity = mapping.jdbcType?.name,
+                        typeHandlerIdentity = mapping.typeHandler.javaClass.name,
+                        parameterMode = mapping.mode.name,
+                        numericScale = mapping.numericScale,
+                    ),
+                ),
+            ),
+            rawInterpolations = emptyList(),
+            preparationMetadata = PreparationMetadata(
+                engineIdentity = "org.mybatis:mybatis",
+                engineVersion = "3.5.19",
+                languageDriverIdentity = statement.lang.javaClass.name,
+                databaseId = configuration.databaseId,
+            ),
+        )
+        val targetId = ExecutionTargetId(
+            StableDataSourceId(POSTGRES_E2E_DATA_SOURCE_UUID),
+            ExplicitSchemaIdentity("public"),
+        )
+        val target = ResolvedExecutionTarget(
+            ExecutionTargetDescriptor(targetId, POSTGRES_E2E_DATA_SOURCE_NAME),
+            MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+        )
+
+        return when (val result = PostgreSqlBigintExecutionMaterializer(target).materialize(prepared)) {
+            is MaterializationResult.Success -> result.execution
+            is MaterializationResult.Failed -> fail {
+                "stock PostgreSQL BIGINT proof must materialize, got " +
+                    result.failure.kind + " / " + result.failure.code
+            }
+        }
+    }
+
+    private fun writePostgreSqlDatabaseToolsDriverFixture(configDir: Path, postgresJar: Path) {
+        val driverDir = Files.createDirectories(configDir.resolve("jdbc-drivers"))
+        val driverJar = driverDir.resolve(postgresJar.fileName)
+        Files.copy(postgresJar, driverJar, StandardCopyOption.REPLACE_EXISTING)
+
+        val optionsDir = Files.createDirectories(configDir.resolve("options"))
+        Files.writeString(
+            optionsDir.resolve("databaseDrivers.xml"),
+            """
+            <application>
+              <component name="LocalDatabaseDriverManager" version="201">
+                <driver id="postgresql">
+                  <artifact use="false" />
+                  <option name="auto-sync" value="true" />
+                  <library>
+                    <url>${driverJar.toUri().toASCIIString()}</url>
+                  </library>
+                </driver>
+              </component>
+            </application>
+            """.trimIndent(),
+        )
+    }
+
+    private fun writePostgreSqlDataSourceFixture(projectDir: Path) {
+        val ideaDir = Files.createDirectories(projectDir.resolve(".idea"))
+        val projectFileDirMacro =
+            buildString {
+                append(36.toChar())
+                append("ProjectFileDir")
+                append(36.toChar())
+            }
+        Files.writeString(
+            ideaDir.resolve("dataSources.xml"),
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project version="4">
+              <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
+                <data-source source="LOCAL" name="$POSTGRES_E2E_DATA_SOURCE_NAME" uuid="$POSTGRES_E2E_DATA_SOURCE_UUID">
+                  <driver-ref>postgresql</driver-ref>
+                  <synchronize>true</synchronize>
+                  <jdbc-driver>org.postgresql.Driver</jdbc-driver>
+                  <jdbc-url>jdbc:postgresql://127.0.0.1:5432/zmybatis?user=zmybatis</jdbc-url>
+                  <working-dir>$projectFileDirMacro</working-dir>
+                </data-source>
+              </component>
+            </project>
+            """.trimIndent(),
+        )
+        Files.writeString(
+            ideaDir.resolve("dataSources.local.xml"),
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project version="4">
+              <component name="dataSourceStorageLocal">
+                <data-source name="$POSTGRES_E2E_DATA_SOURCE_NAME" uuid="$POSTGRES_E2E_DATA_SOURCE_UUID">
+                  <!-- Match the persisted Database Tools 2026.2 PostgreSQL shape before the
+                       first live introspection: DBMS identity plus an explicit current
+                       database/current schema scope. The loaded Das model resolves those
+                       markers to the concrete zmybatis/public names used by production code. -->
+                  <database-info product="" version="" jdbc-version="" driver-name="" driver-version="" dbms="POSTGRES" />
+                  <auth-provider>no-auth</auth-provider>
+                  <user-name>zmybatis</user-name>
+                  <schema-mapping>
+                    <introspection-scope>
+                      <node kind="database" qname="@">
+                        <node kind="schema" qname="@" />
+                      </node>
+                    </introspection-scope>
+                  </schema-mapping>
+                </data-source>
+              </component>
+            </project>
+            """.trimIndent(),
         )
     }
 

@@ -26,6 +26,18 @@ class StarterDatabaseE2EIsolationContractTest {
                 line.trim().startsWith("implementation(\"com.h2database:h2:")
             },
         )
+        assertTrue(
+            "PostgreSQL proof must declare exactly one pgJDBC driver on the integration-test graph",
+            build.lineSequence().count { line ->
+                line.trim() == "integrationTestImplementation(\"org.postgresql:postgresql:42.7.14\")"
+            } == 1,
+        )
+        assertFalse(
+            "pgJDBC must never become a shipped plugin implementation dependency",
+            build.lineSequence().any { line ->
+                line.trim().startsWith("implementation(\"org.postgresql:postgresql:")
+            },
+        )
     }
 
     @Test
@@ -64,6 +76,25 @@ class StarterDatabaseE2EIsolationContractTest {
         assertFalse(
             "H2 must not rely on the IDE process classpath instead of Database Tools driver isolation",
             e2e.contains("idea.additional.classpath"),
+        )
+        assertTrue(
+            "PostgreSQL proof must use a local Database Tools pgJDBC driver and a real PostgreSQL URL",
+            e2e.contains("<driver-ref>postgresql</driver-ref>") &&
+                e2e.contains("org.postgresql.Driver") &&
+                e2e.contains("jdbc:postgresql://127.0.0.1:5432/zmybatis"),
+        )
+        assertTrue(
+            "PostgreSQL proof must introspect and select an explicit public schema through maintained UI actions",
+            e2e.contains("ActivateDatabaseToolWindow") &&
+                e2e.contains("hotKeyWithDefaultModifierKey(KeyEvent.VK_F5)") &&
+                e2e.contains("waitOneText(\"public\")"),
+        )
+        assertTrue(
+            "PostgreSQL proof must execute both stock-MyBatis if branches and observe native query history",
+            e2e.contains("positiveArtifact.executionSql") &&
+                e2e.contains("negativeArtifact.executionSql") &&
+                e2e.contains("Console.History.Browse") &&
+                e2e.contains("PostgreSqlQuery.xml - zMyBatis History"),
         )
     }
 

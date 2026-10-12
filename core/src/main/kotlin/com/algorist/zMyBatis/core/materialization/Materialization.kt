@@ -1,5 +1,6 @@
 package com.algorist.zMyBatis.core.materialization
 
+import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.algorist.zMyBatis.core.preparation.PreparationMetadata
 import com.algorist.zMyBatis.core.preparation.PreparedExecution
 import com.algorist.zMyBatis.core.source.JavaStatementId
@@ -31,6 +32,11 @@ data class MaterializationSafetyFlags(
 enum class MaterializationFailureKind {
     BOUND_EXECUTION_REQUIRED,
     RAW_INTERPOLATION_REQUIRES_POLICY,
+    BINDING_COUNT_UNSUPPORTED,
+    BINDING_METADATA_UNSUPPORTED,
+    BINDING_VALUE_UNSUPPORTED,
+    PLACEHOLDER_TOPOLOGY_UNSUPPORTED,
+    DIALECT_UNSUPPORTED,
 }
 
 data class MaterializationFailure(
@@ -54,6 +60,8 @@ class MaterializedExecution internal constructor(
     sourceRevisions: Map<SourceFileId, SourceRevision>,
     val preparationMetadata: PreparationMetadata,
     val executionSql: String,
+    val executionTargetId: ExecutionTargetId? = null,
+    val executionDialectId: String? = null,
     val safetyFlags: MaterializationSafetyFlags,
     val fingerprint: MaterializationFingerprint,
 ) {
@@ -80,6 +88,8 @@ class MaterializedExecution internal constructor(
             sourceRevisionSnapshot == other.sourceRevisionSnapshot &&
             preparationMetadata == other.preparationMetadata &&
             executionSql == other.executionSql &&
+            executionTargetId == other.executionTargetId &&
+            executionDialectId == other.executionDialectId &&
             safetyFlags == other.safetyFlags &&
             fingerprint == other.fingerprint
     }
@@ -90,6 +100,8 @@ class MaterializedExecution internal constructor(
         result = 31 * result + sourceRevisionSnapshot.hashCode()
         result = 31 * result + preparationMetadata.hashCode()
         result = 31 * result + executionSql.hashCode()
+        result = 31 * result + executionTargetId.hashCode()
+        result = 31 * result + executionDialectId.hashCode()
         result = 31 * result + safetyFlags.hashCode()
         result = 31 * result + fingerprint.hashCode()
         return result
@@ -143,14 +155,16 @@ object MaintainedExecutionMaterializer : ExecutionMaterializer {
 
 private const val BOUND_EXECUTION_REQUIRED = "materialization-bound-execution-required"
 private const val RAW_INTERPOLATION_POLICY_REQUIRED = "materialization-raw-interpolation-policy-required"
-private const val FINGERPRINT_VERSION = "zmybatis-materialized-execution-v2"
+private const val FINGERPRINT_VERSION = "zmybatis-materialized-execution-v4"
 
-private fun failed(kind: MaterializationFailureKind, code: String): MaterializationResult.Failed =
+internal fun failed(kind: MaterializationFailureKind, code: String): MaterializationResult.Failed =
     MaterializationResult.Failed(MaterializationFailure(kind, code))
 
-private fun materialized(
+internal fun materialized(
     prepared: PreparedExecution,
     executionSql: String,
+    executionTargetId: ExecutionTargetId? = null,
+    executionDialectId: String? = null,
 ): MaterializationResult.Success {
     val safetyFlags = MaterializationSafetyFlags(
         declaredMutation = prepared.statementKind != StatementKind.SELECT,
@@ -159,6 +173,8 @@ private fun materialized(
     val fingerprint = fingerprint(
         prepared = prepared,
         executionSql = executionSql,
+        executionTargetId = executionTargetId,
+        executionDialectId = executionDialectId,
         safetyFlags = safetyFlags,
     )
 
@@ -169,6 +185,8 @@ private fun materialized(
             sourceRevisions = prepared.sourceRevisions,
             preparationMetadata = prepared.preparationMetadata,
             executionSql = executionSql,
+            executionTargetId = executionTargetId,
+            executionDialectId = executionDialectId,
             safetyFlags = safetyFlags,
             fingerprint = fingerprint,
         ),
@@ -178,6 +196,8 @@ private fun materialized(
 private fun fingerprint(
     prepared: PreparedExecution,
     executionSql: String,
+    executionTargetId: ExecutionTargetId?,
+    executionDialectId: String?,
     safetyFlags: MaterializationSafetyFlags,
 ): MaterializationFingerprint {
     val digest = MessageDigest.getInstance("SHA-256")
@@ -197,6 +217,9 @@ private fun fingerprint(
     digest.field(prepared.preparationMetadata.engineVersion)
     digest.field(prepared.preparationMetadata.languageDriverIdentity)
     digest.field(executionSql)
+    digest.field(executionTargetId?.dataSourceId?.value ?: "<unbound-target>")
+    digest.field(executionTargetId?.schema?.value ?: "<unbound-schema>")
+    digest.field(executionDialectId ?: "<unbound-dialect>")
     digest.field(safetyFlags.declaredMutation.toString())
     digest.field(safetyFlags.containsRawInterpolation.toString())
 

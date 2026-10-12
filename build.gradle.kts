@@ -107,6 +107,7 @@ dependencies {
     // Process-E2E fixture only. The JAR is copied into the isolated Starter config
     // and registered as a local Database Tools driver; it is never part of the shipped plugin artifact.
     integrationTestImplementation("com.h2database:h2:2.5.252")
+    integrationTestImplementation("org.postgresql:postgresql:42.7.14")
     // JetBrains Starter's CommonScope loads kotlinx.coroutines.SupervisorKt at runtime, but
     // the Starter test framework does not supply coroutines transitively on this configuration.
     // Keep this explicit runtime prerequisite; removing it fails Starter / Driver E2E.
