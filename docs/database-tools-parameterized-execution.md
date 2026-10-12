@@ -2,6 +2,8 @@
 
 Issue: #251
 
+**Later target-policy update (2026-10-13, #391):** [Leap execution rebaseline](leap-execution-rebaseline.md) decouples architecture replacement from mandatory true JDBC binding. This document's 2026.2 API observations, all three negative candidate assessments, and the original #258 strict-contract decision are retained as historical proof. They do **not** prove that SQL-text materialization is safe for arbitrary DBMS/type pairs; that separate capability needs explicit implementation and runtime evidence. Current code still fails closed for nonzero Leap bindings.
+
 Status: **NO-GO for the Leap cutover contract on the maintained IntelliJ IDEA Ultimate / Database Tools 2026.2 baseline.**
 
 This result does **not** mean that Database Tools cannot execute prepared statements. It means that the maintained/public surface proven in 2026.2 does not provide one path that simultaneously:
