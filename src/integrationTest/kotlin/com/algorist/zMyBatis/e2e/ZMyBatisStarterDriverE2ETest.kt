@@ -8,10 +8,15 @@ import com.intellij.driver.sdk.openFile
 import com.intellij.driver.sdk.ui.Finder
 import com.intellij.driver.sdk.ui.components.ComponentData
 import com.intellij.driver.sdk.ui.components.UiComponent
+import com.intellij.driver.sdk.ui.components.common.codeEditorForFile
 import com.intellij.driver.sdk.ui.components.common.ideFrame
+import com.intellij.driver.sdk.ui.components.common.databaseToolWindow
+import com.intellij.driver.sdk.ui.components.ultimate.dataSourcesAndDriversDialog
 import com.intellij.driver.sdk.ui.components.elements.accessibleTable
+import com.intellij.driver.sdk.ui.components.elements.actionButton
 import com.intellij.driver.sdk.ui.components.elements.button
 import com.intellij.driver.sdk.ui.components.elements.dialog
+import com.intellij.driver.sdk.ui.components.elements.isDialogOpened
 import com.intellij.driver.sdk.ui.components.elements.list
 import com.intellij.driver.sdk.ui.components.elements.popup
 import com.intellij.driver.sdk.ui.components.elements.popups
@@ -39,6 +44,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.junit.jupiter.api.io.TempDir
 import org.h2.Driver as H2Driver
+import org.postgresql.Driver as PostgreSqlDriver
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import java.nio.file.Files
@@ -86,6 +92,7 @@ class ZMyBatisStarterDriverE2ETest {
     companion object {
         private const val IDE_RELEASE = "2026.2.3"
         private const val E2E_DATA_SOURCE_UUID = "4c6e150e-3d84-4a71-9d85-0a6d05d42e01"
+        private const val POSTGRES_E2E_DRIVER_NAME = "zMyBatis PostgreSQL 42.7.14"
         private const val KNOWN_ISLANDS_ISSUE = "IJPL-222870"
         private const val ISLANDS_FAILURE_PREFIX = "Theme Islands Dark refers to unknown color scheme"
         private const val ISLANDS_FAILURE_STACK =
@@ -253,6 +260,133 @@ class ZMyBatisStarterDriverE2ETest {
                 ui.waitForNoOpenedDialogs()
             }
     }
+
+    @Test
+    fun databaseToolsCreatedPostgreSqlDataSourceExposesExplicitSchemaModel(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("target-postgresql-project"))
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+
+        val context = starterContext("target-postgresql-schema-model", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+                openFile("Query.xml", waitForCodeAnalysis = false)
+
+                ideFrame {
+                    invokeAction("ActivateDatabaseToolWindow", now = false)
+                    databaseToolWindow {
+                        actionButton {
+                            and(byClass("ActionButton"), byAccessibleName("New"))
+                        }.performAction()
+                    }
+                    val addList = ui.popup().list()
+                    addList.waitOneText(
+                        "Data Source",
+                        message = "Database Tools New menu must expose Data Source",
+                        timeout = 30.seconds,
+                    ).click()
+                    waitFor("Database Tools datasource type submenu", timeout = 30.seconds) {
+                        ui.popups().list().size >= 2
+                    }
+                    val dataSourceTypeList = ui.popups().list().last().list()
+                    dataSourceTypeList.setFocus()
+                    dataSourceTypeList.keyboard {
+                        typeText("PostgreSQL")
+                        enter()
+                    }
+
+                    dataSourcesAndDriversDialog {
+                        button {
+                            and(
+                                byClass("ComboBoxButton"),
+                                contains(byAccessibleName("PostgreSQL")),
+                            )
+                        }.click()
+                        waitFor("custom pinned PostgreSQL driver popup", timeout = 30.seconds) {
+                            ui.popups().list().lastOrNull()?.hasText(POSTGRES_E2E_DRIVER_NAME) == true
+                        }
+                        ui.popups().list().last().waitOneText(
+                            POSTGRES_E2E_DRIVER_NAME,
+                            message = "custom pinned PostgreSQL driver must be selectable",
+                            timeout = 30.seconds,
+                        ).click()
+                        textField(
+                            "//div[contains(@visible_text, 'jdbc:postgresql:')]",
+                        ).text = "jdbc:postgresql://127.0.0.1:5432/zmybatis?user=zmybatis"
+                        textField(
+                            "//div[@accessiblename='User:' and @class='JBTextField']",
+                        ).text = "zmybatis"
+                        textField(
+                            "//div[@accessiblename='Password:' and @class='JBPasswordField']",
+                        ).text = "zmybatis"
+
+                        testConnection()
+                        waitFor(
+                            "pinned local PostgreSQL driver result",
+                            timeout = 3.minutes,
+                        ) {
+                            isConnectionSuccessful(driverNameContains = "PostgreSQL") || downloadDriverFilesButton.present()
+                        }
+                        assertFalse(
+                            downloadDriverFilesButton.present(),
+                            "pinned pgJDBC 42.7.14 must be recognized without downloading another driver",
+                        )
+                        assertTrue(
+                            isConnectionSuccessful(driverNameContains = "PostgreSQL"),
+                            "PostgreSQL Test Connection must succeed with pinned pgJDBC 42.7.14",
+                        )
+                        waitFor(
+                            "PostgreSQL Test Connection lifecycle completed",
+                            timeout = 30.seconds,
+                        ) {
+                            testConnectionButton.isEnabled()
+                        }
+                        // Database Tools can publish the successful result before its asynchronous
+                        // Test Connection reset is fully settled. Require sustained IDE idle before
+                        // disposing the dialog so the probe does not race that maintained lifecycle.
+                        driver.waitForIndicators(30.seconds, waitSmartLongEnough = true)
+                        okButton.click()
+                    }
+                }
+                waitFor("Data Sources and Drivers dialog is closed", timeout = 30.seconds) {
+                    !ui.isDialogOpened("//div[@title='Data Sources and Drivers']")
+                }
+
+                ideFrame {
+                    invokeAction("ActivateDatabaseToolWindow", now = false)
+                    databaseToolWindow {
+                        invokeAction("DatabaseView.Refresh", now = false)
+                    }
+                }
+
+                openFile("Query.xml", waitForCodeAnalysis = false)
+                ideFrame {
+                    codeEditorForFile("Query.xml").goToLine(2)
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DRIVER_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+
+                waitFor("shipping chooser exposes explicit PostgreSQL public schema", timeout = 3.minutes) {
+                    ui.popups().list().lastOrNull()?.hasText("public") == true
+                }
+                assertTrue(
+                    ui.popups().list().last().hasText("public"),
+                    "normal Database Tools creation must expose explicit public schema to the shipping chooser",
+                )
+                ui.popups().list().last().keyboard { escape() }
+            }
+    }
+
 
     @Test
     fun registeredRawInterpolationForcesPreviewWhenSettingDisabled(@TempDir tempDir: Path) {
@@ -463,6 +597,36 @@ class ZMyBatisStarterDriverE2ETest {
         assertTrue(
             Files.isRegularFile(context.paths.configDir.resolve("idea.key")),
             "activation must persist its state before the project run",
+        )
+    }
+
+    private fun writePostgreSqlDatabaseToolsDriverFixture(configDir: Path, postgresJar: Path) {
+        val driverDir = Files.createDirectories(configDir.resolve("jdbc-drivers"))
+        val driverJar = driverDir.resolve(postgresJar.fileName)
+        Files.copy(postgresJar, driverJar, StandardCopyOption.REPLACE_EXISTING)
+
+        val optionsDir = Files.createDirectories(configDir.resolve("options"))
+        Files.writeString(
+            optionsDir.resolve("databaseDrivers.xml"),
+            """
+            <application>
+              <component name="LocalDatabaseDriverManager" version="201">
+                <driver
+                    id="zmybatis-postgresql-42.7.14"
+                    name="zMyBatis PostgreSQL 42.7.14"
+                    dialect="PostgreSQL"
+                    driver-class="org.postgresql.Driver"
+                    icon="AllIcons.Providers.Postgresql">
+                  <artifact use="false" />
+                  <option name="auto-sync" value="true" />
+                  <option name="schema-control" value="AUTOMATIC" />
+                  <library>
+                    <url>${driverJar.toUri().toASCIIString()}</url>
+                  </library>
+                </driver>
+              </component>
+            </application>
+            """.trimIndent(),
         )
     }
 

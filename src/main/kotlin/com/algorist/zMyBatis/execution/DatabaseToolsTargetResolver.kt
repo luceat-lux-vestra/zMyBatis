@@ -46,8 +46,9 @@ internal object ExactTargetSelectionPolicy {
         dataSources: List<DataSourceCandidate<D>>,
         schemas: (D) -> List<SchemaCandidate<S>>,
     ): ExactTargetSelectionResult<D, S> {
-        val targetDataSourceId = descriptor.targetId.dataSourceId.value
-        val matchingDataSources = dataSources.filter { it.stableId == targetDataSourceId }
+        val matchingDataSources = dataSources.filter {
+            it.stableId == descriptor.targetId.dataSourceId.value
+        }
 
         val dataSource = when (matchingDataSources.size) {
             0 -> return failed(
