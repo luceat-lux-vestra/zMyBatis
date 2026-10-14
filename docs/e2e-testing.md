@@ -67,7 +67,7 @@ For every run it records:
 - the exact plugin distribution path;
 - the SHA-256 digest of that plugin ZIP.
 
-On failure it archives the Gradle/JUnit result and Starter IDE logs when present. E2E remains separate from the required `Merge Gate`; the gate aggregates the ordinary Build, Test, Qodana, Plugin Verifier, workflow-policy, and Dependency Review component jobs.
+On failure it archives the Gradle/JUnit result plus bounded per-test IDE diagnostics (`log/idea.log` and screenshots when present); it deliberately does not archive the entire Starter test tree. E2E remains separate from the required `Merge Gate`; the gate aggregates the ordinary Build, Test, Qodana, Plugin Verifier, workflow-policy, and Dependency Review component jobs.
 
 Issue #130 completed the harness and its initial repeatability rollout. The current `.github/merge-gate-policy.yml` does **not** make E2E an unconditional required status check for every PR; the workflow remains separately visible process-level evidence. Applicability is decided per change: when installed-plugin or user-path behavior is part of the changed invariant, the relevant Starter/Driver scenario must pass on the exact final PR HEAD before merge. A lower-level-only change may record E2E as not applicable with a layer-based reason.
 

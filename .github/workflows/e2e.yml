@@ -140,9 +140,12 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: e2e-failure-diagnostics
+          # Preserve actionable test/IDE evidence without archiving the entire
+          # Starter test tree (which includes downloaded/runtime bulk data).
           path: |
             e2e.log
             build/reports/tests/integrationTest
             build/test-results/integrationTest
-            out/ide-tests/tests
+            out/ide-tests/tests/**/log/idea.log
+            out/ide-tests/tests/**/screenshots/**
           if-no-files-found: warn

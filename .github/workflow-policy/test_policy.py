@@ -419,6 +419,13 @@ def check_main_e2e_cache_seed(failures: list[str]) -> None:
                )
            ), failures)
 
+    expect("E2E failure diagnostics never archive the full IDE test tree",
+           "\n            out/ide-tests/tests\n" not in workflow, failures)
+    expect("E2E failure diagnostics retain bounded IDE logs and screenshots",
+           "out/ide-tests/tests/**/log/idea.log" in workflow
+           and "out/ide-tests/tests/**/screenshots/**" in workflow,
+           failures)
+
 
 
 def check_dependency_submission_main_scope(failures: list[str]) -> None:
