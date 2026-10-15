@@ -38,5 +38,9 @@ updates:
       - "github_actions"
     groups:
       github-actions:
+        applies-to: version-updates
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
