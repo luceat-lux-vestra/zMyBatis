@@ -176,6 +176,11 @@ jobs:
                "language: actions", "language: java-kotlin",
                "build-mode: manual", "java-version: 25",
                "check_codeql_sarif.py", "retention-days: 90",
+               "name: CodeQL schedule guard",
+               'if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then',
+               '.head_sha == $sha',
+               "needs: scan-guard",
+               "if: needs.scan-guard.outputs.should_scan == 'true'",
            )), failures)
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "renamed-codeql.yml"
