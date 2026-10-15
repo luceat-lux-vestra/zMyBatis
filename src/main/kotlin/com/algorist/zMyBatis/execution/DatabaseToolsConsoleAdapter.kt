@@ -177,6 +177,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
      *
      * Neither preview text nor a formatter may become the execution payload.
      */
+    @Suppress("unused") // #417 non-shipping integration boundary; no registered caller before #66 cutover.
     fun executeMaterialized(
         console: JdbcConsole,
         artifact: MaterializedExecution,
@@ -186,7 +187,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         onFailure: (DatabaseToolsSqlExecutionFailure) -> Unit,
     ) {
         val boundTarget = artifact.executionTargetId
-        if (boundTarget == null || !isInvocationValid() || currentTargetId() != boundTarget) {
+        if (!materializedDeliveryValid(boundTarget, currentTargetId, isInvocationValid)) {
             onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
             return
         }
@@ -194,7 +195,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             console = console,
             sql = artifact.executionSql,
             preExecutionCheck = {
-                isInvocationValid() && currentTargetId() == boundTarget
+                materializedDeliveryValid(boundTarget, currentTargetId, isInvocationValid)
             },
             onExecuted = onExecuted,
             onFailure = onFailure,
@@ -402,3 +403,10 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         }
     }
 }
+
+/** Shared admission predicate for each async boundary; an absent exact target never executes. */
+internal fun materializedDeliveryValid(
+    boundTarget: ExecutionTargetId?,
+    currentTargetId: () -> ExecutionTargetId?,
+    isInvocationValid: () -> Boolean,
+): Boolean = boundTarget != null && isInvocationValid() && currentTargetId() == boundTarget
