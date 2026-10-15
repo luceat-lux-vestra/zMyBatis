@@ -92,7 +92,7 @@ def download(run_id: int, repo: str, name: str, directory: Path) -> None:
 
 def verify_release(sha: str, tag: str, repo: str) -> dict:
     require(bool(SHA.fullmatch(sha)), "release candidate must be an exact SHA")
-    require(bool(re.fullmatch(r"v[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.+-]+)?", tag)),
+    require(bool(re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.+-]+)?", tag)),
             "release tag is not a SemVer v-prefixed tag")
     require(repo == os.environ.get("GITHUB_REPOSITORY"),
             "repository mismatch")
@@ -213,9 +213,9 @@ def main() -> None:
             summary = os.environ.get("GITHUB_STEP_SUMMARY")
             if summary:
                 with open(summary, "a", encoding="utf-8") as stream:
-                    stream.write("### Exact-SHA CodeQL preflight\\n\\n```json\\n")
+                    stream.write("### Exact-SHA CodeQL preflight\n\n```json\n")
                     stream.write(json.dumps(proof, indent=2, sort_keys=True))
-                    stream.write("\\n```\\n")
+                    stream.write("\n```\n")
     except (ValueError, OSError, subprocess.CalledProcessError,
             json.JSONDecodeError, TypeError, KeyError) as exc:
         print(f"::error::Release security preflight rejected: {exc}", file=sys.stderr)
