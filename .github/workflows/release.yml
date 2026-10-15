@@ -23,6 +23,7 @@ jobs:
     environment: jetbrains-marketplace
     permissions:
       contents: write
+      actions: read # Inspect trusted CodeQL runs, jobs and original SARIF artifacts.
       id-token: write
       attestations: write
     steps:
@@ -145,6 +146,18 @@ jobs:
             exit 1
           }
           echo "publish=true" >> "$GITHUB_OUTPUT"
+
+      - name: Require exact-tag-SHA CodeQL before first Marketplace publication
+        if: ${{ steps.state.outputs.publish == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.source.outputs.commit }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflow-policy/check_release_codeql.py \
+            --sha "$RELEASE_SHA" --tag "$RELEASE_TAG"
 
       - name: Setup Java
         if: ${{ steps.state.outputs.publish == 'true' }}

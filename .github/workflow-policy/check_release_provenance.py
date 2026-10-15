@@ -135,6 +135,10 @@ def verify_static(repo: Path) -> list[str]:
         "zmybatis-release-identity.json",
         "zmybatis-release-published.json",
         'publication_state: "pending"',
+        "Require exact-tag-SHA CodeQL before first Marketplace publication",
+        "check_release_codeql.py",
+        'steps.state.outputs.publish == \'true\'',
+        "actions: read # Inspect trusted CodeQL runs, jobs and original SARIF artifacts.",
     ]
     for fragment in required_release_fragments:
         if fragment not in release:
@@ -165,6 +169,12 @@ def verify_static(repo: Path) -> list[str]:
     if 'RELEASE_ASSET: ${{ steps.artifact.outputs.path }}' in release:
         failures.append("GitHub Release must not upload the unsigned buildPlugin archive")
 
+    security_pos = release.find("check_release_codeql.py")
+    recovery_pos = release.find("Resolve publication recovery state")
+    setup_pos = release.find("      - name: Setup Java")
+    if not (recovery_pos >= 0 and security_pos > recovery_pos and
+            setup_pos > security_pos):
+        failures.append("exact-tag-SHA CodeQL preflight must run after recovery classification and before build/sign/publish")
     artifact_pos = release.find("check_release_provenance.py artifact")
     sign_pos = release.find("./gradlew signPlugin verifyPluginSignature")
     capture_pos = release.find("Capture verified signed release asset")

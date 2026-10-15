@@ -100,6 +100,44 @@ After that, a normal workflow replay verifies the completed identity and signed 
 
 Marketplace withdrawal/hiding, GitHub Release reconciliation, source rollback, and a corrected publication are separate decisions. None authorizes tag rewrite or version reuse. An incorrect published artifact is corrected with a new version and a new immutable identity.
 
+## Prepublication CodeQL hold — R2A #105
+
+The `release: released/prereleased` GitHub Actions event runs **after** a public
+GitHub Release is created. The workflow can stop the **first automated JetBrains
+Marketplace publication before build, signing, assets or `publishPlugin`**, but
+**cannot** prevent an owner/admin from creating a GitHub Release in the UI/API.
+Direct Marketplace uploads and a manual recovery outside this workflow are also
+operator-controlled bypasses. Do not describe these paths as automatically blocked.
+
+Before creating/publishing **any GitHub Release**:
+
+1. Finalize the protected, reviewed `main` candidate. Record the complete
+   40-character SHA and confirm it is the intended immutable protected `v*`
+   tag target; reject outdated or retargeted tags.
+2. Find a successful weekly or deliberate manual CodeQL scan **on that same
+   SHA**, or run `gh workflow run codeql.yml -R luceat-lux-vestra/zMyBatis
+   --ref main -f candidate_sha=<40-character SHA>` while that commit is
+   still the latest protected `main`. The workflow refuses other refs and
+   older candidates.
+3. Read the run ID, verify attempt 1 and the two successful matrix jobs
+   `CodeQL (actions)` and `CodeQL (java-kotlin)`. Inspect both retained
+   `codeql-<SHA>-<language>` **unaltered SARIF** artifacts, recorded SHA-256,
+   language categories, CodeQL query-pack metadata, successful invocation,
+   and zero High/Critical security findings. Expired/missing/corrupt evidence,
+   failed jobs, uncertain attempt, wrong SHA, or a severe finding are a hard stop.
+4. Create the protected version tag and verify its commit equals the scanned
+   SHA; only then publish the GitHub Release. The release workflow repeats
+   this evidence check before **new** Marketplace publication.
+5. No test release, fake publication, or Marketplace push is authorized to
+   prove this preflight. Run negative fixtures in CI instead.
+
+The normal already-published `publish=false` replay validates existing
+identity/signed asset and stays idempotent; it intentionally does not attempt
+a second Marketplace publication. Pending publication identity is a manual
+recovery hold, not an automatic retry. An operator handling an exceptional
+recovery must separately re-check the exact-source CodeQL evidence before
+authorizing any real vendor-side mutation.
+
 ## Hard-stop conditions
 
 Stop without publication or identity mutation if:
