@@ -70,10 +70,6 @@ SAFE_PR_EXCLUSIONS = {
     'github.event_name == "push"',
 }
 
-SAFE_PR_WRITE_EXCEPTIONS = {
-    ("codeql.yml", "analyze"): frozenset({"security-events"}),
-}
-
 
 def indent_of(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
@@ -271,11 +267,6 @@ def job_excluded_from_pull_request(job: Job) -> bool:
     return len(expressions) == 1 and expressions[0] in SAFE_PR_EXCLUSIONS
 
 
-def pr_write_exception_applies(path: Path, job: Job, write_grants: set[str]) -> bool:
-    expected = SAFE_PR_WRITE_EXCEPTIONS.get((path.name, job.name))
-    return expected is not None and frozenset(write_grants) == expected
-
-
 def checkout_steps_missing_persist_credentials_false(job: Job) -> list[int]:
     offending: list[int] = []
     lines = job.lines
@@ -354,7 +345,6 @@ def check_file(path: Path) -> list[str]:
             and is_pr_workflow
             and not job_excluded_from_pull_request(job)
             and has_checkout
-            and not pr_write_exception_applies(path, job, write_grants)
         ):
             failures.append(
                 f"{path}: job '{job.name}' holds write permission(s) "
