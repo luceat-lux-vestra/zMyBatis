@@ -180,7 +180,7 @@ jobs:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "renamed-codeql.yml"
         path.write_text(
-            codeql_source.replace("  schedule:", "  pull_request:\\n  schedule:", 1),
+            codeql_source.replace("  schedule:", "  pull_request:\n  schedule:", 1),
             encoding="utf-8",
         )
         expect("PR-injected CodeQL is rejected by trust-boundary checker",
