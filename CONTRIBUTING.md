@@ -51,6 +51,17 @@ Starter/Driver IDE release; those checks still use the declared vendor versions.
 - `release.yml` is part of the current hardened workflow review surface. It is checked for immutable action pins, permissions/credential boundaries, actionlint/zizmor findings, and the dedicated SemVer/tag/artifact publication-provenance contract.
 - Do not add a manual UI-test workflow unless the repository also contains real UI tests whose result is meaningful evidence. Template IDE/robot-server startup alone is not a test contract.
 
+## GitHub Actions lifecycle
+
+Research and temporary workflows should stay off the protected default branch
+where practical. If an exceptional ephemeral workflow is checked in under
+`.github/workflows`, filenames beginning with `research-`, `temporary-`,
+`tmp-`, or `experiment-` must include non-empty `# lifecycle-owner:` and
+`# lifecycle-retire:` header comments.
+
+Historical Actions runs and artifacts are retained as evidence; they do not
+require obsolete workflow source to remain on the default branch.
+
 ## Release changes
 
 The active release policy is documented in AGENTS.md section 9 and enforced by `.github/workflow-policy/check_release_provenance.py`.
