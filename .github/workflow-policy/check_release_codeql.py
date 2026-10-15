@@ -54,7 +54,7 @@ def verify_source(sha: str, tag: str, repo: str) -> None:
             "tag or release candidate SHA mismatch")
     # A local checkout/ref does not prove the remote tag stayed unchanged while
     # a long-running scan completed. Dereference annotated or lightweight tags.
-    refs = dict(line.split("\t", 1) for line in git(
+    refs = dict(reversed(line.split("\t", 1)) for line in git(
         "ls-remote", "--tags", "origin", f"refs/tags/{tag}",
         f"refs/tags/{tag}^{{}}").splitlines())
     remote_tag = refs.get(f"refs/tags/{tag}^{{}}", refs.get(f"refs/tags/{tag}"))
