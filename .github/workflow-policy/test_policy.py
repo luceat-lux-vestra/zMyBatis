@@ -142,6 +142,67 @@ jobs:
             failures,
         )
 
+    lifecycle_fixture = """# lifecycle-owner: issue #419
+# lifecycle-retire: delete after bounded workflow research is recorded
+name: Research lifecycle fixture
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo safe
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        checker = str(POLICY_DIR / "check_trust_boundary.py")
+
+        valid = root / "research-lifecycle-fixture.yml"
+        valid.write_text(lifecycle_fixture, encoding="utf-8")
+        expect(
+            "ephemeral workflow with lifecycle metadata is accepted",
+            run(["python3", checker, str(valid)]) == 0,
+            failures,
+        )
+
+        missing_owner = root / "temporary-lifecycle-fixture.yml"
+        missing_owner.write_text(
+            lifecycle_fixture.replace("# lifecycle-owner: issue #419\n", "# lifecycle-owner: \n"),
+            encoding="utf-8",
+        )
+        expect(
+            "ephemeral workflow missing lifecycle owner is rejected",
+            run(["python3", checker, str(missing_owner)]) != 0,
+            failures,
+        )
+
+        missing_retire = root / "experiment-lifecycle-fixture.yaml"
+        missing_retire.write_text(
+            lifecycle_fixture.replace(
+                "# lifecycle-retire: delete after bounded workflow research is recorded\n",
+                "# lifecycle-retire: \n",
+            ),
+            encoding="utf-8",
+        )
+        expect(
+            "ephemeral workflow missing lifecycle retirement condition is rejected",
+            run(["python3", checker, str(missing_retire)]) != 0,
+            failures,
+        )
+
+        maintained = root / "ci-fixture.yml"
+        maintained.write_text(
+            "\n".join(lifecycle_fixture.splitlines()[2:]) + "\n",
+            encoding="utf-8",
+        )
+        expect(
+            "maintained workflow filename needs no ephemeral lifecycle metadata",
+            run(["python3", checker, str(maintained)]) == 0,
+            failures,
+        )
+
     pins_rc = run(
         [
             "python3",
