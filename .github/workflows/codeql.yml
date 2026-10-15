@@ -161,5 +161,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$EXPECTED_SHA" FETCH_HEAD
