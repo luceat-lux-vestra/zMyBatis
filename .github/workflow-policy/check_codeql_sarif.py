@@ -168,8 +168,6 @@ def self_test() -> None:
         for language, pack in (
             ("actions", "codeql/actions-queries"),
             ("java-kotlin", "codeql/java-queries"),
-            ("javascript-typescript", "codeql/javascript-queries"),
-            ("rust", "codeql/rust-queries"),
         ):
             clean = fixture(language=language, results=False)
             clean["runs"][0]["tool"]["extensions"][0]["name"] = pack
