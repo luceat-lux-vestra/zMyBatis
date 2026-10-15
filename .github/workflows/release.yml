@@ -16,7 +16,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  codeql_preflight:
+    name: Release CodeQL preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    permissions:
+      contents: read
+      actions: write # Only this isolated nonpublishing job can dispatch CodeQL.
+    steps:
+      - name: Fetch tagged sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove release source and skip completed Marketplace recovery
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflow-policy/check_release_provenance.py tag "$RELEASE_TAG"
+          tagged="$(git rev-parse HEAD)"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$tagged" FETCH_HEAD
+          echo "sha=$tagged" >> "$GITHUB_OUTPUT"
+          released="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          echo "$released" | jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and .id != null' >/dev/null
+          published="$(echo "$released" | jq '[.assets[]? | select(.name == "zmybatis-release-published.json")] | length')"
+          [ "$published" -le 1 ] || exit 1
+          if [ "$published" -eq 1 ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reuse or automatically execute exact-source CodeQL
+        if: ${{ steps.source.outputs.publish == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.source.outputs.sha }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          python3 .github/workflow-policy/check_release_codeql.py \
+            --sha "$RELEASE_SHA" --tag "$RELEASE_TAG"
+
   release:
+    needs: codeql_preflight
     name: Publish Plugin
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -146,18 +196,6 @@ jobs:
             exit 1
           }
           echo "publish=true" >> "$GITHUB_OUTPUT"
-
-      - name: Require exact-tag-SHA CodeQL before first Marketplace publication
-        if: ${{ steps.state.outputs.publish == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_SHA: ${{ steps.source.outputs.commit }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/workflow-policy/check_release_codeql.py \
-            --sha "$RELEASE_SHA" --tag "$RELEASE_TAG"
 
       - name: Setup Java
         if: ${{ steps.state.outputs.publish == 'true' }}
