@@ -396,9 +396,9 @@ def main() -> None:
         print("Exact source CodeQL preflight accepted: " + json.dumps(proof, sort_keys=True))
         if os.environ.get("GITHUB_STEP_SUMMARY"):
             with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
-                out.write("### Exact-source CodeQL preflight\n\n\`\`\`json\n")
+                out.write("### Exact-source CodeQL preflight\n\n```json\n")
                 out.write(json.dumps(proof, indent=2, sort_keys=True))
-                out.write("\n\`\`\`\n")
+                out.write("\n```\n")
     except (ValueError, OSError, subprocess.CalledProcessError, json.JSONDecodeError,
             TypeError, KeyError) as error:
         print(f"::error::Release CodeQL preflight rejected: {error}", file=sys.stderr)
