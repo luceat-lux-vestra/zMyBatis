@@ -408,8 +408,10 @@ jobs:
       - name: Require recurring live-settings audit ownership
         run: python3 .github/workflow-policy/check_live_settings.py .github/merge-gate-policy.yml --static-only
 
-      - name: Verify CodeQL SARIF negative controls
-        run: python3 .github/workflow-policy/check_codeql_sarif.py --self-test
+      - name: Verify CodeQL security and release-preflight negative controls
+        run: |
+          python3 .github/workflow-policy/check_codeql_sarif.py --self-test
+          python3 .github/workflow-policy/check_release_codeql.py --self-test
 
       - name: Require release provenance contract
         run: python3 .github/workflow-policy/check_release_provenance.py static .
