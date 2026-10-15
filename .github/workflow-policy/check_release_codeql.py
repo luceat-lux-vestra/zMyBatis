@@ -52,6 +52,13 @@ def verify_source(sha: str, tag: str, repo: str) -> None:
     require(git("rev-parse", "HEAD") == sha, "release checkout SHA mismatch")
     require(git("rev-parse", f"refs/tags/{tag}^{{commit}}") == sha,
             "tag or release candidate SHA mismatch")
+    # A local checkout/ref does not prove the remote tag stayed unchanged while
+    # a long-running scan completed. Dereference annotated or lightweight tags.
+    refs = dict(line.split("\t", 1) for line in git(
+        "ls-remote", "--tags", "origin", f"refs/tags/{tag}",
+        f"refs/tags/{tag}^{{}}").splitlines())
+    remote_tag = refs.get(f"refs/tags/{tag}^{{}}", refs.get(f"refs/tags/{tag}"))
+    require(remote_tag == sha, "remote release tag moved or is unavailable")
     # Protected main and protected publication tag are verified independently
     # by the repository rulesets. Never require the tag SHA to be today's HEAD.
     subprocess.run(["git", "fetch", "--no-tags", "origin", "main"], check=True)
