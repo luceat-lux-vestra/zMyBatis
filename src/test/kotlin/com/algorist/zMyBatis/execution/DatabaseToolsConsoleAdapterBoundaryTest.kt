@@ -52,8 +52,8 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
 
         assertTrue(method.contains("artifact.executionTargetId"))
         assertTrue(method.contains("boundTarget == null"))
-        assertTrue(method.contains("currentTargetId() != boundTarget"))
-        assertTrue(method.contains("isInvocationValid() && currentTargetId() == boundTarget"))
+        assertTrue(method.contains("materializedDeliveryValid(boundTarget, currentTargetId, isInvocationValid)"))
+        assertTrue(adapter.contains("boundTarget != null && isInvocationValid() && currentTargetId() == boundTarget"))
         assertTrue(method.contains("sql = artifact.executionSql"))
         assertFalse(method.contains("sql = artifact.toString()"))
         assertFalse(method.contains("SqlFormatter"))
