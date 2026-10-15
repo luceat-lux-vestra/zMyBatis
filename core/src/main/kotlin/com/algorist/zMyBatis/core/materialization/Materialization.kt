@@ -1,6 +1,7 @@
 package com.algorist.zMyBatis.core.materialization
 
 import com.algorist.zMyBatis.core.execution.ExecutionTargetId
+import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.algorist.zMyBatis.core.preparation.PreparationMetadata
 import com.algorist.zMyBatis.core.preparation.PreparedExecution
 import com.algorist.zMyBatis.core.source.JavaStatementId
@@ -137,6 +138,41 @@ object ZeroBindingExecutionMaterializer : ExecutionMaterializer {
         return materialized(
             prepared = prepared,
             executionSql = prepared.sqlWithPlaceholders,
+        )
+    }
+}
+
+/**
+ * Zero-binding materialization for the replacement execution path after one exact target has
+ * already been resolved.
+ *
+ * Unlike [ZeroBindingExecutionMaterializer], this artifact is suitable for orchestration that must
+ * keep preview and later dispatch tied to one exact datasource/schema identity. No dialect
+ * literalization occurs here; the optional database id is retained only as target-derived semantic
+ * context/fingerprint input.
+ */
+class TargetBoundZeroBindingExecutionMaterializer(
+    private val target: ResolvedExecutionTarget,
+) : ExecutionMaterializer {
+    override fun materialize(prepared: PreparedExecution): MaterializationResult {
+        if (prepared.rawInterpolations.isNotEmpty()) {
+            return failed(
+                MaterializationFailureKind.RAW_INTERPOLATION_REQUIRES_POLICY,
+                RAW_INTERPOLATION_POLICY_REQUIRED,
+            )
+        }
+        if (prepared.orderedBindings.isNotEmpty()) {
+            return failed(
+                MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
+                BOUND_EXECUTION_REQUIRED,
+            )
+        }
+
+        return materialized(
+            prepared = prepared,
+            executionSql = prepared.sqlWithPlaceholders,
+            executionTargetId = target.targetId,
+            executionDialectId = target.effectiveDatabaseId?.value,
         )
     }
 }
