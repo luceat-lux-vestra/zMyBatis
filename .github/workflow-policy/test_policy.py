@@ -164,57 +164,28 @@ jobs:
         failures,
     )
 
-    # CodeQL pull-request analysis is the only audited PR write exception.
-    # It may upload code-scanning results with exactly security-events:write;
-    # renaming the workflow or adding any second write scope must fail closed.
+    # CodeQL is never allowed on PR/push. An injected pull_request event
+    # must not silently re-enable privileged checks of untrusted source.
     codeql_source = (WORKFLOWS_DIR / "codeql.yml").read_text(encoding="utf-8")
+    expect("CodeQL has no PR or push trigger",
+           "  pull_request:" not in codeql_source and "  push:" not in codeql_source,
+           failures)
+    expect("CodeQL preserves manual exact SHA, weekly cadence and manual JVM analysis",
+           all(fragment in codeql_source for fragment in (
+               "workflow_dispatch:", "candidate_sha:", 'cron: "47 3 * * 3"',
+               "language: actions", "language: java-kotlin",
+               "build-mode: manual", "java-version: 25",
+               "check_codeql_sarif.py", "retention-days: 90",
+           )), failures)
     with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        exact = tmp_path / "codeql.yml"
-        exact.write_text(codeql_source, encoding="utf-8")
-        exact_rc = run([
-            "python3",
-            str(POLICY_DIR / "check_trust_boundary.py"),
-            str(exact),
-        ])
-        expect(
-            "CodeQL exact PR security-events exception is accepted",
-            exact_rc == 0,
-            failures,
-        )
-
-        renamed = tmp_path / "renamed-codeql.yml"
-        renamed.write_text(codeql_source, encoding="utf-8")
-        renamed_rc = run([
-            "python3",
-            str(POLICY_DIR / "check_trust_boundary.py"),
-            str(renamed),
-        ])
-        expect(
-            "CodeQL exception is path-scoped and rejects a renamed workflow",
-            renamed_rc != 0,
-            failures,
-        )
-
-        broadened = tmp_path / "codeql.yml"
-        broadened.write_text(
-            codeql_source.replace(
-                "security-events: write",
-                "security-events: write\n      contents: write",
-                1,
-            ),
+        path = Path(tmp) / "renamed-codeql.yml"
+        path.write_text(
+            codeql_source.replace("  schedule:", "  pull_request:\\n  schedule:", 1),
             encoding="utf-8",
         )
-        broadened_rc = run([
-            "python3",
-            str(POLICY_DIR / "check_trust_boundary.py"),
-            str(broadened),
-        ])
-        expect(
-            "CodeQL exception rejects any additional write scope",
-            broadened_rc != 0,
-            failures,
-        )
+        expect("PR-injected CodeQL is rejected by trust-boundary checker",
+               run(["python3", str(POLICY_DIR / "check_trust_boundary.py"),
+                    str(path)]) != 0, failures)
 
     required_rc = run(
         [
