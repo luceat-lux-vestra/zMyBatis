@@ -104,6 +104,35 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libegl1
           ldconfig -p | grep -F 'libEGL.so.1'
 
+      - name: Start pinned PostgreSQL E2E service
+        if: ${{ github.event_name != 'push' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --rm \
+            --name zmybatis-postgres-e2e \
+            -e POSTGRES_USER=zmybatis \
+            -e POSTGRES_DB=zmybatis \
+            -e POSTGRES_HOST_AUTH_METHOD=trust \
+            -p 5432:5432 \
+            postgres@sha256:0b2882c46a2b8d8e148431b333394348cf4d7f15aec6df7f17d51dc641e56cfa
+          # The official image starts a temporary Unix-socket-only server during
+          # initdb and then shuts it down before launching the final TCP server. Waiting
+          # without -h can therefore produce a false-ready race. Require the final TCP
+          # listener and a real query through that listener.
+          for attempt in $(seq 1 60); do
+            if docker exec zmybatis-postgres-e2e               pg_isready -h 127.0.0.1 -U zmybatis -d zmybatis >/dev/null &&
+              docker exec zmybatis-postgres-e2e                 psql -h 127.0.0.1 -U zmybatis -d zmybatis -Atc 'select 1' | grep -qx '1'; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              docker logs zmybatis-postgres-e2e
+              exit 1
+            fi
+            sleep 1
+          done
+          docker exec zmybatis-postgres-e2e             psql -h 127.0.0.1 -U zmybatis -d zmybatis -Atc 'select version()'
+
       - name: Run Starter / Driver E2E
         if: ${{ github.event_name != 'push' }}
         shell: bash
@@ -116,15 +145,15 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          mapfile -t logs < <(find out/ide-tests/tests -type f -path '*/action-real-database/log/idea.log' -print 2>/dev/null)
+          mapfile -t logs < <(find out/ide-tests/tests -type f \( -path '*/action-real-database/log/idea.log' -o -path '*/action-postgresql-bigint/log/idea.log' \) -print 2>/dev/null)
           if [[ ${#logs[@]} -eq 0 ]]; then
-            echo "::warning::No action-real-database idea.log found"
+            echo "::warning::No real-database/PostgreSQL idea.log found"
             exit 0
           fi
 
           for log in "${logs[@]}"; do
             echo "===== $log ====="
-            grep -E -i 'zMyBatis|com[.]algorist[.]zMyBatis|org[.]h2|jdbc:h2|SQLException|SQLState|JDBC|JdbcConsole|DatabaseDriver|DataSource|connection|driver' "$log" | tail -n 600 || true
+            grep -E -i 'zMyBatis|com[.]algorist[.]zMyBatis|org[.]h2|jdbc:h2|org[.]postgresql|jdbc:postgresql|SQLException|SQLState|JDBC|JdbcConsole|DatabaseDriver|DataSource|connection|driver|Query History' "$log" | tail -n 900 || true
           done
 
       - name: Upload E2E artifact identity
