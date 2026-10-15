@@ -42,6 +42,23 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         assertFalse(adapter.contains("Messages.show"))
     }
 
+    @Test
+    fun `Leap artifact delivery keeps exact SQL and target checks inside async dispatch`() {
+        val adapter = source(
+            "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"
+        )
+        val method = adapter.substringAfter("fun executeMaterialized(")
+            .substringBefore("\n    fun executeSql(")
+
+        assertTrue(method.contains("artifact.executionTargetId"))
+        assertTrue(method.contains("boundTarget == null"))
+        assertTrue(method.contains("currentTargetId() != boundTarget"))
+        assertTrue(method.contains("isInvocationValid() && currentTargetId() == boundTarget"))
+        assertTrue(method.contains("sql = artifact.executionSql"))
+        assertFalse(method.contains("sql = artifact.toString()"))
+        assertFalse(method.contains("SqlFormatter"))
+    }
+
     private fun source(relativePath: String): String =
         Files.readString(repositoryRoot().resolve(relativePath))
 
