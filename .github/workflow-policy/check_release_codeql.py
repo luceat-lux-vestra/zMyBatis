@@ -195,15 +195,17 @@ def find_runs(repo: str, sha: str, workflow_id: int) -> list[dict]:
     found = []
     # Searching by event head_sha would exclude historical-commit scans.
     # A bounded recent search may miss old evidence; that means a fresh scan.
-    for page in range(1, 6):
+    # Search only approved trigger types. Historical PR-triggered runs can be
+    # numerous; fetching their pages every 15 seconds risks Actions API limits.
+    # Beyond the bounded recent eligible window, start a new verified scan.
+    for event in ("workflow_dispatch", "schedule"):
         data = gh_json(
-            f"repos/{repo}/actions/workflows/{WORKFLOW}/runs?per_page=100&page={page}"
+            f"repos/{repo}/actions/workflows/{WORKFLOW}/runs"
+            f"?event={event}&per_page=100"
         )
         runs = data.get("workflow_runs")
         require(isinstance(runs, list), "malformed workflow run listing")
         found.extend(x for x in runs if eligible_run(x, sha, workflow_id))
-        if len(runs) < 100:
-            break
     return sorted(found, key=lambda r: (r.get("created_at", ""), r.get("id", 0)),
                   reverse=True)
 
