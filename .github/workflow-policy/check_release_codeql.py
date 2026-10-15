@@ -358,7 +358,7 @@ def self_test() -> None:
              patch(__name__ + ".verify_evidence", return_value={"run_id": 17}), \
              patch(__name__ + ".time.sleep"), \
              patch(__name__ + ".time.monotonic",
-                   side_effect=(x for x in range(0, 1000, 10))):
+                   side_effect=(x for x in range(0, 10000))):
             if failure:
                 reject(lambda: run_preflight(sha, "v1.0.0", "owner/repo",
                                            timeout=50, poll=1), failure)
