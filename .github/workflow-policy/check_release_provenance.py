@@ -184,6 +184,10 @@ def verify_static(repo: Path) -> list[str]:
     if not (source_pos >= 0 and recovery_pos >= 0
             and security_pos > source_pos > recovery_pos
             and require_gate in preflight_job
+            and "group: release-codeql-preflight" in preflight_job
+            and "cancel-in-progress: false" in preflight_job
+            and "path: .trusted-codeql-preflight" in preflight_job
+            and ".trusted-codeql-preflight/.github/workflow-policy/check_release_codeql.py" in preflight_job
             and "needs: codeql_preflight" in release_job
             and "      - name: Setup Java" in release_job):
         failures.append(
