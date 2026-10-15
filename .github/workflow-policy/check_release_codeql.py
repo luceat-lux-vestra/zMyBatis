@@ -269,6 +269,42 @@ def run_preflight(sha: str, tag: str, repo: str,
 def self_test() -> None:
     sha = "a" * 40
     other = "b" * 40
+
+    # An older protected-main candidate is valid, but not if main ancestry or
+    # its remote publication tag is altered before the verdict.
+    def source_git(*args):
+        if args == ("rev-parse", "HEAD"):
+            return sha
+        if args == ("rev-parse", "refs/tags/v1.0.0^{commit}"):
+            return sha
+        if args[:3] == ("ls-remote", "--tags", "origin"):
+            return sha + "\trefs/tags/v1.0.0"
+        raise AssertionError(f"unexpected git call: {args!r}")
+
+    with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}), \
+         patch(__name__ + ".git", side_effect=source_git), \
+         patch(__name__ + ".subprocess.run") as source_run:
+        source_run.return_value.returncode = 0
+        verify_source(sha, "v1.0.0", "owner/repo")
+        source_run.return_value.returncode = 1
+        try:
+            verify_source(sha, "v1.0.0", "owner/repo")
+        except ValueError as error:
+            assert "not in current protected main" in str(error)
+        else:
+            raise AssertionError("untrusted main ancestry accepted")
+
+    with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}), \
+         patch(__name__ + ".git", side_effect=lambda *args: (
+             other + "\trefs/tags/v1.0.0" if args[:3] ==
+             ("ls-remote", "--tags", "origin") else sha)):
+        try:
+            verify_source(sha, "v1.0.0", "owner/repo")
+        except ValueError as error:
+            assert "remote release tag moved" in str(error)
+        else:
+            raise AssertionError("changed remote release tag accepted")
+
     modern = {"workflow_id": 2, "path": ".github/workflows/codeql.yml",
               "head_sha": other, "head_branch": "main", "event": "workflow_dispatch",
               "display_title": RUN_PREFIX + sha, "run_attempt": 1,
