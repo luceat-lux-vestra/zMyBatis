@@ -182,7 +182,7 @@ def verify_static(repo: Path) -> list[str]:
     source_pos = preflight_job.find("check_release_provenance.py tag")
     require_gate = "steps.source.outputs.publish == 'true'"
     if not (source_pos >= 0 and recovery_pos >= 0
-            and security_pos > recovery_pos > source_pos
+            and security_pos > source_pos > recovery_pos
             and require_gate in preflight_job
             and "needs: codeql_preflight" in release_job
             and "      - name: Setup Java" in release_job):
