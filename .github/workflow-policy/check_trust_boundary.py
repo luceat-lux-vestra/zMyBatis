@@ -45,6 +45,18 @@ CHECKOUT_USES = re.compile(r"^\s*uses:\s*actions/checkout@")
 PERSIST_CREDENTIALS_FALSE = re.compile(
     r"^\s*persist-credentials:\s*false\s*$"
 )
+EPHEMERAL_WORKFLOW = re.compile(
+    r"^(?:research|temporary|tmp|experiment)(?:[-_].*)?\.ya?ml$",
+    re.IGNORECASE,
+)
+LIFECYCLE_OWNER = re.compile(
+    r"^\s*#\s*lifecycle-owner:\s*(\S.*)$",
+    re.IGNORECASE,
+)
+LIFECYCLE_RETIRE = re.compile(
+    r"^\s*#\s*lifecycle-retire:\s*(\S.*)$",
+    re.IGNORECASE,
+)
 
 KNOWN_PERMISSION_SCOPES = {
     "actions",
@@ -296,6 +308,25 @@ def check_file(path: Path) -> list[str]:
     all_lines = path.read_text(encoding="utf-8").splitlines()
     workflow_permissions = workflow_level_permissions(all_lines)
     failures: list[str] = []
+
+    if EPHEMERAL_WORKFLOW.fullmatch(path.name):
+        header = all_lines[:20]
+        owner = next(
+            (match.group(1).strip() for line in header if (match := LIFECYCLE_OWNER.match(line))),
+            "",
+        )
+        retire = next(
+            (match.group(1).strip() for line in header if (match := LIFECYCLE_RETIRE.match(line))),
+            "",
+        )
+        if not owner:
+            failures.append(
+                f"{path}: ephemeral workflow requires non-empty # lifecycle-owner: header metadata"
+            )
+        if not retire:
+            failures.append(
+                f"{path}: ephemeral workflow requires non-empty # lifecycle-retire: header metadata"
+            )
 
     if workflow_permissions.unsupported:
         failures.append(
