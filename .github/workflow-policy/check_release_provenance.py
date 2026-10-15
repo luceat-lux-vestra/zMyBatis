@@ -135,7 +135,9 @@ def verify_static(repo: Path) -> list[str]:
         "zmybatis-release-identity.json",
         "zmybatis-release-published.json",
         'publication_state: "pending"',
-        "Require exact-tag-SHA CodeQL before first Marketplace publication",
+        "Reuse or automatically execute exact-source CodeQL",
+        "needs: codeql_preflight",
+        "actions: write # Only this isolated nonpublishing job can dispatch CodeQL.",
         "check_release_codeql.py",
         'steps.state.outputs.publish == \'true\'',
         "actions: read # Inspect trusted CodeQL runs, jobs and original SARIF artifacts.",
@@ -169,12 +171,34 @@ def verify_static(repo: Path) -> list[str]:
     if 'RELEASE_ASSET: ${{ steps.artifact.outputs.path }}' in release:
         failures.append("GitHub Release must not upload the unsigned buildPlugin archive")
 
-    security_pos = release.find("check_release_codeql.py")
-    recovery_pos = release.find("Resolve publication recovery state")
-    setup_pos = release.find("      - name: Setup Java")
-    if not (recovery_pos >= 0 and security_pos > recovery_pos and
-            setup_pos > security_pos):
-        failures.append("exact-tag-SHA CodeQL preflight must run after recovery classification and before build/sign/publish")
+    # Authorize a separate, minimally privileged preflight job instead of
+    # granting actions:write to the token also used for plugin publication.
+    preflight_job = (
+        release.split("\n  codeql_preflight:", 1)[1].split("\n  release:", 1)[0]
+        if "\n  codeql_preflight:" in release and "\n  release:" in release else ""
+    )
+    security_pos = preflight_job.find("check_release_codeql.py")
+    recovery_pos = preflight_job.find("Prove release source and skip completed Marketplace recovery")
+    source_pos = preflight_job.find("check_release_provenance.py tag")
+    require_gate = "steps.source.outputs.publish == 'true'"
+    if not (source_pos >= 0 and recovery_pos >= 0
+            and security_pos > recovery_pos > source_pos
+            and require_gate in preflight_job
+            and "needs: codeql_preflight" in release_job
+            and "      - name: Setup Java" in release_job):
+        failures.append(
+            "CodeQL preflight must follow source/recovery classification in the "
+            "prerequisite job and precede all publisher work"
+        )
+    if not ("contents: read" in preflight_job and "actions: write" in preflight_job
+            and "contents: write" not in preflight_job
+            and "id-token: write" not in preflight_job
+            and "attestations: write" not in preflight_job
+            and "environment: jetbrains-marketplace" not in preflight_job
+            and "continue-on-error" not in preflight_job
+            and not any(op in preflight_job for op in
+                        ("publishPlugin", "gh release upload", "signPlugin"))):
+        failures.append("CodeQL dispatch job must remain isolated and nonpublishing")
     artifact_pos = release.find("check_release_provenance.py artifact")
     sign_pos = release.find("./gradlew signPlugin verifyPluginSignature")
     capture_pos = release.find("Capture verified signed release asset")
