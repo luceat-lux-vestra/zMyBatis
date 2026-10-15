@@ -48,6 +48,36 @@ def check(directory: Path, language: str, candidate_sha: str) -> dict:
         not isinstance(x, dict) or x.get("executionSuccessful") is not True for x in invocations
     ):
         raise ValueError("CodeQL analysis reports an unsuccessful invocation")
+    # Original CodeQL diagnostic events prove that at least one file for the
+    # requested language was actually extracted. A loaded query pack and an
+    # empty result set alone do not establish coverage (zero-file scans).
+    diagnostic, suffixes = {
+        "actions": ("actions/diagnostics/successfully-extracted-files", (".yml", ".yaml")),
+        "java-kotlin": ("java/diagnostics/successfully-extracted-files", (".kt",)),
+    }[language]
+    extracted = set()
+    for invocation in invocations:
+        notifications = invocation.get("toolExecutionNotifications")
+        if not isinstance(notifications, list):
+            raise ValueError("CodeQL extraction diagnostics are missing")
+        for note in notifications:
+            if not isinstance(note, dict):
+                raise ValueError("malformed CodeQL extraction diagnostic")
+            if note.get("descriptor", {}).get("id") != diagnostic:
+                continue
+            locations = note.get("locations")
+            if not isinstance(locations, list):
+                raise ValueError("malformed CodeQL extracted-file locations")
+            for location in locations:
+                if not isinstance(location, dict):
+                    raise ValueError("malformed CodeQL extraction file location")
+                uri = (location.get("physicalLocation", {})
+                       .get("artifactLocation", {}).get("uri"))
+                if isinstance(uri, str) and uri.endswith(suffixes):
+                    extracted.add(uri)
+    if not extracted:
+        raise ValueError(f"no verified {language} files extracted by CodeQL")
+
     # CodeQL SARIF puts query rules in tool.extensions[].rules, not in
     # tool.driver.rules. A clean scan may contain zero results and no driver rules.
     tool = run.get("tool", {})
@@ -142,7 +172,17 @@ def self_test() -> None:
             "tool": {"driver": {"name": "CodeQL"}, "extensions": [
                 {"name": "codeql/java-queries", "rules": [rule]}]},
             "automationDetails": {"id": "/language:" + language + "/"},
-            "invocations": [{"executionSuccessful": True}],
+            "invocations": [{"executionSuccessful": True,
+                             "toolExecutionNotifications": [{
+                                 "descriptor": {"id": (
+                                     "actions/diagnostics/successfully-extracted-files"
+                                     if language == "actions" else
+                                     "java/diagnostics/successfully-extracted-files")},
+                                 "locations": [{"physicalLocation": {"artifactLocation": {
+                                     "uri": (".github/workflows/codeql.yml" if language == "actions"
+                                             else "src/main/kotlin/Sample.kt")
+                                 }}}]
+                             }]}],
             "results": [{"ruleId": "java/test", "rule": {
                 "id": "java/test", "index": 0, "toolComponent": {"index": 0}
             }}] if results else []}]}
@@ -190,6 +230,13 @@ def self_test() -> None:
         bad = fixture()
         bad["runs"][0]["invocations"][0]["executionSuccessful"] = False
         probe(bad, "unsuccessful invocation")
+        bad = fixture()
+        bad["runs"][0]["invocations"][0]["toolExecutionNotifications"] = []
+        probe(bad, "no verified java-kotlin files extracted")
+        bad = fixture()
+        bad["runs"][0]["invocations"][0]["toolExecutionNotifications"][0][
+            "locations"][0]["physicalLocation"]["artifactLocation"]["uri"] = "NoKotlin.java"
+        probe(bad, "no verified java-kotlin files extracted")
         bad = fixture()
         bad["runs"][0]["results"][0]["ruleId"] = "missing"
         probe(bad, "unknown rule")

@@ -147,9 +147,9 @@ object XmlStatementParameterContractFactory {
         val foreachLocals = foreach
             ?.let { declaration -> listOfNotNull(declaration.item, declaration.index).toSet() }
             .orEmpty()
-        val callerRoots = placeholderScan.uses
-            .mapTo(linkedSetOf()) { use -> use.expression.substringBefore('.') }
-        if (foreachLocals.any { it in callerRoots }) {
+        if (foreachLocals.any { local ->
+                placeholderScan.uses.any { use -> use.expression.substringBefore('.') == local }
+            }) {
             return blockedContract(
                 statementId,
                 sourceRevisions,
