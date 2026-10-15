@@ -1,30 +1,26 @@
 name: CodeQL
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths-ignore:
-      - "README.md"
-      - "CONTRIBUTING.md"
-      - "AGENTS.md"
-      - "docs/*.md"
-      - "docs/**/*.md"
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: "Exact 40-character protected main SHA to scan"
+        required: true
+        type: string
   schedule:
     - cron: "47 3 * * 3"
 
 permissions: {}
 
 concurrency:
-  group: codeql-${{ github.ref }}
+  group: codeql-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: true
 
 jobs:
   analyze:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       actions: read
       contents: read
@@ -38,8 +34,21 @@ jobs:
           - language: java-kotlin
             build-mode: manual
     env:
-      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}
     steps:
+      - name: Verify exact protected-main candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Exact 40-character SHA required"; exit 1; }
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::CodeQL must originate on main"; exit 1; }
+          [ "$GITHUB_SHA" = "$EXPECTED_SHA" ] || { echo "::error::Event SHA differs from candidate SHA"; exit 1; }
+          case "$GITHUB_EVENT_NAME" in schedule|workflow_dispatch) ;; *) exit 1 ;; esac
+          remote_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          [ "$remote_main" = "$EXPECTED_SHA" ] || { echo "::error::Candidate SHA is not current protected main"; exit 1; }
+
       - name: Fetch exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,6 +57,9 @@ jobs:
 
       - name: Verify exact checkout
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Exercise SARIF verifier failure fixtures
+        run: python3 .github/workflow-policy/check_codeql_sarif.py --self-test
 
       - name: Setup Java
         if: ${{ matrix.language == 'java-kotlin' }}
@@ -60,9 +72,7 @@ jobs:
         if: ${{ matrix.language == 'java-kotlin' }}
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
-          # Untrusted PR runs restore only. Trusted default-branch runs seed
-          # the architecture-isolated Linux-ARM64 Gradle cache.
-          # Weekly default-branch scanning must not create a second Gradle cache family.
+          # Preserve the existing ARM64 cache-family and read-only contract.
           cache-read-only: true
 
       - name: Initialize CodeQL
@@ -76,6 +86,31 @@ jobs:
         run: ./gradlew --no-build-cache buildPlugin :mybatis-engine:compileKotlin -Dorg.gradle.jvmargs=-Xmx3g
 
       - name: Analyze
+        id: analyze
         uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           category: "/language:${{ matrix.language }}"
+          upload: always
+          output: ${{ runner.temp }}/codeql-${{ matrix.language }}
+
+      - name: Retain unmodified original language SARIF
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: codeql-${{ env.EXPECTED_SHA }}-${{ matrix.language }}
+          path: ${{ steps.analyze.outputs.sarif-output }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Fail closed on malformed or High/Critical SARIF
+        env:
+          SARIF_DIR: ${{ steps.analyze.outputs.sarif-output }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflow-policy/check_codeql_sarif.py \
+            --sarif-dir "$SARIF_DIR" \
+            --language "${{ matrix.language }}" \
+            --candidate-sha "$EXPECTED_SHA"
+          remote_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          [ "$remote_main" = "$EXPECTED_SHA" ] || { echo "::error::Protected main moved during analysis"; exit 1; }
