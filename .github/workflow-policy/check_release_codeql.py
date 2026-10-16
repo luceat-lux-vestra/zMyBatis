@@ -631,53 +631,6 @@ def self_test() -> None:
         result = run_preflight(sha, "v1.0.0", "owner/repo",
                                timeout=50, poll=1)
         assert result["execution"] == "dispatched"
-        assert checks.call_count == 2 and regenerated.call_count == 1    active = dict(modern, status="in_progress", conclusion=None)
-    with patch(__name__ + ".find_runs", return_value=[
-        active, dict(active, id=18)]):
-        reject(lambda: select_run("owner/repo", sha, 2), "multiple concurrent")
-    with patch(__name__ + ".gh_json", return_value={
-        "workflow_runs": long_page
-    }):
-        reject(lambda: find_runs("owner/repo", sha, 2), "1000-run bound")
-    queued = dict(modern, status="queued", conclusion=None)
-    failed = dict(modern, conclusion="failure")
-    exercise([modern, modern], 0)
-    # Two independently eligible complete same-SHA scans must each pass their
-    # original SARIF and source-manifest verification; reuse only afterwards.
-    with patch(__name__ + ".verify_source"), \
-         patch(__name__ + ".gh_json", return_value={"id": 2, "state": "active"}), \
-         patch(__name__ + ".select_run", side_effect=[
-             modern, modern, dict(modern, id=18), None]), \
-         patch(__name__ + ".dispatch") as unnecessary, \
-         patch(__name__ + ".verify_evidence", side_effect=[
-             {"run_id": 17}, {"run_id": 18}]) as checks, \
-         patch(__name__ + ".time.sleep"), \
-         patch(__name__ + ".time.monotonic",
-               side_effect=(x for x in range(0, 10000))):
-        reuse = run_preflight(sha, "v1.0.0", "owner/repo",
-                              timeout=50, poll=1)
-        assert reuse["execution"] == "reused-or-joined"
-        assert checks.call_count == 2 and unnecessary.call_count == 0
-
-    exercise([None, None, queued, active, modern], 1)
-    exercise([active, active, modern], 0)
-    exercise([failed, failed], 0, "ended")
-    exercise([None] * 10, 1, "timed out")
-    # A stale completed scanner first requires fresh canonical dispatch;
-    # the complete new scanner may then authorize the unchanged source.
-    with patch(__name__ + ".verify_source"), \
-         patch(__name__ + ".gh_json", return_value={"id": 2, "state": "active"}), \
-         patch(__name__ + ".select_run", side_effect=[
-             modern, modern, None, queued, active, modern]), \
-         patch(__name__ + ".dispatch") as regenerated, \
-         patch(__name__ + ".verify_evidence", side_effect=[
-             None, {"run_id": 17}]) as checks, \
-         patch(__name__ + ".time.sleep"), \
-         patch(__name__ + ".time.monotonic",
-               side_effect=(x for x in range(0, 10000))):
-        result = run_preflight(sha, "v1.0.0", "owner/repo",
-                               timeout=50, poll=1)
-        assert result["execution"] == "dispatched"
         assert checks.call_count == 2 and regenerated.call_count == 1
     print("Exact-source CodeQL reuse/dispatch/join/wait negative controls passed")
 
