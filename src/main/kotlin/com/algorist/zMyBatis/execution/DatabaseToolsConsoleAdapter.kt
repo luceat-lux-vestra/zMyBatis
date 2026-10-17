@@ -1,5 +1,7 @@
 package com.algorist.zMyBatis.execution
 
+import com.algorist.zMyBatis.core.execution.ExecutionTargetId
+import com.algorist.zMyBatis.core.materialization.MaterializedExecution
 import com.algorist.zMyBatis.services.ConsoleCacheService
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.console.JdbcConsoleProvider
@@ -167,6 +169,38 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             LOG.error("zMyBatis: fatal schema-switch failure", fatal)
             throw fatal
         }
+
+    /**
+     * Non-shipping Leap delivery entry point. The caller owns source/cancellation checks and
+     * live exact-target resolution; this method rechecks them at every executeSql dispatch
+     * boundary, including the editor-open callback and immediately before native invocation.
+     *
+     * Neither preview text nor a formatter may become the execution payload.
+     */
+    @Suppress("unused") // #417 non-shipping integration boundary; no registered caller before #66 cutover.
+    fun executeMaterialized(
+        console: JdbcConsole,
+        artifact: MaterializedExecution,
+        currentTargetId: () -> ExecutionTargetId?,
+        isInvocationValid: () -> Boolean,
+        onExecuted: () -> Unit,
+        onFailure: (DatabaseToolsSqlExecutionFailure) -> Unit,
+    ) {
+        val boundTarget = artifact.executionTargetId
+        if (!materializedDeliveryValid(boundTarget, currentTargetId, isInvocationValid)) {
+            onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
+            return
+        }
+        executeSql(
+            console = console,
+            sql = artifact.executionSql,
+            preExecutionCheck = {
+                materializedDeliveryValid(boundTarget, currentTargetId, isInvocationValid)
+            },
+            onExecuted = onExecuted,
+            onFailure = onFailure,
+        )
+    }
 
     fun executeSql(
         console: JdbcConsole,
@@ -369,3 +403,10 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         }
     }
 }
+
+/** Shared admission predicate for each async boundary; an absent exact target never executes. */
+internal fun materializedDeliveryValid(
+    boundTarget: ExecutionTargetId?,
+    currentTargetId: () -> ExecutionTargetId?,
+    isInvocationValid: () -> Boolean,
+): Boolean = boundTarget != null && isInvocationValid() && currentTargetId() == boundTarget
