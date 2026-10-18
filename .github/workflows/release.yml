@@ -76,15 +76,75 @@ jobs:
           python3 .trusted-codeql-preflight/.github/workflow-policy/check_release_codeql.py \
             --sha "$RELEASE_SHA" --tag "$RELEASE_TAG"
 
+  qodana_preflight:
+    name: Release Qodana preflight
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-qodana-preflight
+      cancel-in-progress: false
+    timeout-minutes: 65
+    permissions:
+      contents: read
+      actions: write # Only this isolated nonpublishing job can dispatch trusted Qodana.
+    steps:
+      - name: Fetch tagged sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove release source and skip completed Marketplace recovery
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflow-policy/check_release_provenance.py tag "$RELEASE_TAG"
+          tagged="$(git rev-parse HEAD)"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$tagged" FETCH_HEAD
+          echo "sha=$tagged" >> "$GITHUB_OUTPUT"
+          released="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          echo "$released" | jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and .id != null' >/dev/null
+          published="$(echo "$released" | jq '[.assets[]? | select(.name == "zmybatis-release-published.json")] | length')"
+          [ "$published" -le 1 ] || exit 1
+          if [ "$published" -eq 1 ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout trusted main Qodana preflight policy
+        if: ${{ steps.source.outputs.publish == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          path: .trusted-qodana-preflight
+          persist-credentials: false
+
+      - name: Reuse or automatically execute exact-source Qodana
+        if: ${{ steps.source.outputs.publish == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.source.outputs.sha }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          python3 .trusted-qodana-preflight/.github/workflow-policy/check_release_qodana.py \
+            --sha "$RELEASE_SHA" --tag "$RELEASE_TAG"
+
   release:
-    needs: codeql_preflight
+    needs: [ codeql_preflight, qodana_preflight ]
     name: Publish Plugin
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: jetbrains-marketplace
     permissions:
       contents: write
-      actions: read # Inspect trusted CodeQL runs, jobs and original SARIF artifacts.
+      actions: read # Inspect trusted CodeQL/Qodana runs, jobs and original SARIF artifacts.
       id-token: write
       attestations: write
     steps:
