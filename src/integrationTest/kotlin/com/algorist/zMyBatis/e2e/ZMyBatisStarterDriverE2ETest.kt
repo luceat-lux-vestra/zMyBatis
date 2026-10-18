@@ -154,6 +154,10 @@ class ZMyBatisStarterDriverE2ETest {
             "com.intellij.openapi.editor.colors.impl.EditorColorsManagerImpl.getSchemeForCurrentUITheme"
         private val pluginArchive: Path = pathOf(System.getProperty("path.to.build.plugin")).toAbsolutePath()
         private val sampleProject: Path = pathOf("src/integrationTest/testProject").toAbsolutePath()
+        private val activationSeedLock = Any()
+
+        @Volatile
+        private var sharedActivationSeedConfigDir: Path? = null
 
         init {
             // Starter and the IDE run in separate processes. Make IDE-side exceptions/freezes fail
@@ -780,17 +784,79 @@ class ZMyBatisStarterDriverE2ETest {
     private fun starterContext(
         testName: String,
         projectDir: Path,
-    ) =
-        Starter.newContext(
-            testName,
-            TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(projectDir)).useRelease(IDE_RELEASE),
-        ).apply {
-            System.getenv("LICENSE_KEY")
-                ?.takeIf { it.isNotBlank() }
-                ?.let { setLicense(it) }
-            PluginConfigurator(this).installPluginFromPath(pluginArchive)
-            activateBeforeOpeningProject(this)
+    ): IDETestContext {
+        val context =
+            Starter.newContext(
+                testName,
+                TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(projectDir)).useRelease(IDE_RELEASE),
+            ).apply {
+                System.getenv("LICENSE_KEY")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { setLicense(it) }
+                PluginConfigurator(this).installPluginFromPath(pluginArchive)
+            }
+
+        val restoreStartedAtNanos = System.nanoTime()
+        copyDirectory(activationSeedConfigDir(), context.paths.configDir)
+        assertTrue(
+            Files.isRegularFile(context.paths.configDir.resolve("idea.key")),
+            "activation seed must materialize an independent licensed scenario config",
+        )
+        val restoreDurationMs = (System.nanoTime() - restoreStartedAtNanos) / 1_000_000
+        println(
+            "ZMYBATIS_E2E_ACTIVATION_RESTORE test=$testName duration_ms=$restoreDurationMs",
+        )
+        return context
+    }
+
+    private fun activationSeedConfigDir(): Path {
+        sharedActivationSeedConfigDir?.let { return it }
+        return synchronized(activationSeedLock) {
+            sharedActivationSeedConfigDir
+                ?: createActivationSeedConfig().also { sharedActivationSeedConfigDir = it }
         }
+    }
+
+    private fun createActivationSeedConfig(): Path {
+        val seedContext =
+            Starter.newContext(
+                "activation-seed",
+                TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(sampleProject)).useRelease(IDE_RELEASE),
+            ).apply {
+                System.getenv("LICENSE_KEY")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { setLicense(it) }
+                PluginConfigurator(this).installPluginFromPath(pluginArchive)
+            }
+
+        val seedStartedAtNanos = System.nanoTime()
+        activateBeforeOpeningProject(seedContext)
+        val regularFiles =
+            Files.walk(seedContext.paths.configDir).use { paths ->
+                paths.filter { Files.isRegularFile(it) }.count()
+            }
+        val seedDurationMs = (System.nanoTime() - seedStartedAtNanos) / 1_000_000
+        println(
+            "ZMYBATIS_E2E_ACTIVATION_SEED_READY duration_ms=$seedDurationMs files=$regularFiles",
+        )
+        return seedContext.paths.configDir
+    }
+
+    private fun copyDirectory(sourceRoot: Path, destinationRoot: Path) {
+        Files.createDirectories(destinationRoot)
+        Files.walk(sourceRoot).use { paths ->
+            paths.forEach { source ->
+                val relative = sourceRoot.relativize(source)
+                val target = destinationRoot.resolve(relative.toString())
+                if (Files.isDirectory(source)) {
+                    Files.createDirectories(target)
+                } else {
+                    target.parent?.let(Files::createDirectories)
+                    Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
+                }
+            }
+        }
+    }
 
     private fun activateBeforeOpeningProject(context: IDETestContext) {
         val activationStartedAtNanos = System.nanoTime()
