@@ -258,25 +258,35 @@ jobs:
            "  pull_request:" not in qodana_full_source
            and "  push:" not in qodana_full_source,
            failures)
-    expect("trusted full Qodana preserves weekly/manual exact-source contract",
+    expect("trusted full Qodana preserves reusable weekly/manual exact-source contract",
            all(fragment in qodana_full_source for fragment in (
+               "run-name: Qodana source ${{ inputs.candidate_sha || github.sha }}",
                "workflow_dispatch:", "candidate_sha:", 'cron: "23 4 * * 4"',
+               "name: Qodana schedule guard",
+               'if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then',
+               'actions/workflows/qodana-full.yml/runs?event=schedule&status=success&branch=main',
+               '"qodana-report"', '"qodana-source-manifest"',
+               "needs: scan-guard",
+               "if: needs.scan-guard.outputs.should_scan == 'true'",
                'GITHUB_REF" != "refs/heads/main"',
                '^[0-9a-f]{40}$',
                'git merge-base --is-ancestor "$EXPECTED_SHA" origin/main',
+               "path: .qodana-source",
                "ref: ${{ env.EXPECTED_SHA }}",
-               'test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"',
+               'git -C .qodana-source rev-parse HEAD',
                "Qodana - Full Code Inspection",
                "JetBrains/qodana-action@3e8d76ff0e0241618abd808682f426afe84bab3f",
-               "args: --fail-threshold 0",
+               "--project-dir .qodana-source --repository-root .qodana-source --fail-threshold 0",
                "cache-default-branch-only: true",
                "pr-mode: false",
                "artifact-name: qodana-report",
+               "check_qodana_sarif.py",
                "qodana-source-manifest.json",
                "retention-days: 90",
            )), failures)
     expect("trusted full Qodana source identity is distinct from workflow event identity",
-           '"candidate_sha": os.environ["EXPECTED_SHA"]' in qodana_full_source
+           '"candidate_sha": source' in qodana_full_source
+           and '"checkout_sha": checkout' in qodana_full_source
            and '"event_sha": os.environ["GITHUB_SHA"]' in qodana_full_source,
            failures)
 
