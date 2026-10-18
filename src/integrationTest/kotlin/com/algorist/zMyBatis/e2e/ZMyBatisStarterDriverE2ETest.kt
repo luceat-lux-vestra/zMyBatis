@@ -797,7 +797,13 @@ class ZMyBatisStarterDriverE2ETest {
             }
 
         val restoreStartedAtNanos = System.nanoTime()
-        copyDirectory(activationSeedConfigDir(), context.paths.configDir)
+        val seedKey = activationSeedConfigDir().resolve("idea.key")
+        Files.createDirectories(context.paths.configDir)
+        Files.copy(
+            seedKey,
+            context.paths.configDir.resolve("idea.key"),
+            StandardCopyOption.REPLACE_EXISTING,
+        )
         assertTrue(
             Files.isRegularFile(context.paths.configDir.resolve("idea.key")),
             "activation seed must materialize an independent licensed scenario config",
@@ -840,22 +846,6 @@ class ZMyBatisStarterDriverE2ETest {
             "ZMYBATIS_E2E_ACTIVATION_SEED_READY duration_ms=$seedDurationMs files=$regularFiles",
         )
         return seedContext.paths.configDir
-    }
-
-    private fun copyDirectory(sourceRoot: Path, destinationRoot: Path) {
-        Files.createDirectories(destinationRoot)
-        Files.walk(sourceRoot).use { paths ->
-            paths.forEach { source ->
-                val relative = sourceRoot.relativize(source)
-                val target = destinationRoot.resolve(relative.toString())
-                if (Files.isDirectory(source)) {
-                    Files.createDirectories(target)
-                } else {
-                    target.parent?.let(Files::createDirectories)
-                    Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
-                }
-            }
-        }
     }
 
     private fun activateBeforeOpeningProject(context: IDETestContext) {
