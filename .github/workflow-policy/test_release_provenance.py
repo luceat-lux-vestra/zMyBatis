@@ -129,6 +129,54 @@ def main() -> int:
         make_static_fixture(
             fixture,
             release_text.replace(
+                "needs: [ codeql_preflight, qodana_preflight ]",
+                "needs: codeql_preflight",
+                1,
+            ),
+        )
+        expect(
+            "missing Qodana release prerequisite rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "actions: write # Only this isolated nonpublishing job can dispatch trusted Qodana.",
+                "actions: read # Qodana dispatch authority removed",
+                1,
+            ),
+        )
+        expect(
+            "Qodana preflight missing isolated dispatch authority rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
+                "path: .trusted-qodana-preflight",
+                "path: .untrusted-qodana-preflight",
+                1,
+            ),
+        )
+        expect(
+            "Qodana preflight trusted-main policy path regression rejected",
+            bool(verify_static(fixture)),
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        make_static_fixture(
+            fixture,
+            release_text.replace(
                 "Lock publication identity before Marketplace mutation",
                 "Publication mutation without durable lock",
                 1,

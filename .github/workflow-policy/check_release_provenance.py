@@ -136,11 +136,14 @@ def verify_static(repo: Path) -> list[str]:
         "zmybatis-release-published.json",
         'publication_state: "pending"',
         "Reuse or automatically execute exact-source CodeQL",
-        "needs: codeql_preflight",
+        "Reuse or automatically execute exact-source Qodana",
+        "needs: [ codeql_preflight, qodana_preflight ]",
         "actions: write # Only this isolated nonpublishing job can dispatch CodeQL.",
+        "actions: write # Only this isolated nonpublishing job can dispatch trusted Qodana.",
         "check_release_codeql.py",
+        "check_release_qodana.py",
         'steps.state.outputs.publish == \'true\'',
-        "actions: read # Inspect trusted CodeQL runs, jobs and original SARIF artifacts.",
+        "actions: read # Inspect trusted CodeQL/Qodana runs, jobs and original SARIF artifacts.",
     ]
     for fragment in required_release_fragments:
         if fragment not in release:
@@ -171,38 +174,89 @@ def verify_static(repo: Path) -> list[str]:
     if 'RELEASE_ASSET: ${{ steps.artifact.outputs.path }}' in release:
         failures.append("GitHub Release must not upload the unsigned buildPlugin archive")
 
-    # Authorize a separate, minimally privileged preflight job instead of
+    # Authorize separate, minimally privileged scanner preflight jobs instead of
     # granting actions:write to the token also used for plugin publication.
-    preflight_job = (
-        release.split("\n  codeql_preflight:", 1)[1].split("\n  release:", 1)[0]
-        if "\n  codeql_preflight:" in release and "\n  release:" in release else ""
+    codeql_preflight_job = (
+        release.split("\n  codeql_preflight:", 1)[1].split("\n  qodana_preflight:", 1)[0]
+        if "\n  codeql_preflight:" in release and "\n  qodana_preflight:" in release else ""
     )
-    security_pos = preflight_job.find("check_release_codeql.py")
-    recovery_pos = preflight_job.find("Prove release source and skip completed Marketplace recovery")
-    source_pos = preflight_job.find("check_release_provenance.py tag")
+    qodana_preflight_job = (
+        release.split("\n  qodana_preflight:", 1)[1].split("\n  release:", 1)[0]
+        if "\n  qodana_preflight:" in release and "\n  release:" in release else ""
+    )
     require_gate = "steps.source.outputs.publish == 'true'"
-    if not (source_pos >= 0 and recovery_pos >= 0
-            and security_pos > source_pos > recovery_pos
-            and require_gate in preflight_job
-            and "group: release-codeql-preflight" in preflight_job
-            and "cancel-in-progress: false" in preflight_job
-            and "path: .trusted-codeql-preflight" in preflight_job
-            and ".trusted-codeql-preflight/.github/workflow-policy/check_release_codeql.py" in preflight_job
-            and "needs: codeql_preflight" in release_job
-            and "      - name: Setup Java" in release_job):
+
+    codeql_security_pos = codeql_preflight_job.find("check_release_codeql.py")
+    codeql_recovery_pos = codeql_preflight_job.find(
+        "Prove release source and skip completed Marketplace recovery"
+    )
+    codeql_source_pos = codeql_preflight_job.find("check_release_provenance.py tag")
+    if not (
+        codeql_source_pos >= 0
+        and codeql_recovery_pos >= 0
+        and codeql_security_pos > codeql_source_pos > codeql_recovery_pos
+        and require_gate in codeql_preflight_job
+        and "group: release-codeql-preflight" in codeql_preflight_job
+        and "cancel-in-progress: false" in codeql_preflight_job
+        and "path: .trusted-codeql-preflight" in codeql_preflight_job
+        and ".trusted-codeql-preflight/.github/workflow-policy/check_release_codeql.py"
+            in codeql_preflight_job
+    ):
         failures.append(
-            "CodeQL preflight must follow source/recovery classification in the "
-            "prerequisite job and precede all publisher work"
+            "CodeQL preflight must follow source/recovery classification and remain "
+            "a trusted-main exact-source prerequisite"
         )
-    if not ("contents: read" in preflight_job and "actions: write" in preflight_job
+
+    qodana_security_pos = qodana_preflight_job.find("check_release_qodana.py")
+    qodana_recovery_pos = qodana_preflight_job.find(
+        "Prove release source and skip completed Marketplace recovery"
+    )
+    qodana_source_pos = qodana_preflight_job.find("check_release_provenance.py tag")
+    if not (
+        qodana_source_pos >= 0
+        and qodana_recovery_pos >= 0
+        and qodana_security_pos > qodana_source_pos > qodana_recovery_pos
+        and require_gate in qodana_preflight_job
+        and "group: release-qodana-preflight" in qodana_preflight_job
+        and "cancel-in-progress: false" in qodana_preflight_job
+        and "path: .trusted-qodana-preflight" in qodana_preflight_job
+        and ".trusted-qodana-preflight/.github/workflow-policy/check_release_qodana.py"
+            in qodana_preflight_job
+    ):
+        failures.append(
+            "Qodana preflight must follow source/recovery classification and remain "
+            "a trusted-main exact-source prerequisite"
+        )
+
+    if (
+        "needs: [ codeql_preflight, qodana_preflight ]" not in release_job
+        or "      - name: Setup Java" not in release_job
+    ):
+        failures.append(
+            "release publisher must depend on both exact-source security preflights "
+            "before any publisher work"
+        )
+
+    for label, preflight_job in (
+        ("CodeQL", codeql_preflight_job),
+        ("Qodana", qodana_preflight_job),
+    ):
+        if not (
+            "contents: read" in preflight_job
+            and "actions: write" in preflight_job
             and "contents: write" not in preflight_job
             and "id-token: write" not in preflight_job
             and "attestations: write" not in preflight_job
             and "environment: jetbrains-marketplace" not in preflight_job
             and "continue-on-error" not in preflight_job
-            and not any(op in preflight_job for op in
-                        ("publishPlugin", "gh release upload", "signPlugin"))):
-        failures.append("CodeQL dispatch job must remain isolated and nonpublishing")
+            and not any(
+                op in preflight_job
+                for op in ("publishPlugin", "gh release upload", "signPlugin")
+            )
+        ):
+            failures.append(
+                f"{label} dispatch job must remain isolated and nonpublishing"
+            )
     artifact_pos = release.find("check_release_provenance.py artifact")
     sign_pos = release.find("./gradlew signPlugin verifyPluginSignature")
     capture_pos = release.find("Capture verified signed release asset")
