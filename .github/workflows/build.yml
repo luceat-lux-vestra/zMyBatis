@@ -403,7 +403,9 @@ jobs:
         run: python3 .github/workflow-policy/check_required_contexts.py .github/merge-gate-policy.yml .
 
       - name: Require fail-closed Qodana authority
-        run: python3 .github/workflow-policy/check_qodana_gate.py .github/workflows/build.yml qodana.yml
+        run: |
+          python3 .github/workflow-policy/check_qodana_gate.py .github/workflows/build.yml qodana.yml
+          python3 .github/workflow-policy/check_qodana_sarif.py --self-test
 
       - name: Require recurring live-settings audit ownership
         run: python3 .github/workflow-policy/check_live_settings.py .github/merge-gate-policy.yml --static-only
