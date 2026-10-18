@@ -15,12 +15,45 @@ GOOD_WORKFLOW = f"""name: Build
 on: pull_request
 permissions:
   contents: read
+  pull-requests: read
 jobs:
+  qodanaScope:
+    name: Qodana scope
+    runs-on: ubuntu-latest
+    outputs:
+      qodana_required: ${{{{ steps.scope.outputs.qodana_required }}}}
+      qodana_reason: ${{{{ steps.scope.outputs.qodana_reason }}}}
+      qodana_changed_count: ${{{{ steps.scope.outputs.qodana_changed_count }}}}
+    steps:
+      - name: Fetch trusted Qodana classifier policy
+        uses: actions/checkout@{PIN}
+        with:
+          ref: ${{{{ github.event.pull_request.base.sha }}}}
+          path: .trusted-qodana-scope
+          persist-credentials: false
+      - name: Decide Qodana applicability
+        id: scope
+        run: |
+          classifier=".trusted-qodana-scope/.github/workflow-policy/classify_qodana_scope.py"
+          test "$(git -C .trusted-qodana-scope rev-parse HEAD)" = "$PR_BASE_SHA"
+          expected="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.changed_files')"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100"
+          echo "qodana_required=true"
+          echo "qodana_reason=metadata-api-failure"
+          echo "qodana_reason=non-pr-full-scan"
   inspectCode:
     name: Inspect code
+    needs: [ qodanaScope ]
     runs-on: ubuntu-latest
     steps:
+      - name: Require valid Qodana scope decision
+        run: |
+          test "$QODANA_REASON" = "all-paths-proven-non-qodana"
+      - name: Qodana not applicable
+        if: ${{{{ needs.qodanaScope.outputs.qodana_required == 'false' }}}}
+        run: echo not-applicable
       - name: Qodana - Code Inspection
+        if: ${{{{ needs.qodanaScope.outputs.qodana_required == 'true' }}}}
         uses: JetBrains/qodana-action@{PIN}
         with:
           args: --fail-threshold 0
@@ -85,6 +118,44 @@ def main() -> int:
             GOOD_WORKFLOW.replace(
                 "        uses: JetBrains/qodana-action@",
                 "        continue-on-error: true\n        uses: JetBrains/qodana-action@",
+            ),
+            GOOD_QODANA,
+        ) != 0,
+        failures,
+    )
+    expect(
+        "rejects PR-head classifier authority",
+        run_case(
+            GOOD_WORKFLOW.replace(
+                "github.event.pull_request.base.sha",
+                "github.event.pull_request.head.sha",
+            ),
+            GOOD_QODANA,
+        ) != 0,
+        failures,
+    )
+    expect(
+        "rejects classifier execution from PR workspace",
+        run_case(
+            GOOD_WORKFLOW.replace(
+                'classifier=".trusted-qodana-scope/.github/workflow-policy/classify_qodana_scope.py"',
+                'classifier=".github/workflow-policy/classify_qodana_scope.py"',
+            ),
+            GOOD_QODANA,
+        ) != 0,
+        failures,
+    )
+    expect(
+        "rejects Inspect code without scope dependency",
+        run_case(GOOD_WORKFLOW.replace("    needs: [ qodanaScope ]\n", ""), GOOD_QODANA) != 0,
+        failures,
+    )
+    expect(
+        "rejects an unguarded non-applicable result",
+        run_case(
+            GOOD_WORKFLOW.replace(
+                'test "$QODANA_REASON" = "all-paths-proven-non-qodana"',
+                'echo "$QODANA_REASON"',
             ),
             GOOD_QODANA,
         ) != 0,

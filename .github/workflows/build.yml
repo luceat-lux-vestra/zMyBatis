@@ -3,7 +3,8 @@
 # Gates, in dependency order:
 # - build:       assembles the distributable plugin ZIP and keeps it as an artifact.
 # - test:        root + core + mybatis-engine checks, including Kover coverage report generation.
-# - inspectCode: fail-closed full-repository Qodana static analysis.
+# - qodanaScope: trusted-base fail-closed PR applicability decision.
+# - inspectCode: stable evidence; full Qodana or deterministic non-applicable result.
 # - verify:      plugin structure verification + IntelliJ Plugin Verifier.
 # - lint:        workflow/security/governance policy validation.
 # - dependencyReview: pull-request dependency admission control.
@@ -225,57 +226,119 @@ jobs:
           path: ${{ github.workspace }}/build/reports/kover/report.xml
           if-no-files-found: error
 
-  inspectCode:
-    name: Inspect code
+  qodanaScope:
+    name: Qodana scope
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 45
+    timeout-minutes: 5
+    outputs:
+      qodana_required: ${{ steps.scope.outputs.qodana_required }}
+      qodana_reason: ${{ steps.scope.outputs.qodana_reason }}
+      qodana_changed_count: ${{ steps.scope.outputs.qodana_changed_count }}
     steps:
-      - name: Detect documentation-only scope
-        id: scope
+      - name: Fetch trusted Qodana classifier policy
         if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .trusted-qodana-scope
+          persist-credentials: false
+
+      - name: Decide Qodana applicability
+        id: scope
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          changed="$RUNNER_TEMP/pr-changed-files.json"
 
-          if ! gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" > "$changed"; then
-            echo "::warning::Could not establish the changed-file set; using full validation."
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            {
+              echo "qodana_required=true"
+              echo "qodana_reason=non-pr-full-scan"
+              echo "qodana_changed_count=0"
+            } >> "$GITHUB_OUTPUT"
+            echo "Qodana scope decision: required=true reason=non-pr-full-scan"
             exit 0
           fi
 
-          if ! jq -e '[.[][]] | length > 0' "$changed" >/dev/null; then
-            echo "::warning::Changed-file set is empty or unreadable; using full validation."
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          [[ "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::PR base SHA is not an exact 40-hex commit."
+            exit 1
+          }
+          test "$(git -C .trusted-qodana-scope rev-parse HEAD)" = "$PR_BASE_SHA"
+          classifier=".trusted-qodana-scope/.github/workflow-policy/classify_qodana_scope.py"
+          test -f "$classifier"
+          python3 "$classifier" --self-test
+
+          changed="$RUNNER_TEMP/qodana-changed-files.json"
+          if ! expected="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.changed_files')" \
+             || ! [[ "$expected" =~ ^[0-9]+$ ]] \
+             || ! gh api --paginate --slurp \
+                  "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" > "$changed"; then
+            {
+              echo "qodana_required=true"
+              echo "qodana_reason=metadata-api-failure"
+              echo "qodana_changed_count=0"
+            } >> "$GITHUB_OUTPUT"
+            echo "Qodana scope decision: required=true reason=metadata-api-failure"
             exit 0
           fi
 
-          if jq -e '
-            [ .[][] | .filename ] as $files
-            | all($files[];
-                . == "README.md"
-                or . == "CONTRIBUTING.md"
-                or . == "AGENTS.md"
-                or test("^docs/.*[.]md$")
-              )
-          ' "$changed" >/dev/null; then
-            docs_only=true
-          else
-            docs_only=false
+          python3 "$classifier" \
+            --input "$changed" \
+            --expected-count "$expected" \
+            --github-output "$GITHUB_OUTPUT"
+
+  inspectCode:
+    name: Inspect code
+    needs: [ qodanaScope ]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - name: Require valid Qodana scope decision
+        env:
+          QODANA_REQUIRED: ${{ needs.qodanaScope.outputs.qodana_required }}
+          QODANA_REASON: ${{ needs.qodanaScope.outputs.qodana_reason }}
+          QODANA_CHANGED_COUNT: ${{ needs.qodanaScope.outputs.qodana_changed_count }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$QODANA_REQUIRED" in
+            true|false) ;;
+            *)
+              echo "::error::Invalid Qodana applicability decision: '$QODANA_REQUIRED'"
+              exit 1
+              ;;
+          esac
+          [[ "$QODANA_CHANGED_COUNT" =~ ^[0-9]+$ ]] || {
+            echo "::error::Invalid Qodana changed-file count: '$QODANA_CHANGED_COUNT'"
+            exit 1
+          }
+          test -n "$QODANA_REASON"
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ] && [ "$QODANA_REQUIRED" != "true" ]; then
+            echo "::error::Non-PR validation must perform full Qodana."
+            exit 1
+          fi
+          if [ "$QODANA_REQUIRED" = "false" ]; then
+            test "$GITHUB_EVENT_NAME" = "pull_request"
+            test "$QODANA_REASON" = "all-paths-proven-non-qodana"
+            [[ "$QODANA_CHANGED_COUNT" =~ ^[1-9][0-9]*$ ]] || {
+              echo "::error::A non-applicable decision requires a non-empty changed-file set."
+              exit 1
+            }
           fi
 
-          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
-          echo "docs-only=$docs_only"
-
-      - name: Documentation-only fast path
-        if: ${{ steps.scope.outputs.docs_only == 'true' }}
-        run: echo "Documentation-only change; Qodana Inspect code is not applicable."
+      - name: Qodana not applicable
+        if: ${{ github.event_name == 'pull_request' && needs.qodanaScope.outputs.qodana_required == 'false' }}
+        env:
+          QODANA_REASON: ${{ needs.qodanaScope.outputs.qodana_reason }}
+          QODANA_CHANGED_COUNT: ${{ needs.qodanaScope.outputs.qodana_changed_count }}
+        run: echo "Qodana full scan is not applicable ($QODANA_REASON; changed=$QODANA_CHANGED_COUNT)."
 
       - name: Fetch Sources
-        if: ${{ steps.scope.outputs.docs_only != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+        if: ${{ needs.qodanaScope.outputs.qodana_required == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -283,14 +346,14 @@ jobs:
           persist-credentials: false
 
       - name: Setup Java
-        if: ${{ steps.scope.outputs.docs_only != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+        if: ${{ needs.qodanaScope.outputs.qodana_required == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: zulu
           java-version: 25
 
       - name: Qodana - Code Inspection
-        if: ${{ steps.scope.outputs.docs_only != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+        if: ${{ needs.qodanaScope.outputs.qodana_required == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
         uses: JetBrains/qodana-action@3e8d76ff0e0241618abd808682f426afe84bab3f # v2026.2.2
         with:
           args: --fail-threshold 0
@@ -407,41 +470,8 @@ jobs:
           python3 .github/workflow-policy/check_qodana_gate.py .github/workflows/build.yml qodana.yml
           python3 .github/workflow-policy/check_qodana_sarif.py --self-test
 
-      - name: Verify Qodana PR scope classifier (shadow)
-        id: qodana_scope_shadow
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/workflow-policy/classify_qodana_scope.py --self-test
-
-          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
-            echo "Qodana scope shadow classification is PR-only."
-            exit 0
-          fi
-
-          changed="$RUNNER_TEMP/qodana-shadow-changed-files.json"
-          if ! expected="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.changed_files')" \
-             || ! [[ "$expected" =~ ^[0-9]+$ ]] \
-             || ! gh api --paginate --slurp \
-                  "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" > "$changed"; then
-            {
-              echo "qodana_required=true"
-              echo "qodana_reason=metadata-api-failure"
-              echo "qodana_changed_count=0"
-            } >> "$GITHUB_OUTPUT"
-            echo "Qodana shadow decision: required=true reason=metadata-api-failure"
-            exit 0
-          fi
-
-          python3 .github/workflow-policy/classify_qodana_scope.py \
-            --input "$changed" \
-            --expected-count "$expected" \
-            --github-output "$GITHUB_OUTPUT"
-
-          echo "Shadow only: this decision does not yet authorize skipping Inspect code."
+      - name: Verify Qodana PR scope classifier policy
+        run: python3 .github/workflow-policy/classify_qodana_scope.py --self-test
 
       - name: Require recurring live-settings audit ownership
         run: python3 .github/workflow-policy/check_live_settings.py .github/merge-gate-policy.yml --static-only
@@ -506,7 +536,7 @@ jobs:
 
   mergeGate:
     name: Merge Gate
-    needs: [ build, test, inspectCode, verify, lint, dependencyReview ]
+    needs: [ build, test, qodanaScope, inspectCode, verify, lint, dependencyReview ]
     if: ${{ always() }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
@@ -515,6 +545,7 @@ jobs:
         env:
           BUILD_RESULT: ${{ needs.build.result }}
           TEST_RESULT: ${{ needs.test.result }}
+          QODANA_SCOPE_RESULT: ${{ needs.qodanaScope.result }}
           INSPECT_RESULT: ${{ needs.inspectCode.result }}
           VERIFY_RESULT: ${{ needs.verify.result }}
           LINT_RESULT: ${{ needs.lint.result }}
@@ -526,6 +557,7 @@ jobs:
           for entry in \
             "Build=$BUILD_RESULT" \
             "Test=$TEST_RESULT" \
+            "Qodana scope=$QODANA_SCOPE_RESULT" \
             "Inspect code=$INSPECT_RESULT" \
             "Verify plugin=$VERIFY_RESULT" \
             "Lint workflows=$LINT_RESULT" \

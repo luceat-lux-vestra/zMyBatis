@@ -296,19 +296,35 @@ jobs:
 
     build_source = (WORKFLOWS_DIR / "build.yml").read_text(encoding="utf-8")
     classifier_source = (POLICY_DIR / "classify_qodana_scope.py").read_text(encoding="utf-8")
-    expect("Qodana PR scope classifier is wired in lint shadow mode",
-           all(fragment in build_source for fragment in (
-               "Verify Qodana PR scope classifier (shadow)",
-               "id: qodana_scope_shadow",
-               "classify_qodana_scope.py --self-test",
-               "--expected-count \"$expected\"",
-               "Shadow only: this decision does not yet authorize skipping Inspect code.",
-           )), failures)
+    expect("Qodana PR scope classifier self-test remains in lint",
+           "Verify Qodana PR scope classifier policy" in build_source
+           and "classify_qodana_scope.py --self-test" in build_source,
+           failures)
+    qodana_scope_section = build_source.split("\n  qodanaScope:", 1)[1].split("\n  inspectCode:", 1)[0]
     inspect_section = build_source.split("\n  inspectCode:", 1)[1].split("\n  verify:", 1)[0]
-    expect("shadow classifier cannot yet authorize Inspect code skipping",
-           "classify_qodana_scope.py" not in inspect_section
-           and "qodana_required" not in inspect_section
-           and "qodana_scope_shadow" not in inspect_section,
+    expect("authoritative Qodana applicability uses trusted PR base policy",
+           all(fragment in qodana_scope_section for fragment in (
+               "ref: ${{ github.event.pull_request.base.sha }}",
+               "path: .trusted-qodana-scope",
+               'classifier=".trusted-qodana-scope/.github/workflow-policy/classify_qodana_scope.py"',
+               'test "$(git -C .trusted-qodana-scope rev-parse HEAD)" = "$PR_BASE_SHA"',
+               "--jq '.changed_files'",
+               "gh api --paginate --slurp",
+               'echo "qodana_required=true"',
+           ))
+           and "github.event.pull_request.head.sha" not in qodana_scope_section,
+           failures)
+    expect("Inspect code consumes the trusted scope result fail-closed",
+           all(fragment in inspect_section for fragment in (
+               "needs: [ qodanaScope ]",
+               "Require valid Qodana scope decision",
+               "needs.qodanaScope.outputs.qodana_required == 'false'",
+               'test "$QODANA_REASON" = "all-paths-proven-non-qodana"',
+               "needs.qodanaScope.outputs.qodana_required == 'true'",
+           )), failures)
+    expect("Stage-C shadow authority is retired",
+           "qodana_scope_shadow" not in build_source
+           and "Shadow only: this decision does not yet authorize skipping Inspect code." not in build_source,
            failures)
     expect("Qodana classifier remains fail-closed on control files and incomplete metadata",
            all(fragment in classifier_source for fragment in (
@@ -381,8 +397,8 @@ jobs:
         aggregate_workflow = aggregate_root / ".github" / "workflows" / "build.yml"
         text = aggregate_workflow.read_text(encoding="utf-8")
         text = text.replace(
-            "needs: [ build, test, inspectCode, verify, lint, dependencyReview ]",
-            "needs: [ build, test, inspectCode, verify, lint ]",
+            "needs: [ build, test, qodanaScope, inspectCode, verify, lint, dependencyReview ]",
+            "needs: [ build, test, qodanaScope, inspectCode, verify, lint ]",
             1,
         )
         aggregate_workflow.write_text(text, encoding="utf-8")
