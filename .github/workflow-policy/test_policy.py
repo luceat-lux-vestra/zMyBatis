@@ -294,6 +294,35 @@ jobs:
            and '"event_sha": os.environ["GITHUB_SHA"]' in qodana_full_source,
            failures)
 
+    build_source = (WORKFLOWS_DIR / "build.yml").read_text(encoding="utf-8")
+    classifier_source = (POLICY_DIR / "classify_qodana_scope.py").read_text(encoding="utf-8")
+    expect("Qodana PR scope classifier is wired in lint shadow mode",
+           all(fragment in build_source for fragment in (
+               "Verify Qodana PR scope classifier (shadow)",
+               "id: qodana_scope_shadow",
+               "classify_qodana_scope.py --self-test",
+               "--expected-count \"$expected\"",
+               "Shadow only: this decision does not yet authorize skipping Inspect code.",
+           )), failures)
+    inspect_section = build_source.split("\n  inspectCode:", 1)[1].split("\n  verify:", 1)[0]
+    expect("shadow classifier cannot yet authorize Inspect code skipping",
+           "classify_qodana_scope.py" not in inspect_section
+           and "qodana_required" not in inspect_section
+           and "qodana_scope_shadow" not in inspect_section,
+           failures)
+    expect("Qodana classifier remains fail-closed on control files and incomplete metadata",
+           all(fragment in classifier_source for fragment in (
+               '"qodana.yml"',
+               '".github/workflows/build.yml"',
+               '".github/workflows/qodana-full.yml"',
+               '".github/workflows/release.yml"',
+               '".github/workflow-policy/classify_qodana_scope.py"',
+               '"metadata-count-mismatch"',
+               '"rename-identity-incomplete"',
+               '"status-unknown"',
+               'qodana-relevant:',
+           )), failures)
+
     required_rc = run(
         [
             "python3",
