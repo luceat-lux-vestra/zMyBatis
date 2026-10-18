@@ -68,8 +68,11 @@ import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTe
 import com.intellij.tools.ide.starter.product.idea.ultimate.IdeaUltimate
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInfo
 import org.junit.jupiter.api.fail
 import org.junit.jupiter.api.io.TempDir
 import org.h2.Driver as H2Driver
@@ -125,6 +128,20 @@ private fun Finder.textArea(): JTextAreaUi =
     x("//div[@class='JBTextArea']", JTextAreaUi::class.java)
 
 class ZMyBatisStarterDriverE2ETest {
+
+    private var testStartedAtNanos: Long = 0
+
+    @BeforeEach
+    fun recordScenarioStart(testInfo: TestInfo) {
+        testStartedAtNanos = System.nanoTime()
+        println("ZMYBATIS_E2E_TEST_START name=${testInfo.displayName}")
+    }
+
+    @AfterEach
+    fun recordScenarioEnd(testInfo: TestInfo) {
+        val durationMs = (System.nanoTime() - testStartedAtNanos) / 1_000_000
+        println("ZMYBATIS_E2E_TEST_END name=${testInfo.displayName} duration_ms=$durationMs")
+    }
 
     companion object {
         private const val IDE_RELEASE = "2026.2.3"
@@ -776,6 +793,7 @@ class ZMyBatisStarterDriverE2ETest {
         }
 
     private fun activateBeforeOpeningProject(context: IDETestContext) {
+        val activationStartedAtNanos = System.nanoTime()
         // Keep the normal license/trial flow, but complete it before project-tree reads begin.
         // On 2026.2.3 activation dynamically reloads schemes; overlapping project startup races them.
         context.runIdeWithDriver(commandLine = ::startIdeWithoutProject, launchName = "activation")
@@ -796,6 +814,10 @@ class ZMyBatisStarterDriverE2ETest {
         assertTrue(
             Files.isRegularFile(context.paths.configDir.resolve("idea.key")),
             "activation must persist its state before the project run",
+        )
+        val durationMs = (System.nanoTime() - activationStartedAtNanos) / 1_000_000
+        println(
+            "ZMYBATIS_E2E_ACTIVATION config=${context.paths.configDir.fileName} duration_ms=$durationMs",
         )
     }
 
