@@ -1,0 +1,129 @@
+# Trusted full Qodana analysis for protected-main source identities.
+# Owner: issue #426 / R2A #104.
+#
+# This workflow is deliberately NOT a pull-request gate yet. The existing
+# Build / Inspect code job remains authoritative until release preflight,
+# recurring evidence and a fail-closed PR classifier are proven separately.
+# Explicit/manual candidate scans are never skipped by a schedule no-op guard.
+
+name: Qodana Full Scan
+
+on:
+  schedule:
+    - cron: "23 4 * * 4"
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: "Exact protected-main ancestor commit to analyze"
+        required: true
+        type: string
+
+concurrency:
+  group: qodana-full-${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  full-scan:
+    name: Qodana full scan
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    env:
+      EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}
+    steps:
+      - name: Fetch protected main for candidate verification
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact protected-main candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Trusted Qodana workflow must execute from protected main"
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::candidate_sha must be a full lowercase commit SHA"
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if ! git cat-file -e "$EXPECTED_SHA^{commit}"; then
+            echo "::error::candidate_sha is not available as a commit"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$EXPECTED_SHA" origin/main; then
+            echo "::error::candidate_sha is not reachable from protected main"
+            exit 1
+          fi
+
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Setup Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Qodana - Full Code Inspection
+        uses: JetBrains/qodana-action@3e8d76ff0e0241618abd808682f426afe84bab3f # v2026.2.2
+        with:
+          args: --fail-threshold 0
+          primary-cache-key: qodana-jvm-community-2026.2.2-linux-arm64-${{ env.EXPECTED_SHA }}
+          additional-cache-key: qodana-jvm-community-2026.2.2-linux-arm64-
+          cache-default-branch-only: true
+          pr-mode: false
+          upload-result: true
+          artifact-name: qodana-report
+          use-annotations: false
+          post-pr-comment: false
+
+      - name: Record exact-source Qodana provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = {
+              "candidate_sha": os.environ["EXPECTED_SHA"],
+              "event_name": os.environ["GITHUB_EVENT_NAME"],
+              "event_sha": os.environ["GITHUB_SHA"],
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "qodana_action": "JetBrains/qodana-action@3e8d76ff0e0241618abd808682f426afe84bab3f",
+              "profile": "qodana.recommended",
+              "fail_threshold": 0,
+          }
+          Path("qodana-source-manifest.json").write_text(
+              json.dumps(payload, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload exact-source Qodana provenance
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: qodana-source-manifest
+          path: qodana-source-manifest.json
+          if-no-files-found: error
+          retention-days: 90
