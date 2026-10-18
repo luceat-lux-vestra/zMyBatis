@@ -205,6 +205,36 @@ class StatementSourceGraphRevalidatorProjectFixtureTest : LightJavaCodeInsightFi
         assertEquals(unsupportedRevision.fileId, failure.sourceFileId)
     }
 
+    fun testAdditionalAuthoritySnapshotIsRevalidatedWithGraphSources() {
+        val rootFile = myFixture.tempDirFixture.createFile(
+            "fixture/RootMapper.xml",
+            "<mapper namespace=\"fixture.RootMapper\"><select id=\"find\">SELECT 1</select></mapper>",
+        )
+        val mapperMethodFile = myFixture.tempDirFixture.createFile(
+            "fixture/RootMapper.java",
+            "package fixture; interface RootMapper { long find(long id); }",
+        )
+        val root = dependentSnapshot(rootFile)
+        val mapperMethod = dependentSnapshot(mapperMethodFile)
+
+        assertSame(
+            SourceGraphRevalidationResult.Current,
+            StatementSourceGraphRevalidator.revalidateSnapshots(listOf(root, mapperMethod)),
+        )
+
+        val document = FileDocumentManager.getInstance().getDocument(mapperMethodFile)
+        assertNotNull(document)
+        WriteCommandAction.runWriteCommandAction(project) {
+            document!!.insertString(document.textLength, " ")
+        }
+
+        val failure = failed(
+            StatementSourceGraphRevalidator.revalidateSnapshots(listOf(root, mapperMethod)),
+        )
+        assertTrue(failure is SourceGraphRevalidationFailure.SourceChanged)
+        assertEquals(mapperMethod.fileId, failure.sourceFileId)
+    }
+
     fun testMultiSourceFailureOrderingIsDeterministicBySourceIdentity() {
         val first = SourceSnapshot(
             fileId = SourceFileId("memory:a"),

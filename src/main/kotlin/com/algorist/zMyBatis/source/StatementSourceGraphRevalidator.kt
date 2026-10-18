@@ -61,18 +61,28 @@ object StatementSourceGraphRevalidator {
     private const val VFS_REVISION_PREFIX = "vfs:"
 
     fun revalidate(graph: StatementSourceGraph): SourceGraphRevalidationResult =
-        revalidate(
-            graph = graph,
+        revalidateSnapshots(graph.sourceSnapshots)
+
+    /**
+     * Revalidates one complete immutable source-authority set without assuming every authority
+     * snapshot belongs to a [StatementSourceGraph].
+     *
+     * XML preparation may additionally depend on captured Java mapper-method source. #66 therefore
+     * revalidates graph and additional authority snapshots through this same side-effect-free path.
+     */
+    fun revalidateSnapshots(snapshots: List<SourceSnapshot>): SourceGraphRevalidationResult =
+        revalidateSnapshots(
+            snapshots = snapshots,
             virtualFileLookup = VirtualFileManager.getInstance()::findFileByUrl,
             fileDocumentManager = FileDocumentManager.getInstance(),
         )
 
-    internal fun revalidate(
-        graph: StatementSourceGraph,
+    internal fun revalidateSnapshots(
+        snapshots: List<SourceSnapshot>,
         virtualFileLookup: (String) -> VirtualFile?,
         fileDocumentManager: FileDocumentManager,
     ): SourceGraphRevalidationResult {
-        for (snapshot in graph.sourceSnapshots) {
+        for (snapshot in snapshots.sortedBy { it.fileId.value }) {
             revalidateSnapshot(snapshot, virtualFileLookup, fileDocumentManager)?.let {
                 return SourceGraphRevalidationResult.Failed(it)
             }
