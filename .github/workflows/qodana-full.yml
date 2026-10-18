@@ -68,12 +68,14 @@ jobs:
             ' <<<"$runs"
           )
 
+          expected_sarif="qodana-$GITHUB_SHA-sarif"
+          expected_source="qodana-source-$GITHUB_SHA"
           for run_id in "${candidate_runs[@]}"; do
             artifacts="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100")"
-            if jq -e '
+            if jq -e --arg sarif "$expected_sarif" --arg source "$expected_source" '
               [.artifacts[] | select(.expired == false) | .name] as $names
-              | ($names | index("qodana-report")) != null
-                and ($names | index("qodana-source-manifest")) != null
+              | ($names | index($sarif)) != null
+                and ($names | index($source)) != null
             ' <<<"$artifacts" >/dev/null; then
               echo "should_scan=false" >> "$GITHUB_OUTPUT"
               echo "Protected main SHA $GITHUB_SHA already has reusable full Qodana evidence in run $run_id."
@@ -167,6 +169,14 @@ jobs:
           python3 .github/workflow-policy/check_qodana_sarif.py \
             --sarif-file "$QODANA_RESULTS_DIR/qodana.sarif.json"
 
+      - name: Retain verified original Qodana SARIF
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: qodana-${{ env.EXPECTED_SHA }}-sarif
+          path: ${{ runner.temp }}/qodana/results/qodana.sarif.json
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Record exact-source Qodana provenance
         shell: bash
         run: |
@@ -205,7 +215,7 @@ jobs:
       - name: Upload exact-source Qodana provenance
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: qodana-source-manifest
+          name: qodana-source-${{ env.EXPECTED_SHA }}
           path: qodana-source-manifest.json
           if-no-files-found: error
           retention-days: 90
