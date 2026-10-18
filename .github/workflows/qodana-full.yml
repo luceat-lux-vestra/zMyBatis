@@ -4,9 +4,10 @@
 # This workflow is deliberately NOT a pull-request gate yet. The existing
 # Build / Inspect code job remains authoritative until release preflight,
 # recurring evidence and a fail-closed PR classifier are proven separately.
-# Explicit/manual candidate scans are never skipped by a schedule no-op guard.
+# Explicit/manual candidate scans are never skipped by the schedule no-op guard.
 
 name: Qodana Full Scan
+run-name: Qodana source ${{ inputs.candidate_sha || github.sha }}
 
 on:
   schedule:
@@ -19,21 +20,82 @@ on:
         type: string
 
 concurrency:
-  group: qodana-full-${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}
+  group: qodana-full-${{ inputs.candidate_sha || github.sha }}
   cancel-in-progress: false
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
+  scan-guard:
+    name: Qodana schedule guard
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      should_scan: ${{ steps.decide.outputs.should_scan }}
+    steps:
+      - name: Decide whether full Qodana is required
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
+            echo "should_scan=true" >> "$GITHUB_OUTPUT"
+            echo "Explicit candidate scan: always run full Qodana."
+            exit 0
+          fi
+
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::Scheduled source is not an immutable SHA."
+            exit 1
+          }
+
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/qodana-full.yml/runs?event=schedule&status=success&branch=main&per_page=100")"
+          mapfile -t candidate_runs < <(
+            jq -r --arg sha "$GITHUB_SHA" --argjson current "$GITHUB_RUN_ID" '
+              .workflow_runs[]
+              | select(
+                  .id != $current
+                  and .head_sha == $sha
+                  and .head_branch == "main"
+                  and .path == ".github/workflows/qodana-full.yml"
+                )
+              | .id
+            ' <<<"$runs"
+          )
+
+          for run_id in "${candidate_runs[@]}"; do
+            artifacts="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100")"
+            if jq -e '
+              [.artifacts[] | select(.expired == false) | .name] as $names
+              | ($names | index("qodana-report")) != null
+                and ($names | index("qodana-source-manifest")) != null
+            ' <<<"$artifacts" >/dev/null; then
+              echo "should_scan=false" >> "$GITHUB_OUTPUT"
+              echo "Protected main SHA $GITHUB_SHA already has reusable full Qodana evidence in run $run_id."
+              exit 0
+            fi
+          done
+
+          echo "should_scan=true" >> "$GITHUB_OUTPUT"
+          echo "No reusable full Qodana evidence exists for protected main SHA $GITHUB_SHA; running full scan."
+
   full-scan:
+    needs: scan-guard
+    if: needs.scan-guard.outputs.should_scan == 'true'
     name: Qodana full scan
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
+    permissions:
+      contents: read
     env:
       EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}
     steps:
-      - name: Fetch protected main for candidate verification
+      - name: Checkout trusted main policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
@@ -66,6 +128,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ env.EXPECTED_SHA }}
+          path: .qodana-source
           fetch-depth: 0
           persist-credentials: false
 
@@ -73,7 +136,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(git -C .qodana-source rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - name: Setup Java
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
@@ -84,7 +147,7 @@ jobs:
       - name: Qodana - Full Code Inspection
         uses: JetBrains/qodana-action@3e8d76ff0e0241618abd808682f426afe84bab3f # v2026.2.2
         with:
-          args: --fail-threshold 0
+          args: --project-dir .qodana-source --repository-root .qodana-source --fail-threshold 0
           primary-cache-key: qodana-jvm-community-2026.2.2-linux-arm64-${{ env.EXPECTED_SHA }}
           additional-cache-key: qodana-jvm-community-2026.2.2-linux-arm64-
           cache-default-branch-only: true
@@ -94,6 +157,16 @@ jobs:
           use-annotations: false
           post-pr-comment: false
 
+      - name: Enforce full Qodana SARIF
+        if: ${{ always() }}
+        env:
+          QODANA_RESULTS_DIR: ${{ runner.temp }}/qodana/results
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflow-policy/check_qodana_sarif.py \
+            --sarif-file "$QODANA_RESULTS_DIR/qodana.sarif.json"
+
       - name: Record exact-source Qodana provenance
         shell: bash
         run: |
@@ -101,15 +174,24 @@ jobs:
           python3 - <<'PY'
           import json
           import os
+          import subprocess
           from pathlib import Path
 
+          checkout = subprocess.check_output(
+              ["git", "-C", ".qodana-source", "rev-parse", "HEAD"], text=True
+          ).strip()
+          source = os.environ["EXPECTED_SHA"]
+          if checkout != source:
+              raise SystemExit("Qodana checkout diverges from selected source SHA")
           payload = {
-              "candidate_sha": os.environ["EXPECTED_SHA"],
+              "schema": 1,
+              "candidate_sha": source,
+              "checkout_sha": checkout,
               "event_name": os.environ["GITHUB_EVENT_NAME"],
               "event_sha": os.environ["GITHUB_SHA"],
               "repository": os.environ["GITHUB_REPOSITORY"],
-              "run_id": os.environ["GITHUB_RUN_ID"],
-              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "qodana_action": "JetBrains/qodana-action@3e8d76ff0e0241618abd808682f426afe84bab3f",
               "profile": "qodana.recommended",
               "fail_threshold": 0,
