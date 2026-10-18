@@ -407,6 +407,42 @@ jobs:
           python3 .github/workflow-policy/check_qodana_gate.py .github/workflows/build.yml qodana.yml
           python3 .github/workflow-policy/check_qodana_sarif.py --self-test
 
+      - name: Verify Qodana PR scope classifier (shadow)
+        id: qodana_scope_shadow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflow-policy/classify_qodana_scope.py --self-test
+
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "Qodana scope shadow classification is PR-only."
+            exit 0
+          fi
+
+          changed="$RUNNER_TEMP/qodana-shadow-changed-files.json"
+          if ! expected="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.changed_files')" \
+             || ! [[ "$expected" =~ ^[0-9]+$ ]] \
+             || ! gh api --paginate --slurp \
+                  "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" > "$changed"; then
+            {
+              echo "qodana_required=true"
+              echo "qodana_reason=metadata-api-failure"
+              echo "qodana_changed_count=0"
+            } >> "$GITHUB_OUTPUT"
+            echo "Qodana shadow decision: required=true reason=metadata-api-failure"
+            exit 0
+          fi
+
+          python3 .github/workflow-policy/classify_qodana_scope.py \
+            --input "$changed" \
+            --expected-count "$expected" \
+            --github-output "$GITHUB_OUTPUT"
+
+          echo "Shadow only: this decision does not yet authorize skipping Inspect code."
+
       - name: Require recurring live-settings audit ownership
         run: python3 .github/workflow-policy/check_live_settings.py .github/merge-gate-policy.yml --static-only
 
