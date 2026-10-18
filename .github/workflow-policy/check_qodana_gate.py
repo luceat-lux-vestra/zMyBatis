@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Fail-closed contract for the required Qodana `Inspect code` gate.
+"""Fail-closed contract for Qodana applicability and `Inspect code` evidence.
 
-The required status context is authoritative only when the producing job turns
-unaccepted Qodana findings into a non-zero result. Repository source must not
-be hidden behind Qodana exclusions. The only maintained exclusion is Qodana's
-own generated workspace.
+PR-time Qodana may be non-applicable only when a classifier loaded from the
+trusted PR base proves every changed path safe. PR source must never authorize
+its own exemption. When Qodana is applicable, findings still fail the job.
+Repository source must not be hidden behind Qodana exclusions. The only
+maintained exclusion is Qodana's own generated workspace.
 
 This checker deliberately validates a small repository-specific contract without
 a YAML dependency, matching the other workflow-policy checkers.
@@ -36,9 +37,13 @@ def fail(message: str, failures: list[str]) -> None:
     print(f"ERROR: {message}", file=sys.stderr)
 
 
-def inspect_job(workflow_text: str):
+def workflow_job(workflow_text: str, name: str):
     jobs = split_jobs(workflow_text.splitlines())
-    return next((job for job in jobs if job.name == "inspectCode"), None)
+    return next((job for job in jobs if job.name == name), None)
+
+
+def inspect_job(workflow_text: str):
+    return workflow_job(workflow_text, "inspectCode")
 
 
 def require_field(job_text: str, field: str, expected: str, failures: list[str]) -> None:
@@ -121,6 +126,39 @@ def check(workflow_path: Path, qodana_path: Path) -> list[str]:
     job_text = "\n".join(job.lines)
     if not ACTION_PATTERN.search(job_text):
         fail("Inspect code must invoke Qodana from an immutable 40-hex action pin", failures)
+    scope_job = workflow_job(workflow_text, "qodanaScope")
+    if scope_job is None:
+        fail("build workflow is missing the qodanaScope job", failures)
+    else:
+        scope_text = "\n".join(scope_job.lines)
+        required_scope_fragments = (
+            "ref: ${{ github.event.pull_request.base.sha }}",
+            "path: .trusted-qodana-scope",
+            "persist-credentials: false",
+            'classifier=".trusted-qodana-scope/.github/workflow-policy/classify_qodana_scope.py"',
+            'test "$(git -C .trusted-qodana-scope rev-parse HEAD)" = "$PR_BASE_SHA"',
+            "--jq '.changed_files'",
+            "gh api --paginate --slurp",
+            'echo "qodana_required=true"',
+            'echo "qodana_reason=metadata-api-failure"',
+            'echo "qodana_reason=non-pr-full-scan"',
+        )
+        for fragment in required_scope_fragments:
+            if fragment not in scope_text:
+                fail(f"Qodana scope authority is missing trusted-base control `{fragment}`", failures)
+        if "github.event.pull_request.head.sha" in scope_text:
+            fail("Qodana scope authority must never load policy from PR head", failures)
+
+    required_inspect_fragments = (
+        "needs: [ qodanaScope ]",
+        "Require valid Qodana scope decision",
+        "needs.qodanaScope.outputs.qodana_required == 'false'",
+        'test "$QODANA_REASON" = "all-paths-proven-non-qodana"',
+        "needs.qodanaScope.outputs.qodana_required == 'true'",
+    )
+    for fragment in required_inspect_fragments:
+        if fragment not in job_text:
+            fail(f"Inspect code applicability gate is missing `{fragment}`", failures)
 
     require_field(job_text, "args", "--fail-threshold 0", failures)
     require_field(job_text, "pr-mode", "false", failures)

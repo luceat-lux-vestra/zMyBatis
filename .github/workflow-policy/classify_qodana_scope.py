@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Conservative changed-file classifier for PR-time Qodana applicability.
 
-Stage C runs this in shadow mode only. The classifier may prove a PR
-non-Qodana-relevant, but it does not yet authorize skipping Inspect code.
-UNKNOWN / incomplete metadata always means Qodana required.
+Stage D consumes this classifier only from the trusted pull-request base
+commit before deciding whether full PR-time Qodana is applicable. Repository
+source never gets to authorize its own exemption. UNKNOWN / incomplete metadata
+always means Qodana required.
 """
 from __future__ import annotations
 
