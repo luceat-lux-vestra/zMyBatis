@@ -68,8 +68,11 @@ import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTe
 import com.intellij.tools.ide.starter.product.idea.ultimate.IdeaUltimate
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInfo
 import org.junit.jupiter.api.fail
 import org.junit.jupiter.api.io.TempDir
 import org.h2.Driver as H2Driver
@@ -126,6 +129,20 @@ private fun Finder.textArea(): JTextAreaUi =
 
 class ZMyBatisStarterDriverE2ETest {
 
+    private var testStartedAtNanos: Long = 0
+
+    @BeforeEach
+    fun recordScenarioStart(testInfo: TestInfo) {
+        testStartedAtNanos = System.nanoTime()
+        println("ZMYBATIS_E2E_TEST_START name=${testInfo.displayName}")
+    }
+
+    @AfterEach
+    fun recordScenarioEnd(testInfo: TestInfo) {
+        val durationMs = (System.nanoTime() - testStartedAtNanos) / 1_000_000
+        println("ZMYBATIS_E2E_TEST_END name=${testInfo.displayName} duration_ms=$durationMs")
+    }
+
     companion object {
         private const val IDE_RELEASE = "2026.2.3"
         private const val E2E_DATA_SOURCE_UUID = "4c6e150e-3d84-4a71-9d85-0a6d05d42e01"
@@ -137,6 +154,10 @@ class ZMyBatisStarterDriverE2ETest {
             "com.intellij.openapi.editor.colors.impl.EditorColorsManagerImpl.getSchemeForCurrentUITheme"
         private val pluginArchive: Path = pathOf(System.getProperty("path.to.build.plugin")).toAbsolutePath()
         private val sampleProject: Path = pathOf("src/integrationTest/testProject").toAbsolutePath()
+        private val activationSeedLock = Any()
+
+        @Volatile
+        private var sharedActivationSeedConfigDir: Path? = null
 
         init {
             // Starter and the IDE run in separate processes. Make IDE-side exceptions/freezes fail
@@ -763,19 +784,72 @@ class ZMyBatisStarterDriverE2ETest {
     private fun starterContext(
         testName: String,
         projectDir: Path,
-    ) =
-        Starter.newContext(
-            testName,
-            TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(projectDir)).useRelease(IDE_RELEASE),
-        ).apply {
-            System.getenv("LICENSE_KEY")
-                ?.takeIf { it.isNotBlank() }
-                ?.let { setLicense(it) }
-            PluginConfigurator(this).installPluginFromPath(pluginArchive)
-            activateBeforeOpeningProject(this)
+    ): IDETestContext {
+        val context =
+            Starter.newContext(
+                testName,
+                TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(projectDir)).useRelease(IDE_RELEASE),
+            ).apply {
+                System.getenv("LICENSE_KEY")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { setLicense(it) }
+                PluginConfigurator(this).installPluginFromPath(pluginArchive)
+            }
+
+        val restoreStartedAtNanos = System.nanoTime()
+        val seedKey = activationSeedConfigDir().resolve("idea.key")
+        Files.createDirectories(context.paths.configDir)
+        Files.copy(
+            seedKey,
+            context.paths.configDir.resolve("idea.key"),
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+        assertTrue(
+            Files.isRegularFile(context.paths.configDir.resolve("idea.key")),
+            "activation seed must materialize an independent licensed scenario config",
+        )
+        val restoreDurationMs = (System.nanoTime() - restoreStartedAtNanos) / 1_000_000
+        println(
+            "ZMYBATIS_E2E_ACTIVATION_RESTORE test=$testName duration_ms=$restoreDurationMs",
+        )
+        return context
+    }
+
+    private fun activationSeedConfigDir(): Path {
+        sharedActivationSeedConfigDir?.let { return it }
+        return synchronized(activationSeedLock) {
+            sharedActivationSeedConfigDir
+                ?: createActivationSeedConfig().also { sharedActivationSeedConfigDir = it }
         }
+    }
+
+    private fun createActivationSeedConfig(): Path {
+        val seedContext =
+            Starter.newContext(
+                "activation-seed",
+                TestCase(IdeInfo.IdeaUltimate, LocalProjectInfo(sampleProject)).useRelease(IDE_RELEASE),
+            ).apply {
+                System.getenv("LICENSE_KEY")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { setLicense(it) }
+                PluginConfigurator(this).installPluginFromPath(pluginArchive)
+            }
+
+        val seedStartedAtNanos = System.nanoTime()
+        activateBeforeOpeningProject(seedContext)
+        val regularFiles =
+            Files.walk(seedContext.paths.configDir).use { paths ->
+                paths.filter { Files.isRegularFile(it) }.count()
+            }
+        val seedDurationMs = (System.nanoTime() - seedStartedAtNanos) / 1_000_000
+        println(
+            "ZMYBATIS_E2E_ACTIVATION_SEED_READY duration_ms=$seedDurationMs files=$regularFiles",
+        )
+        return seedContext.paths.configDir
+    }
 
     private fun activateBeforeOpeningProject(context: IDETestContext) {
+        val activationStartedAtNanos = System.nanoTime()
         // Keep the normal license/trial flow, but complete it before project-tree reads begin.
         // On 2026.2.3 activation dynamically reloads schemes; overlapping project startup races them.
         context.runIdeWithDriver(commandLine = ::startIdeWithoutProject, launchName = "activation")
@@ -796,6 +870,10 @@ class ZMyBatisStarterDriverE2ETest {
         assertTrue(
             Files.isRegularFile(context.paths.configDir.resolve("idea.key")),
             "activation must persist its state before the project run",
+        )
+        val durationMs = (System.nanoTime() - activationStartedAtNanos) / 1_000_000
+        println(
+            "ZMYBATIS_E2E_ACTIVATION config=${context.paths.configDir.fileName} duration_ms=$durationMs",
         )
     }
 
