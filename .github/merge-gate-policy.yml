@@ -17,8 +17,9 @@ mergeStrategy:
   requireLinearHistory: true
 
 # The live ruleset requires one stable aggregate context. Build/Test/Qodana/
-# Plugin Verifier/workflow-policy/dependency evidence remain separate jobs inside
-# build.yml; Merge Gate runs with always() and fails unless every component is success.
+# Plugin Verifier/workflow-policy/dependency evidence and the read-only dependency-
+# submission compatibility adapter remain separate jobs inside build.yml; Merge Gate
+# runs with always() and fails unless every component is success.
 requiredStatusChecks:
   - context: Merge Gate
     producedBy: .github/workflows/build.yml
@@ -74,6 +75,13 @@ trustBoundary:
   workflowDefault: contents:read
   explicitPermissionsRequired: true
   privilegedJobs:
+    - workflow: .github/workflows/dependency-submission.yml
+      job: submitGraph
+      permissions: [ contents:write ]
+      justification: >-
+        Publishes the exact protected-main Gradle dependency snapshot through
+        GitHub's Dependency Submission API. PR validation must use the separate
+        read-only generate-and-upload adapter and must never inherit this authority.
     - workflow: .github/workflows/release.yml
       job: release
       permissions: [ contents:write, id-token:write, attestations:write ]

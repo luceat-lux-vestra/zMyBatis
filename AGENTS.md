@@ -116,7 +116,7 @@ Baseline evidence for ordinary code changes is selected by the changed contract 
 
 Leap evidence must be indexed by the new contract/domain boundary where possible rather than by continued existence of legacy class names. Legacy fixtures remain useful only when they can falsify a target invariant or protect shipping behavior during migration.
 
-Documentation-only CI uses a deliberately narrow syntactic fast path when **every** changed file is one of `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, or a Markdown file under `docs/**`. This is not a semantic classifier and does not prove that a documentation claim is correct. In that case the internal `Build`, `Test`, `Inspect code`, and `Verify plugin` jobs keep their evidence slots but skip product/runtime work; `Lint workflows` and `Dependency Review` still execute, and the required `Merge Gate` succeeds only after all six component jobs report success. E2E and CodeQL are not scheduled for that docs-only change. Any changed file outside the allowlist, or any inability to establish the changed-file set, restores the ordinary full validation path.
+Documentation-only CI uses a deliberately narrow syntactic fast path when **every** changed file is one of `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, or a Markdown file under `docs/**`. This is not a semantic classifier and does not prove that a documentation claim is correct. In that case the internal `Build`, `Test`, `Inspect code`, and `Verify plugin` jobs keep their evidence slots but skip product/runtime work; `Lint workflows`, `Dependency submission PR validation`, and `Dependency Review` still execute, and the required `Merge Gate` succeeds only after all eight component jobs report success. E2E and CodeQL are not scheduled for that docs-only change. Any changed file outside the allowlist, or any inability to establish the changed-file set, restores the ordinary full validation path.
 
 Do not delete, ignore, soften, or bypass assertions/checks to obtain green CI. UNKNOWN/UNVERIFIED evidence is not a PASS.
 
@@ -146,7 +146,7 @@ The live ruleset has exactly one required context:
 
 - `Merge Gate`
 
-`Merge Gate` is the fail-closed aggregate in `.github/workflows/build.yml`. It succeeds only when the internal `Build`, `Test`, `Inspect code`, `Verify plugin`, `Lint workflows`, and `Dependency Review` jobs all conclude successfully. The live `main protection` ruleset enforces that context strictly together with squash-only linear history, required review-thread resolution, and no bypass actors. `.github/workflows/repository-settings-drift.yml` performs scheduled fail-closed live readback and also runs when its checked-in policy or audit implementation changes on main.
+`Merge Gate` is the fail-closed aggregate in `.github/workflows/build.yml`. It succeeds only when the internal `Build`, `Test`, `Qodana scope`, `Inspect code`, `Dependency submission PR validation`, `Verify plugin`, `Lint workflows`, and `Dependency Review` jobs all conclude successfully. The live `main protection` ruleset enforces that context strictly together with squash-only linear history, required review-thread resolution, and no bypass actors. `.github/workflows/repository-settings-drift.yml` performs scheduled fail-closed live readback and also runs when its checked-in policy or audit implementation changes on main.
 
 Workflow trust-boundary rules:
 
@@ -154,6 +154,7 @@ Workflow trust-boundary rules:
 - every scanned job has explicit effective permissions;
 - PR-authored code cannot execute with write-scoped authority unless an exact audited event condition excludes PR execution;
 - read-only checkout jobs use `persist-credentials: false`;
+- trusted dependency-submission changes are pre-merge validated through a read-only PR adapter that runs the same pinned Gradle action in `generate-and-upload` mode; PR graphs remain `refs/pull/...` evidence and can never replace the protected-main `generate-and-submit` publisher;
 - `Inspect code` is the authoritative Qodana gate;
 - the internal `Lint workflows` job in `build.yml` runs repository pin/trust/required-context/live-settings/release-provenance checks plus actionlint and zizmor;
 - the checked-in negative controls must continue to fail for deliberately bad fixtures;

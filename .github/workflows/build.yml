@@ -5,6 +5,7 @@
 # - test:        root + core + mybatis-engine checks, including Kover coverage report generation.
 # - qodanaScope: trusted-base fail-closed PR applicability decision.
 # - inspectCode: stable evidence; full Qodana or deterministic non-applicable result.
+# - dependencySubmissionValidation: read-only trusted-publisher compatibility fixture when applicable.
 # - verify:      plugin structure verification + IntelliJ Plugin Verifier.
 # - lint:        workflow/security/governance policy validation.
 # - dependencyReview: pull-request dependency admission control.
@@ -368,6 +369,81 @@ jobs:
           use-annotations: false
           post-pr-comment: false
 
+  dependencySubmissionValidation:
+    name: Dependency submission PR validation
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Fetch exact validation source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify dependency-submission PR adapter policy
+        run: |
+          python3 .github/workflow-policy/trusted_dependency_submission_validation.py self-test
+          python3 .github/workflow-policy/trusted_dependency_submission_validation.py check-contract \
+            --production .github/workflows/dependency-submission.yml \
+            --pr-workflow .github/workflows/build.yml
+
+      - name: Classify dependency-submission validation scope
+        id: dependency-scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            echo "Dependency-submission PR validation is not applicable outside pull_request."
+            exit 0
+          fi
+
+          pull="$RUNNER_TEMP/dependency-pr.json"
+          files="$RUNNER_TEMP/dependency-pr-files.json"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > "$pull"
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" > "$files"
+          python3 .github/workflow-policy/trusted_dependency_submission_validation.py classify \
+            --pull "$pull" \
+            --pages "$files" \
+            --head "$EXPECTED_HEAD" >> "$GITHUB_OUTPUT"
+
+      - name: Setup supported Java
+        if: ${{ steps.dependency-scope.outputs.required == 'true' }}
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Generate untrusted PR dependency graph without submission
+        if: ${{ steps.dependency-scope.outputs.required == 'true' }}
+        uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: true
+          dependency-graph: generate-and-upload
+          dependency-graph-report-dir: dependency-graph-reports-pr
+          dependency-graph-continue-on-failure: false
+
+      - name: Verify PR dependency graph provenance and coverage
+        if: ${{ steps.dependency-scope.outputs.required == 'true' }}
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          python3 .github/workflow-policy/trusted_dependency_submission_validation.py verify \
+            --dir dependency-graph-reports-pr \
+            --head "$EXPECTED_HEAD" \
+            --event-ref "$EVENT_REF"
+
+
   verify:
     name: Verify plugin
     runs-on: ubuntu-24.04-arm
@@ -488,6 +564,13 @@ jobs:
       - name: Require authoritative governance contract
         run: python3 .github/workflow-policy/check_governance_contract.py .
 
+      - name: Verify dependency-submission PR validation policy
+        run: |
+          python3 .github/workflow-policy/trusted_dependency_submission_validation.py self-test
+          python3 .github/workflow-policy/trusted_dependency_submission_validation.py check-contract \
+            --production .github/workflows/dependency-submission.yml \
+            --pr-workflow .github/workflows/build.yml
+
       - name: Verify issue metadata policy
         run: |
           python3 .github/workflow-policy/test_issue_metadata.py
@@ -536,7 +619,7 @@ jobs:
 
   mergeGate:
     name: Merge Gate
-    needs: [ build, test, qodanaScope, inspectCode, verify, lint, dependencyReview ]
+    needs: [ build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview ]
     if: ${{ always() }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
@@ -547,6 +630,7 @@ jobs:
           TEST_RESULT: ${{ needs.test.result }}
           QODANA_SCOPE_RESULT: ${{ needs.qodanaScope.result }}
           INSPECT_RESULT: ${{ needs.inspectCode.result }}
+          DEPENDENCY_SUBMISSION_VALIDATION_RESULT: ${{ needs.dependencySubmissionValidation.result }}
           VERIFY_RESULT: ${{ needs.verify.result }}
           LINT_RESULT: ${{ needs.lint.result }}
           DEPENDENCY_REVIEW_RESULT: ${{ needs.dependencyReview.result }}
@@ -559,6 +643,7 @@ jobs:
             "Test=$TEST_RESULT" \
             "Qodana scope=$QODANA_SCOPE_RESULT" \
             "Inspect code=$INSPECT_RESULT" \
+            "Dependency submission PR validation=$DEPENDENCY_SUBMISSION_VALIDATION_RESULT" \
             "Verify plugin=$VERIFY_RESULT" \
             "Lint workflows=$LINT_RESULT" \
             "Dependency Review=$DEPENDENCY_REVIEW_RESULT"

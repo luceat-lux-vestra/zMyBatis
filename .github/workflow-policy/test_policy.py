@@ -397,8 +397,8 @@ jobs:
         aggregate_workflow = aggregate_root / ".github" / "workflows" / "build.yml"
         text = aggregate_workflow.read_text(encoding="utf-8")
         text = text.replace(
+            "needs: [ build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview ]",
             "needs: [ build, test, qodanaScope, inspectCode, verify, lint, dependencyReview ]",
-            "needs: [ build, test, qodanaScope, inspectCode, verify, lint ]",
             1,
         )
         aggregate_workflow.write_text(text, encoding="utf-8")
