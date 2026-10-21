@@ -128,7 +128,7 @@ def check_entry(entry: dict[str, str], repo_root: Path, classification: str) -> 
         failures.append(f"'{context}': job '{job_id}' in {produced_by} has name '{name}', expected '{context}'")
 
     if context == "Merge Gate":
-        expected_needs = {"build", "test", "qodanaScope", "inspectCode", "verify", "lint", "dependencyReview"}
+        expected_needs = {"build", "test", "qodanaScope", "inspectCode", "dependencySubmissionValidation", "verify", "lint", "dependencyReview"}
         actual_needs = job_needs(job)
         if actual_needs != expected_needs:
             failures.append(
