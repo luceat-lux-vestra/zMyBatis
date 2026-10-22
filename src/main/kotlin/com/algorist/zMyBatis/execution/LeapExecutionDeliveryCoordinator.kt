@@ -19,12 +19,14 @@ import com.intellij.openapi.project.Project
  * Non-shipping #66 application coordinator from approved preparation inputs to Database Tools.
  *
  * The registered action does not call this yet. This class exists to prove one complete authority
- * chain before preview/confirmation and the final single-authority action cutover are introduced.
+ * chain through immutable-artifact approval and delivery before the final single-authority action
+ * cutover is introduced.
  */
 @Suppress("unused")
 internal class LeapExecutionDeliveryCoordinator(project: Project) {
     private val targetResolver = DatabaseToolsTargetResolver(project)
     private val consoleAdapter = DatabaseToolsConsoleAdapter.getInstance(project)
+    private val approvalAdapter = LeapExecutionApprovalAdapter(project)
 
     fun execute(
         source: PreparationSource,
@@ -33,8 +35,10 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
         targetDescriptor: ExecutionTargetDescriptor,
         resourceKey: String,
         forceNewConsole: Boolean,
+        approvalOptions: LeapExecutionApprovalOptions,
         isInvocationActive: () -> Boolean,
         onExecuted: () -> Unit,
+        onCancelled: () -> Unit,
         onFailure: (LeapExecutionDeliveryFailure) -> Unit,
     ) {
         val authority = preparationSourceAuthority(source)
@@ -85,6 +89,41 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
             return
         }
 
+        approvalAdapter.requestApproval(
+            artifact = artifact,
+            options = approvalOptions,
+            isInvocationActive = isInvocationActive,
+            onResult = { approval ->
+                when (approval) {
+                    LeapExecutionApprovalResult.Approved ->
+                        deliverApproved(
+                            authority = authority,
+                            artifact = artifact,
+                            targetDescriptor = targetDescriptor,
+                            resourceKey = resourceKey,
+                            forceNewConsole = forceNewConsole,
+                            isInvocationActive = isInvocationActive,
+                            onExecuted = onExecuted,
+                            onFailure = onFailure,
+                        )
+                    LeapExecutionApprovalResult.UserCancelled -> onCancelled()
+                    LeapExecutionApprovalResult.InvocationInvalidated ->
+                        onFailure(LeapExecutionDeliveryFailure.InvocationInvalidated)
+                }
+            },
+        )
+    }
+
+    private fun deliverApproved(
+        authority: PreparationSourceAuthority,
+        artifact: MaterializedExecution,
+        targetDescriptor: ExecutionTargetDescriptor,
+        resourceKey: String,
+        forceNewConsole: Boolean,
+        isInvocationActive: () -> Boolean,
+        onExecuted: () -> Unit,
+        onFailure: (LeapExecutionDeliveryFailure) -> Unit,
+    ) {
         val deliveryTarget = when (
             val admission = admit(
                 authority = authority,
