@@ -174,7 +174,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         }
 
     /**
-     * Non-shipping Leap delivery entry point.
+     * Shipping Leap immutable-artifact delivery entry point.
      *
      * The caller owns invocation/cancellation and source-revision validity and supplies a freshly
      * resolved exact Database Tools target. Every asynchronous/native dispatch boundary reruns the
@@ -182,7 +182,6 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
      *
      * Neither preview text nor formatting output can become the execution payload.
      */
-    @Suppress("unused") // #417 boundary is packaged before the #66 production authority cutover.
     fun executeMaterialized(
         console: JdbcConsole,
         artifact: MaterializedExecution,
@@ -430,7 +429,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
  * Shared fail-closed admission predicate for immutable artifact delivery.
  *
  * Ordering is deliberate: an unbound artifact, cancelled invocation, or stale source never reaches
- * target lookup. The target supplied by the future #66 caller must be freshly resolved through the
+ * target lookup. The shipping caller must freshly resolve the target through the
  * maintained Database Tools exact datasource/schema resolver.
  */
 internal fun materializedDeliveryValid(
