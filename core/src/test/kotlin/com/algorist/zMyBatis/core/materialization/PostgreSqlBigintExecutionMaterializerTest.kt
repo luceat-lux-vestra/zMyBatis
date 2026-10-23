@@ -48,9 +48,22 @@ class PostgreSqlBigintExecutionMaterializerTest {
 
     @Test
     fun rawInterpolationMayCoexistWithOneProvenBigintBinding() {
+        val rawFile = SourceFileId("vfs:/Query.xml")
         val raw = PreparedRawInterpolation(
             requirementId = InputRequirementId("raw-projection"),
-            provenance = provenance(InputKind.RAW_INTERPOLATION, "projection"),
+            provenance = InputProvenance(
+                listOf(
+                    InputEvidence.Placeholder(
+                        kind = InputKind.RAW_INTERPOLATION,
+                        expression = "projection",
+                        source = SourceEvidence(
+                            rawFile,
+                            SourceRevision("r1"),
+                            SourceRange(0, 5),
+                        ),
+                    ),
+                ),
+            ),
             origin = ExecutionInputOrigin.USER_ENTERED,
         )
         val execution = success(
