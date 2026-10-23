@@ -19,10 +19,10 @@ import com.algorist.zMyBatis.core.preparation.PreparedExecution
 import com.algorist.zMyBatis.mybatis.MyBatisPreparationBoundary
 
 /**
- * Non-shipping #66 application boundary for building one immutable execution candidate.
+ * Shipping application boundary for building one immutable execution candidate.
  *
- * This deliberately stops before Database Tools delivery. The registered shipping action remains
- * the legacy authority until the replacement path reaches the single-authority cutover gate.
+ * This boundary stops before Database Tools delivery and returns either one exact target-bound
+ * artifact or a typed fail-closed preparation/materialization result.
  */
 internal object LeapExecutionCandidateCoordinator {
     fun build(
