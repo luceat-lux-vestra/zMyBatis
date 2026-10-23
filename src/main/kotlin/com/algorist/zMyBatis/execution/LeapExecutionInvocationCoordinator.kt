@@ -119,7 +119,7 @@ internal sealed interface LeapExecutionInvocationFailure {
 }
 
 /**
- * Non-shipping production-orchestration seam for #66.
+ * Production-orchestration seam for the registered #66 execution action.
  *
  * Source capture and missing-target chooser ownership remain outside this slice. Given one immutable
  * preparation source, this coordinator derives its matching input contract, snapshots one persisted
