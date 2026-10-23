@@ -73,6 +73,13 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("<artifact use=\"false\" />") &&
                 e2e.contains("configDir.resolve(\"jdbc-drivers\")"),
         )
+        assertTrue(
+            "cold H2 fixture must establish a maintained Database Tools connection and force schema introspection",
+            e2e.contains("connectAndPrimeH2DatabaseToolsSchemaMetadata") &&
+                e2e.contains("invokeAction(\"Database.Settings\", now = false)") &&
+                e2e.contains("isConnectionSuccessful(driverNameContains = \"H2\")") &&
+                e2e.contains("DatabaseView.ForceRefresh"),
+        )
         assertFalse(
             "H2 must not rely on the IDE process classpath instead of Database Tools driver isolation",
             e2e.contains("idea.additional.classpath"),
