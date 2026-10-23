@@ -260,7 +260,7 @@ class ZMyBatisStarterDriverE2ETest {
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
-                primeDatabaseToolsSchemaMetadata()
+                connectAndPrimeH2DatabaseToolsSchemaMetadata()
 
                 service(ZMyBatisSettingsRemote::class).apply {
                     setAutoFormatSql(false)
@@ -631,7 +631,7 @@ class ZMyBatisStarterDriverE2ETest {
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
-                primeDatabaseToolsSchemaMetadata()
+                connectAndPrimeH2DatabaseToolsSchemaMetadata()
 
                 service(ZMyBatisSettingsRemote::class).apply {
                     setAutoFormatSql(false)
@@ -707,7 +707,7 @@ class ZMyBatisStarterDriverE2ETest {
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
-                primeDatabaseToolsSchemaMetadata()
+                connectAndPrimeH2DatabaseToolsSchemaMetadata()
 
                 service(ZMyBatisSettingsRemote::class).apply {
                     setAutoFormatSql(false)
@@ -969,14 +969,48 @@ class ZMyBatisStarterDriverE2ETest {
         }
     }
 
-    private fun Driver.primeDatabaseToolsSchemaMetadata() {
+    private fun Driver.connectAndPrimeH2DatabaseToolsSchemaMetadata() {
         ideFrame {
+            // The project fixture is deliberately cold on startup. Open the maintained Database
+            // Tools settings surface and prove the pinned H2 driver can establish a real connection
+            // before asking the database explorer to introspect explicit schemas.
+            invokeAction("Database.Settings", now = false)
+            dataSourcesAndDriversDialog {
+                testConnection()
+                waitFor(
+                    "pinned local H2 driver result",
+                    timeout = 2.minutes,
+                ) {
+                    isConnectionSuccessful(driverNameContains = "H2") || downloadDriverFilesButton.present()
+                }
+                assertFalse(
+                    downloadDriverFilesButton.present(),
+                    "pinned local H2 driver must be recognized without downloading another driver",
+                )
+                assertTrue(
+                    isConnectionSuccessful(driverNameContains = "H2"),
+                    "H2 Test Connection must succeed before explicit-schema target admission",
+                )
+                waitFor(
+                    "H2 Test Connection lifecycle completed",
+                    timeout = 30.seconds,
+                ) {
+                    testConnectionButton.isEnabled()
+                }
+                driver.waitForIndicators(30.seconds, waitSmartLongEnough = true)
+                okButton.click()
+            }
+
+            waitFor("Data Sources and Drivers dialog is closed", timeout = 30.seconds) {
+                !ui.isDialogOpened("//div[@title='Data Sources and Drivers']")
+            }
+
             invokeAction("ActivateDatabaseToolWindow", now = false)
             databaseToolWindow {
-                waitFor("DatabaseView.Refresh is accepted", timeout = 30.seconds) {
+                waitFor("DatabaseView.ForceRefresh is accepted", timeout = 30.seconds) {
                     runCatching {
                         driver.invokeAction(
-                            "DatabaseView.Refresh",
+                            "DatabaseView.ForceRefresh",
                             now = false,
                             component = component,
                         )
@@ -985,8 +1019,9 @@ class ZMyBatisStarterDriverE2ETest {
                 }
             }
         }
-        // The replacement target authority never invents or defaults a schema. A static Starter
-        // datasource therefore has to complete Database Tools introspection before the action can
+
+        // The replacement target authority never invents or defaults a schema. The fixture must
+        // complete a real Database Tools connection plus forced introspection before the action can
         // enumerate an explicit named schema.
         waitForIndicators(2.minutes, waitSmartLongEnough = true)
     }
