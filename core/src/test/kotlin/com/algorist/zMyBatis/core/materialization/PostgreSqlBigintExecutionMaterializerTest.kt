@@ -5,6 +5,7 @@ import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
 import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.algorist.zMyBatis.core.execution.StableDataSourceId
+import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputKind
 import com.algorist.zMyBatis.core.input.InputProvenance
@@ -16,6 +17,7 @@ import com.algorist.zMyBatis.core.preparation.PreparedBinding
 import com.algorist.zMyBatis.core.preparation.PreparedBindingMetadata
 import com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin
 import com.algorist.zMyBatis.core.preparation.PreparedExecution
+import com.algorist.zMyBatis.core.preparation.PreparedRawInterpolation
 import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
 import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
@@ -42,6 +44,27 @@ class PostgreSqlBigintExecutionMaterializerTest {
         assertEquals("SELECT 7 AS RESULT_VALUE", execution.executionSql)
         assertEquals(target.targetId, execution.executionTargetId)
         assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, execution.executionDialectId)
+    }
+
+    @Test
+    fun rawInterpolationMayCoexistWithOneProvenBigintBinding() {
+        val raw = PreparedRawInterpolation(
+            requirementId = InputRequirementId("raw-projection"),
+            provenance = provenance(InputKind.RAW_INTERPOLATION, "projection"),
+            origin = ExecutionInputOrigin.USER_ENTERED,
+        )
+        val execution = success(
+            PostgreSqlBigintExecutionMaterializer(target()).materialize(
+                prepared(
+                    "SELECT 7 AS RAW_VALUE, ? AS RESULT_VALUE",
+                    bindings = listOf(binding(BigInteger.valueOf(41))),
+                    rawInterpolations = listOf(raw),
+                ),
+            ),
+        )
+
+        assertEquals("SELECT 7 AS RAW_VALUE, 41 AS RESULT_VALUE", execution.executionSql)
+        assertTrue(execution.safetyFlags.containsRawInterpolation)
     }
 
     @Test
@@ -186,6 +209,7 @@ class PostgreSqlBigintExecutionMaterializerTest {
         sql: String,
         value: BigInteger = BigInteger.ONE,
         bindings: List<PreparedBinding> = listOf(binding(value)),
+        rawInterpolations: List<PreparedRawInterpolation> = emptyList(),
     ): PreparedExecution {
         val file = SourceFileId("vfs:/Query.xml")
         return PreparedExecution(
@@ -194,7 +218,7 @@ class PostgreSqlBigintExecutionMaterializerTest {
             sourceRevisions = mapOf(file to SourceRevision("r1")),
             sqlWithPlaceholders = sql,
             orderedBindings = bindings,
-            rawInterpolations = emptyList(),
+            rawInterpolations = rawInterpolations,
             preparationMetadata = PreparationMetadata(
                 engineIdentity = "org.mybatis:mybatis",
                 engineVersion = "3.5.19",
