@@ -13,7 +13,6 @@ import com.algorist.zMyBatis.core.source.JavaAnnotationStatementVariantsCapture
 import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceSnapshot
-import com.algorist.zMyBatis.core.source.XmlMapperMethodCapture
 import com.algorist.zMyBatis.core.source.XmlStatementId
 import com.algorist.zMyBatis.core.source.selectJavaAnnotationStatementVariant
 import com.algorist.zMyBatis.services.ConsoleCacheService
@@ -160,8 +159,8 @@ internal fun selectLeapPreparationSource(
     evidence: LeapActionSourceEvidence,
     effectiveDatabaseId: MyBatisDatabaseId?,
     captureXmlMapperMethod: (XmlStatementId) -> XmlMapperMethodCaptureResult,
-): LeapPreparationSourceSelectionResult =
-    when (evidence) {
+): LeapPreparationSourceSelectionResult {
+    return when (evidence) {
         is LeapActionSourceEvidence.Java ->
             when (
                 val selection = selectJavaAnnotationStatementVariant(
@@ -234,6 +233,7 @@ internal fun selectLeapPreparationSource(
             )
         }
     }
+}
 
 private fun XmlMapperMethodCaptureFailure.allowsAbsentMapperMethod(): Boolean =
     this == XmlMapperMethodCaptureFailure.UNRESOLVED_MAPPER_TYPE ||
@@ -358,6 +358,7 @@ internal class LeapExecutionTargetAdmissionAdapter(
 
                     val dataSourceGroup = DefaultActionGroup(dataSource.name, true)
                     dataSourceGroup.templatePresentation.icon = dataSource.icon
+                    val eligibleBeforeDataSource = eligibleTargets
                     for (schema in schemas) {
                         val descriptor = leapExecutionTargetDescriptor(
                             stableDataSourceId = stableId,
@@ -385,7 +386,7 @@ internal class LeapExecutionTargetAdmissionAdapter(
                             },
                         )
                     }
-                    if (dataSourceGroup.childCount > 0) {
+                    if (eligibleTargets > eligibleBeforeDataSource) {
                         group.add(dataSourceGroup)
                     }
                 }
