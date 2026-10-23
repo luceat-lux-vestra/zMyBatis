@@ -527,12 +527,12 @@ internal sealed interface LeapActionContextAdmissionFailure {
 }
 
 /**
- * Non-shipping real-action-context admission boundary for #66.
+ * Real-action-context admission boundary for the registered #66 execution action.
  *
  * This class extracts immutable source evidence and exact target authority from an IDE action event,
- * then delegates to #443. The registered shipping action does not call this coordinator yet.
+ * then delegates to the invocation/application chain without a legacy execution fallback.
  */
-@Suppress("unused", "LongMethod")
+@Suppress("LongMethod")
 internal class LeapActionContextAdmissionCoordinator(
     private val project: Project,
 ) {
