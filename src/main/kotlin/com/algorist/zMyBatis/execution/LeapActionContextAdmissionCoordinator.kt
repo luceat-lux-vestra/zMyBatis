@@ -88,6 +88,7 @@ internal sealed interface LeapActionSourceEvidenceFailure {
         val failure: XmlActionSourceCaptureFailure,
     ) : LeapActionSourceEvidenceFailure
 
+    data object XmlProjectIndexUnavailable : LeapActionSourceEvidenceFailure
     data object UnsupportedContext : LeapActionSourceEvidenceFailure
 }
 
@@ -579,9 +580,83 @@ internal class LeapActionContextAdmissionCoordinator(
             }
         }
 
+        continueWithCapturedEvidence(
+            evidence = evidence,
+            dataContext = event.dataContext,
+            liveInvocation = liveInvocation,
+            onExecuted = onExecuted,
+            onCancelled = onCancelled,
+            onFailure = onFailure,
+        )
+    }
+
+    private fun continueWithCapturedEvidence(
+        evidence: LeapActionSourceEvidence,
+        dataContext: DataContext,
+        liveInvocation: () -> Boolean,
+        onExecuted: () -> Unit,
+        onCancelled: () -> Unit,
+        onFailure: (LeapActionContextAdmissionFailure) -> Unit,
+    ) {
+        if (evidence !is LeapActionSourceEvidence.Xml) {
+            requestTarget(
+                evidence = evidence,
+                dataContext = dataContext,
+                liveInvocation = liveInvocation,
+                onExecuted = onExecuted,
+                onCancelled = onCancelled,
+                onFailure = onFailure,
+            )
+            return
+        }
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val expanded = XmlProjectMapperSourceCaptureAdapter.capture(
+                project = project,
+                rootSnapshot = evidence.snapshots.single(),
+                rootDiscovery = evidence.discoveries.single(),
+            )
+            ApplicationManager.getApplication().invokeLater({
+                if (!liveInvocation()) {
+                    onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
+                    return@invokeLater
+                }
+
+                when (expanded) {
+                    is XmlProjectMapperSourceCaptureResult.Captured ->
+                        requestTarget(
+                            evidence = evidence.copy(
+                                snapshots = expanded.capture.snapshots,
+                                discoveries = expanded.capture.discoveries,
+                            ),
+                            dataContext = dataContext,
+                            liveInvocation = liveInvocation,
+                            onExecuted = onExecuted,
+                            onCancelled = onCancelled,
+                            onFailure = onFailure,
+                        )
+                    XmlProjectMapperSourceCaptureResult.IndexUnavailable ->
+                        onFailure(
+                            LeapActionContextAdmissionFailure.SourceCaptureFailed(
+                                LeapActionSourceEvidenceFailure.XmlProjectIndexUnavailable,
+                            ),
+                        )
+                }
+            }, ModalityState.any())
+        }
+    }
+
+    private fun requestTarget(
+        evidence: LeapActionSourceEvidence,
+        dataContext: DataContext,
+        liveInvocation: () -> Boolean,
+        onExecuted: () -> Unit,
+        onCancelled: () -> Unit,
+        onFailure: (LeapActionContextAdmissionFailure) -> Unit,
+    ) {
         targetAdmission.requestTarget(
             sourceFileId = evidence.sourceFileId,
-            dataContext = event.dataContext,
+            dataContext = dataContext,
             isInvocationActive = liveInvocation,
             onResult = { target ->
                 when (target) {
