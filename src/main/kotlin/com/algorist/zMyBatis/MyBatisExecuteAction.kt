@@ -28,6 +28,14 @@ class MyBatisExecuteAction : AnAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
+        when (MyBatisContextAnalyzer.analyze(e)) {
+            MyBatisContextAnalyzer.ContextType.NONE -> return
+            MyBatisContextAnalyzer.ContextType.PROVIDER -> {
+                LeapActionFailurePresenter.presentUnsupportedProvider(project)
+                return
+            }
+            else -> Unit
+        }
 
         LeapActionContextAdmissionCoordinator(project).execute(
             event = e,
@@ -41,6 +49,19 @@ class MyBatisExecuteAction : AnAction() {
 }
 
 private object LeapActionFailurePresenter {
+    fun presentUnsupportedProvider(project: Project) {
+        show(
+            project = project,
+            presentation = FailurePresentation(
+                title = "zMyBatis: Provider Not Supported",
+                message = "@SelectProvider / @InsertProvider / @UpdateProvider / @DeleteProvider " +
+                    "generate SQL dynamically at runtime. Run zMyBatis from a supported XML mapper " +
+                    "or direct Java statement annotation instead.",
+            ),
+            error = false,
+        )
+    }
+
     fun present(
         project: Project,
         failure: LeapActionContextAdmissionFailure,
@@ -77,13 +98,21 @@ private object LeapActionFailurePresenter {
                 )
         }
 
+        show(project, presentation, error = true)
+    }
+
+    private fun show(
+        project: Project,
+        presentation: FailurePresentation,
+        error: Boolean,
+    ) {
         ApplicationManager.getApplication().invokeLater({
             if (project.isDisposed) return@invokeLater
-            Messages.showErrorDialog(
-                project,
-                presentation.message,
-                presentation.title,
-            )
+            if (error) {
+                Messages.showErrorDialog(project, presentation.message, presentation.title)
+            } else {
+                Messages.showInfoMessage(project, presentation.message, presentation.title)
+            }
         }, ModalityState.any())
     }
 }
