@@ -13,16 +13,16 @@ import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.source.SourceGraphRevalidationFailure
 import com.algorist.zMyBatis.source.SourceGraphRevalidationResult
 import com.algorist.zMyBatis.source.StatementSourceGraphRevalidator
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
+import java.awt.datatransfer.StringSelection
 
 /**
- * Non-shipping #66 application coordinator from approved preparation inputs to Database Tools.
+ * Shipping #66 application coordinator from approved preparation inputs to Database Tools.
  *
- * The registered action does not call this yet. This class exists to prove one complete authority
- * chain through immutable-artifact approval and delivery before the final single-authority action
- * cutover is introduced.
+ * The exact immutable artifact remains the sole SQL authority through approval, target revalidation,
+ * native Database Tools execution and optional post-execution clipboard projection.
  */
-@Suppress("unused")
 internal class LeapExecutionDeliveryCoordinator(project: Project) {
     private val targetResolver = DatabaseToolsTargetResolver(project)
     private val consoleAdapter = DatabaseToolsConsoleAdapter.getInstance(project)
@@ -35,6 +35,7 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
         targetDescriptor: ExecutionTargetDescriptor,
         resourceKey: String,
         forceNewConsole: Boolean,
+        copyExecutedSqlToClipboard: Boolean,
         approvalOptions: LeapExecutionApprovalOptions,
         isInvocationActive: () -> Boolean,
         onExecuted: () -> Unit,
@@ -102,6 +103,7 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
                             targetDescriptor = targetDescriptor,
                             resourceKey = resourceKey,
                             forceNewConsole = forceNewConsole,
+                            copyExecutedSqlToClipboard = copyExecutedSqlToClipboard,
                             isInvocationActive = isInvocationActive,
                             onExecuted = onExecuted,
                             onFailure = onFailure,
@@ -120,6 +122,7 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
         targetDescriptor: ExecutionTargetDescriptor,
         resourceKey: String,
         forceNewConsole: Boolean,
+        copyExecutedSqlToClipboard: Boolean,
         isInvocationActive: () -> Boolean,
         onExecuted: () -> Unit,
         onFailure: (LeapExecutionDeliveryFailure) -> Unit,
@@ -159,7 +162,14 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
                         expected == authority.sourceRevisions &&
                             revalidate(authority) is SourceGraphRevalidationResult.Current
                     },
-                    onExecuted = onExecuted,
+                    onExecuted = {
+                        if (copyExecutedSqlToClipboard) {
+                            CopyPasteManager.getInstance().setContents(
+                                StringSelection(artifact.executionSql),
+                            )
+                        }
+                        onExecuted()
+                    },
                     onFailure = { failure ->
                         onFailure(LeapExecutionDeliveryFailure.SqlExecutionFailed(failure))
                     },
