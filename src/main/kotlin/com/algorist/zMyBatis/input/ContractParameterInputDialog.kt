@@ -32,8 +32,8 @@ import javax.swing.text.JTextComponent
  * submission policy to [ContractInputSubmissionPolicy], then typed decoding/final environment
  * validation to [ContractInputAdapter].
  *
- * Production action cutover is deliberately owned by #66. Until that cutover, the legacy dialog
- * may remain on the legacy execution path; this class is the target UI boundary for that migration.
+ * The registered Leap action uses this dialog only for non-empty contracts. A valid zero-input
+ * contract bypasses modal input entirely; the retained legacy dialog is non-shipping cleanup debt.
  */
 @Suppress("MagicNumber", "LongMethod")
 class ContractParameterInputDialog(
