@@ -141,6 +141,61 @@ class LeapActionContextAdmissionCoordinatorTest {
     }
 
     @Test
+    fun xmlSourceSelectionResolvesQualifiedCrossDocumentInclude() {
+        val rootContent = """
+            <mapper namespace="fixture.Mapper">
+              <select id="find">
+                SELECT * FROM users
+                <include refid="shared.SharedFragments.where"/>
+              </select>
+            </mapper>
+        """.trimIndent()
+        val sharedContent = """
+            <mapper namespace="shared.SharedFragments">
+              <sql id="where">WHERE active = 1</sql>
+            </mapper>
+        """.trimIndent()
+        val rootSnapshot = SourceSnapshot(
+            fileId = SourceFileId("vfs:/fixture/Mapper.xml"),
+            revision = SourceRevision("document:445-root"),
+            content = rootContent,
+        )
+        val sharedSnapshot = SourceSnapshot(
+            fileId = SourceFileId("vfs:/fixture/SharedFragments.xml"),
+            revision = SourceRevision("vfs:445-shared"),
+            content = sharedContent,
+        )
+        val rootDiscovery =
+            (XmlMapperSourceDiscovery.discover(rootSnapshot) as XmlMapperDiscoveryResult.Discovered).mapper
+        val sharedDiscovery =
+            (XmlMapperSourceDiscovery.discover(sharedSnapshot) as XmlMapperDiscoveryResult.Discovered).mapper
+        val statementId = XmlStatementId(rootSnapshot.fileId, "fixture.Mapper", "find")
+
+        val selected = selectLeapPreparationSource(
+            evidence = LeapActionSourceEvidence.Xml(
+                statementId = statementId,
+                snapshots = listOf(rootSnapshot, sharedSnapshot),
+                discoveries = listOf(rootDiscovery, sharedDiscovery),
+            ),
+            effectiveDatabaseId = null,
+            captureXmlMapperMethod = {
+                XmlMapperMethodCaptureResult.Failed(
+                    XmlMapperMethodCaptureFailure.UNRESOLVED_MAPPER_TYPE,
+                )
+            },
+        )
+
+        val source = (selected as LeapPreparationSourceSelectionResult.Ready).source
+            as XmlMapperPreparationSource
+        assertEquals(2, source.sourceGraph.sourceSnapshots.size)
+        assertEquals(1, source.sourceGraph.dependencies.size)
+        assertEquals(
+            sharedSnapshot.fileId,
+            source.sourceGraph.dependencies.single().requiredFileId,
+        )
+    }
+
+    @Test
     fun admissionRemainsNonShippingAndHasNoLegacyFallbackOrDefaultSchema() {
         val coordinator = sourceText(
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapActionContextAdmissionCoordinator.kt",
@@ -151,6 +206,8 @@ class LeapActionContextAdmissionCoordinatorTest {
 
         assertTrue(coordinator.contains("JavaAnnotationSourceCaptureAdapter.capture"))
         assertTrue(coordinator.contains("XmlActionSourceCaptureAdapter.capture"))
+        assertTrue(coordinator.contains("XmlProjectMapperSourceCaptureAdapter.capture"))
+        assertTrue(coordinator.contains("executeOnPooledThread"))
         assertTrue(coordinator.contains("LeapExecutionInvocationCoordinator"))
         assertTrue(coordinator.contains("ExecutionTargetDescriptorStore"))
         assertFalse(coordinator.contains("Use Default Schema"))
