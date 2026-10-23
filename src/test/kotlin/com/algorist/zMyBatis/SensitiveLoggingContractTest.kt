@@ -53,9 +53,9 @@ class SensitiveLoggingContractTest {
     }
 
     @Test
-    fun `metadata only logging evidence remains in the shipping action`() {
+    fun `legacy compatibility logging remains metadata only until cleanup`() {
         val source = Files.readString(
-            Path.of("src", "main", "kotlin", "com", "algorist", "zMyBatis", "MyBatisExecuteProxyAction.kt")
+            Path.of("src", "main", "kotlin", "com", "algorist", "zMyBatis", "LegacyMyBatisExecuteProxyAction.kt")
         )
         val dollar = '$'
         val metadataOnlyEvidence = listOf(
