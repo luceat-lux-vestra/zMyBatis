@@ -8,9 +8,9 @@ import org.junit.Test
 class LegacyActionSourceRevisionGuardContractTest {
 
     @Test
-    fun `shipping action carries root and annotation dependency revisions through execution boundaries`() {
+    fun `legacy compatibility action carries root and annotation dependency revisions through execution boundaries`() {
         val action = source(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
+            "src/main/kotlin/com/algorist/zMyBatis/LegacyMyBatisExecuteProxyAction.kt",
         )
 
         assertTrue(
