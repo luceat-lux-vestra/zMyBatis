@@ -173,7 +173,7 @@ Every configured datasource remains eligible for selection and exact target iden
 
 Standard MyBatis `databaseId` semantics depend on target-derived effective database ID and may refuse unresolved custom mappings; the source/target contract of #252 continues to apply. `#{}` bound values and `${}` raw interpolation remain different input/confirmation classes.
 
-#251 established **NO-GO for the different strict contract** of maintained programmatic JDBC binding plus native results/history on 2026.2. #258 froze that earlier product target. #391 changes the **target product requirement**, not those measured API facts. The shipping action and current `MaintainedExecutionMaterializer` still fail closed for nonzero Leap bindings until another PR implements, tests and wires a supported renderer. There is no permission to route zero bindings to Leap while silently using legacy for nonzero inputs, or to disable `BOUND_EXECUTION_REQUIRED` without actual code/evidence.
+#251 established **NO-GO for the different strict contract** of maintained programmatic JDBC binding plus native results/history on 2026.2. #258 froze that earlier product target. #391 changes the **target product requirement**, not those measured API facts. The registered action now uses one Leap execution authority: zero-binding artifacts use the target-bound DB-neutral materializer, and the explicitly proven nonzero production slice uses the PostgreSQL BIGINT materializer. Every other nonzero dialect/type/placeholder shape fails typed at materialization; none may fall back to legacy execution.
 
 SQL text materialization is a deliberately bounded compatibility feature: no generic regex replacement of `?`, string/comment/dialect-operator confusion, guessed null, arbitrary `toString()`, unverified raw `${}` replacement or broad DBMS support claim. Preview/execution identity and mandatory confirmation requirements remain unchanged in strength.
 
@@ -185,7 +185,7 @@ The sole execution authority after materialization is an immutable **exact SQL-t
 - Revalidate source, target, cancellation/disposal and confirmation immediately before dispatch; any material change invalidates the artifact.
 - DML and raw `${}` require explicit final-artifact confirmation; no implicit execution after preview.
 - A prepared statement with nonzero bindings is not an executable text artifact until *all* dialect/type/placeholder obligations are proven. Unsupported cases fail closed.
-- Existing legacy execution remains sole shipping authority until one complete new production path is proven; no split cutover by mapping count.
+- The registered action has one Leap production authority. Unsupported materialization never falls back to the retained legacy evaluator/action by mapping count, mapper flavor, setting, or failure path.
 
 ## 11. Safety posture
 
