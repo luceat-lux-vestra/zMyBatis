@@ -17,18 +17,22 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
    - copies the versioned sample project into a fresh temporary directory;
    - opens the project and waits for supported background-indicator readiness;
    - reaches the shipping `ZMyBatisSettings` application service over Driver JMX/RMI and asserts its typed production result.
-2. **Registered-action / real Database Tools golden path**
+2. **Registered-action / real Database Tools zero-binding golden path**
    - starts the exact packaged plugin in a real IDE process with an integration-test-only H2 JDBC fixture registered as a local Database Tools driver;
    - prepares a real project-level Database Tools datasource through the IDE-supported `.idea/dataSources.xml` persistence boundary rather than a test adapter or internal Driver stub;
-   - opens the canonical mapper and invokes the registered `zMyBatis.Execute` action;
-   - selects the datasource/default-schema through the shipping chooser;
-   - enters a scalar through the real `ParameterInputDialog`;
-   - observes the real `SqlPreviewDialog` and requires the user-visible SQL to contain the resolved value;
+   - opens the canonical zero-binding mapper and invokes the registered `zMyBatis.Execute` action;
+   - selects the datasource plus an explicit named schema through the shipping chooser;
+   - observes the real `SqlPreviewDialog` and requires its SQL to equal the exact zero-binding artifact text;
    - clicks `Execute` and waits for a real Database Tools `TableResultView` cell containing the expected H2 result.
-3. **Registered-action fail-closed path**
-   - opens the same mapper fixture in a fresh IDE process without any datasource;
+3. **Registered-action / PostgreSQL BIGINT nonzero golden path**
+   - creates a real PostgreSQL datasource through Database Tools using the pinned pgJDBC fixture;
+   - invokes the same registered `zMyBatis.Execute` action for a mapper with one `#{value,jdbcType=BIGINT}` binding and stock-MyBatis dynamic `<if>`;
+   - selects the exact datasource + `public` schema, enters the scalar through `ContractParameterInputDialog`, and requires preview text to equal the independently materialized artifact;
+   - executes positive and negative cases, observes native result-grid values, and verifies both exact SQL texts persist in native Database Tools history.
+4. **Registered-action fail-closed path**
+   - opens the mapper fixture in a fresh IDE process without any datasource;
    - invokes the real production action from the supported statement context;
-   - requires the production `zMyBatis: No Data Source` refusal instead of parameter evaluation or execution.
+   - requires the typed `zMyBatis: Execution Target Unavailable` refusal instead of preparation or execution.
 
 No production method exists solely for this harness. H2 is an `integrationTestImplementation` fixture only; before IDE startup, the test copies its JAR into that Starter run's isolated IDE config and records it as a local Driver Files library in `options/databaseDrivers.xml`. It is neither placed on `idea.additional.classpath` nor added to the shipped plugin dependency graph. The datasource itself is loaded from project `.idea/dataSources.xml` plus local datasource state, while Driver interacts only with the shipping zMyBatis service/action and visible product UI. The golden path therefore exercises Database Tools' own JDBC driver classloader instead of an internal datasource-construction stub or production E2E hook.
 
@@ -88,4 +92,4 @@ Pure value objects, deterministic source-graph algorithms, isolated parser seman
 
 Do not move stable semantic matrices into this suite merely to label them E2E. Prefer Driver API/service interaction to Swing traversal. UI interaction is used only when registration or visible product behavior is itself the claim.
 
-The maintained H2 golden path proves one representative installed-plugin user journey through the current shipping action and native Database Tools query/result UI. It does **not** prove every DBMS/dialect, every datasource/schema identity case, DataGrip parity, console disposal/reuse lifecycle, or the final Leap execution architecture. Those remain explicit #67 compatibility/lifecycle obligations. Architecture Leap continues to add representative production-wired scenarios as #62-#66 boundaries become authoritative. The harness remains repository-wide after Leap and is extended according to the applicability rule above.
+The maintained registered-action suite now proves complementary production paths through the same Leap authority: H2 covers DB-neutral zero-binding preview/native execution/result UI, while PostgreSQL covers the explicitly supported BIGINT nonzero materializer with contract input, exact preview, native result cells and persisted native history. It does **not** prove every DBMS/dialect, every datasource/schema identity case, DataGrip parity, or console disposal/reuse lifecycle; those remain explicit #67 compatibility/lifecycle obligations. The harness remains repository-wide and is extended according to the applicability rule above.
