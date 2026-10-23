@@ -248,7 +248,7 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     @Test
-    fun registeredActionExecutesParameterizedQueryThroughRealDatabaseTools(@TempDir tempDir: Path) {
+    fun registeredActionExecutesZeroBindingQueryThroughRealDatabaseTools(@TempDir tempDir: Path) {
         val projectDir = copySampleProject(tempDir.resolve("action-database-project"))
         val h2Jar = Path.of(H2Driver::class.java.protectionDomain.codeSource.location.toURI())
         writeH2DataSourceFixture(projectDir)
@@ -279,22 +279,16 @@ class ZMyBatisStarterDriverE2ETest {
                 dataSourceList.clickItem("zMyBatis E2E", fullMatch = false)
                 dataSourceList.setFocus()
                 dataSourceList.keyboard {
-                    // The datasource row is an action group. Opening it selects its first enabled
-                    // child, which is the production "Use Default Schema" action.
+                    // The replacement authority exposes only explicit named schemas.
                     right()
                     enter()
                 }
 
-                ui.dialog(title = "Enter MyBatis Parameters") {
-                    textField().text = "7"
-                    button("OK").click()
-                }
-
                 ui.dialog(title = "zMyBatis — SQL Preview") {
-                    val previewSql = textArea().text
-                    assertTrue(
-                        previewSql.contains("SELECT 7 AS RESULT_VALUE"),
-                        "shipping preview must expose the resolved parameterized SQL, got: <$previewSql>",
+                    assertEquals(
+                        "SELECT 7 AS RESULT_VALUE",
+                        textArea().text.trim(),
+                        "zero-binding preview must equal the exact SQL submitted to Database Tools",
                     )
                     button("Execute").click()
                 }
