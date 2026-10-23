@@ -9,9 +9,9 @@ import org.junit.Test
 class LegacyEvaluationExecutionGuardContractTest {
 
     @Test
-    fun `shipping action refuses explicit evaluation failure before formatting preview or execution`() {
+    fun `legacy compatibility action refuses explicit evaluation failure before formatting preview or execution`() {
         val action = source(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
+            "src/main/kotlin/com/algorist/zMyBatis/LegacyMyBatisExecuteProxyAction.kt",
         )
         val worker = action
             .substringAfter("ApplicationManager.getApplication().executeOnPooledThread {")
@@ -25,7 +25,7 @@ class LegacyEvaluationExecutionGuardContractTest {
         val preview = worker.indexOf("SqlPreviewDialog(", settingsRead)
         val execution = worker.indexOf("executeOnConsole(", settingsRead)
 
-        assertTrue("shipping action must use the explicit execution-evaluation API", evaluationCall >= 0)
+        assertTrue("legacy compatibility action must use the explicit execution-evaluation API", evaluationCall >= 0)
         assertTrue("failure branch must follow evaluation", failureBranch > evaluationCall)
         assertTrue("failure branch must terminate the worker", failureReturn > failureBranch)
         assertTrue("settings/format path must be unreachable after failure return", settingsRead > failureReturn)
@@ -46,9 +46,9 @@ class LegacyEvaluationExecutionGuardContractTest {
     }
 
     @Test
-    fun `shipping action derives mutation confirmation from current declaration evidence`() {
+    fun `legacy compatibility action derives mutation confirmation from current declaration evidence`() {
         val action = source(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
+            "src/main/kotlin/com/algorist/zMyBatis/LegacyMyBatisExecuteProxyAction.kt",
         )
         val policyCapture = action
             .substringAfter("val requiresMutationConfirmation =")
@@ -75,7 +75,7 @@ class LegacyEvaluationExecutionGuardContractTest {
     @Test
     fun `mandatory confirmation requirements cannot be disabled by preview setting`() {
         val action = source(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
+            "src/main/kotlin/com/algorist/zMyBatis/LegacyMyBatisExecuteProxyAction.kt",
         )
         val worker = action
             .substringAfter("ApplicationManager.getApplication().executeOnPooledThread {")
