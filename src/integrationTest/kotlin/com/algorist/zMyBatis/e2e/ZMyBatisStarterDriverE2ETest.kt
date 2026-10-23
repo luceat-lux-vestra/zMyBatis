@@ -43,6 +43,7 @@ import com.intellij.driver.sdk.ui.components.ultimate.dataSourcesAndDriversDialo
 import com.intellij.driver.sdk.ui.components.elements.accessibleTable
 import com.intellij.driver.sdk.ui.components.elements.actionButton
 import com.intellij.driver.sdk.ui.components.elements.button
+import com.intellij.driver.sdk.ui.components.elements.checkBox
 import com.intellij.driver.sdk.ui.components.elements.dialog
 import com.intellij.driver.sdk.ui.components.elements.isDialogOpened
 import com.intellij.driver.sdk.ui.components.elements.list
@@ -538,6 +539,9 @@ class ZMyBatisStarterDriverE2ETest {
             ui.dialog(title = "Enter MyBatis Parameters") {
                 if (rawInput) {
                     textArea().text = input
+                    checkBox(
+                        "//div[@class='JBCheckBox' and @text='I understand this value is inserted as raw SQL text']",
+                    ).check()
                 } else {
                     textField().text = input
                 }
