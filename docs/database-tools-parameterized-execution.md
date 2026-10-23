@@ -2,7 +2,7 @@
 
 Issue: #251
 
-**Later target-policy update (2026-10-13, #391):** [Leap execution rebaseline](leap-execution-rebaseline.md) decouples architecture replacement from mandatory true JDBC binding. This document's 2026.2 API observations, all three negative candidate assessments, and the original #258 strict-contract decision are retained as historical proof. They do **not** prove that SQL-text materialization is safe for arbitrary DBMS/type pairs; that separate capability needs explicit implementation and runtime evidence. Current code still fails closed for nonzero Leap bindings.
+**Later target-policy update (2026-10-13, #391):** [Leap execution rebaseline](leap-execution-rebaseline.md) decouples architecture replacement from mandatory true JDBC binding. This document's 2026.2 API observations, all three negative candidate assessments, and the original #258 strict-contract decision are retained as historical proof. They do **not** prove that SQL-text materialization is safe for arbitrary DBMS/type pairs; that separate capability needs explicit implementation and runtime evidence. Current registered execution still fails closed for every nonzero dialect/type/placeholder shape outside an explicitly proven materializer; the first named nonzero slice is PostgreSQL BIGINT.
 
 Status: **NO-GO for the Leap cutover contract on the maintained IntelliJ IDEA Ultimate / Database Tools 2026.2 baseline.**
 
@@ -15,7 +15,7 @@ This result does **not** mean that Database Tools cannot execute prepared statem
 - preserves Database Tools cancellation/disposal semantics; and
 - preserves the native console result/history UX without zMyBatis owning result rendering or relying on undocumented/internal contracts.
 
-The consequence is fail-closed: non-zero bindings remain structured `PreparedExecution` state and are not executable through the Leap adapter yet. This proof does **not** authorize a PostgreSQL/Oracle/MySQL literalizer fallback.
+Under the original true-JDBC-binding contract, the consequence was fail-closed structured `PreparedExecution`. The later #391 SQL-text rebaseline permits only separately proven named materializers; this historical proof does **not** authorize a generic PostgreSQL/Oracle/MySQL literalizer fallback.
 
 ## 1. Maintained baseline and evidence method
 
@@ -212,11 +212,11 @@ It does **not** authorize per-DB literalizers automatically.
 
 Consequences:
 
-- non-zero bindings remain structured `PreparedExecution` and fail closed with `BOUND_EXECUTION_REQUIRED`;
+- under the original #251/#258 contract, non-zero bindings remained structured `PreparedExecution` and failed closed with `BOUND_EXECUTION_REQUIRED`; the current registered action instead admits only separately proven materializers and refuses all other nonzero shapes;
 - zero-binding `MaterializedExecution` remains a valid DB-neutral artifact, but it does not authorize a split production action where bound statements silently fall back to legacy execution;
 - console text substitution / a second parameter prompt is not a substitute for ordered typed binding;
 - raw/smart prepared execution is not promoted by adding a zMyBatis-owned result UI;
 - internal/reflection APIs and per-DB executable literalizers remain rejected as implicit fallbacks;
-- the current legacy action stays the shipping execution authority until a complete replacement execution contract exists, so Phase-5 action cutover and legacy evaluator/action deletion remain blocked by this gate.
+- this historical gate no longer blocks the registered-action cutover because the replacement zero-binding and PostgreSQL BIGINT native-console paths were separately proven; legacy evaluator/action deletion remains bounded #67 follow-up work, not a runtime fallback.
 
 The proof may be reopened when a maintained Database Tools baseline exposes relevant new public/maintained capability. A different native result/history requirement also requires an explicit separately reviewed product/architecture change; it is not inferred from this NO-GO evidence.
