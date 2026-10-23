@@ -8,8 +8,8 @@ import org.junit.Test
 class LegacyXmlIncludeExecutionGuardContractTest {
 
     @Test
-    fun `shipping action refuses include before extraction target parameter or execution work`() {
-        val action = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt")
+    fun `legacy compatibility action refuses include before extraction target parameter or execution work`() {
+        val action = source("src/main/kotlin/com/algorist/zMyBatis/LegacyMyBatisExecuteProxyAction.kt")
         val run = action
             .substringAfter("private fun runMyBatisQuery(")
             .substringBefore("private fun proceedWithParamsAndExecute(")
@@ -43,8 +43,8 @@ class LegacyXmlIncludeExecutionGuardContractTest {
     }
 
     @Test
-    fun `shipping refusal explains authoritative dependency resolution is unavailable`() {
-        val action = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt")
+    fun `legacy compatibility refusal explains authoritative dependency resolution is unavailable`() {
+        val action = source("src/main/kotlin/com/algorist/zMyBatis/LegacyMyBatisExecuteProxyAction.kt")
 
         assertTrue(action.contains("zMyBatis: Mapper Dependency Not Executable"))
         assertTrue(action.contains("cannot resolve those dependencies"))
