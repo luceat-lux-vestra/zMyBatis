@@ -51,7 +51,7 @@ Lexical heuristics currently become caller-input authority, the Swing dialog own
 
 ### `MyBatisEvaluator`
 
-The current object still mixes MyBatis `XMLScriptBuilder`, regex source/OGNL rewriting, settings, literal rendering, and SQL-shaped direct-call compatibility. The previous process-global OGNL accessor mutation and custom nested-map fallback lookup have been removed from the shipping legacy evaluator; qualified map/list navigation now uses stock MyBatis OGNL.
+The current object still mixes MyBatis `XMLScriptBuilder`, regex source/OGNL rewriting, settings, literal rendering, and SQL-shaped direct-call compatibility. The previous process-global OGNL accessor mutation and custom nested-map fallback lookup have been removed from the retained legacy evaluator; qualified map/list navigation now uses stock MyBatis OGNL.
 
 **Disposition:** replace completely. No global OGNL mutation, no authoritative unknown-tag stripping, no error-as-SQL, no evaluator-owned guessed literalization.
 
@@ -217,7 +217,7 @@ Stock MyBatis produces structured `PreparedExecution` (SQL-with-placeholders and
 
 The verified SQL-text artifact is submitted through the existing maintained native Database Tools console path, preserving its result/history UI. It is a compatibility contract, **not JDBC/TypeHandler equivalence**. An unsupported DBMS/type/placeholder situation fails before execution; datasource selection itself remains DBMS-neutral.
 
-#251 still proves no demonstrated maintained 2026.2 API bridge for true JDBC binding *and* native console results/history. #258's strict no-fallback decision is a historical state for that earlier goal. #391 explicitly changes the product target after documentation merge; it does not magically implement the materializer. **Current** `MaintainedExecutionMaterializer` continues to return `BOUND_EXECUTION_REQUIRED` for nonzero bindings. A single full new execution path and runtime evidence are prerequisites for action cutover, with no old/new silent split.
+#251 still proves no demonstrated maintained 2026.2 API bridge for true JDBC binding *and* native console results/history. #258's strict no-fallback decision is historical for that earlier goal. #391 changed the target to bounded SQL-text compatibility. The registered action now uses one replacement authority: target-bound zero-binding plus explicitly proven nonzero materializers, currently the PostgreSQL BIGINT slice; unsupported nonzero shapes fail typed and never route to legacy execution.
 
 Do not use regular-expression question-mark substitution, guessed null, unverified per-DB literalizers or undocumented integration. For mandatory envelope and proof cases see [Leap execution rebaseline](leap-execution-rebaseline.md).
 
@@ -339,7 +339,7 @@ The user's configured Database Tools datasource/session, console and native resu
 
 Target selection must remain DBMS-neutral, but **literal rendering is not**; a datasource may be valid while statement materialization for its family/type is unsupported. #251's NO-GO applies only to the previous stricter native JDBC-binding requirement; the underlying evidence is preserved. #258 historically refused any fallback under that goal; the new policy is an explicit rebaseline, not an undocumented exception.
 
-**Implementation stop:** current runtime materializer returns `BOUND_EXECUTION_REQUIRED` on nonzero mappings and the legacy action stays authoritative. No bypass/cutover until dialect/type/placeholder and actual console E2E proof pass. Do not keep adding standalone admission grammars while this boundary is unproven.
+**Implemented cutover gate:** the registered action may execute only zero-binding artifacts or a named nonzero dialect/type/placeholder slice with actual native-console E2E proof. The PostgreSQL BIGINT slice is the first such nonzero path. Every unproven shape remains fail-closed; legacy execution is not a fallback.
 
 ## 9. Target/session and Database Tools adapter
 
@@ -359,7 +359,7 @@ Execution behavior:
 3. re-check target validity after user/modality/background boundaries;
 4. acquire/reuse a console as an ephemeral resource according to policy;
 5. apply schema/search path and verify success;
-6. submit the single immutable, proved SQL-text artifact for both zero- and supported nonzero-binding statements; until the new materializer exists, current nonzero Leap preparations still fail with `BOUND_EXECUTION_REQUIRED` and no production cutover is allowed;
+6. submit the single immutable, proved SQL-text artifact for zero-binding and explicitly supported nonzero statements; all unproven nonzero shapes fail typed before delivery and never fall back to legacy execution;
 7. invoke the native Database Tools execution path without introducing a zMyBatis DBMS allowlist;
 8. preserve/restore console document/editor state according to the adapter contract.
 
