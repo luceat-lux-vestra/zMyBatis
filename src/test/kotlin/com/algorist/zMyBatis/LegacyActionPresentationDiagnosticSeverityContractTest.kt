@@ -11,7 +11,7 @@ class LegacyActionPresentationDiagnosticSeverityContractTest {
     @Test
     fun `run action keeps handled exceptions non fatal and rethrows fatal throwables`() {
         val action = source(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt"
+            "src/main/kotlin/com/algorist/zMyBatis/LegacyMyBatisExecuteProxyAction.kt"
         )
         val runBody = action
             .substringAfter("private fun runMyBatisQuery(")
@@ -50,7 +50,7 @@ class LegacyActionPresentationDiagnosticSeverityContractTest {
     @Test
     fun `datasource chooser cleanup preserves cancellation and fatal throwables`() {
         val action = source(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt"
+            "src/main/kotlin/com/algorist/zMyBatis/LegacyMyBatisExecuteProxyAction.kt"
         )
         val chooserCallback = action
             .substringAfter("popup.showInBestPositionFor(originalEvent.dataContext)")
