@@ -25,24 +25,48 @@ import org.junit.Test
 
 class LeapExecutionInvocationCoordinatorTest {
     @Test
-    fun policySnapshotMapsOnlyExplicitPresentationAndSessionInputs() {
+    fun policySnapshotMapsExplicitPresentationSessionAndPostExecutionInputs() {
         val reuse = leapExecutionInvocationPolicy(
             showSqlPreview = true,
             formatPreviewSql = false,
             consoleSessionPolicy = ConsoleSessionPolicy.REUSE,
+            copyToClipboard = true,
         )
         assertTrue(reuse.approvalOptions.showSqlPreview)
         assertFalse(reuse.approvalOptions.formatPreviewSql)
         assertFalse(reuse.forceNewConsole)
+        assertTrue(reuse.copyExecutedSqlToClipboard)
 
         val forceNew = leapExecutionInvocationPolicy(
             showSqlPreview = false,
             formatPreviewSql = true,
             consoleSessionPolicy = ConsoleSessionPolicy.NEW_EACH,
+            copyToClipboard = false,
         )
         assertFalse(forceNew.approvalOptions.showSqlPreview)
         assertTrue(forceNew.approvalOptions.formatPreviewSql)
         assertTrue(forceNew.forceNewConsole)
+        assertFalse(forceNew.copyExecutedSqlToClipboard)
+    }
+
+    @Test
+    fun zeroInputContractSkipsModalAndBuildsValidatedEmptyEnvironment() {
+        val capture = javaCapture("select 1")
+        val contract = JavaAnnotationParameterContractFactory.build(capture)
+        var activeChecks = 0
+
+        val result = runLeapZeroInput(
+            contract = contract,
+            isInvocationActive = {
+                activeChecks++
+                true
+            },
+        )
+
+        assertTrue(result is LeapExecutionInputResult.Accepted)
+        val environment = (result as LeapExecutionInputResult.Accepted).environment
+        assertTrue(environment.values.isEmpty())
+        assertEquals(2, activeChecks)
     }
 
     @Test
@@ -93,7 +117,7 @@ class LeapExecutionInvocationCoordinatorTest {
     }
 
     @Test
-    fun coordinatorOwnsPersistedTargetInputAndPolicyWithoutShippingCutover() {
+    fun coordinatorOwnsPersistedTargetInputAndPolicyBehindShippingCutover() {
         val coordinator = sourceText(
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionInvocationCoordinator.kt",
         )
@@ -121,6 +145,7 @@ class LeapExecutionInvocationCoordinatorTest {
         assertFalse(coordinator.contains(" ParameterInputDialog("))
         assertFalse(coordinator.contains("DbPsiFacade"))
         assertFalse(coordinator.contains("JBPopupFactory"))
+        assertTrue(action.contains("LeapActionContextAdmissionCoordinator"))
         assertFalse(action.contains("LeapExecutionInvocationCoordinator"))
     }
 
