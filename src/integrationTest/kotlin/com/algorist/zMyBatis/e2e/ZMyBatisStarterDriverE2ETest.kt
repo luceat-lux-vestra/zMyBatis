@@ -971,10 +971,22 @@ class ZMyBatisStarterDriverE2ETest {
 
     private fun Driver.connectAndPrimeH2DatabaseToolsSchemaMetadata() {
         ideFrame {
-            // The project fixture is deliberately cold on startup. Open the maintained Database
-            // Tools settings surface and prove the pinned H2 driver can establish a real connection
-            // before asking the database explorer to introspect explicit schemas.
-            invokeAction("Database.Settings", now = false)
+            // The project fixture is deliberately cold on startup. Reach the datasource editor from
+            // the actual Database view selection instead of relying on an unregistered global action.
+            invokeAction("ActivateDatabaseToolWindow", now = false)
+            databaseToolWindow {
+                val dataSourceNode = x("//div[contains(@visible_text, 'zMyBatis E2E')]")
+                waitFor("project H2 datasource is visible in Database view", timeout = 30.seconds) {
+                    dataSourceNode.present()
+                }
+                dataSourceNode.click()
+                driver.invokeAction(
+                    "DatabaseView.PropertiesAction",
+                    now = false,
+                    component = component,
+                )
+            }
+
             dataSourcesAndDriversDialog {
                 testConnection()
                 waitFor(
@@ -1007,16 +1019,16 @@ class ZMyBatisStarterDriverE2ETest {
 
             invokeAction("ActivateDatabaseToolWindow", now = false)
             databaseToolWindow {
-                waitFor("DatabaseView.ForceRefresh is accepted", timeout = 30.seconds) {
-                    runCatching {
-                        driver.invokeAction(
-                            "DatabaseView.ForceRefresh",
-                            now = false,
-                            component = component,
-                        )
-                        true
-                    }.getOrDefault(false)
+                val dataSourceNode = x("//div[contains(@visible_text, 'zMyBatis E2E')]")
+                waitFor("project H2 datasource is visible before forced introspection", timeout = 30.seconds) {
+                    dataSourceNode.present()
                 }
+                dataSourceNode.click()
+                driver.invokeAction(
+                    "DatabaseView.ForceRefresh",
+                    now = false,
+                    component = component,
+                )
             }
         }
 
