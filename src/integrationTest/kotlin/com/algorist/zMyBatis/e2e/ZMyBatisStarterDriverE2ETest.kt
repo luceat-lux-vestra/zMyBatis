@@ -767,7 +767,7 @@ class ZMyBatisStarterDriverE2ETest {
                     // action, then prove the production no-datasource refusal is still reached.
                     invokeAction("EditorDown")
                     invokeAction("zMyBatis.Execute", now = false)
-                    dialog(title = "zMyBatis: No Data Source") {
+                    dialog(title = "zMyBatis: Execution Target Unavailable") {
                         button("OK").click()
                     }
                     waitForNoOpenedDialogs()
