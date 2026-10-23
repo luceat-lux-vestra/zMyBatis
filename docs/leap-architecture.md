@@ -31,11 +31,11 @@ The target is driven by these invariants:
 
 ## 2. Fresh-main structural audit
 
-### `MyBatisExecuteProxyAction`
+### Registered action and legacy `MyBatisExecuteProxyAction`
 
-Current responsibilities include context detection, source extraction, statement/history identity, parameter prompting/history, evaluation dispatch, formatting/preview, datasource/schema selection, console reuse/acquisition orchestration, clipboard, and error UI. Low-level console creation, schema switching, editor acquisition, console-document mutation, script-model construction, and native query invocation are isolated behind `DatabaseToolsConsoleAdapter`.
+`MyBatisExecuteAction` is now the registered thin IDE adapter: bounded context presentation plus delegation to `LeapActionContextAdmissionCoordinator`. The old `MyBatisExecuteProxyAction` god-object remains unregistered source-tree debt for #67 deletion/characterization only. Low-level console creation, schema switching, editor acquisition, console-document mutation, script-model construction, and native query invocation remain isolated behind `DatabaseToolsConsoleAdapter`.
 
-**Disposition:** replace the orchestration body. The final action is a thin IDE adapter over one application use case.
+**Disposition:** keep the registered action thin and delete the unregistered legacy orchestration in bounded #67 cleanup; never reintroduce it as a runtime fallback.
 
 ### `MyBatisContextAnalyzer` and `AnnotationSqlExtractor`
 
@@ -55,7 +55,7 @@ The current object still mixes MyBatis `XMLScriptBuilder`, regex source/OGNL rew
 
 **Disposition:** replace completely. No global OGNL mutation, no authoritative unknown-tag stripping, no error-as-SQL, no evaluator-owned guessed literalization.
 
-Until the new full execution path passes the #391 materialization/IDE acceptance gates, the shipping legacy evaluator remains necessary and its bounded refusal guards stay enforced. Direct `evaluate(...)` compatibility strings are characterization only; shipping `evaluateForExecution(...)` never turns unsupported values or evaluator failures into executable SQL.
+The registered execution path no longer calls `MyBatisEvaluator`. Direct legacy `evaluate(...)` / `evaluateForExecution(...)` behavior remains characterization and cleanup debt only; unsupported Leap preparation/materialization produces typed refusal instead of executable diagnostic strings.
 
 ### `SqlFormatter`
 
@@ -67,13 +67,13 @@ Formatting currently feeds the string that is later executed.
 
 Hardening #57 established strong target-identity rules. #260 introduced independent project-scoped v3 source -> target descriptor persistence, and #262 migrates valid v2 records into that authority without recreating consoles at startup. Persisted v3 identity is stable datasource UUID + exact explicit schema, associated with canonical source identity; datasource display name remains presentation-only.
 
-The shipping legacy action now resolves a stored v3 target exactly on a live-console cache miss and acquires a console only for that explicit invocation. `REUSE` and `NEW_EACH` are resource policies over the same persisted target authority. Closing an ephemeral console no longer deletes v3 target identity. The old v2 reader/cleanup path is isolated in `LegacyV2ConsoleSessionMigrationStore`; `ConsoleCacheService` is persistence-neutral and owns only live-resource/selection/shutdown lifecycle.
+The registered Leap action resolves persisted v3 target identity exactly and otherwise requires explicit stable datasource UUID + named schema selection before invocation. `REUSE` and `NEW_EACH` remain resource policies over the same target authority. Closing an ephemeral console does not delete v3 target identity. The old v2 reader/cleanup path remains isolated in `LegacyV2ConsoleSessionMigrationStore`; `ConsoleCacheService` owns only live-resource/selection/shutdown lifecycle.
 
-**Disposition:** continue isolating Database Tools console mechanics and delete `LegacyV2ConsoleSessionMigrationStore` only when no supported upgrade path needs v2 compatibility. Current v3 target identity is independent of live resource lifetime; this foundation does not itself authorize a #391 production action cutover.
+**Disposition:** continue isolating Database Tools console mechanics and delete `LegacyV2ConsoleSessionMigrationStore` only when no supported upgrade path needs v2 compatibility. Target identity stays independent of live resource lifetime.
 
 ### Settings
 
-The shipping legacy action now refuses ordinary evaluator failures before preview/execution regardless of `strictOgnlMode`, and shipping evaluation explicitly disables `ignoreUnknownTags`; both switches remain only direct legacy-evaluator compatibility. `rememberLastInputs` defaults on.
+The registered Leap action does not consult legacy evaluator compatibility switches for execution safety. `strictOgnlMode` and `ignoreUnknownTags` remain legacy compatibility/cleanup debt only; remembered-input behavior is owned by the contract-driven input boundary.
 
 **Disposition:** safety is not configurable. Remove or repurpose those compatibility switches; remembered inputs default off until the new #63 retention contract is complete.
 
