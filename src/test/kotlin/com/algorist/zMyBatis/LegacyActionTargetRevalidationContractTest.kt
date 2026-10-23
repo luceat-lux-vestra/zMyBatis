@@ -9,9 +9,9 @@ import org.junit.Test
 class LegacyActionTargetRevalidationContractTest {
 
     @Test
-    fun `shipping action resolves target before cache reuse and binds cache lookup to target id`() {
+    fun `legacy compatibility action resolves target before cache reuse and binds cache lookup to target id`() {
         val action = source(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
+            "src/main/kotlin/com/algorist/zMyBatis/LegacyMyBatisExecuteProxyAction.kt",
         )
 
         val resolve = action.indexOf("val storedTarget = targetBridge.resolve(sourceFileId)")
@@ -45,7 +45,7 @@ class LegacyActionTargetRevalidationContractTest {
     @Test
     fun `persisted target is revalidated through invocation and Database Tools boundaries`() {
         val action = source(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
+            "src/main/kotlin/com/algorist/zMyBatis/LegacyMyBatisExecuteProxyAction.kt",
         )
 
         assertTrue(
