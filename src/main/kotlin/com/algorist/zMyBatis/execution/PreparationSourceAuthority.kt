@@ -7,7 +7,7 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.SourceSnapshot
 
 /**
- * Immutable source authority carried across the non-shipping #66 delivery orchestration.
+ * Immutable source authority carried across the registered #66 delivery orchestration.
  *
  * Java authority is its captured source graph. XML authority additionally includes every snapshot
  * required to prove mapper-method/input semantics.
