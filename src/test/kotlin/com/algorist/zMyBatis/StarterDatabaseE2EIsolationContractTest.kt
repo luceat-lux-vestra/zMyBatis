@@ -9,23 +9,9 @@ import org.junit.Test
 class StarterDatabaseE2EIsolationContractTest {
 
     @Test
-    fun `H2 fixture remains integration-test-only and production artifact stays unchanged`() {
+    fun `PostgreSQL fixture remains integration-test-only and production artifact stays unchanged`() {
         val build = source("build.gradle.kts")
 
-        assertTrue(
-            "real Database Tools E2E must declare exactly one H2 driver on the integration-test graph",
-            build.lineSequence().count { line ->
-                val declaration = line.trim()
-                declaration.startsWith("integrationTestImplementation(\"com.h2database:h2:") &&
-                    declaration.endsWith("\")")
-            } == 1,
-        )
-        assertFalse(
-            "H2 must never become a shipped plugin implementation dependency",
-            build.lineSequence().any { line ->
-                line.trim().startsWith("implementation(\"com.h2database:h2:")
-            },
-        )
         assertTrue(
             "PostgreSQL proof must declare exactly one pgJDBC driver on the integration-test graph",
             build.lineSequence().count { line ->
@@ -38,10 +24,14 @@ class StarterDatabaseE2EIsolationContractTest {
                 line.trim().startsWith("implementation(\"org.postgresql:postgresql:")
             },
         )
+        assertFalse(
+            "obsolete H2 action fixture must not remain on the process E2E graph",
+            build.contains("com.h2database:h2:"),
+        )
     }
 
     @Test
-    fun `process golden path must traverse production UI and real Database Tools result`() {
+    fun `process golden path must traverse registered Leap authority and explicit PostgreSQL target`() {
         val e2e = source(
             "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
         )
@@ -51,34 +41,7 @@ class StarterDatabaseE2EIsolationContractTest {
         assertTrue(e2e.contains("zMyBatis — SQL Preview"))
         assertTrue(e2e.contains("com.intellij.database.run.ui.table.TableResultView"))
         assertTrue(
-            "golden path must prepare a real project-level Database Tools datasource",
-            e2e.contains("dataSources.xml") &&
-                e2e.contains("DataSourceManagerImpl") &&
-                e2e.contains("<driver-ref>h2.unified</driver-ref>"),
-        )
-        assertTrue(
-            "project-local H2 fixture must connect without interactive Password Safe credentials",
-            e2e.contains("dataSources.local.xml") &&
-                e2e.contains(";USER=sa;PASSWORD=") &&
-                e2e.contains("<auth-provider>no-auth</auth-provider>"),
-        )
-        assertFalse(
-            "E2E must not depend on internal Database Tools LocalDataSource Driver stubs",
-            e2e.contains("LocalDataSourceManager") || e2e.contains("LocalDataSourceFactoryRemote"),
-        )
-        assertTrue(
-            "H2 must be registered as a local Database Tools driver library in Starter config",
-            e2e.contains("databaseDrivers.xml") &&
-                e2e.contains("LocalDatabaseDriverManager") &&
-                e2e.contains("<artifact use=\"false\" />") &&
-                e2e.contains("configDir.resolve(\"jdbc-drivers\")"),
-        )
-        assertFalse(
-            "H2 must not rely on the IDE process classpath instead of Database Tools driver isolation",
-            e2e.contains("idea.additional.classpath"),
-        )
-        assertTrue(
-            "PostgreSQL proof must use a pinned local Database Tools pgJDBC driver and a real PostgreSQL URL",
+            "PostgreSQL proof must use a pinned local Database Tools pgJDBC driver and real service URL",
             e2e.contains("LocalDatabaseDriverManager") &&
                 e2e.contains("driver-class=\"org.postgresql.Driver\"") &&
                 e2e.contains("jdbc:postgresql://127.0.0.1:5432/zmybatis"),
@@ -91,11 +54,28 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("DatabaseView.Refresh") &&
                 e2e.contains("waitOneText(\"public\")"),
         )
+        assertFalse(
+            "shipping cutover E2E must not restore the legacy default-schema target",
+            e2e.contains("Use Default Schema"),
+        )
         assertTrue(
-            "PostgreSQL proof must execute both stock-MyBatis if branches and verify persisted native query history",
-            e2e.contains("positiveArtifact.executionSql") &&
-                e2e.contains("negativeArtifact.executionSql") &&
-                e2e.contains("assertNativePostgreSqlHistoryPersisted") &&
+            "real project source must provide mapper-method caller authority for the XML statement",
+            e2e.contains("public interface QueryMapper") &&
+                e2e.contains("Object ping(@Param(\"value\") long value);") &&
+                e2e.contains("Object raw(@Param(\"value\") String value);"),
+        )
+        assertTrue(
+            "one registered action path must prove zero-binding, PostgreSQL BIGINT, raw approval and mutation cancellation",
+            e2e.contains("line = 4") &&
+                e2e.contains("input = null") &&
+                e2e.contains("positiveArtifact.executionSql") &&
+                e2e.contains("rawInput = true") &&
+                e2e.contains("cancelPostgreSqlMapperCase("),
+        )
+        assertTrue(
+            "native history must contain exact executed artifacts and exclude the cancelled mutation",
+            e2e.contains("expectedSql.forEach") &&
+                e2e.contains("forbiddenSql in historyText") &&
                 e2e.contains("consoles/.history"),
         )
     }
