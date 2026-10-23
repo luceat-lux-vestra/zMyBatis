@@ -90,12 +90,12 @@ class DatabaseToolsExecutionResourceValidityContractTest {
     }
 
     @Test
-    fun `shipping action presents typed console unavailable refusal`() {
+    fun `shipping action presents typed Database Tools delivery refusal`() {
         val adapter = source(
             "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"
         )
-        val action = source(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt"
+        val presenter = source(
+            "src/main/kotlin/com/algorist/zMyBatis/LeapActionFailurePresentation.kt"
         )
 
         assertTrue(
@@ -103,10 +103,15 @@ class DatabaseToolsExecutionResourceValidityContractTest {
             adapter.contains("data object ConsoleUnavailable : DatabaseToolsSqlExecutionFailure"),
         )
         assertTrue(
-            "shipping action must handle the typed console-unavailable outcome",
-            action.contains("DatabaseToolsSqlExecutionFailure.ConsoleUnavailable ->"),
+            "shipping presenter must handle typed SQL execution delivery failure",
+            presenter.contains("is LeapExecutionDeliveryFailure.SqlExecutionFailed ->"),
         )
-        assertTrue(action.contains("zMyBatis: Console Unavailable"))
+        assertTrue(presenter.contains("zMyBatis: Execution Failed"))
+        assertTrue(
+            "shipping presenter must keep console acquisition refusal distinct",
+            presenter.contains("is LeapExecutionDeliveryFailure.ConsoleAcquisitionFailed ->"),
+        )
+        assertTrue(presenter.contains("zMyBatis: Console Unavailable"))
     }
 
     private fun source(relativePath: String): String =
