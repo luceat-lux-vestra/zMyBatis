@@ -260,6 +260,7 @@ class ZMyBatisStarterDriverE2ETest {
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
+                primeDatabaseToolsSchemaMetadata()
 
                 service(ZMyBatisSettingsRemote::class).apply {
                     setAutoFormatSql(false)
@@ -324,6 +325,7 @@ class ZMyBatisStarterDriverE2ETest {
             </mapper>
         """.trimIndent()
         Files.writeString(projectDir.resolve("PostgreSqlQuery.xml"), dynamicMapper)
+        writeMapperInterface(projectDir, "long")
 
         val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
         val context = starterContext("action-postgresql-bigint", projectDir)
@@ -617,6 +619,7 @@ class ZMyBatisStarterDriverE2ETest {
             </mapper>
             """.trimIndent(),
         )
+        writeMapperInterface(projectDir, "java.lang.String")
 
         val h2Jar = Path.of(H2Driver::class.java.protectionDomain.codeSource.location.toURI())
         writeH2DataSourceFixture(projectDir)
@@ -628,6 +631,7 @@ class ZMyBatisStarterDriverE2ETest {
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
+                primeDatabaseToolsSchemaMetadata()
 
                 service(ZMyBatisSettingsRemote::class).apply {
                     setAutoFormatSql(false)
@@ -703,6 +707,7 @@ class ZMyBatisStarterDriverE2ETest {
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
+                primeDatabaseToolsSchemaMetadata()
 
                 service(ZMyBatisSettingsRemote::class).apply {
                     setAutoFormatSql(false)
@@ -962,6 +967,45 @@ class ZMyBatisStarterDriverE2ETest {
                     result.failure.kind + " / " + result.failure.code
             }
         }
+    }
+
+    private fun Driver.primeDatabaseToolsSchemaMetadata() {
+        ideFrame {
+            invokeAction("ActivateDatabaseToolWindow", now = false)
+            databaseToolWindow {
+                waitFor("DatabaseView.Refresh is accepted", timeout = 30.seconds) {
+                    runCatching {
+                        driver.invokeAction(
+                            "DatabaseView.Refresh",
+                            now = false,
+                            component = component,
+                        )
+                        true
+                    }.getOrDefault(false)
+                }
+            }
+        }
+        // The replacement target authority never invents or defaults a schema. A static Starter
+        // datasource therefore has to complete Database Tools introspection before the action can
+        // enumerate an explicit named schema.
+        waitForIndicators(2.minutes, waitSmartLongEnough = true)
+    }
+
+    private fun writeMapperInterface(
+        projectDir: Path,
+        parameterType: String,
+    ) {
+        val packageDir = Files.createDirectories(projectDir.resolve("fixture"))
+        Files.writeString(
+            packageDir.resolve("QueryMapper.java"),
+            """
+            package fixture;
+
+            public interface QueryMapper {
+                Object ping($parameterType value);
+            }
+            """.trimIndent(),
+        )
     }
 
     private fun writePostgreSqlDatabaseToolsDriverFixture(configDir: Path, postgresJar: Path) {
