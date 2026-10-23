@@ -39,7 +39,7 @@ class LegacyEvaluationDiagnosticSeverityContractTest {
     @Test
     fun `action evaluation keeps handled exceptions non fatal and rethrows fatal throwables`() {
         val action = source(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt"
+            "src/main/kotlin/com/algorist/zMyBatis/LegacyMyBatisExecuteProxyAction.kt"
         )
         val evaluationWorker = action
             .substringAfter("ApplicationManager.getApplication().executeOnPooledThread {")
