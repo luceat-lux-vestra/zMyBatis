@@ -35,7 +35,8 @@ internal object XmlProjectMapperSourceCaptureAdapter {
 
     fun capture(
         project: Project,
-        root: XmlActionSourceCapture,
+        rootSnapshot: SourceSnapshot,
+        rootDiscovery: XmlMapperDocumentDiscovery,
     ): XmlProjectMapperSourceCaptureResult {
         val xmlFiles = try {
             ReadAction.compute<List<VirtualFile>, RuntimeException> {
@@ -49,9 +50,9 @@ internal object XmlProjectMapperSourceCaptureAdapter {
             return XmlProjectMapperSourceCaptureResult.IndexUnavailable
         }
 
-        val snapshotsById = linkedMapOf(root.snapshot.fileId to root.snapshot)
-        val discoveriesById = linkedMapOf(root.discovery.sourceFileId to root.discovery)
-        val rootUrl = root.snapshot.fileId.value
+        val snapshotsById = linkedMapOf(rootSnapshot.fileId to rootSnapshot)
+        val discoveriesById = linkedMapOf(rootDiscovery.sourceFileId to rootDiscovery)
+        val rootUrl = rootSnapshot.fileId.value
             .takeIf { it.startsWith(VFS_ID_PREFIX) }
             ?.removePrefix(VFS_ID_PREFIX)
 
