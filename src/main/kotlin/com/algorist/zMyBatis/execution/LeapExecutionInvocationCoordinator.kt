@@ -1,6 +1,7 @@
 package com.algorist.zMyBatis.execution
 
 import com.algorist.zMyBatis.core.input.InputEnvironment
+import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.JavaAnnotationParameterContractFactory
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
@@ -23,12 +24,14 @@ import com.intellij.openapi.project.Project
 internal data class LeapExecutionInvocationPolicy(
     val approvalOptions: LeapExecutionApprovalOptions,
     val forceNewConsole: Boolean,
+    val copyExecutedSqlToClipboard: Boolean,
 )
 
 internal fun leapExecutionInvocationPolicy(
     showSqlPreview: Boolean,
     formatPreviewSql: Boolean,
     consoleSessionPolicy: ConsoleSessionPolicy,
+    copyToClipboard: Boolean,
 ): LeapExecutionInvocationPolicy =
     LeapExecutionInvocationPolicy(
         approvalOptions = LeapExecutionApprovalOptions(
@@ -36,6 +39,7 @@ internal fun leapExecutionInvocationPolicy(
             formatPreviewSql = formatPreviewSql,
         ),
         forceNewConsole = consoleSessionPolicy == ConsoleSessionPolicy.NEW_EACH,
+        copyExecutedSqlToClipboard = copyToClipboard,
     )
 
 /**
@@ -57,6 +61,30 @@ internal sealed interface LeapExecutionInputResult {
     data class Accepted(val environment: InputEnvironment) : LeapExecutionInputResult
     data object UserCancelled : LeapExecutionInputResult
     data object InvocationInvalidated : LeapExecutionInputResult
+    data object InvalidEnvironment : LeapExecutionInputResult
+}
+
+internal fun runLeapZeroInput(
+    contract: ParameterContract,
+    isInvocationActive: () -> Boolean,
+): LeapExecutionInputResult? {
+    if (contract.requirements.isNotEmpty()) return null
+    if (!isInvocationActive()) return LeapExecutionInputResult.InvocationInvalidated
+
+    val result = when (val validation = InputEnvironment.validate(contract, emptyList())) {
+        is InputEnvironmentResult.Success ->
+            LeapExecutionInputResult.Accepted(validation.environment)
+        is InputEnvironmentResult.Failure ->
+            LeapExecutionInputResult.InvalidEnvironment
+    }
+    return if (
+        result is LeapExecutionInputResult.Accepted &&
+        !isInvocationActive()
+    ) {
+        LeapExecutionInputResult.InvocationInvalidated
+    } else {
+        result
+    }
 }
 
 /**
@@ -89,6 +117,10 @@ internal class LeapExecutionInputAdapter(private val project: Project) {
         onResult: (LeapExecutionInputResult) -> Unit,
     ) {
         val liveInvocation = { !project.isDisposed && isInvocationActive() }
+        runLeapZeroInput(contract, liveInvocation)?.let {
+            onResult(it)
+            return
+        }
         ApplicationManager.getApplication().invokeLater({
             onResult(
                 runLeapExecutionInput(
@@ -119,14 +151,13 @@ internal sealed interface LeapExecutionInvocationFailure {
 }
 
 /**
- * Non-shipping production-orchestration seam for #66.
+ * Shipping production-orchestration seam for #66.
  *
  * Source capture and missing-target chooser ownership remain outside this slice. Given one immutable
  * preparation source, this coordinator derives its matching input contract, snapshots one persisted
  * exact target and explicit user policy, crosses the contract input modal, rechecks target/lifecycle
  * authority, and then delegates the exact accepted environment to the existing delivery coordinator.
  */
-@Suppress("unused")
 internal class LeapExecutionInvocationCoordinator(private val project: Project) {
     private val targetStore = ExecutionTargetDescriptorStore.getInstance(project)
     private val inputAdapter = LeapExecutionInputAdapter(project)
@@ -168,6 +199,7 @@ internal class LeapExecutionInvocationCoordinator(private val project: Project) 
             showSqlPreview = settings.sqlPreview,
             formatPreviewSql = settings.autoFormatSql,
             consoleSessionPolicy = settings.consoleSessionPolicy,
+            copyToClipboard = settings.copyToClipboard,
         )
 
         inputAdapter.requestInput(
@@ -187,6 +219,7 @@ internal class LeapExecutionInvocationCoordinator(private val project: Project) 
                                 targetDescriptor = targetDescriptor,
                                 resourceKey = sourceFileId.value,
                                 forceNewConsole = policy.forceNewConsole,
+                                copyExecutedSqlToClipboard = policy.copyExecutedSqlToClipboard,
                                 approvalOptions = policy.approvalOptions,
                                 isInvocationActive = liveInvocation,
                                 onExecuted = onExecuted,
@@ -200,6 +233,12 @@ internal class LeapExecutionInvocationCoordinator(private val project: Project) 
                     LeapExecutionInputResult.UserCancelled -> onCancelled()
                     LeapExecutionInputResult.InvocationInvalidated ->
                         onFailure(LeapExecutionInvocationFailure.InvocationInvalidated)
+                    LeapExecutionInputResult.InvalidEnvironment ->
+                        onFailure(
+                            LeapExecutionInvocationFailure.InputContractBlocked(
+                                listOf("empty-input-environment-invalid"),
+                            ),
+                        )
                 }
             },
         )
