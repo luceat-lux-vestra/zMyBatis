@@ -147,20 +147,15 @@ object ZeroBindingExecutionMaterializer : ExecutionMaterializer {
  * already been resolved.
  *
  * Unlike [ZeroBindingExecutionMaterializer], this artifact is suitable for orchestration that must
- * keep preview and later dispatch tied to one exact datasource/schema identity. No dialect
- * literalization occurs here; the optional database id is retained only as target-derived semantic
- * context/fingerprint input.
+ * keep preview and later dispatch tied to one exact datasource/schema identity. Raw interpolation
+ * is already resolved by stock MyBatis and is retained as mandatory-approval safety evidence; this
+ * materializer performs no raw substitution itself. No dialect literalization occurs here; the
+ * optional database id is retained only as target-derived semantic context/fingerprint input.
  */
 class TargetBoundZeroBindingExecutionMaterializer(
     private val target: ResolvedExecutionTarget,
 ) : ExecutionMaterializer {
     override fun materialize(prepared: PreparedExecution): MaterializationResult {
-        if (prepared.rawInterpolations.isNotEmpty()) {
-            return failed(
-                MaterializationFailureKind.RAW_INTERPOLATION_REQUIRES_POLICY,
-                RAW_INTERPOLATION_POLICY_REQUIRED,
-            )
-        }
         if (prepared.orderedBindings.isNotEmpty()) {
             return failed(
                 MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
@@ -204,7 +199,7 @@ internal fun materialized(
 ): MaterializationResult.Success {
     val safetyFlags = MaterializationSafetyFlags(
         declaredMutation = prepared.statementKind != StatementKind.SELECT,
-        containsRawInterpolation = false,
+        containsRawInterpolation = prepared.rawInterpolations.isNotEmpty(),
     )
     val fingerprint = fingerprint(
         prepared = prepared,
