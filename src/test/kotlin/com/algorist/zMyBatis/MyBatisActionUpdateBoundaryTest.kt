@@ -10,49 +10,53 @@ class MyBatisActionUpdateBoundaryTest {
 
     @Test
     fun `update delegates only to local context classifier`() {
-        val action = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt")
+        val action = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteAction.kt")
         val start = action.indexOf("override fun update(e: AnActionEvent)")
-        val end = action.indexOf("private fun isProjectUnavailable", start)
+        val end = action.indexOf("override fun actionPerformed(e: AnActionEvent)", start)
         assertTrue("update method must exist", start >= 0)
         assertTrue("update method boundary must exist", end > start)
 
         val update = action.substring(start, end)
 
-        assertTrue(update.contains("analyze(e)"))
+        assertTrue(update.contains("MyBatisContextAnalyzer.analyze(e)"))
         assertTrue(update.contains("ContextType.NONE"))
         listOf(
             "extractSqlContent",
             "resolveParameters",
             "DbPsiFacade",
             "DasUtil.getSchemas",
-            "StoredExecutionTargetBridge",
+            "ExecutionTargetDescriptorStore",
             "DatabaseToolsConsoleAdapter",
             "ConsoleCacheService",
             "MyBatisEvaluator",
+            "LeapActionContextAdmissionCoordinator",
         ).forEach { forbidden ->
             assertFalse("update must remain bounded and side-effect free: $forbidden", update.contains(forbidden))
         }
     }
 
     @Test
-    fun `update and execution admission share the same context classifier`() {
-        val action = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt")
-
-        val updateStart = action.indexOf("override fun update(e: AnActionEvent)")
-        val updateEnd = action.indexOf("private fun isProjectUnavailable", updateStart)
+    fun `execution delegates only to Leap admission and has no legacy route`() {
+        val action = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteAction.kt")
         val actionStart = action.indexOf("override fun actionPerformed(e: AnActionEvent)")
-        val actionEnd = action.indexOf("private fun runMyBatisQuery", actionStart)
+        val actionEnd = action.indexOf("private object LeapActionFailurePresenter", actionStart)
 
-        assertTrue(updateStart >= 0 && updateEnd > updateStart)
         assertTrue(actionStart >= 0 && actionEnd > actionStart)
 
-        val update = action.substring(updateStart, updateEnd)
         val admission = action.substring(actionStart, actionEnd)
 
-        assertTrue(update.contains("analyze(e)"))
-        assertTrue(admission.contains("analyze(e)"))
-        assertTrue(admission.contains("ContextType.NONE -> return"))
-        assertTrue(admission.contains("ContextType.PROVIDER"))
+        assertTrue(admission.contains("LeapActionContextAdmissionCoordinator(project).execute"))
+        assertTrue(admission.contains("onCancelled = {}"))
+        listOf(
+            "MyBatisExecuteProxyAction",
+            "MyBatisEvaluator",
+            "ParameterExtractor",
+            "StoredExecutionTargetBridge",
+            "runMyBatisQuery",
+            "DatabaseToolsConsoleAdapter",
+        ).forEach { forbidden ->
+            assertFalse("shipping action must not route through legacy authority: $forbidden", admission.contains(forbidden))
+        }
     }
 
     @Test
