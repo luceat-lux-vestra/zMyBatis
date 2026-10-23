@@ -93,7 +93,7 @@ class LeapExecutionInvocationCoordinatorTest {
     }
 
     @Test
-    fun coordinatorOwnsPersistedTargetInputAndPolicyWithoutShippingCutover() {
+    fun coordinatorOwnsPersistedTargetInputAndPolicyForShippingAuthority() {
         val coordinator = sourceText(
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionInvocationCoordinator.kt",
         )
@@ -104,16 +104,20 @@ class LeapExecutionInvocationCoordinatorTest {
         val contract = coordinator.indexOf("val parameterContract = leapExecutionParameterContract(source)")
         val persistedTarget = coordinator.indexOf("val persistedTarget = targetStore.load(sourceFileId)")
         val settings = coordinator.indexOf("val settings = ZMyBatisSettings.getInstance()")
+        val zeroInput = coordinator.indexOf("if (parameterContract.requirements.isEmpty())")
         val input = coordinator.indexOf("inputAdapter.requestInput(")
-        val targetRecheck = coordinator.indexOf("val currentTarget = targetStore.load(sourceFileId)", input)
+        val targetRecheck = coordinator.indexOf("val currentTarget = targetStore.load(sourceFileId)")
         val delivery = coordinator.indexOf("deliveryCoordinator.execute(", targetRecheck)
 
         assertTrue(contract >= 0)
         assertTrue(contract < persistedTarget)
         assertTrue(persistedTarget < settings)
-        assertTrue(settings < input)
-        assertTrue(input < targetRecheck)
+        assertTrue(settings < zeroInput)
+        assertTrue(zeroInput < input)
+        assertTrue(targetRecheck < zeroInput)
         assertTrue(targetRecheck < delivery)
+        assertTrue(coordinator.contains("InputEnvironment.validate(parameterContract, emptyList())"))
+        assertTrue(coordinator.contains("is InputEnvironmentResult.Success -> continueWithInput(emptyInput.environment)"))
         assertTrue(coordinator.contains("LeapExecutionInvocationFailure.MissingPersistedTarget"))
         assertTrue(coordinator.contains("LeapExecutionInvocationFailure.PersistedTargetChanged"))
         assertTrue(coordinator.contains("LeapExecutionInputResult.UserCancelled -> onCancelled()"))
