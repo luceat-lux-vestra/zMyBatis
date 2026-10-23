@@ -197,7 +197,7 @@ class LeapActionContextAdmissionCoordinatorTest {
     }
 
     @Test
-    fun admissionRemainsNonShippingAndHasNoLegacyFallbackOrDefaultSchema() {
+    fun admissionIsShippingAndHasNoLegacyFallbackOrDefaultSchema() {
         val coordinator = sourceText(
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapActionContextAdmissionCoordinator.kt",
         )
@@ -214,7 +214,7 @@ class LeapActionContextAdmissionCoordinatorTest {
         assertFalse(coordinator.contains("Use Default Schema"))
         assertFalse(coordinator.contains("MyBatisEvaluator"))
         assertFalse(coordinator.contains("StoredExecutionTargetBridge"))
-        assertFalse(action.contains("LeapActionContextAdmissionCoordinator"))
+        assertTrue(action.contains("LeapActionContextAdmissionCoordinator"))
     }
 
     private fun sourceText(relativePath: String): String =
