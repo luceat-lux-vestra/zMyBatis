@@ -17,7 +17,9 @@ import java.math.BigInteger
  * other binding/type/handler/topology fails closed. A target-derived conventional PostgreSQL
  * database id is mandatory; target selection itself remains DBMS-neutral. The selected execution
  * target and proven dialect are captured in the immutable artifact so preview and dispatch bind to
- * the same authority.
+ * the same authority. Any stock-MyBatis raw interpolation has already become SQL text before this
+ * boundary; its provenance is retained in artifact safety flags so final approval remains mandatory.
+ * A raw value that introduces ambiguous question-mark topology still fails the marker proof.
  */
 class PostgreSqlBigintExecutionMaterializer(
     private val target: ResolvedExecutionTarget,
@@ -27,12 +29,6 @@ class PostgreSqlBigintExecutionMaterializer(
             return failed(
                 MaterializationFailureKind.DIALECT_UNSUPPORTED,
                 DIALECT_UNSUPPORTED,
-            )
-        }
-        if (prepared.rawInterpolations.isNotEmpty()) {
-            return failed(
-                MaterializationFailureKind.RAW_INTERPOLATION_REQUIRES_POLICY,
-                RAW_INTERPOLATION_POLICY_REQUIRED,
             )
         }
         if (prepared.orderedBindings.size != 1) {
@@ -104,7 +100,6 @@ class PostgreSqlBigintExecutionMaterializer(
         const val BINDING_METADATA_UNSUPPORTED = "postgresql-bigint-binding-metadata-unsupported"
         const val BINDING_VALUE_UNSUPPORTED = "postgresql-bigint-binding-value-unsupported"
         const val PLACEHOLDER_TOPOLOGY_UNSUPPORTED = "postgresql-bigint-placeholder-topology-unsupported"
-        const val RAW_INTERPOLATION_POLICY_REQUIRED = "materialization-raw-interpolation-policy-required"
     }
 }
 
