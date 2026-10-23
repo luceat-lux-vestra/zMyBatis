@@ -964,5 +964,3 @@ open class MyBatisExecuteProxyAction : AnAction() {
             sql
         }
 }
-
-class MyBatisExecuteAction : MyBatisExecuteProxyAction()
