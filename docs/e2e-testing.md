@@ -10,28 +10,27 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
 
 ## Maintained process scenarios
 
-`ZMyBatisStarterDriverE2ETest` maintains three process-level scenarios against the maintained IntelliJ IDEA Ultimate 2026.2.3 target on JDK 25:
+`ZMyBatisStarterDriverE2ETest` maintains three process-level scenario families against the maintained IntelliJ IDEA Ultimate 2026.2.3 target on JDK 25:
 
 1. **Packaged-plugin / production-service happy path**
    - installs the exact `buildPlugin` archive into a separate IDE process;
    - copies the versioned sample project into a fresh temporary directory;
    - opens the project and waits for supported background-indicator readiness;
    - reaches the shipping `ZMyBatisSettings` application service over Driver JMX/RMI and asserts its typed production result.
-2. **Registered-action / real Database Tools golden path**
-   - starts the exact packaged plugin in a real IDE process with an integration-test-only H2 JDBC fixture registered as a local Database Tools driver;
-   - prepares a real project-level Database Tools datasource through the IDE-supported `.idea/dataSources.xml` persistence boundary rather than a test adapter or internal Driver stub;
-   - opens the canonical mapper and invokes the registered `zMyBatis.Execute` action;
-   - selects the datasource/default-schema through the shipping chooser;
-   - enters a scalar through the real `ParameterInputDialog`;
-   - observes the real `SqlPreviewDialog` and requires the user-visible SQL to contain the resolved value;
-   - clicks `Execute` and waits for a real Database Tools `TableResultView` cell containing the expected H2 result.
+2. **Registered Leap action / real PostgreSQL golden path**
+   - starts the exact packaged plugin and a pinned PostgreSQL service/pgJDBC pair;
+   - creates the datasource through maintained Database Tools UI, proves Test Connection, refreshes the database model, and selects the **explicit `public` schema** through the shipping chooser;
+   - adds real project Java mapper authority matching the XML namespace, so the #63 contract proves caller type/alias semantics rather than guessing from XML text;
+   - invokes the registered `zMyBatis.Execute` action for a zero-binding statement and proves that no parameter modal is required;
+   - invokes the same registered authority for the proven PostgreSQL BIGINT nonzero slice and verifies preview text, native result cells, exact target identity and native Database Tools history;
+   - turns ordinary preview off, then proves raw `${}` still forces final-artifact confirmation and can execute only the approved immutable SQL;
+   - proves a mutating declaration also forces approval and that cancellation leaves the SQL absent from native query history.
 3. **Registered-action fail-closed path**
-   - opens the same mapper fixture in a fresh IDE process without any datasource;
+   - opens the mapper fixture in a fresh IDE process without any datasource;
    - invokes the real production action from the supported statement context;
-   - requires the production `zMyBatis: No Data Source` refusal instead of parameter evaluation or execution.
+   - requires the typed `zMyBatis: Execution Target Unavailable` refusal instead of input preparation or execution.
 
-No production method exists solely for this harness. H2 is an `integrationTestImplementation` fixture only; before IDE startup, the test copies its JAR into that Starter run's isolated IDE config and records it as a local Driver Files library in `options/databaseDrivers.xml`. It is neither placed on `idea.additional.classpath` nor added to the shipped plugin dependency graph. The datasource itself is loaded from project `.idea/dataSources.xml` plus local datasource state, while Driver interacts only with the shipping zMyBatis service/action and visible product UI. The golden path therefore exercises Database Tools' own JDBC driver classloader instead of an internal datasource-construction stub or production E2E hook.
-
+No production method exists solely for this harness. pgJDBC is an `integrationTestImplementation` fixture only; before IDE startup, the test copies its pinned JAR into that Starter run's isolated IDE config and records it as a local Driver Files library in `options/databaseDrivers.xml`. It is neither placed on `idea.additional.classpath` nor added to the shipped plugin dependency graph. Driver interacts only with the registered zMyBatis action, normal project sources, maintained Database Tools UI and visible result/history surfaces.
 ## Local execution
 
 Run the process suite separately from the normal fixture suite:
@@ -50,8 +49,8 @@ The first local run can download IDE/Starter artifacts. Semantic correctness of 
 - the checked-in `src/integrationTest/testProject` sample is copied into that directory before IDE startup, so IDE metadata cannot mutate the repository fixture or a later scenario;
 - each scenario starts and closes its own IDE process through `runIdeWithDriver().useDriverAndCloseIde`;
 - before opening the project, a separate no-project launch completes the supplied-license or native `StartTrial` activation in that scenario's isolated config, waits for Ultimate/plugin initialization, and proves activation state was persisted; the project launch then uses that config without overlapping project-tree reads with activation's dynamic scheme reload;
-- the database golden path generates project-local `.idea/dataSources.xml` / `dataSources.local.xml` only inside that test's temporary project, and uses an in-memory H2 datasource as deterministic process-test infrastructure; its JDBC JAR is copied only into the isolated Starter IDE config and registered as a local Database Tools driver library, while the exact normal plugin ZIP remains unchanged;
-- datasource choice, parameter input, preview confirmation, and result-table observation use maintained Driver component APIs rather than screen coordinates or correctness sleeps;
+- the database golden path creates the PostgreSQL datasource through maintained Database Tools UI inside that test's temporary project; the pinned pgJDBC JAR is copied only into the isolated Starter IDE config and registered as a local Database Tools driver library, while the exact normal plugin ZIP remains unchanged;
+- datasource/explicit-schema choice, contract input, preview confirmation/cancellation, result-table observation and native-history checks use maintained Driver or persisted product surfaces rather than screen coordinates or correctness sleeps;
 - readiness uses Driver `waitForIndicators` / bounded component waits, not correctness sleeps;
 - Starter's `CIServer` integration is overridden so IDE-side exceptions/freezes reported by Starter fail the JUnit process instead of producing a false green;
 - IDE startup failure, Driver communication loss, assertion failure, or process failure therefore fails the task.
@@ -88,4 +87,4 @@ Pure value objects, deterministic source-graph algorithms, isolated parser seman
 
 Do not move stable semantic matrices into this suite merely to label them E2E. Prefer Driver API/service interaction to Swing traversal. UI interaction is used only when registration or visible product behavior is itself the claim.
 
-The maintained H2 golden path proves one representative installed-plugin user journey through the current shipping action and native Database Tools query/result UI. It does **not** prove every DBMS/dialect, every datasource/schema identity case, DataGrip parity, console disposal/reuse lifecycle, or the final Leap execution architecture. Those remain explicit #67 compatibility/lifecycle obligations. Architecture Leap continues to add representative production-wired scenarios as #62-#66 boundaries become authoritative. The harness remains repository-wide after Leap and is extended according to the applicability rule above.
+The maintained PostgreSQL golden path proves the registered Leap action across one exact explicit-schema target, zero-binding execution, the bounded BIGINT nonzero renderer, raw mandatory approval, mutation cancellation, native results and native query history. It does **not** prove every DBMS/dialect/type, every datasource/schema lifecycle case, DataGrip parity, or all disposal/concurrency races. Those remain explicit #67 compatibility/lifecycle obligations. The harness remains repository-wide and is extended according to the applicability rule above.
