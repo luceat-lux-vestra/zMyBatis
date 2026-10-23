@@ -65,8 +65,8 @@ dependencies {
         exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
     }
 
-    // #415 packages the approved stock-MyBatis preparation boundary for the non-shipping
-    // Leap execution candidate path. Production action routing remains unchanged in this slice.
+    // The root plugin packages the approved stock-MyBatis preparation boundary consumed by
+    // the registered Leap execution authority.
     implementation(project(":mybatis-engine")) {
         exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
     }
