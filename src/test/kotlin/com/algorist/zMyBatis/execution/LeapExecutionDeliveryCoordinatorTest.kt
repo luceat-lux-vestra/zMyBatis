@@ -141,7 +141,7 @@ class LeapExecutionDeliveryCoordinatorTest {
     }
 
     @Test
-    fun coordinatorComposesMaintainedBoundariesWithoutShippingActionCutover() {
+    fun coordinatorComposesMaintainedBoundariesBehindShippingAction() {
         val coordinator = sourceText(
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionDeliveryCoordinator.kt",
         )
@@ -167,6 +167,9 @@ class LeapExecutionDeliveryCoordinatorTest {
         assertTrue(coordinator.contains("LeapExecutionApprovalResult.UserCancelled -> onCancelled()"))
         assertTrue(coordinator.contains("StatementSourceGraphRevalidator::revalidateSnapshots"))
         assertTrue(coordinator.contains("targetResolver.resolve(targetDescriptor)"))
+        assertTrue(coordinator.contains("CopyPasteManager.getInstance().setContents("))
+        assertTrue(coordinator.contains("StringSelection(artifact.executionSql)"))
+        assertTrue(action.contains("LeapActionContextAdmissionCoordinator"))
         assertFalse(action.contains("LeapExecutionDeliveryCoordinator"))
     }
 
