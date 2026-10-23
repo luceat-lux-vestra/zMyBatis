@@ -65,8 +65,7 @@ dependencies {
         exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
     }
 
-    // #415 packages the approved stock-MyBatis preparation boundary for the non-shipping
-    // Leap execution candidate path. Production action routing remains unchanged in this slice.
+    // The registered Leap execution authority consumes the isolated stock-MyBatis preparation boundary.
     implementation(project(":mybatis-engine")) {
         exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
     }
@@ -110,9 +109,8 @@ dependencies {
     // This dependency is intentional even though project source does not import coroutines:
     // removing it fails Starter E2E with NoClassDefFoundError for kotlinx/coroutines/SupervisorKt.
     integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
-    // Process-E2E fixture only. The JAR is copied into the isolated Starter config
+    // Process-E2E fixture only. The pinned pgJDBC JAR is copied into the isolated Starter config
     // and registered as a local Database Tools driver; it is never part of the shipped plugin artifact.
-    integrationTestImplementation("com.h2database:h2:2.5.252")
     integrationTestImplementation("org.postgresql:postgresql:42.7.14")
     // JetBrains Starter's CommonScope loads kotlinx.coroutines.SupervisorKt at runtime, but
     // the Starter test framework does not supply coroutines transitively on this configuration.
