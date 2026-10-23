@@ -1,5 +1,10 @@
 package com.algorist.zMyBatis.core.materialization
 
+import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
+import com.algorist.zMyBatis.core.execution.ExecutionTargetId
+import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
+import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
+import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputKind
@@ -91,6 +96,38 @@ class MaterializationTest {
             "materialization-raw-interpolation-policy-required",
         )
         assertFalse(failure.toString().contains("select * from users"))
+    }
+
+    @Test
+    fun targetBoundZeroBindingRawInterpolationRetainsMandatoryApprovalEvidence() {
+        val prepared = prepared(
+            sql = "select * from users",
+            rawInterpolations = listOf(
+                PreparedRawInterpolation(
+                    requirementId = InputRequirementId("raw-table"),
+                    provenance = provenance(InputKind.RAW_INTERPOLATION, "table"),
+                    origin = ExecutionInputOrigin.USER_ENTERED,
+                ),
+            ),
+        )
+        val target = ResolvedExecutionTarget(
+            descriptor = ExecutionTargetDescriptor(
+                targetId = ExecutionTargetId(
+                    StableDataSourceId("fixture-postgresql"),
+                    ExplicitSchemaIdentity("public"),
+                ),
+                dataSourceDisplayName = "fixture",
+            ),
+            effectiveDatabaseId = null,
+        )
+
+        val execution = success(
+            TargetBoundZeroBindingExecutionMaterializer(target).materialize(prepared),
+        )
+
+        assertEquals("select * from users", execution.executionSql)
+        assertEquals(target.targetId, execution.executionTargetId)
+        assertTrue(execution.safetyFlags.containsRawInterpolation)
     }
 
     @Test
