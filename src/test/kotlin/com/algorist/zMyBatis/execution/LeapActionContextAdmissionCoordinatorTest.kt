@@ -3,6 +3,7 @@ package com.algorist.zMyBatis.execution
 import com.algorist.zMyBatis.core.preparation.PreparationSource
 import com.algorist.zMyBatis.core.preparation.XmlMapperPreparationSource
 import com.algorist.zMyBatis.core.source.CapturedStatement
+import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
 import com.algorist.zMyBatis.core.source.JavaAnnotationStatementVariant
 import com.algorist.zMyBatis.core.source.JavaAnnotationStatementVariantsCapture
 import com.algorist.zMyBatis.core.source.JavaStatementId
@@ -86,21 +87,21 @@ class LeapActionContextAdmissionCoordinatorTest {
             ),
             variants = listOf(
                 JavaAnnotationStatementVariant(null, StatementKind.SELECT, listOf("select 1")),
-                JavaAnnotationStatementVariant("postgresql", StatementKind.SELECT, listOf("select 2")),
+                JavaAnnotationStatementVariant(ConventionalMyBatisDatabaseIds.POSTGRESQL, StatementKind.SELECT, listOf("select 2")),
             ),
             parameters = emptyList(),
         )
 
         val selected = selectLeapPreparationSource(
             evidence = LeapActionSourceEvidence.Java(variants),
-            effectiveDatabaseId = MyBatisDatabaseId("postgresql"),
+            effectiveDatabaseId = MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
             captureXmlMapperMethod = { error("XML capture must not run for Java") },
         )
 
         val source = (selected as LeapPreparationSourceSelectionResult.Ready).source
             as PreparationSource.JavaAnnotation
         assertEquals(listOf("select 2"), source.capture.sqlSegments)
-        assertEquals(MyBatisDatabaseId("postgresql"), source.capture.effectiveDatabaseId)
+        assertEquals(MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL), source.capture.effectiveDatabaseId)
     }
 
     @Test
@@ -108,7 +109,7 @@ class LeapActionContextAdmissionCoordinatorTest {
         val content = """
             <mapper namespace="fixture.Mapper">
               <select id="find">select 1</select>
-              <select id="find" databaseId="postgresql">select 2</select>
+              <select id="find" databaseId="${ConventionalMyBatisDatabaseIds.POSTGRESQL}">select 2</select>
             </mapper>
         """.trimIndent()
         val snapshot = SourceSnapshot(
@@ -125,7 +126,7 @@ class LeapActionContextAdmissionCoordinatorTest {
                 snapshots = listOf(snapshot),
                 discoveries = listOf(discovery),
             ),
-            effectiveDatabaseId = MyBatisDatabaseId("postgresql"),
+            effectiveDatabaseId = MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
             captureXmlMapperMethod = {
                 XmlMapperMethodCaptureResult.Failed(
                     XmlMapperMethodCaptureFailure.UNRESOLVED_MAPPER_TYPE,
@@ -135,7 +136,7 @@ class LeapActionContextAdmissionCoordinatorTest {
 
         val source = (selected as LeapPreparationSourceSelectionResult.Ready).source
             as XmlMapperPreparationSource
-        assertEquals(MyBatisDatabaseId("postgresql"), source.effectiveDatabaseId)
+        assertEquals(MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL), source.effectiveDatabaseId)
         assertNull(source.mapperMethod)
         assertEquals(statementId, source.sourceGraph.rootStatement.id)
     }
