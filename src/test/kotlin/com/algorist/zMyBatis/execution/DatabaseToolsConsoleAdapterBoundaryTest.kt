@@ -9,17 +9,21 @@ import org.junit.Test
 class DatabaseToolsConsoleAdapterBoundaryTest {
 
     @Test
-    fun `shipping action delegates low level Database Tools console mechanics`() {
+    fun `shipping action delegates through Leap before Database Tools mechanics`() {
         val action = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt")
+        val delivery = source(
+            "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionDeliveryCoordinator.kt"
+        )
 
-        assertTrue(action.contains("DatabaseToolsConsoleAdapter.getInstance"))
+        assertTrue(action.contains("LeapActionContextAdmissionCoordinator(project).execute("))
+        assertFalse(action.contains("DatabaseToolsConsoleAdapter"))
         assertFalse(action.contains("JdbcConsole.newConsole"))
         assertFalse(action.contains(".switchSchema("))
         assertFalse(action.contains("JdbcConsoleProvider.findScriptModelNoInject"))
         assertFalse(action.contains("JdbcConsoleProvider.doRunQueryInConsole"))
         assertFalse(action.contains("WriteCommandAction.runWriteCommandAction"))
         assertFalse(action.contains("FileEditorManager.getInstance"))
-        assertFalse(action.contains("executeMaterialized("))
+        assertTrue(delivery.contains("consoleAdapter.executeMaterialized("))
     }
 
     @Test
