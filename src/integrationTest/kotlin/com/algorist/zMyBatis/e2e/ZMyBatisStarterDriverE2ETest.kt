@@ -833,7 +833,8 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     private fun writeLeapMapperAuthority(projectDir: Path) {
-        val paramSource = projectDir.resolve("org/apache/ibatis/annotations/Param.java")
+        val sourceRoot = Files.createDirectories(projectDir.resolve("src"))
+        val paramSource = sourceRoot.resolve("org/apache/ibatis/annotations/Param.java")
         Files.createDirectories(paramSource.parent)
         Files.writeString(
             paramSource,
@@ -843,7 +844,7 @@ class ZMyBatisStarterDriverE2ETest {
             """.trimIndent(),
         )
 
-        val mapperSource = projectDir.resolve("fixture/QueryMapper.java")
+        val mapperSource = sourceRoot.resolve("fixture/QueryMapper.java")
         Files.createDirectories(mapperSource.parent)
         Files.writeString(
             mapperSource,
@@ -860,7 +861,50 @@ class ZMyBatisStarterDriverE2ETest {
             }
             """.trimIndent(),
         )
+
+        val moduleDirMacro = buildString {
+            append(36.toChar())
+            append("MODULE_DIR")
+            append(36.toChar())
+        }
+        Files.writeString(
+            projectDir.resolve("zmybatis-e2e.iml"),
+            """
+            <module type="JAVA_MODULE" version="4">
+              <component name="NewModuleRootManager" inherit-compiler-output="true">
+                <exclude-output />
+                <content url="file://$moduleDirMacro">
+                  <sourceFolder url="file://$moduleDirMacro/src" isTestSource="false" />
+                </content>
+                <orderEntry type="inheritedJdk" />
+                <orderEntry type="sourceFolder" forTests="false" />
+              </component>
+            </module>
+            """.trimIndent(),
+        )
+
+        val projectDirMacro = buildString {
+            append(36.toChar())
+            append("PROJECT_DIR")
+            append(36.toChar())
+        }
+        val ideaDir = Files.createDirectories(projectDir.resolve(".idea"))
+        Files.writeString(
+            ideaDir.resolve("modules.xml"),
+            """
+            <project version="4">
+              <component name="ProjectModuleManager">
+                <modules>
+                  <module
+                      fileurl="file://$projectDirMacro/zmybatis-e2e.iml"
+                      filepath="$projectDirMacro/zmybatis-e2e.iml" />
+                </modules>
+              </component>
+            </project>
+            """.trimIndent(),
+        )
     }
+
     private fun copySampleProject(destination: Path): Path {
         require(Files.isDirectory(sampleProject)) { "Missing versioned E2E sample project: $sampleProject" }
 
