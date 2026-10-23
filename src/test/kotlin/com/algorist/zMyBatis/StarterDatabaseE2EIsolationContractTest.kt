@@ -76,7 +76,8 @@ class StarterDatabaseE2EIsolationContractTest {
         assertTrue(
             "cold H2 fixture must establish a maintained Database Tools connection and force schema introspection",
             e2e.contains("connectAndPrimeH2DatabaseToolsSchemaMetadata") &&
-                e2e.contains("invokeAction(\"Database.Settings\", now = false)") &&
+                e2e.contains("DatabaseView.PropertiesAction") &&
+                e2e.contains("zMyBatis E2E") &&
                 e2e.contains("isConnectionSuccessful(driverNameContains = \"H2\")") &&
                 e2e.contains("DatabaseView.ForceRefresh"),
         )
