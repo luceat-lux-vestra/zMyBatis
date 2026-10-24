@@ -9,6 +9,7 @@ import com.algorist.zMyBatis.core.materialization.MaterializationFailure
 import com.algorist.zMyBatis.core.materialization.MaterializationResult
 import com.algorist.zMyBatis.core.materialization.MaterializedExecution
 import com.algorist.zMyBatis.core.materialization.PostgreSqlBigintExecutionMaterializer
+import com.algorist.zMyBatis.core.materialization.TargetBoundRawExecutionMaterializer
 import com.algorist.zMyBatis.core.materialization.TargetBoundZeroBindingExecutionMaterializer
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
@@ -19,10 +20,10 @@ import com.algorist.zMyBatis.core.preparation.PreparedExecution
 import com.algorist.zMyBatis.mybatis.MyBatisPreparationBoundary
 
 /**
- * Non-shipping #66 application boundary for building one immutable execution candidate.
+ * Application boundary for building the immutable execution candidate used by the registered action.
  *
- * This deliberately stops before Database Tools delivery. The registered shipping action remains
- * the legacy authority until the replacement path reaches the single-authority cutover gate.
+ * This deliberately stops before Database Tools delivery; downstream approval and delivery retain
+ * the exact candidate authority without a legacy execution fallback.
  */
 internal object LeapExecutionCandidateCoordinator {
     fun build(
@@ -70,10 +71,13 @@ internal object LeapExecutionCandidateCoordinator {
         prepared: PreparedExecution,
         target: ResolvedExecutionTarget,
     ): ExecutionMaterializer =
-        if (prepared.orderedBindings.isEmpty()) {
-            TargetBoundZeroBindingExecutionMaterializer(target)
-        } else {
-            PostgreSqlBigintExecutionMaterializer(target)
+        when {
+            prepared.rawInterpolations.isNotEmpty() && prepared.orderedBindings.isEmpty() ->
+                TargetBoundRawExecutionMaterializer(target)
+            prepared.orderedBindings.isEmpty() ->
+                TargetBoundZeroBindingExecutionMaterializer(target)
+            else ->
+                PostgreSqlBigintExecutionMaterializer(target)
         }
 }
 

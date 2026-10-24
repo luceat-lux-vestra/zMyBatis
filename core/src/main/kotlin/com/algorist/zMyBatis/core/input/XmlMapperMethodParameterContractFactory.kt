@@ -32,6 +32,8 @@ object XmlMapperMethodParameterContractFactory {
         "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
     private const val PARAMETER_OBJECT_FALLBACK_RULE =
         "mybatis-3.5.19-default-parameter-handler-type-handler-fallback"
+    private const val RAW_PARAMETER_OBJECT_FALLBACK_RULE =
+        "mybatis-3.5.19-dynamic-context-fallback-parameter-object"
     private const val PARAMETER_OBJECT_PROPERTY_RULE =
         "mybatis-3.5.19-default-parameter-handler-meta-object-property"
     private const val NAMED_MAP_PROPERTY_RULE =
@@ -280,21 +282,32 @@ object XmlMapperMethodParameterContractFactory {
                         ),
                     )
                 }
-                foreachCollections.isEmpty() && conditions.isEmpty() &&
+                foreachCollections.isEmpty() &&
                     parameterObjectFallback != null &&
-                    kind == InputKind.BOUND &&
-                    isSimpleMappingProperty(mappingProperty) -> {
+                    isSimpleMappingProperty(mappingProperty) &&
+                    parameterObjectFallbackSupports(
+                        parameter = parameterObjectFallback,
+                        mappingProperty = mappingProperty,
+                        kind = kind,
+                        placeholders = placeholders,
+                        conditions = conditions,
+                    ) -> {
                     resolvedByParameter.getOrPut(parameterObjectFallback.index) { mutableListOf() } += ResolvedUse(
                         parameter = parameterObjectFallback,
                         root = mappingProperty,
                         kind = kind,
                         aliasKind = InputAliasKind.PARAMETER_OBJECT,
                         placeholders = placeholders,
+                        conditions = conditions,
                         generatedAlias = null,
                         parameterObjectFallback = InputEvidence.ParameterObjectFallback(
                             parameterIndex = parameterObjectFallback.index,
                             mappingProperty = mappingProperty,
-                            ruleId = PARAMETER_OBJECT_FALLBACK_RULE,
+                            ruleId = if (kind == InputKind.RAW_INTERPOLATION) {
+                                RAW_PARAMETER_OBJECT_FALLBACK_RULE
+                            } else {
+                                PARAMETER_OBJECT_FALLBACK_RULE
+                            },
                         ),
                     )
                 }
@@ -397,8 +410,9 @@ object XmlMapperMethodParameterContractFactory {
                 )
             }
             if (
-                conditionEvidence.isNotEmpty() &&
-                (expectedType.shape != InputShape.SCALAR || expectedType.scalarType != InputScalarType.BOOLEAN)
+                conditionEvidence.any { evidence ->
+                    XmlBooleanGuardSyntax.parse(evidence.expression)?.accepts(expectedType) != true
+                }
             ) {
                 problems += InputContractProblem(
                     kind = InputContractProblemKind.UNSUPPORTED,
@@ -453,6 +467,40 @@ object XmlMapperMethodParameterContractFactory {
                     put(genericName, parameter)
                 }
             }
+        }
+    }
+
+    private fun parameterObjectFallbackSupports(
+        parameter: JavaMethodParameterMetadata,
+        mappingProperty: String,
+        kind: InputKind,
+        placeholders: List<InputEvidence.Placeholder>,
+        conditions: List<InputEvidence.OgnlExpression>,
+    ): Boolean {
+        val conditionsMatchProperty = conditions.all {
+            XmlBooleanGuardSyntax.parse(it.expression)?.callerAlias == mappingProperty
+        }
+        return when (kind) {
+            InputKind.BOUND -> {
+                conditionsMatchProperty &&
+                    if (conditions.isEmpty()) {
+                        true
+                    } else {
+                        val expectedType = JavaParameterTypeContract.expectedType(parameter.typeIdentity, kind)
+                        placeholders.any {
+                            it.kind == InputKind.BOUND && it.expression == mappingProperty
+                        } &&
+                            conditions.all { evidence ->
+                                val guard = XmlBooleanGuardSyntax.parse(evidence.expression)
+                                guard?.callerValueKind == XmlBooleanGuardSyntax.CallerValueKind.INTEGER &&
+                                    guard.accepts(expectedType)
+                            }
+                    }
+            }
+            InputKind.RAW_INTERPOLATION ->
+                conditions.isEmpty() &&
+                    conditionsMatchProperty &&
+                    JavaParameterTypeContract.isString(parameter.typeIdentity)
         }
     }
 

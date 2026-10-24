@@ -543,6 +543,57 @@ class XmlMapperMethodParameterContractFactoryTest {
     }
 
     @Test
+    fun soleUnannotatedRawStringUsesDynamicContextParameterObjectFallback() {
+        val graph = graph("select " + raw("value"))
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "java.lang.String", "value", null)),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputKind.RAW_INTERPOLATION, requirement.kind)
+        assertEquals(InputShape.RAW_TEXT, requirement.expectedType.shape)
+        assertEquals(InputScalarType.STRING, requirement.expectedType.scalarType)
+        val alias = contract.aliases.single()
+        assertEquals("value", alias.name)
+        assertEquals(InputAliasKind.PARAMETER_OBJECT, alias.kind)
+        val fallback = alias.provenance.evidence
+            .filterIsInstance<InputEvidence.ParameterObjectFallback>()
+            .single()
+        assertEquals(
+            "mybatis-3.5.19-dynamic-context-fallback-parameter-object",
+            fallback.ruleId,
+        )
+    }
+
+    @Test
+    fun soleUnannotatedIntegerProvesBoundValueAndPositiveIfCaller() {
+        val graph = graph(
+            "select #{value,jdbcType=BIGINT}<if test=\"value > 0\">, 1</if>",
+        )
+        val mapper = mapper(
+            graph,
+            listOf(parameter(0, "long", "value", null)),
+        )
+
+        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputKind.BOUND, requirement.kind)
+        assertEquals(InputScalarType.INTEGER, requirement.expectedType.scalarType)
+        assertEquals(InputAliasKind.PARAMETER_OBJECT, contract.aliases.single().kind)
+        assertTrue(
+            requirement.provenance.evidence.any {
+                it is InputEvidence.OgnlExpression && it.expression == "value > 0"
+            },
+        )
+    }
+
+    @Test
     fun sourceNameWithoutExplicitParamUsesParameterObjectFallbackNotSourceNameAuthority() {
         val graph = graph("select * from users where id = #{id}")
         val mapper = mapper(

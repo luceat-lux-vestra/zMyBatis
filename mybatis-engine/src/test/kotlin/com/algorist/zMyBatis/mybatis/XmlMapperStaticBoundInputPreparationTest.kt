@@ -288,18 +288,25 @@ class XmlMapperStaticBoundInputPreparationTest {
     }
 
     @Test
-    fun rawXmlInputRemainsBlockedBeforeDynamicEvaluation() {
+    fun soleUnannotatedRawStringIsRenderedByStockMyBatisAndRetainsRawProvenance() {
         val fixture = fixture(
-            "SELECT * FROM " + raw("table"),
-            listOf(parameter(0, "java.lang.String", "table", "table")),
+            "SELECT " + raw("value") + " AS RESULT_VALUE",
+            listOf(parameter(0, "java.lang.String", "value", null)),
         )
 
-        assertFailure(
-            prepare(fixture, listOf(InputValue.RawText("users"))),
-            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "xml-preparation-raw-input-unsupported",
+        val execution = success(
+            prepare(fixture, listOf(InputValue.RawText("7"))),
+        )
+
+        assertEquals("SELECT 7 AS RESULT_VALUE", normalize(execution.sqlWithPlaceholders))
+        assertTrue(execution.orderedBindings.isEmpty())
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(
+            contract(fixture).requirements.single().id,
+            execution.rawInterpolations.single().requirementId,
         )
     }
+
 
     private fun prepare(
         fixture: Fixture,
@@ -319,7 +326,7 @@ class XmlMapperStaticBoundInputPreparationTest {
             ).environment
         val source = XmlMapperPreparationSource(
             fixture.graph,
-            additionalAuthoritySnapshots = listOf(fixture.mapper.mapperSource),
+            mapperMethod = fixture.mapper,
         )
         val request = MyBatisPreparationRequest.create(source, contract, environment)
         check(request is PreparationRequestResult.Ready) {

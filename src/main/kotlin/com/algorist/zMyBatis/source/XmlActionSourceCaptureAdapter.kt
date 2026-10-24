@@ -34,7 +34,7 @@ internal sealed interface XmlActionSourceCaptureFailure {
 }
 
 /**
- * Real-editor XML admission adapter for the non-shipping Leap path.
+ * Real-editor XML admission adapter for the registered Leap execution path.
  *
  * The active editor Document remains source authority. PSI is synchronized only to identify the
  * statement at the caret and is checked back against the immutable snapshot/discovery result.

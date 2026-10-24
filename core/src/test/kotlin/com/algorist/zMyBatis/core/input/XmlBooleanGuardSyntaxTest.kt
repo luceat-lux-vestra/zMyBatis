@@ -27,6 +27,21 @@ class XmlBooleanGuardSyntaxTest {
     }
 
     @Test
+    fun positiveIntegerGuardHasOneAuthenticatedIntegerCaller() {
+        val syntax = requireNotNull(XmlBooleanGuardSyntax.parse("value > 0"))
+
+        assertEquals("value", syntax.callerAlias)
+        assertEquals(XmlBooleanGuardSyntax.CallerValueKind.INTEGER, syntax.callerValueKind)
+        assertTrue(syntax.requiresSingleSelect)
+        assertTrue(syntax.accepts(ExpectedInputType(InputShape.SCALAR, InputScalarType.INTEGER)))
+        assertFalse(syntax.accepts(ExpectedInputType(InputShape.SCALAR, InputScalarType.BOOLEAN)))
+        assertEquals(true, syntax.isActiveScalar(7L))
+        assertEquals(false, syntax.isActiveScalar(0L))
+        assertEquals(false, syntax.isActiveScalar(-7L))
+        assertNull(syntax.isActiveScalar(true))
+    }
+
+    @Test
     fun grammarDoesNotGuessOtherOgnlShapes() {
         for (expression in listOf(
             "", " true", "enabled ", "! enabled", "!!enabled",
@@ -37,6 +52,7 @@ class XmlBooleanGuardSyntaxTest {
             "!enabled == false", "(enabled)", "enabled.equals(true)",
             "enabled != true || false", "enabled != true != false",
             "false == enabled", "enabled\n== false",
+            "value>=0", "value >= 0", "value > 1", "value < 0", "value > -1",
         )) {
             assertNull(expression, XmlBooleanGuardSyntax.parse(expression))
         }

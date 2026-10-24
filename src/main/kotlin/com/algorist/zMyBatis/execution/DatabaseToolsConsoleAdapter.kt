@@ -174,7 +174,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         }
 
     /**
-     * Non-shipping Leap delivery entry point.
+     * Leap delivery entry point used by the registered execution authority.
      *
      * The caller owns invocation/cancellation and source-revision validity and supplies a freshly
      * resolved exact Database Tools target. Every asynchronous/native dispatch boundary reruns the
@@ -182,7 +182,6 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
      *
      * Neither preview text nor formatting output can become the execution payload.
      */
-    @Suppress("unused") // #417 boundary is packaged before the #66 production authority cutover.
     fun executeMaterialized(
         console: JdbcConsole,
         artifact: MaterializedExecution,
@@ -282,7 +281,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                         LOG.warn("zMyBatis: editor still null after opening for '${console.title}'")
                         onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable(console.title))
                     }
-                }, ModalityState.any())
+                }, ModalityState.defaultModalityState())
             } else {
                 LOG.warn("zMyBatis: console virtual file is null")
             }

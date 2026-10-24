@@ -178,6 +178,39 @@ class TargetBoundZeroBindingExecutionMaterializer(
 }
 
 /**
+ * Target-bound policy for stock-MyBatis-rendered raw interpolation with zero bound parameters.
+ *
+ * Raw text has already been substituted by MyBatis from an authenticated String input. The
+ * immutable rendered SQL is retained exactly, and the safety flag forces explicit preview approval
+ * before Database Tools delivery. Mixed raw + bound execution remains unsupported.
+ */
+class TargetBoundRawExecutionMaterializer(
+    private val target: ResolvedExecutionTarget,
+) : ExecutionMaterializer {
+    override fun materialize(prepared: PreparedExecution): MaterializationResult {
+        if (prepared.rawInterpolations.isEmpty()) {
+            return failed(
+                MaterializationFailureKind.RAW_INTERPOLATION_REQUIRES_POLICY,
+                RAW_INTERPOLATION_POLICY_REQUIRED,
+            )
+        }
+        if (prepared.orderedBindings.isNotEmpty()) {
+            return failed(
+                MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
+                BOUND_EXECUTION_REQUIRED,
+            )
+        }
+
+        return materialized(
+            prepared = prepared,
+            executionSql = prepared.sqlWithPlaceholders,
+            executionTargetId = target.targetId,
+            executionDialectId = target.effectiveDatabaseId?.value,
+        )
+    }
+}
+
+/**
  * Current maintained entry point.
  *
  * PostgreSQL-specific literalization experiments are intentionally not authoritative here. Until
@@ -204,7 +237,7 @@ internal fun materialized(
 ): MaterializationResult.Success {
     val safetyFlags = MaterializationSafetyFlags(
         declaredMutation = prepared.statementKind != StatementKind.SELECT,
-        containsRawInterpolation = false,
+        containsRawInterpolation = prepared.rawInterpolations.isNotEmpty(),
     )
     val fingerprint = fingerprint(
         prepared = prepared,

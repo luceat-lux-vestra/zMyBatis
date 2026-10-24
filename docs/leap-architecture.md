@@ -31,11 +31,11 @@ The target is driven by these invariants:
 
 ## 2. Fresh-main structural audit
 
-### `MyBatisExecuteProxyAction`
+### Registered action and legacy `MyBatisExecuteProxyAction`
 
-Current responsibilities include context detection, source extraction, statement/history identity, parameter prompting/history, evaluation dispatch, formatting/preview, datasource/schema selection, console reuse/acquisition orchestration, clipboard, and error UI. Low-level console creation, schema switching, editor acquisition, console-document mutation, script-model construction, and native query invocation are isolated behind `DatabaseToolsConsoleAdapter`.
+`MyBatisExecuteAction` is now the registered thin IDE adapter: bounded context presentation plus delegation to `LeapActionContextAdmissionCoordinator`. The old `MyBatisExecuteProxyAction` god-object remains unregistered source-tree debt for #67 deletion/characterization only. Low-level console creation, schema switching, editor acquisition, console-document mutation, script-model construction, and native query invocation remain isolated behind `DatabaseToolsConsoleAdapter`.
 
-**Disposition:** replace the orchestration body. The final action is a thin IDE adapter over one application use case.
+**Disposition:** keep the registered action thin and delete the unregistered legacy orchestration in bounded #67 cleanup; never reintroduce it as a runtime fallback.
 
 ### `MyBatisContextAnalyzer` and `AnnotationSqlExtractor`
 
@@ -51,11 +51,11 @@ Lexical heuristics currently become caller-input authority, the Swing dialog own
 
 ### `MyBatisEvaluator`
 
-The current object still mixes MyBatis `XMLScriptBuilder`, regex source/OGNL rewriting, settings, literal rendering, and SQL-shaped direct-call compatibility. The previous process-global OGNL accessor mutation and custom nested-map fallback lookup have been removed from the shipping legacy evaluator; qualified map/list navigation now uses stock MyBatis OGNL.
+The current object still mixes MyBatis `XMLScriptBuilder`, regex source/OGNL rewriting, settings, literal rendering, and SQL-shaped direct-call compatibility. The previous process-global OGNL accessor mutation and custom nested-map fallback lookup have been removed from the retained legacy evaluator; qualified map/list navigation now uses stock MyBatis OGNL.
 
 **Disposition:** replace completely. No global OGNL mutation, no authoritative unknown-tag stripping, no error-as-SQL, no evaluator-owned guessed literalization.
 
-Until the new full execution path passes the #391 materialization/IDE acceptance gates, the shipping legacy evaluator remains necessary and its bounded refusal guards stay enforced. Direct `evaluate(...)` compatibility strings are characterization only; shipping `evaluateForExecution(...)` never turns unsupported values or evaluator failures into executable SQL.
+The registered execution path no longer calls `MyBatisEvaluator`. Direct legacy `evaluate(...)` / `evaluateForExecution(...)` behavior remains characterization and cleanup debt only; unsupported Leap preparation/materialization produces typed refusal instead of executable diagnostic strings.
 
 ### `SqlFormatter`
 
@@ -67,13 +67,13 @@ Formatting currently feeds the string that is later executed.
 
 Hardening #57 established strong target-identity rules. #260 introduced independent project-scoped v3 source -> target descriptor persistence, and #262 migrates valid v2 records into that authority without recreating consoles at startup. Persisted v3 identity is stable datasource UUID + exact explicit schema, associated with canonical source identity; datasource display name remains presentation-only.
 
-The shipping legacy action now resolves a stored v3 target exactly on a live-console cache miss and acquires a console only for that explicit invocation. `REUSE` and `NEW_EACH` are resource policies over the same persisted target authority. Closing an ephemeral console no longer deletes v3 target identity. The old v2 reader/cleanup path is isolated in `LegacyV2ConsoleSessionMigrationStore`; `ConsoleCacheService` is persistence-neutral and owns only live-resource/selection/shutdown lifecycle.
+The registered Leap action resolves persisted v3 target identity exactly and otherwise requires explicit stable datasource UUID + named schema selection before invocation. `REUSE` and `NEW_EACH` remain resource policies over the same target authority. Closing an ephemeral console does not delete v3 target identity. The old v2 reader/cleanup path remains isolated in `LegacyV2ConsoleSessionMigrationStore`; `ConsoleCacheService` owns only live-resource/selection/shutdown lifecycle.
 
-**Disposition:** continue isolating Database Tools console mechanics and delete `LegacyV2ConsoleSessionMigrationStore` only when no supported upgrade path needs v2 compatibility. Current v3 target identity is independent of live resource lifetime; this foundation does not itself authorize a #391 production action cutover.
+**Disposition:** continue isolating Database Tools console mechanics and delete `LegacyV2ConsoleSessionMigrationStore` only when no supported upgrade path needs v2 compatibility. Target identity stays independent of live resource lifetime.
 
 ### Settings
 
-The shipping legacy action now refuses ordinary evaluator failures before preview/execution regardless of `strictOgnlMode`, and shipping evaluation explicitly disables `ignoreUnknownTags`; both switches remain only direct legacy-evaluator compatibility. `rememberLastInputs` defaults on.
+The registered Leap action does not consult legacy evaluator compatibility switches for execution safety. `strictOgnlMode` and `ignoreUnknownTags` remain legacy compatibility/cleanup debt only; remembered-input behavior is owned by the contract-driven input boundary.
 
 **Disposition:** safety is not configurable. Remove or repurpose those compatibility switches; remembered inputs default off until the new #63 retention contract is complete.
 
@@ -217,7 +217,7 @@ Stock MyBatis produces structured `PreparedExecution` (SQL-with-placeholders and
 
 The verified SQL-text artifact is submitted through the existing maintained native Database Tools console path, preserving its result/history UI. It is a compatibility contract, **not JDBC/TypeHandler equivalence**. An unsupported DBMS/type/placeholder situation fails before execution; datasource selection itself remains DBMS-neutral.
 
-#251 still proves no demonstrated maintained 2026.2 API bridge for true JDBC binding *and* native console results/history. #258's strict no-fallback decision is a historical state for that earlier goal. #391 explicitly changes the product target after documentation merge; it does not magically implement the materializer. **Current** `MaintainedExecutionMaterializer` continues to return `BOUND_EXECUTION_REQUIRED` for nonzero bindings. A single full new execution path and runtime evidence are prerequisites for action cutover, with no old/new silent split.
+#251 still proves no demonstrated maintained 2026.2 API bridge for true JDBC binding *and* native console results/history. #258's strict no-fallback decision is historical for that earlier goal. #391 changed the target to bounded SQL-text compatibility. The registered action now uses one replacement authority: target-bound zero-binding plus explicitly proven nonzero materializers, currently the PostgreSQL BIGINT slice; unsupported nonzero shapes fail typed and never route to legacy execution.
 
 Do not use regular-expression question-mark substitution, guessed null, unverified per-DB literalizers or undocumented integration. For mandatory envelope and proof cases see [Leap execution rebaseline](leap-execution-rebaseline.md).
 
@@ -339,7 +339,7 @@ The user's configured Database Tools datasource/session, console and native resu
 
 Target selection must remain DBMS-neutral, but **literal rendering is not**; a datasource may be valid while statement materialization for its family/type is unsupported. #251's NO-GO applies only to the previous stricter native JDBC-binding requirement; the underlying evidence is preserved. #258 historically refused any fallback under that goal; the new policy is an explicit rebaseline, not an undocumented exception.
 
-**Implementation stop:** current runtime materializer returns `BOUND_EXECUTION_REQUIRED` on nonzero mappings and the legacy action stays authoritative. No bypass/cutover until dialect/type/placeholder and actual console E2E proof pass. Do not keep adding standalone admission grammars while this boundary is unproven.
+**Implemented cutover gate:** the registered action may execute only zero-binding artifacts or a named nonzero dialect/type/placeholder slice with actual native-console E2E proof. The PostgreSQL BIGINT slice is the first such nonzero path. Every unproven shape remains fail-closed; legacy execution is not a fallback.
 
 ## 9. Target/session and Database Tools adapter
 
@@ -359,7 +359,7 @@ Execution behavior:
 3. re-check target validity after user/modality/background boundaries;
 4. acquire/reuse a console as an ephemeral resource according to policy;
 5. apply schema/search path and verify success;
-6. submit the single immutable, proved SQL-text artifact for both zero- and supported nonzero-binding statements; until the new materializer exists, current nonzero Leap preparations still fail with `BOUND_EXECUTION_REQUIRED` and no production cutover is allowed;
+6. submit the single immutable, proved SQL-text artifact for zero-binding and explicitly supported nonzero statements; all unproven nonzero shapes fail typed before delivery and never fall back to legacy execution;
 7. invoke the native Database Tools execution path without introducing a zMyBatis DBMS allowlist;
 8. preserve/restore console document/editor state according to the adapter contract.
 
