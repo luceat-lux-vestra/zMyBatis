@@ -74,10 +74,12 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("configDir.resolve(\"jdbc-drivers\")"),
         )
         assertTrue(
-            "cold H2 fixture must establish a maintained Database Tools connection and force schema introspection",
+            "cold H2 fixture must establish datasource-bearing Database tree context before connection and introspection",
             e2e.contains("connectAndPrimeH2DatabaseToolsSchemaMetadata") &&
+                e2e.contains("databaseViewTree()") &&
+                e2e.contains("waitForSelectedPathContaining(\"zMyBatis E2E\"") &&
+                e2e.contains("component = databaseTree.component") &&
                 e2e.contains("DatabaseView.PropertiesAction") &&
-                e2e.contains("zMyBatis E2E") &&
                 e2e.contains("isConnectionSuccessful(driverNameContains = \"H2\")") &&
                 e2e.contains("DatabaseView.ForceRefresh"),
         )
