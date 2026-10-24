@@ -100,6 +100,6 @@ internal class LeapExecutionApprovalAdapter(private val project: Project) {
                     showPreview = { sql -> SqlPreviewDialog(project, sql).showAndGet() },
                 ),
             )
-        }, ModalityState.any())
+        }, ModalityState.defaultModalityState())
     }
 }

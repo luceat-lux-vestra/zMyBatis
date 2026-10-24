@@ -44,6 +44,21 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
     }
 
     @Test
+    fun `model-changing continuations use write-safe modality`() {
+        val adapter = source(
+            "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"
+        )
+        val approval = source(
+            "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionApprovalAdapter.kt"
+        )
+
+        assertFalse(adapter.contains("ModalityState.any()"))
+        assertFalse(approval.contains("ModalityState.any()"))
+        assertTrue(adapter.contains("ModalityState.defaultModalityState()"))
+        assertTrue(approval.contains("ModalityState.defaultModalityState()"))
+    }
+
+    @Test
     fun `Leap artifact delivery preserves immutable SQL and explicit revalidation inputs`() {
         val adapter = source(
             "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"

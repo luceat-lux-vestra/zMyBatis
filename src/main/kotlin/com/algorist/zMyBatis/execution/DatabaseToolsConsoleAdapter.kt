@@ -281,7 +281,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                         LOG.warn("zMyBatis: editor still null after opening for '${console.title}'")
                         onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable(console.title))
                     }
-                }, ModalityState.any())
+                }, ModalityState.defaultModalityState())
             } else {
                 LOG.warn("zMyBatis: console virtual file is null")
             }
