@@ -4,11 +4,14 @@ package com.algorist.zMyBatis
 
 import com.algorist.zMyBatis.execution.LeapActionContextAdmissionCoordinator
 import com.algorist.zMyBatis.execution.LeapActionContextAdmissionFailure
+import com.algorist.zMyBatis.execution.LeapExecutionDeliveryFailure
+import com.algorist.zMyBatis.execution.LeapExecutionInvocationFailure
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 
@@ -19,6 +22,10 @@ import com.intellij.openapi.ui.Messages
  * delegates all supported execution semantics to the Leap admission/application chain.
  */
 class MyBatisExecuteAction : AnAction() {
+    companion object {
+        private val LOG = Logger.getInstance(MyBatisExecuteAction::class.java)
+    }
+
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
@@ -42,11 +49,59 @@ class MyBatisExecuteAction : AnAction() {
             onExecuted = {},
             onCancelled = {},
             onFailure = { failure ->
+                if (failure is LeapActionContextAdmissionFailure.InvocationFailed) {
+                    LOG.warn(
+                        "zMyBatis: Leap invocation refused " +
+                            "(stage=${leapInvocationFailureDiagnosticCode(failure.failure)})",
+                    )
+                }
                 LeapActionFailurePresenter.present(project, failure)
             },
         )
     }
 }
+
+private fun leapInvocationFailureDiagnosticCode(
+    failure: LeapExecutionInvocationFailure,
+): String =
+    when (failure) {
+        LeapExecutionInvocationFailure.InvocationInvalidated ->
+            "invocation-invalidated"
+        is LeapExecutionInvocationFailure.InputContractBlocked ->
+            "input-contract-blocked:" + failure.problemCodes.sorted().joinToString(",")
+        LeapExecutionInvocationFailure.MissingPersistedTarget ->
+            "missing-persisted-target"
+        LeapExecutionInvocationFailure.PersistedTargetChanged ->
+            "persisted-target-changed"
+        is LeapExecutionInvocationFailure.DeliveryFailed ->
+            "delivery-failed:" + leapDeliveryFailureDiagnosticCode(failure.failure)
+    }
+
+private fun leapDeliveryFailureDiagnosticCode(
+    failure: LeapExecutionDeliveryFailure,
+): String =
+    when (failure) {
+        LeapExecutionDeliveryFailure.InvocationInvalidated ->
+            "invocation-invalidated"
+        is LeapExecutionDeliveryFailure.SourceInvalid ->
+            "source-invalid:" + failure.failure.javaClass.simpleName
+        is LeapExecutionDeliveryFailure.TargetResolutionFailed ->
+            "target-resolution-failed:" + failure.failure.javaClass.simpleName
+        is LeapExecutionDeliveryFailure.PreparationFailed ->
+            "preparation-failed:" + failure.failure.javaClass.simpleName
+        is LeapExecutionDeliveryFailure.MaterializationFailed ->
+            "materialization-failed:" + failure.failure.javaClass.simpleName
+        is LeapExecutionDeliveryFailure.CandidateTargetIdentityMismatch ->
+            "candidate-target-identity-mismatch"
+        LeapExecutionDeliveryFailure.ArtifactSourceAuthorityMismatch ->
+            "artifact-source-authority-mismatch"
+        LeapExecutionDeliveryFailure.TargetSemanticDrift ->
+            "target-semantic-drift"
+        is LeapExecutionDeliveryFailure.ConsoleAcquisitionFailed ->
+            "console-acquisition-failed:" + failure.failure.javaClass.simpleName
+        is LeapExecutionDeliveryFailure.SqlExecutionFailed ->
+            "sql-execution-failed:" + failure.failure.javaClass.simpleName
+    }
 
 private object LeapActionFailurePresenter {
     fun presentUnsupportedProvider(project: Project) {
