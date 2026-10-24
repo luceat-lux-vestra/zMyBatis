@@ -1,6 +1,7 @@
 package com.algorist.zMyBatis.execution
 
 import com.algorist.zMyBatis.core.input.InputEnvironment
+import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.JavaAnnotationParameterContractFactory
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
@@ -119,7 +120,7 @@ internal sealed interface LeapExecutionInvocationFailure {
 }
 
 /**
- * Non-shipping production-orchestration seam for #66.
+ * Production-orchestration seam for the registered #66 execution action.
  *
  * Source capture and missing-target chooser ownership remain outside this slice. Given one immutable
  * preparation source, this coordinator derives its matching input contract, snapshots one persisted
@@ -170,33 +171,54 @@ internal class LeapExecutionInvocationCoordinator(private val project: Project) 
             consoleSessionPolicy = settings.consoleSessionPolicy,
         )
 
+        fun continueWithInput(environment: InputEnvironment) {
+            if (!liveInvocation()) {
+                onFailure(LeapExecutionInvocationFailure.InvocationInvalidated)
+                return
+            }
+
+            val currentTarget = targetStore.load(sourceFileId)
+            if (currentTarget?.descriptor != targetDescriptor) {
+                onFailure(LeapExecutionInvocationFailure.PersistedTargetChanged)
+                return
+            }
+
+            deliveryCoordinator.execute(
+                source = source,
+                parameterContract = parameterContract,
+                inputEnvironment = environment,
+                targetDescriptor = targetDescriptor,
+                resourceKey = sourceFileId.value,
+                forceNewConsole = policy.forceNewConsole,
+                approvalOptions = policy.approvalOptions,
+                isInvocationActive = liveInvocation,
+                onExecuted = onExecuted,
+                onCancelled = onCancelled,
+                onFailure = { failure ->
+                    onFailure(LeapExecutionInvocationFailure.DeliveryFailed(failure))
+                },
+            )
+        }
+
+        if (parameterContract.requirements.isEmpty()) {
+            when (val emptyInput = InputEnvironment.validate(parameterContract, emptyList())) {
+                is InputEnvironmentResult.Success -> continueWithInput(emptyInput.environment)
+                is InputEnvironmentResult.Failure ->
+                    onFailure(
+                        LeapExecutionInvocationFailure.InputContractBlocked(
+                            listOf("input-contract-empty-environment-invalid"),
+                        ),
+                    )
+            }
+            return
+        }
+
         inputAdapter.requestInput(
             contract = parameterContract,
             isInvocationActive = liveInvocation,
             onResult = { input ->
                 when (input) {
-                    is LeapExecutionInputResult.Accepted -> {
-                        val currentTarget = targetStore.load(sourceFileId)
-                        if (currentTarget?.descriptor != targetDescriptor) {
-                            onFailure(LeapExecutionInvocationFailure.PersistedTargetChanged)
-                        } else {
-                            deliveryCoordinator.execute(
-                                source = source,
-                                parameterContract = parameterContract,
-                                inputEnvironment = input.environment,
-                                targetDescriptor = targetDescriptor,
-                                resourceKey = sourceFileId.value,
-                                forceNewConsole = policy.forceNewConsole,
-                                approvalOptions = policy.approvalOptions,
-                                isInvocationActive = liveInvocation,
-                                onExecuted = onExecuted,
-                                onCancelled = onCancelled,
-                                onFailure = { failure ->
-                                    onFailure(LeapExecutionInvocationFailure.DeliveryFailed(failure))
-                                },
-                            )
-                        }
-                    }
+                    is LeapExecutionInputResult.Accepted -> continueWithInput(input.environment)
                     LeapExecutionInputResult.UserCancelled -> onCancelled()
                     LeapExecutionInputResult.InvocationInvalidated ->
                         onFailure(LeapExecutionInvocationFailure.InvocationInvalidated)

@@ -59,7 +59,7 @@ class KotlinActionContextBoundaryTest : LightJavaCodeInsightFixtureTestCase() {
             mapperFile.findElementAt(myFixture.editor.caretModel.offset)
         )
 
-        val action = MyBatisExecuteProxyAction()
+        val action = MyBatisExecuteAction()
         assertEquals(
             "current production analyzer is PsiJavaFile-gated and must not claim Kotlin annotation support",
             MyBatisContextAnalyzer.ContextType.NONE,
@@ -67,7 +67,7 @@ class KotlinActionContextBoundaryTest : LightJavaCodeInsightFixtureTestCase() {
         )
     }
 
-    private fun actionEvent(action: MyBatisExecuteProxyAction, psiFile: PsiFile): AnActionEvent {
+    private fun actionEvent(action: MyBatisExecuteAction, psiFile: PsiFile): AnActionEvent {
         val dataContext = SimpleDataContext.builder()
             .add(CommonDataKeys.PROJECT, project)
             .add(CommonDataKeys.EDITOR, myFixture.editor)

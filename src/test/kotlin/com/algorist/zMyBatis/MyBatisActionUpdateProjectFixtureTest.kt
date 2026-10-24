@@ -149,7 +149,7 @@ class MyBatisActionUpdateProjectFixtureTest : LightJavaCodeInsightFixtureTestCas
         moveCaretTo(plain, myFixture.editor, "find()")
         assertNotApplicable(updatePresentation(myFixture.editor, plain))
 
-        val action = MyBatisExecuteProxyAction()
+        val action = MyBatisExecuteAction()
         val dataContext = SimpleDataContext.builder()
             .add(CommonDataKeys.PROJECT, project)
             .add(CommonDataKeys.PSI_FILE, plain)
@@ -189,7 +189,7 @@ class MyBatisActionUpdateProjectFixtureTest : LightJavaCodeInsightFixtureTestCas
     }
 
     private fun updatePresentation(editor: Editor, psiFile: PsiFile): Presentation {
-        val action = MyBatisExecuteProxyAction()
+        val action = MyBatisExecuteAction()
         val dataContext = SimpleDataContext.builder()
             .add(CommonDataKeys.PROJECT, project)
             .add(CommonDataKeys.EDITOR, editor)

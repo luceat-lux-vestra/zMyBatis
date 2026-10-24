@@ -16,13 +16,11 @@ import com.algorist.zMyBatis.source.StatementSourceGraphRevalidator
 import com.intellij.openapi.project.Project
 
 /**
- * Non-shipping #66 application coordinator from approved preparation inputs to Database Tools.
+ * #66 application coordinator from approved preparation inputs to Database Tools.
  *
- * The registered action does not call this yet. This class exists to prove one complete authority
- * chain through immutable-artifact approval and delivery before the final single-authority action
- * cutover is introduced.
+ * The registered action reaches this boundary through the Leap invocation chain. Immutable-artifact
+ * approval and delivery remain the single execution authority with no legacy fallback.
  */
-@Suppress("unused")
 internal class LeapExecutionDeliveryCoordinator(project: Project) {
     private val targetResolver = DatabaseToolsTargetResolver(project)
     private val consoleAdapter = DatabaseToolsConsoleAdapter.getInstance(project)

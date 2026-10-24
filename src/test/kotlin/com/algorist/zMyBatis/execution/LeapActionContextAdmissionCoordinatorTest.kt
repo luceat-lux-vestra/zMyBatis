@@ -197,13 +197,17 @@ class LeapActionContextAdmissionCoordinatorTest {
     }
 
     @Test
-    fun admissionRemainsNonShippingAndHasNoLegacyFallbackOrDefaultSchema() {
+    fun registeredActionUsesLeapAdmissionAsSingleShippingAuthority() {
         val coordinator = sourceText(
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapActionContextAdmissionCoordinator.kt",
         )
-        val action = sourceText(
+        val shippingAction = sourceText(
+            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteAction.kt",
+        )
+        val legacyAction = sourceText(
             "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
         )
+        val pluginXml = sourceText("src/main/resources/META-INF/plugin.xml")
 
         assertTrue(coordinator.contains("JavaAnnotationSourceCaptureAdapter.capture"))
         assertTrue(coordinator.contains("XmlActionSourceCaptureAdapter.capture"))
@@ -214,7 +218,19 @@ class LeapActionContextAdmissionCoordinatorTest {
         assertFalse(coordinator.contains("Use Default Schema"))
         assertFalse(coordinator.contains("MyBatisEvaluator"))
         assertFalse(coordinator.contains("StoredExecutionTargetBridge"))
-        assertFalse(action.contains("LeapActionContextAdmissionCoordinator"))
+
+        assertTrue(shippingAction.contains("class MyBatisExecuteAction : AnAction()"))
+        assertTrue(shippingAction.contains("ActionUpdateThread.BGT"))
+        assertTrue(shippingAction.contains("MyBatisContextAnalyzer.analyze(e)"))
+        assertTrue(shippingAction.contains("LeapActionContextAdmissionCoordinator(project).execute"))
+        assertFalse(shippingAction.contains("MyBatisExecuteProxyAction"))
+        assertFalse(shippingAction.contains("MyBatisEvaluator"))
+        assertFalse(shippingAction.contains("StoredExecutionTargetBridge"))
+        assertFalse(shippingAction.contains("runMyBatisQuery"))
+
+        assertFalse(legacyAction.contains("class MyBatisExecuteAction"))
+        assertTrue(pluginXml.contains("id=\"zMyBatis.Execute\""))
+        assertTrue(pluginXml.contains("class=\"com.algorist.zMyBatis.MyBatisExecuteAction\""))
     }
 
     private fun sourceText(relativePath: String): String =

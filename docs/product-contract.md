@@ -58,14 +58,14 @@ Known replacement targets include:
 - regex/keyword-based `ParameterExtractor` as caller-input authority;
 - `ParameterInputDialog` semantic/type/history ownership;
 - raw-string `ParameterHistoryService` identity/persistence;
-- `MyBatisEvaluator` regex OGNL/source transformations, literal rendering, and retained direct-call error-as-SQL compatibility; the previous process-global custom map accessor mutation has been removed from the shipping legacy evaluator;
+- `MyBatisEvaluator` regex OGNL/source transformations, literal rendering, and retained direct-call error-as-SQL compatibility; the previous process-global custom map accessor mutation has been removed from the retained legacy evaluator;
 - v2 persisted-record/live-console-cache lifecycle coupling and startup eager console recreation;
 - execution-time formatting mutation;
 - `Strict OGNL Mode` and `Ignore Unknown Tags` are retained only as direct legacy-evaluator compatibility; shipping evaluation fails closed independently of both switches.
 
 Current positive evidence remains useful as regression/falsification evidence during migration, but it does not dictate the target class or package design.
 
-While the legacy shipping action remains the only shipping execution authority pending #391's verified complete cutover, XML statements containing a real `<include>` dependency are refused before extraction/evaluation/target work. The legacy evaluator does not own authoritative mapper-fragment resolution, and `Ignore Unknown Tags` must not turn unresolved includes into partial executable-looking SQL. This temporary refusal does not change the target source graph/MyBatis preparation capability.
+The registered Leap action resolves supported XML `<sql>/<include>` dependencies through the authoritative source graph and fails typed on missing, ambiguous, cyclic, or unavailable dependencies. The retained legacy evaluator still lacks authoritative fragment resolution, but it is no longer a production fallback; its old refusal guards remain characterization/cleanup debt only.
 
 The same temporary fail-closed rule applies to legacy bound-value fallback shapes: direct `MyBatisEvaluator.evaluate(...)` may still produce compatibility strings for characterization, but shipping `evaluateForExecution(...)` refuses direct List/Map marker-bearing NULL and arbitrary-object `toString()` before console mutation. This is not type/dialect-fidelity proof or permission to implement an unverified #391 renderer.
 
@@ -173,7 +173,7 @@ Every configured datasource remains eligible for selection and exact target iden
 
 Standard MyBatis `databaseId` semantics depend on target-derived effective database ID and may refuse unresolved custom mappings; the source/target contract of #252 continues to apply. `#{}` bound values and `${}` raw interpolation remain different input/confirmation classes.
 
-#251 established **NO-GO for the different strict contract** of maintained programmatic JDBC binding plus native results/history on 2026.2. #258 froze that earlier product target. #391 changes the **target product requirement**, not those measured API facts. The shipping action and current `MaintainedExecutionMaterializer` still fail closed for nonzero Leap bindings until another PR implements, tests and wires a supported renderer. There is no permission to route zero bindings to Leap while silently using legacy for nonzero inputs, or to disable `BOUND_EXECUTION_REQUIRED` without actual code/evidence.
+#251 established **NO-GO for the different strict contract** of maintained programmatic JDBC binding plus native results/history on 2026.2. #258 froze that earlier product target. #391 changes the **target product requirement**, not those measured API facts. The registered action now uses one Leap execution authority: zero-binding artifacts use the target-bound DB-neutral materializer, and the explicitly proven nonzero production slice uses the PostgreSQL BIGINT materializer. Every other nonzero dialect/type/placeholder shape fails typed at materialization; none may fall back to legacy execution.
 
 SQL text materialization is a deliberately bounded compatibility feature: no generic regex replacement of `?`, string/comment/dialect-operator confusion, guessed null, arbitrary `toString()`, unverified raw `${}` replacement or broad DBMS support claim. Preview/execution identity and mandatory confirmation requirements remain unchanged in strength.
 
@@ -185,7 +185,7 @@ The sole execution authority after materialization is an immutable **exact SQL-t
 - Revalidate source, target, cancellation/disposal and confirmation immediately before dispatch; any material change invalidates the artifact.
 - DML and raw `${}` require explicit final-artifact confirmation; no implicit execution after preview.
 - A prepared statement with nonzero bindings is not an executable text artifact until *all* dialect/type/placeholder obligations are proven. Unsupported cases fail closed.
-- Existing legacy execution remains sole shipping authority until one complete new production path is proven; no split cutover by mapping count.
+- The registered action has one Leap production authority. Unsupported materialization never falls back to the retained legacy evaluator/action by mapping count, mapper flavor, setting, or failure path.
 
 ## 11. Safety posture
 
@@ -270,7 +270,7 @@ A small safety patch may remove current INFO leakage before the full Leap cutove
 5. derive a provenanced input contract;
 6. collect and validate explicit user input;
 7. prepare through isolated MyBatis semantics, including the proven target database id when required;
-8. use a proven DBMS/type/placeholder materializer to create one immutable authoritative SQL-text artifact from MyBatis BoundSql and ordered values; refuse nonzero cases without that proof (current code retains `BOUND_EXECUTION_REQUIRED` until a later validated implementation);
+8. use a proven materializer to create one immutable authoritative SQL-text artifact: target-bound zero-binding for the DB-neutral case, or an explicitly supported nonzero dialect/type slice such as the proven PostgreSQL BIGINT path; refuse every other nonzero case without fallback;
 9. revalidate source and target revisions;
 10. require mutation/raw confirmation where applicable;
 11. execute exactly the approved SQL text through the configured native Database Tools console for a dialect/type slice proven executable; no DBMS allowlist for target selection;
