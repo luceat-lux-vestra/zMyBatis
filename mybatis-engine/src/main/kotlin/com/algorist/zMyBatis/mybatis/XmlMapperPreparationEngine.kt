@@ -416,6 +416,7 @@ object XmlMapperPreparationEngine {
      */
     private fun createIsolatedRuntime(fresh: Boolean = false): IsolatedRuntime {
         val myBatisLocation = Configuration::class.java.protectionDomain?.codeSource?.location
+            ?: MyBatisRuntimeArtifact.fromClassResource(Configuration::class.java)
             ?: throw IsolationFailure("mybatis-code-source-unavailable")
         if (myBatisLocation.protocol != "file") {
             throw IsolationFailure("mybatis-code-source-non-local")
