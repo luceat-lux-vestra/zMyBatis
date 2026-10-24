@@ -477,31 +477,30 @@ object XmlMapperMethodParameterContractFactory {
         placeholders: List<InputEvidence.Placeholder>,
         conditions: List<InputEvidence.OgnlExpression>,
     ): Boolean {
-        if (
-            conditions.any {
-                XmlBooleanGuardSyntax.parse(it.expression)?.callerAlias != mappingProperty
-            }
-        ) {
-            return false
+        val conditionsMatchProperty = conditions.all {
+            XmlBooleanGuardSyntax.parse(it.expression)?.callerAlias == mappingProperty
         }
         return when (kind) {
             InputKind.BOUND -> {
-                if (conditions.isEmpty()) {
-                    true
-                } else {
-                    val expectedType = JavaParameterTypeContract.expectedType(parameter.typeIdentity, kind)
-                    placeholders.any {
-                        it.kind == InputKind.BOUND && it.expression == mappingProperty
-                    } &&
-                        conditions.all { evidence ->
-                            val guard = XmlBooleanGuardSyntax.parse(evidence.expression)
-                            guard?.callerValueKind == XmlBooleanGuardSyntax.CallerValueKind.INTEGER &&
-                                guard.accepts(expectedType)
-                        }
-                }
+                conditionsMatchProperty &&
+                    if (conditions.isEmpty()) {
+                        true
+                    } else {
+                        val expectedType = JavaParameterTypeContract.expectedType(parameter.typeIdentity, kind)
+                        placeholders.any {
+                            it.kind == InputKind.BOUND && it.expression == mappingProperty
+                        } &&
+                            conditions.all { evidence ->
+                                val guard = XmlBooleanGuardSyntax.parse(evidence.expression)
+                                guard?.callerValueKind == XmlBooleanGuardSyntax.CallerValueKind.INTEGER &&
+                                    guard.accepts(expectedType)
+                            }
+                    }
             }
             InputKind.RAW_INTERPOLATION ->
-                conditions.isEmpty() && JavaParameterTypeContract.isString(parameter.typeIdentity)
+                conditions.isEmpty() &&
+                    conditionsMatchProperty &&
+                    JavaParameterTypeContract.isString(parameter.typeIdentity)
         }
     }
 

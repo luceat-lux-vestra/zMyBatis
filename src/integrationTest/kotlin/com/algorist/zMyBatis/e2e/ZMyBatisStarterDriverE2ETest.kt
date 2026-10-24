@@ -103,6 +103,7 @@ interface ZMyBatisSettingsRemote {
 @Remote("javax.swing.text.JTextComponent")
 interface JTextComponentRemote {
     fun getText(): String
+    fun setText(value: String)
 }
 
 @Remote(
@@ -119,12 +120,21 @@ interface TrialAvailabilityRemote {
 }
 
 private class JTextAreaUi(data: ComponentData) : UiComponent(data) {
-    val text: String
+    var text: String
         get() = driver.cast(component, JTextComponentRemote::class).getText()
+        set(value) {
+            driver.cast(component, JTextComponentRemote::class).setText(value)
+        }
 }
 
 private fun Finder.textArea(): JTextAreaUi =
     x("//div[@class='JBTextArea']", JTextAreaUi::class.java)
+
+private fun Finder.rawConfirmation(): UiComponent =
+    x(
+        "//div[@visible_text='I understand this value is inserted as raw SQL text']",
+        UiComponent::class.java,
+    )
 
 class ZMyBatisStarterDriverE2ETest {
 
@@ -649,7 +659,8 @@ class ZMyBatisStarterDriverE2ETest {
                 ui.popups().list().last().waitOneText("public").click()
 
                 ui.dialog(title = "Enter MyBatis Parameters") {
-                    textField().text = "7"
+                    textArea().text = "7"
+                    rawConfirmation().click()
                     button("OK").click()
                 }
 

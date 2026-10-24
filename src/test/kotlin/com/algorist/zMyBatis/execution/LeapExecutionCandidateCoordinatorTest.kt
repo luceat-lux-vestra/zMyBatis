@@ -86,7 +86,7 @@ class LeapExecutionCandidateCoordinatorTest {
             target,
         )
 
-        assertTrue(result is LeapExecutionCandidateResult.Ready)
+        assertTrue("raw candidate expected Ready but got $result", result is LeapExecutionCandidateResult.Ready)
         val execution = (result as LeapExecutionCandidateResult.Ready).execution
         assertEquals("select 7 as result_value", execution.executionSql)
         assertEquals(target.targetId, execution.executionTargetId)

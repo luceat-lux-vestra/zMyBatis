@@ -354,7 +354,7 @@ class XmlMapperStaticBoundInputPreparationTest {
             ).environment
         val source = XmlMapperPreparationSource(
             fixture.graph,
-            additionalAuthoritySnapshots = listOf(fixture.mapper.mapperSource),
+            mapperMethod = fixture.mapper,
         )
         val request = MyBatisPreparationRequest.create(source, contract, environment)
         check(request is PreparationRequestResult.Ready) {

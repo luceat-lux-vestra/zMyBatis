@@ -397,15 +397,15 @@ object XmlMapperPreparationEngine {
         }
 
         val rawInterpolations = mutableListOf<PreparedRawInterpolation>()
-        for (requirement in rawRequirements) {
-            val provided = request.inputEnvironment.value(requirement.id)
+        for ((requirementId, _, _, _, provenance) in rawRequirements) {
+            val provided = request.inputEnvironment.value(requirementId)
                 ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, RAW_INPUT_UNSUPPORTED)
             if (provided.value !is InputValue.RawText) {
                 return failed(PreparationFailureKind.PREPARATION_INVARIANT, RAW_INPUT_UNSUPPORTED)
             }
             rawInterpolations += PreparedRawInterpolation(
-                requirementId = requirement.id,
-                provenance = requirement.provenance,
+                requirementId = requirementId,
+                provenance = provenance,
                 origin = provided.origin,
             )
         }
