@@ -599,6 +599,86 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     @Test
+    fun registeredRawInterpolationForcesPreviewWhenSettingDisabled(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-raw-confirmation-postgresql-project"))
+        val rawToken = buildString {
+            append(36.toChar())
+            append("{value}")
+        }
+        Files.writeString(
+            projectDir.resolve("Query.xml"),
+            """
+            <mapper namespace="fixture.QueryMapper">
+            <select id="ping">SELECT $rawToken AS RESULT_VALUE</select>
+            </mapper>
+            """.trimIndent(),
+        )
+        writeMapperInterface(projectDir, "java.lang.String")
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-raw-confirmation-postgresql", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("Query.xml")
+                ui.codeEditorForFile("Query.xml").clickOnPosition(2, 20)
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("PostgreSQL explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                ui.dialog(title = "Enter MyBatis Parameters") {
+                    textField().text = "7"
+                    button("OK").click()
+                }
+
+                ui.dialog(title = "zMyBatis — SQL Preview") {
+                    val previewSql = textArea().text
+                    assertTrue(
+                        previewSql.contains("SELECT 7 AS RESULT_VALUE"),
+                        "raw interpolation must force final-SQL preview even when sqlPreview=false, got: <$previewSql>",
+                    )
+                    button("Cancel").click()
+                }
+                ui.waitForNoOpenedDialogs()
+
+                val resultGridOpened = try {
+                    ui.accessibleTable {
+                        byType("com.intellij.database.run.ui.table.TableResultView")
+                    }.content()
+                    true
+                } catch (_: com.intellij.driver.sdk.WaitForException) {
+                    false
+                }
+                assertFalse(
+                    resultGridOpened,
+                    "cancelling the mandatory raw-interpolation preview must not execute the query",
+                )
+            }
+    }
+
+    @Test
     fun registeredActionReachesProductionFailClosedPath(@TempDir tempDir: Path) {
         val projectDir = copySampleProject(tempDir.resolve("action-project"))
 
