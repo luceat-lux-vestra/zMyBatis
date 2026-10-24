@@ -88,7 +88,10 @@ private fun leapDeliveryFailureDiagnosticCode(
         is LeapExecutionDeliveryFailure.TargetResolutionFailed ->
             "target-resolution-failed:" + failure.failure.javaClass.simpleName
         is LeapExecutionDeliveryFailure.PreparationFailed ->
-            "preparation-failed:" + failure.failure.javaClass.simpleName
+            "preparation-failed:" +
+                failure.failure.kind.name.lowercase().replace('_', '-') +
+                ":" +
+                failure.failure.code
         is LeapExecutionDeliveryFailure.MaterializationFailed ->
             "materialization-failed:" + failure.failure.javaClass.simpleName
         is LeapExecutionDeliveryFailure.CandidateTargetIdentityMismatch ->
