@@ -417,6 +417,34 @@ class ZMyBatisStarterDriverE2ETest {
         )
     }
 
+    private fun assertNativePostgreSqlHistoryContainsAndExcludes(
+        configDir: Path,
+        requiredSql: String,
+        forbiddenSql: String,
+    ) {
+        val historyRoot = configDir.resolve("consoles/.history")
+        assertTrue(
+            Files.isDirectory(historyRoot),
+            "Database Tools native history root must exist after IDE close: $historyRoot",
+        )
+        val historyFiles = Files.walk(historyRoot).use { paths ->
+            paths.filter { Files.isRegularFile(it) }.toList()
+        }
+        val historyContents = historyFiles.mapNotNull { file ->
+            runCatching { Files.readString(file) }.getOrNull()
+        }
+        assertTrue(
+            historyContents.any { requiredSql in it },
+            "Database Tools native query history must persist the exact approved direct-Java raw SQL; " +
+                "historyFiles=$historyFiles",
+        )
+        assertFalse(
+            historyContents.any { forbiddenSql in it },
+            "cancelled direct-Java raw SQL must not enter native Database Tools history; " +
+                "historyFiles=$historyFiles",
+        )
+    }
+
     private fun Driver.createPostgreSqlDataSourceThroughDatabaseTools(projectDir: Path): String {
         ideFrame {
             invokeAction("ActivateDatabaseToolWindow", now = false)
@@ -690,6 +718,126 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     @Test
+    fun registeredJavaAnnotationRawInterpolationExecutesExactApprovedSql(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-java-raw-postgresql-project"))
+        writeDirectJavaRawMapper(projectDir)
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-java-raw-postgresql", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        val cancelledSql = "SELECT 45001 AS RESULT_VALUE"
+        val executedSql = "SELECT 45002 AS RESULT_VALUE"
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("JavaRawQueryMapper.java")
+                ui.codeEditorForFile("JavaRawQueryMapper.java").clickOnPosition(8, 20)
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("PostgreSQL explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                ui.dialog(title = "Enter MyBatis Parameters") {
+                    assertTrue(textArea().text.isBlank(), "raw Java input must start without retained history")
+                    textArea().text = "45001"
+                    rawConfirmation().click()
+                    button("OK").click()
+                }
+
+                ui.dialog(title = "zMyBatis — SQL Preview") {
+                    assertEquals(
+                        cancelledSql,
+                        textArea().text.trim(),
+                        "direct Java raw interpolation must force the exact final SQL preview when sqlPreview=false",
+                    )
+                    button("Cancel").click()
+                }
+                ui.waitForNoOpenedDialogs()
+
+                val resultGridOpened = try {
+                    ui.accessibleTable {
+                        byType("com.intellij.database.run.ui.table.TableResultView")
+                    }.content()
+                    true
+                } catch (_: com.intellij.driver.sdk.WaitForException) {
+                    false
+                }
+                assertFalse(
+                    resultGridOpened,
+                    "cancelling direct Java raw approval must not execute the query",
+                )
+
+                openFile("JavaRawQueryMapper.java")
+                ui.codeEditorForFile("JavaRawQueryMapper.java").clickOnPosition(8, 20)
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                ui.dialog(title = "Enter MyBatis Parameters") {
+                    assertTrue(
+                        textArea().text.isBlank(),
+                        "raw Java input must never be retained across registered-action invocations",
+                    )
+                    textArea().text = "45002"
+                    rawConfirmation().click()
+                    button("OK").click()
+                }
+
+                ui.dialog(title = "zMyBatis — SQL Preview") {
+                    assertEquals(
+                        executedSql,
+                        textArea().text.trim(),
+                        "approved preview must equal the exact SQL submitted to Database Tools",
+                    )
+                    button("Execute").click()
+                }
+
+                waitFor(
+                    message = "PostgreSQL Database Tools result grid contains the direct Java raw value",
+                    timeout = 2.minutes,
+                ) {
+                    try {
+                        ui.accessibleTable {
+                            byType("com.intellij.database.run.ui.table.TableResultView")
+                        }.content().values.any { row ->
+                            row.values.any { cell -> cell.trim() == "45002" }
+                        }
+                    } catch (_: com.intellij.driver.sdk.WaitForException) {
+                        false
+                    }
+                }
+                ui.waitForNoOpenedDialogs()
+            }
+
+        assertNativePostgreSqlHistoryContainsAndExcludes(
+            configDir = context.paths.configDir,
+            requiredSql = executedSql,
+            forbiddenSql = cancelledSql,
+        )
+    }
+
+    @Test
     fun registeredActionReachesProductionFailClosedPath(@TempDir tempDir: Path) {
         val projectDir = copySampleProject(tempDir.resolve("action-project"))
 
@@ -900,6 +1048,56 @@ class ZMyBatisStarterDriverE2ETest {
                     result.failure.kind + " / " + result.failure.code
             }
         }
+    }
+
+    private fun writeDirectJavaRawMapper(projectDir: Path) {
+        // The Starter sample is intentionally build-tool-free. Minimal source stubs give Java PSI
+        // resolvable MyBatis annotation FQNs; real MyBatis 3.5.19 annotation resolution is already
+        // covered by JavaAnnotationSourceCaptureAdapterProjectFixtureTest.
+        val annotationDir = Files.createDirectories(
+            projectDir.resolve("org/apache/ibatis/annotations"),
+        )
+        Files.writeString(
+            annotationDir.resolve("Select.java"),
+            """
+            package org.apache.ibatis.annotations;
+
+            public @interface Select {
+                String[] value();
+                String databaseId() default "";
+                boolean affectData() default false;
+            }
+            """.trimIndent(),
+        )
+        Files.writeString(
+            annotationDir.resolve("Param.java"),
+            """
+            package org.apache.ibatis.annotations;
+
+            public @interface Param {
+                String value();
+            }
+            """.trimIndent(),
+        )
+
+        val rawToken = buildString {
+            append(36.toChar())
+            append("{value}")
+        }
+        Files.writeString(
+            projectDir.resolve("JavaRawQueryMapper.java"),
+            """
+            package fixture;
+
+            import org.apache.ibatis.annotations.Param;
+            import org.apache.ibatis.annotations.Select;
+
+            public interface JavaRawQueryMapper {
+                @Select(value = "SELECT $rawToken AS RESULT_VALUE")
+                Object ping(@Param(value = "value") String value);
+            }
+            """.trimIndent(),
+        )
     }
 
     private fun writeMapperInterface(

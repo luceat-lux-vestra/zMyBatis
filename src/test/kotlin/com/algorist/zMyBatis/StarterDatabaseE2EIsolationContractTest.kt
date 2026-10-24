@@ -70,11 +70,21 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("waitOneText(\"public\")"),
         )
         assertTrue(
-            "raw confirmation must retain real mapper caller authority while reusing the PostgreSQL process target",
+            "XML raw confirmation must retain real Java mapper caller authority while reusing the PostgreSQL process target",
             e2e.contains("registeredRawInterpolationForcesPreviewWhenSettingDisabled") &&
                 e2e.contains("writeMapperInterface(projectDir, \"java.lang.String\")") &&
                 e2e.contains("action-raw-confirmation-postgresql") &&
                 e2e.contains("createPostgreSqlDataSourceThroughDatabaseTools(projectDir)"),
+        )
+        assertTrue(
+            "direct Java annotation raw proof must exercise the registered action, non-retention, exact approval, native result, and native history",
+            e2e.contains("registeredJavaAnnotationRawInterpolationExecutesExactApprovedSql") &&
+                e2e.contains("writeDirectJavaRawMapper(projectDir)") &&
+                e2e.contains("public interface JavaRawQueryMapper") &&
+                e2e.contains("@Select(value =") &&
+                e2e.contains("@Param(value = \"value\")") &&
+                e2e.contains("raw Java input must never be retained across registered-action invocations") &&
+                e2e.contains("assertNativePostgreSqlHistoryContainsAndExcludes"),
         )
         assertFalse(
             "mutation confirmation belongs to lower-level Leap approval evidence rather than a duplicate process datasource scenario",

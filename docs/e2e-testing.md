@@ -28,12 +28,18 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
    - invokes the same registered `zMyBatis.Execute` action for a mapper with one `#{value,jdbcType=BIGINT}` binding and stock-MyBatis dynamic `<if>`;
    - selects the exact datasource + `public` schema, enters the scalar through `ContractParameterInputDialog`, and requires preview text to equal the independently materialized artifact;
    - executes positive and negative cases, observes native result-grid values, and verifies both exact SQL texts persist in native Database Tools history.
-4. **Registered raw-interpolation confirmation path**
-   - uses a real Java mapper method to prove caller-input authority;
+4. **Registered XML raw-interpolation confirmation path**
+   - declares `${}` in the XML mapper while using a real Java mapper method for caller-input authority;
    - reuses the maintained PostgreSQL datasource/explicit-schema path;
    - verifies raw interpolation forces final-SQL preview even when the ordinary preview setting is disabled;
    - cancels at approval and proves no native result grid is created.
-5. **Registered-action fail-closed path**
+5. **Registered direct-Java-annotation raw-interpolation path**
+   - opens a real Java mapper method with direct `@Select` plus explicit `@Param` provenance and invokes the registered `zMyBatis.Execute` action from that source;
+   - uses the same maintained PostgreSQL datasource/explicit-schema lifecycle and keeps `sqlPreview=false` so raw interpolation itself must force approval;
+   - cancels one exact raw artifact and proves it creates neither a native result grid nor native query-history entry;
+   - invokes the same method again, proves the prior raw value was not retained, approves a different exact SQL artifact, observes its native result value, and verifies only the executed artifact reaches Database Tools history;
+   - the build-tool-free Starter sample supplies minimal source stubs for the MyBatis annotation FQNs so Java PSI can resolve the direct annotation; real MyBatis 3.5.19 annotation resolution remains independently covered by the Java source-adapter project fixture.
+6. **Registered-action fail-closed path**
    - opens the mapper fixture in a fresh IDE process without any datasource;
    - invokes the real production action from the supported statement context;
    - requires the typed `zMyBatis: Execution Target Unavailable` refusal instead of preparation or execution.
