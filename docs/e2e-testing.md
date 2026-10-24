@@ -10,31 +10,35 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
 
 ## Maintained process scenarios
 
-`ZMyBatisStarterDriverE2ETest` maintains three process-level scenarios against the maintained IntelliJ IDEA Ultimate 2026.2.3 target on JDK 25:
+`ZMyBatisStarterDriverE2ETest` maintains focused process-level scenarios against the maintained IntelliJ IDEA Ultimate 2026.2.3 target on JDK 25:
 
 1. **Packaged-plugin / production-service happy path**
    - installs the exact `buildPlugin` archive into a separate IDE process;
    - copies the versioned sample project into a fresh temporary directory;
    - opens the project and waits for supported background-indicator readiness;
    - reaches the shipping `ZMyBatisSettings` application service over Driver JMX/RMI and asserts its typed production result.
-2. **Registered-action / real Database Tools zero-binding golden path**
-   - starts the exact packaged plugin in a real IDE process with an integration-test-only H2 JDBC fixture registered as a local Database Tools driver;
-   - prepares a real project-level Database Tools datasource through the IDE-supported `.idea/dataSources.xml` persistence boundary rather than a test adapter or internal Driver stub;
-   - opens the canonical zero-binding mapper and invokes the registered `zMyBatis.Execute` action;
-   - selects the datasource plus an explicit named schema through the shipping chooser;
-   - observes the real `SqlPreviewDialog` and requires its SQL to equal the exact zero-binding artifact text;
-   - clicks `Execute` and waits for a real Database Tools `TableResultView` cell containing the expected H2 result.
-3. **Registered-action / PostgreSQL BIGINT nonzero golden path**
+2. **Registered-action / PostgreSQL zero-binding golden path**
    - creates a real PostgreSQL datasource through Database Tools using the pinned pgJDBC fixture;
+   - opens the canonical zero-binding mapper and invokes the registered `zMyBatis.Execute` action;
+   - selects the exact datasource plus explicit `public` schema through the shipping chooser;
+   - observes the real `SqlPreviewDialog` and requires its SQL to equal the exact DB-neutral zero-binding artifact text;
+   - clicks `Execute` and waits for a real Database Tools `TableResultView` cell containing the expected value.
+3. **Registered-action / PostgreSQL BIGINT nonzero golden path**
+   - reuses the same maintained PostgreSQL datasource creation boundary;
    - invokes the same registered `zMyBatis.Execute` action for a mapper with one `#{value,jdbcType=BIGINT}` binding and stock-MyBatis dynamic `<if>`;
    - selects the exact datasource + `public` schema, enters the scalar through `ContractParameterInputDialog`, and requires preview text to equal the independently materialized artifact;
    - executes positive and negative cases, observes native result-grid values, and verifies both exact SQL texts persist in native Database Tools history.
-4. **Registered-action fail-closed path**
+4. **Registered raw-interpolation confirmation path**
+   - uses a real Java mapper method to prove caller-input authority;
+   - reuses the maintained PostgreSQL datasource/explicit-schema path;
+   - verifies raw interpolation forces final-SQL preview even when the ordinary preview setting is disabled;
+   - cancels at approval and proves no native result grid is created.
+5. **Registered-action fail-closed path**
    - opens the mapper fixture in a fresh IDE process without any datasource;
    - invokes the real production action from the supported statement context;
    - requires the typed `zMyBatis: Execution Target Unavailable` refusal instead of preparation or execution.
 
-No production method exists solely for this harness. H2 is an `integrationTestImplementation` fixture only; before IDE startup, the test copies its JAR into that Starter run's isolated IDE config and records it as a local Driver Files library in `options/databaseDrivers.xml`. It is neither placed on `idea.additional.classpath` nor added to the shipped plugin dependency graph. The datasource itself is loaded from project `.idea/dataSources.xml` plus local datasource state, while Driver interacts only with the shipping zMyBatis service/action and visible product UI. The golden path therefore exercises Database Tools' own JDBC driver classloader instead of an internal datasource-construction stub or production E2E hook.
+No production method exists solely for this harness. The process database stack uses only pinned pgJDBC on the `integrationTestImplementation` graph; before IDE startup, the test copies that JAR into the isolated Starter config and records it as a local Driver Files library. Driver then creates the datasource through maintained Database Tools UI, performs a real Test Connection, refreshes Database Tools, and selects explicit `public` through shipping UI. No H2-specific cold-datasource/introspection harness participates in #448 evidence.
 
 ## Local execution
 
@@ -54,7 +58,7 @@ The first local run can download IDE/Starter artifacts. Semantic correctness of 
 - the checked-in `src/integrationTest/testProject` sample is copied into that directory before IDE startup, so IDE metadata cannot mutate the repository fixture or a later scenario;
 - each scenario starts and closes its own IDE process through `runIdeWithDriver().useDriverAndCloseIde`;
 - before opening the project, a separate no-project launch completes the supplied-license or native `StartTrial` activation in that scenario's isolated config, waits for Ultimate/plugin initialization, and proves activation state was persisted; the project launch then uses that config without overlapping project-tree reads with activation's dynamic scheme reload;
-- the database golden path generates project-local `.idea/dataSources.xml` / `dataSources.local.xml` only inside that test's temporary project, and uses an in-memory H2 datasource as deterministic process-test infrastructure; its JDBC JAR is copied only into the isolated Starter IDE config and registered as a local Database Tools driver library, while the exact normal plugin ZIP remains unchanged;
+- the database scenarios create PostgreSQL datasource state only inside each temporary Starter project through maintained Database Tools UI; pinned pgJDBC is copied only into the isolated Starter IDE config and registered as a local Database Tools driver library, while the exact normal plugin ZIP remains unchanged;
 - datasource choice, parameter input, preview confirmation, and result-table observation use maintained Driver component APIs rather than screen coordinates or correctness sleeps;
 - readiness uses Driver `waitForIndicators` / bounded component waits, not correctness sleeps;
 - Starter's `CIServer` integration is overridden so IDE-side exceptions/freezes reported by Starter fail the JUnit process instead of producing a false green;
@@ -92,4 +96,4 @@ Pure value objects, deterministic source-graph algorithms, isolated parser seman
 
 Do not move stable semantic matrices into this suite merely to label them E2E. Prefer Driver API/service interaction to Swing traversal. UI interaction is used only when registration or visible product behavior is itself the claim.
 
-The maintained registered-action suite now proves complementary production paths through the same Leap authority: H2 covers DB-neutral zero-binding preview/native execution/result UI, while PostgreSQL covers the explicitly supported BIGINT nonzero materializer with contract input, exact preview, native result cells and persisted native history. It does **not** prove every DBMS/dialect, every datasource/schema identity case, DataGrip parity, or console disposal/reuse lifecycle; those remain explicit #67 compatibility/lifecycle obligations. The harness remains repository-wide and is extended according to the applicability rule above.
+The maintained registered-action suite now uses one PostgreSQL Database Tools stack for complementary production paths through the same Leap authority: the DB-neutral zero-binding artifact executes against an explicit PostgreSQL target, the named BIGINT nonzero slice proves contract input/materialization/native results/history, and the raw-interpolation scenario proves mandatory preview cancellation without native execution. It does **not** prove every DBMS/dialect, every datasource/schema identity case, DataGrip parity, or console disposal/reuse lifecycle; those remain explicit #67 compatibility/lifecycle obligations. The harness remains repository-wide and is extended according to the applicability rule above.
