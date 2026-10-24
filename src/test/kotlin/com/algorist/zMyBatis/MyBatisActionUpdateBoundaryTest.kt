@@ -60,6 +60,51 @@ class MyBatisActionUpdateBoundaryTest {
     }
 
     @Test
+    fun `invocation refusal diagnostic exposes only typed metadata`() {
+        val action = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteAction.kt")
+        val diagnosticStart = action.indexOf("private fun leapInvocationFailureDiagnosticCode(")
+        val presenterStart = action.indexOf("private object LeapActionFailurePresenter", diagnosticStart)
+
+        assertTrue(diagnosticStart >= 0 && presenterStart > diagnosticStart)
+
+        val diagnostic = action.substring(diagnosticStart, presenterStart)
+        listOf(
+            "input-contract-blocked:",
+            "missing-persisted-target",
+            "persisted-target-changed",
+            "delivery-failed:",
+            "preparation-failed:",
+            "materialization-failed:",
+            "console-acquisition-failed:",
+            "sql-execution-failed:",
+        ).forEach { code ->
+            assertTrue("typed diagnostic code must remain observable: $code", diagnostic.contains(code))
+        }
+
+        listOf(
+            "executionSql",
+            "inputEnvironment",
+            "sourceFileId",
+            "dataSourceDisplayName",
+            ".message",
+        ).forEach { forbidden ->
+            assertFalse(
+                "refusal diagnostic must not expose source/input/target payload: $forbidden",
+                diagnostic.contains(forbidden),
+            )
+        }
+
+        assertTrue(
+            action.contains(
+                "LOG.warn(\n" +
+                    "                        \"zMyBatis: Leap invocation refused \"",
+            ),
+        )
+        assertTrue(action.contains("LeapActionFailurePresenter.present(project, failure)"))
+        assertTrue(action.contains("title = \"zMyBatis: Execution Refused\""))
+    }
+
+    @Test
     fun `java update classification fails closed while indexes are unavailable`() {
         val analyzer = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisContextAnalyzer.kt")
 
