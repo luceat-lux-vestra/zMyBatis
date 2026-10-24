@@ -70,6 +70,17 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("waitOneText(\"public\")"),
         )
         assertTrue(
+            "raw confirmation must retain real mapper caller authority while reusing the PostgreSQL process target",
+            e2e.contains("registeredRawInterpolationForcesPreviewWhenSettingDisabled") &&
+                e2e.contains("writeMapperInterface(projectDir, \"java.lang.String\")") &&
+                e2e.contains("action-raw-confirmation-postgresql") &&
+                e2e.contains("createPostgreSqlDataSourceThroughDatabaseTools(projectDir)"),
+        )
+        assertFalse(
+            "mutation confirmation belongs to lower-level Leap approval evidence rather than a duplicate process datasource scenario",
+            e2e.contains("registeredMutationDeclarationForcesPreviewWhenSettingDisabled"),
+        )
+        assertTrue(
             "PostgreSQL BIGINT proof must execute both stock-MyBatis if branches and verify persisted native query history",
             e2e.contains("positiveArtifact.executionSql") &&
                 e2e.contains("negativeArtifact.executionSql") &&
