@@ -34,9 +34,11 @@ object XmlBooleanGuardSyntax {
                         expectedType.scalarType == InputScalarType.INTEGER
                 }
 
-        fun isActive(value: Any?): Boolean? = when (callerValueKind) {
+        fun isActive(value: Boolean): Boolean = value == activeWhenTrue
+
+        fun isActiveScalar(value: Any?): Boolean? = when (callerValueKind) {
             CallerValueKind.BOOLEAN ->
-                (value as? Boolean)?.let { it == activeWhenTrue }
+                (value as? Boolean)?.let { isActive(it) }
             CallerValueKind.INTEGER -> when (value) {
                 is BigInteger -> value.signum() > 0
                 is Byte -> value > 0

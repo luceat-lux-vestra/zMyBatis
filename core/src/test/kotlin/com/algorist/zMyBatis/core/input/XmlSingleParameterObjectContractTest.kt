@@ -155,13 +155,14 @@ class XmlSingleParameterObjectContractTest {
     }
 
     @Test
-    fun rawAndNestedUsesDoNotGainParameterObjectFallback() {
+    fun soleRawStringUsesParameterObjectFallbackButNestedUseRemainsBlocked() {
         val raw = build(
             graph("select * from " + rawToken("table")),
             listOf(parameter(0, "java.lang.String", "table", null)),
         )
-        assertTrue(raw.isPreparationBlocked)
-        assertTrue(raw.aliases.none { it.kind == InputAliasKind.PARAMETER_OBJECT })
+        assertFalse(raw.isPreparationBlocked)
+        assertEquals(InputKind.RAW_INTERPOLATION, raw.requirements.single().kind)
+        assertEquals(InputAliasKind.PARAMETER_OBJECT, raw.aliases.single().kind)
 
         val nested = build(
             graph("select * from users where id = #{payload.id}"),

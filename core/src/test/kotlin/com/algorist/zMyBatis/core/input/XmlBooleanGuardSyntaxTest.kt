@@ -35,10 +35,10 @@ class XmlBooleanGuardSyntaxTest {
         assertTrue(syntax.requiresSingleSelect)
         assertTrue(syntax.accepts(ExpectedInputType(InputShape.SCALAR, InputScalarType.INTEGER)))
         assertFalse(syntax.accepts(ExpectedInputType(InputShape.SCALAR, InputScalarType.BOOLEAN)))
-        assertEquals(true, syntax.isActive(7L))
-        assertEquals(false, syntax.isActive(0L))
-        assertEquals(false, syntax.isActive(-7L))
-        assertNull(syntax.isActive(true))
+        assertEquals(true, syntax.isActiveScalar(7L))
+        assertEquals(false, syntax.isActiveScalar(0L))
+        assertEquals(false, syntax.isActiveScalar(-7L))
+        assertNull(syntax.isActiveScalar(true))
     }
 
     @Test

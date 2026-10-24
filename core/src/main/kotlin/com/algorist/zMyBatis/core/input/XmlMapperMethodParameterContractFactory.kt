@@ -289,6 +289,7 @@ object XmlMapperMethodParameterContractFactory {
                         parameter = parameterObjectFallback,
                         mappingProperty = mappingProperty,
                         kind = kind,
+                        placeholders = placeholders,
                         conditions = conditions,
                     ) -> {
                     resolvedByParameter.getOrPut(parameterObjectFallback.index) { mutableListOf() } += ResolvedUse(
@@ -297,6 +298,7 @@ object XmlMapperMethodParameterContractFactory {
                         kind = kind,
                         aliasKind = InputAliasKind.PARAMETER_OBJECT,
                         placeholders = placeholders,
+                        conditions = conditions,
                         generatedAlias = null,
                         parameterObjectFallback = InputEvidence.ParameterObjectFallback(
                             parameterIndex = parameterObjectFallback.index,
@@ -472,6 +474,7 @@ object XmlMapperMethodParameterContractFactory {
         parameter: JavaMethodParameterMetadata,
         mappingProperty: String,
         kind: InputKind,
+        placeholders: List<InputEvidence.Placeholder>,
         conditions: List<InputEvidence.OgnlExpression>,
     ): Boolean {
         if (
@@ -482,7 +485,21 @@ object XmlMapperMethodParameterContractFactory {
             return false
         }
         return when (kind) {
-            InputKind.BOUND -> true
+            InputKind.BOUND -> {
+                if (conditions.isEmpty()) {
+                    true
+                } else {
+                    val expectedType = JavaParameterTypeContract.expectedType(parameter.typeIdentity, kind)
+                    placeholders.any {
+                        it.kind == InputKind.BOUND && it.expression == mappingProperty
+                    } &&
+                        conditions.all { evidence ->
+                            val guard = XmlBooleanGuardSyntax.parse(evidence.expression)
+                            guard?.callerValueKind == XmlBooleanGuardSyntax.CallerValueKind.INTEGER &&
+                                guard.accepts(expectedType)
+                        }
+                }
+            }
             InputKind.RAW_INTERPOLATION ->
                 conditions.isEmpty() && JavaParameterTypeContract.isString(parameter.typeIdentity)
         }

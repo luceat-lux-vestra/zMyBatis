@@ -992,7 +992,7 @@ object XmlMapperPreparationEngine {
                     ?: return XmlBindingCapture.Failed(
                         PreparationFailure(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE),
                     )
-                val active = guard.isActive(parameterPayload.namedValues[guard.callerAlias])
+                val active = guard.isActiveScalar(parameterPayload.namedValues[guard.callerAlias])
                     ?: return XmlBindingCapture.Failed(
                         PreparationFailure(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE),
                     )
