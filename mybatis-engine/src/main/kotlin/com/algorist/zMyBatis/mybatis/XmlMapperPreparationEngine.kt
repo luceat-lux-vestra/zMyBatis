@@ -103,6 +103,8 @@ object XmlMapperPreparationEngine {
     private val safeMapperDoctype = Regex(
         """(?is)<!DOCTYPE\s+mapper\s+PUBLIC\s+["']-//mybatis\.org//DTD Mapper 3\.0//EN["']\s+["']https?://mybatis\.org/dtd/mybatis-3-mapper\.dtd["']\s*>""",
     )
+    private val rawInterpolation = Regex("""\$\{([^}]*)}""")
+    private val rawStructuralAttribute = Regex("""(?s)<(?![!?])[^>]*\$\{""")
     private val simpleIdentifier = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val parameterObjectMapValueTypes = setOf(
         "java.lang.Boolean",
@@ -196,7 +198,7 @@ object XmlMapperPreparationEngine {
         }
 
         for (snapshot in source.sourceGraph.sourceSnapshots) {
-            preflight(snapshot)?.let { return PreparationResult.Failed(it) }
+            preflight(snapshot, request)?.let { return PreparationResult.Failed(it) }
         }
 
         val hasRawInterpolation = request.parameterContract.requirements.any {
@@ -520,8 +522,12 @@ object XmlMapperPreparationEngine {
         return systemLoaderField.get(wrapper) === loader
     }
 
-    private fun preflight(snapshot: SourceSnapshot): PreparationFailure? {
+    private fun preflight(
+        snapshot: SourceSnapshot,
+        request: MyBatisPreparationRequest,
+    ): PreparationFailure? {
         val content = snapshot.content
+        rawSourceFailure(snapshot, request)?.let { return it }
         if (dangerousAttribute.containsMatchIn(content) || dangerousElement.containsMatchIn(content)) {
             return PreparationFailure(PreparationFailureKind.UNSUPPORTED_SEMANTIC, CLASS_LOADING_UNSUPPORTED)
         }
@@ -534,6 +540,47 @@ object XmlMapperPreparationEngine {
         }
         return null
     }
+
+    private fun rawSourceFailure(
+        snapshot: SourceSnapshot,
+        request: MyBatisPreparationRequest,
+    ): PreparationFailure? {
+        val content = snapshot.content
+        val rawOpen = "$" + "{"
+        if (!content.contains(rawOpen)) return null
+        if (rawStructuralAttribute.containsMatchIn(content)) return rawInputUnsupported()
+
+        val sourceExpressions = rawInterpolation.findAll(content)
+            .map { match -> match.groupValues[1].trim() }
+            .toList()
+        if (sourceExpressions.isEmpty()) return rawInputUnsupported()
+
+        val provenExpressions = request.parameterContract.requirements
+            .asSequence()
+            .filter { requirement -> requirement.kind == InputKind.RAW_INTERPOLATION }
+            .flatMap { requirement -> requirement.provenance.evidence.asSequence() }
+            .filterIsInstance<InputEvidence.Placeholder>()
+            .filter { evidence ->
+                evidence.kind == InputKind.RAW_INTERPOLATION &&
+                    evidence.source.sourceFileId == snapshot.fileId
+            }
+            .map { evidence -> evidence.expression.trim() }
+            .toList()
+
+        return if (
+            sourceExpressions.groupingBy(String::toString).eachCount() ==
+            provenExpressions.groupingBy(String::toString).eachCount()
+        ) {
+            null
+        } else {
+            rawInputUnsupported()
+        }
+    }
+
+    private fun rawInputUnsupported(): PreparationFailure = PreparationFailure(
+        PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+        RAW_INPUT_UNSUPPORTED,
+    )
 
     private fun inputContractFailure(
         request: MyBatisPreparationRequest,
