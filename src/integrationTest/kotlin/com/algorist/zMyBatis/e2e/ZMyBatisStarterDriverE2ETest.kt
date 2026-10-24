@@ -978,7 +978,7 @@ class ZMyBatisStarterDriverE2ETest {
             invokeAction("ActivateDatabaseToolWindow", now = false)
             val databaseTree = databaseViewTree()
             databaseTree.waitForDataSourceContaining("zMyBatis E2E", timeout = 30.seconds)
-            databaseTree.selectRow { it.contains("zMyBatis E2E", ignoreCase = true) }
+            databaseTree.clickRow { it.contains("zMyBatis E2E", ignoreCase = true) }
             databaseTree.waitForSelectedPathContaining("zMyBatis E2E", timeout = 30.seconds)
             driver.invokeAction(
                 "DatabaseView.PropertiesAction",
@@ -1019,7 +1019,7 @@ class ZMyBatisStarterDriverE2ETest {
             invokeAction("ActivateDatabaseToolWindow", now = false)
             val refreshedDatabaseTree = databaseViewTree()
             refreshedDatabaseTree.waitForDataSourceContaining("zMyBatis E2E", timeout = 30.seconds)
-            refreshedDatabaseTree.selectRow { it.contains("zMyBatis E2E", ignoreCase = true) }
+            refreshedDatabaseTree.clickRow { it.contains("zMyBatis E2E", ignoreCase = true) }
             refreshedDatabaseTree.waitForSelectedPathContaining("zMyBatis E2E", timeout = 30.seconds)
             driver.invokeAction(
                 "DatabaseView.ForceRefresh",
