@@ -40,6 +40,7 @@ import com.intellij.driver.sdk.ui.components.common.codeEditorForFile
 import com.intellij.driver.sdk.ui.components.common.databaseToolWindow
 import com.intellij.driver.sdk.ui.components.common.ideFrame
 import com.intellij.driver.sdk.ui.components.ultimate.dataSourcesAndDriversDialog
+import com.intellij.driver.sdk.ui.components.ultimate.databaseViewTree
 import com.intellij.driver.sdk.ui.components.elements.accessibleTable
 import com.intellij.driver.sdk.ui.components.elements.actionButton
 import com.intellij.driver.sdk.ui.components.elements.button
@@ -971,21 +972,19 @@ class ZMyBatisStarterDriverE2ETest {
 
     private fun Driver.connectAndPrimeH2DatabaseToolsSchemaMetadata() {
         ideFrame {
-            // The project fixture is deliberately cold on startup. Reach the datasource editor from
-            // the actual Database view selection instead of relying on an unregistered global action.
+            // The project fixture is deliberately cold on startup. Drive the actual Database tree
+            // selection model so Database Tools actions receive the datasource-bearing tree context,
+            // rather than a renderer/root component that can make PropertiesAction a no-op.
             invokeAction("ActivateDatabaseToolWindow", now = false)
-            databaseToolWindow {
-                val dataSourceNode = x("//div[contains(@visible_text, 'zMyBatis E2E')]")
-                waitFor("project H2 datasource is visible in Database view", timeout = 30.seconds) {
-                    dataSourceNode.present()
-                }
-                dataSourceNode.click()
-                driver.invokeAction(
-                    "DatabaseView.PropertiesAction",
-                    now = false,
-                    component = component,
-                )
-            }
+            val databaseTree = databaseViewTree()
+            databaseTree.waitForDataSourceContaining("zMyBatis E2E", timeout = 30.seconds)
+            databaseTree.selectRow { it.contains("zMyBatis E2E", ignoreCase = true) }
+            databaseTree.waitForSelectedPathContaining("zMyBatis E2E", timeout = 30.seconds)
+            driver.invokeAction(
+                "DatabaseView.PropertiesAction",
+                now = false,
+                component = databaseTree.component,
+            )
 
             dataSourcesAndDriversDialog {
                 testConnection()
@@ -1018,18 +1017,15 @@ class ZMyBatisStarterDriverE2ETest {
             }
 
             invokeAction("ActivateDatabaseToolWindow", now = false)
-            databaseToolWindow {
-                val dataSourceNode = x("//div[contains(@visible_text, 'zMyBatis E2E')]")
-                waitFor("project H2 datasource is visible before forced introspection", timeout = 30.seconds) {
-                    dataSourceNode.present()
-                }
-                dataSourceNode.click()
-                driver.invokeAction(
-                    "DatabaseView.ForceRefresh",
-                    now = false,
-                    component = component,
-                )
-            }
+            val refreshedDatabaseTree = databaseViewTree()
+            refreshedDatabaseTree.waitForDataSourceContaining("zMyBatis E2E", timeout = 30.seconds)
+            refreshedDatabaseTree.selectRow { it.contains("zMyBatis E2E", ignoreCase = true) }
+            refreshedDatabaseTree.waitForSelectedPathContaining("zMyBatis E2E", timeout = 30.seconds)
+            driver.invokeAction(
+                "DatabaseView.ForceRefresh",
+                now = false,
+                component = refreshedDatabaseTree.component,
+            )
         }
 
         // The replacement target authority never invents or defaults a schema. The fixture must
