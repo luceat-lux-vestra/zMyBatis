@@ -9,21 +9,13 @@ import org.junit.Test
 class StarterDatabaseE2EIsolationContractTest {
 
     @Test
-    fun `H2 fixture remains integration-test-only and production artifact stays unchanged`() {
+    fun `PostgreSQL process fixture remains integration-test-only and production artifact stays unchanged`() {
         val build = source("build.gradle.kts")
 
-        assertTrue(
-            "real Database Tools E2E must declare exactly one H2 driver on the integration-test graph",
-            build.lineSequence().count { line ->
-                val declaration = line.trim()
-                declaration.startsWith("integrationTestImplementation(\"com.h2database:h2:") &&
-                    declaration.endsWith("\")")
-            } == 1,
-        )
         assertFalse(
-            "H2 must never become a shipped plugin implementation dependency",
+            "retired H2 process harness must not remain on the integration-test graph",
             build.lineSequence().any { line ->
-                line.trim().startsWith("implementation(\"com.h2database:h2:")
+                line.trim().startsWith("integrationTestImplementation(\"com.h2database:h2:")
             },
         )
         assertTrue(
@@ -41,56 +33,30 @@ class StarterDatabaseE2EIsolationContractTest {
     }
 
     @Test
-    fun `process golden path must traverse production UI and real Database Tools result`() {
+    fun `process golden path must reuse one maintained PostgreSQL Database Tools stack`() {
         val e2e = source(
             "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
         )
 
         assertTrue(e2e.contains("invokeAction(\"zMyBatis.Execute\", now = false)"))
-        assertTrue(e2e.contains("Enter MyBatis Parameters"))
         assertTrue(e2e.contains("zMyBatis — SQL Preview"))
         assertTrue(e2e.contains("com.intellij.database.run.ui.table.TableResultView"))
-        assertTrue(
-            "golden path must prepare a real project-level Database Tools datasource",
-            e2e.contains("dataSources.xml") &&
-                e2e.contains("DataSourceManagerImpl") &&
-                e2e.contains("<driver-ref>h2.unified</driver-ref>"),
-        )
-        assertTrue(
-            "project-local H2 fixture must connect without interactive Password Safe credentials",
-            e2e.contains("dataSources.local.xml") &&
-                e2e.contains(";USER=sa;PASSWORD=") &&
-                e2e.contains("<auth-provider>no-auth</auth-provider>"),
-        )
         assertFalse(
-            "E2E must not depend on internal Database Tools LocalDataSource Driver stubs",
-            e2e.contains("LocalDataSourceManager") || e2e.contains("LocalDataSourceFactoryRemote"),
+            "retired H2 datasource/driver/introspection harness must stay out of #448 process evidence",
+            e2e.contains("H2Driver") ||
+                e2e.contains("h2.unified") ||
+                e2e.contains("jdbc:h2:") ||
+                e2e.contains("connectAndPrimeH2DatabaseToolsSchemaMetadata"),
         )
         assertTrue(
-            "H2 must be registered as a local Database Tools driver library in Starter config",
-            e2e.contains("databaseDrivers.xml") &&
-                e2e.contains("LocalDatabaseDriverManager") &&
-                e2e.contains("<artifact use=\"false\" />") &&
-                e2e.contains("configDir.resolve(\"jdbc-drivers\")"),
+            "zero-binding and BIGINT proofs must reuse the maintained PostgreSQL datasource creation path",
+            e2e.contains("registeredActionExecutesZeroBindingQueryThroughRealDatabaseTools") &&
+                e2e.contains("createPostgreSqlDataSourceThroughDatabaseTools(projectDir)") &&
+                e2e.contains("POSTGRES_E2E_DATA_SOURCE_NAME") &&
+                e2e.contains("waitOneText(\"public\")"),
         )
         assertTrue(
-            "cold H2 fixture must establish datasource-bearing Database tree context before connection and introspection",
-            e2e.contains("connectAndPrimeH2DatabaseToolsSchemaMetadata") &&
-                e2e.contains("databaseViewTree()") &&
-                e2e.contains("selectRows { rows ->") &&
-                e2e.contains("rows.filter { it.contains(\"zMyBatis E2E\", ignoreCase = true) }") &&
-                e2e.contains("waitForSelectedPathContaining(\"zMyBatis E2E\"") &&
-                e2e.contains("component = databaseTree.component") &&
-                e2e.contains("DatabaseView.PropertiesAction") &&
-                e2e.contains("isConnectionSuccessful(driverNameContains = \"H2\")") &&
-                e2e.contains("DatabaseView.ForceRefresh"),
-        )
-        assertFalse(
-            "H2 must not rely on the IDE process classpath instead of Database Tools driver isolation",
-            e2e.contains("idea.additional.classpath"),
-        )
-        assertTrue(
-            "PostgreSQL proof must use a pinned local Database Tools pgJDBC driver and a real PostgreSQL URL",
+            "PostgreSQL proof must use a pinned local pgJDBC driver and a real PostgreSQL URL",
             e2e.contains("LocalDatabaseDriverManager") &&
                 e2e.contains("driver-class=\"org.postgresql.Driver\"") &&
                 e2e.contains("jdbc:postgresql://127.0.0.1:5432/zmybatis"),
@@ -104,7 +70,7 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("waitOneText(\"public\")"),
         )
         assertTrue(
-            "PostgreSQL proof must execute both stock-MyBatis if branches and verify persisted native query history",
+            "PostgreSQL BIGINT proof must execute both stock-MyBatis if branches and verify persisted native query history",
             e2e.contains("positiveArtifact.executionSql") &&
                 e2e.contains("negativeArtifact.executionSql") &&
                 e2e.contains("assertNativePostgreSqlHistoryPersisted") &&
