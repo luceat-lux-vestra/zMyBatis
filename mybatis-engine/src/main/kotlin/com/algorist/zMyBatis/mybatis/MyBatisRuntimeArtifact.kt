@@ -20,7 +20,7 @@ import java.util.jar.JarFile
 internal object MyBatisRuntimeArtifact {
     fun fromClassResource(type: Class<*>): URL? {
         val resourcePath = type.name.replace('.', '/') + ".class"
-        val resource = type.getResource("/" + resourcePath) ?: return null
+        val resource = type.getResource("/$resourcePath") ?: return null
         return try {
             when (resource.protocol) {
                 "jar" -> jarArtifact(resource, resourcePath)
