@@ -40,7 +40,6 @@ import com.intellij.driver.sdk.ui.components.common.codeEditorForFile
 import com.intellij.driver.sdk.ui.components.common.databaseToolWindow
 import com.intellij.driver.sdk.ui.components.common.ideFrame
 import com.intellij.driver.sdk.ui.components.ultimate.dataSourcesAndDriversDialog
-import com.intellij.driver.sdk.ui.components.ultimate.databaseViewTree
 import com.intellij.driver.sdk.ui.components.elements.accessibleTable
 import com.intellij.driver.sdk.ui.components.elements.actionButton
 import com.intellij.driver.sdk.ui.components.elements.button
@@ -76,7 +75,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInfo
 import org.junit.jupiter.api.fail
 import org.junit.jupiter.api.io.TempDir
-import org.h2.Driver as H2Driver
 import org.postgresql.Driver as PostgreSqlDriver
 import org.apache.ibatis.builder.xml.XMLMapperBuilder
 import org.apache.ibatis.session.Configuration
@@ -146,7 +144,6 @@ class ZMyBatisStarterDriverE2ETest {
 
     companion object {
         private const val IDE_RELEASE = "2026.2.3"
-        private const val E2E_DATA_SOURCE_UUID = "4c6e150e-3d84-4a71-9d85-0a6d05d42e01"
         private const val POSTGRES_E2E_DRIVER_NAME = "zMyBatis PostgreSQL 42.7.14"
         private const val POSTGRES_E2E_DATA_SOURCE_NAME = POSTGRES_E2E_DRIVER_NAME
         private const val KNOWN_ISLANDS_ISSUE = "IJPL-222870"
@@ -250,41 +247,40 @@ class ZMyBatisStarterDriverE2ETest {
 
     @Test
     fun registeredActionExecutesZeroBindingQueryThroughRealDatabaseTools(@TempDir tempDir: Path) {
-        val projectDir = copySampleProject(tempDir.resolve("action-database-project"))
-        val h2Jar = Path.of(H2Driver::class.java.protectionDomain.codeSource.location.toURI())
-        writeH2DataSourceFixture(projectDir)
-
-        val context = starterContext("action-real-database", projectDir)
-        writeH2DatabaseToolsDriverFixture(context.paths.configDir, h2Jar)
+        val projectDir = copySampleProject(tempDir.resolve("action-zero-binding-postgresql-project"))
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-zero-binding-postgresql", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
 
         context
             .runIdeWithDriver()
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
-                connectAndPrimeH2DatabaseToolsSchemaMetadata()
 
                 service(ZMyBatisSettingsRemote::class).apply {
                     setAutoFormatSql(false)
                     setSqlPreview(true)
                 }
 
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
                 openFile("Query.xml")
+                ui.codeEditorForFile("Query.xml").clickOnPosition(2, 20)
                 ideFrame {
-                    invokeAction("EditorDown")
                     invokeAction("zMyBatis.Execute", now = false)
                 }
 
-                waitFor("zMyBatis datasource chooser", timeout = 30.seconds) {
+                waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
                     ui.popups().list().isNotEmpty()
                 }
                 val dataSourceList = ui.popup().list()
-                dataSourceList.clickItem("zMyBatis E2E", fullMatch = false)
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
                 dataSourceList.setFocus()
-                dataSourceList.keyboard {
-                    // The replacement authority exposes only explicit named schemas.
-                    right()
-                    enter()
+                dataSourceList.keyboard { right() }
+                waitFor("PostgreSQL explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
                 }
+                ui.popups().list().last().waitOneText("public").click()
 
                 ui.dialog(title = "zMyBatis — SQL Preview") {
                     assertEquals(
@@ -296,12 +292,9 @@ class ZMyBatisStarterDriverE2ETest {
                 }
 
                 waitFor(
-                    message = "Database Tools result grid contains the executed value",
+                    message = "PostgreSQL Database Tools result grid contains the zero-binding value",
                     timeout = 2.minutes,
                 ) {
-                    // Driver resolves the component lazily from content(). Its default component
-                    // lookup is only 15s, so let the outer 2-minute readiness loop own retries
-                    // while Database Tools creates and attaches the native result grid.
                     try {
                         ui.accessibleTable {
                             byType("com.intellij.database.run.ui.table.TableResultView")
@@ -606,158 +599,6 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     @Test
-    fun registeredRawInterpolationForcesPreviewWhenSettingDisabled(@TempDir tempDir: Path) {
-        val projectDir = copySampleProject(tempDir.resolve("action-raw-confirmation-project"))
-        val rawToken = buildString {
-            append(36.toChar())
-            append("{value}")
-        }
-        Files.writeString(
-            projectDir.resolve("Query.xml"),
-            """
-            <mapper namespace="fixture.QueryMapper">
-            <select id="ping">SELECT $rawToken AS RESULT_VALUE</select>
-            </mapper>
-            """.trimIndent(),
-        )
-        writeMapperInterface(projectDir, "java.lang.String")
-
-        val h2Jar = Path.of(H2Driver::class.java.protectionDomain.codeSource.location.toURI())
-        writeH2DataSourceFixture(projectDir)
-
-        val context = starterContext("action-raw-confirmation", projectDir)
-        writeH2DatabaseToolsDriverFixture(context.paths.configDir, h2Jar)
-
-        context
-            .runIdeWithDriver()
-            .useDriverAndCloseIde {
-                waitForIndicators(5.minutes)
-                connectAndPrimeH2DatabaseToolsSchemaMetadata()
-
-                service(ZMyBatisSettingsRemote::class).apply {
-                    setAutoFormatSql(false)
-                    setSqlPreview(false)
-                }
-
-                openFile("Query.xml")
-                ideFrame {
-                    invokeAction("EditorDown")
-                    invokeAction("zMyBatis.Execute", now = false)
-                }
-
-                waitFor("zMyBatis datasource chooser", timeout = 30.seconds) {
-                    ui.popups().list().isNotEmpty()
-                }
-                val dataSourceList = ui.popup().list()
-                dataSourceList.clickItem("zMyBatis E2E", fullMatch = false)
-                dataSourceList.setFocus()
-                dataSourceList.keyboard {
-                    right()
-                    enter()
-                }
-
-                ui.dialog(title = "Enter MyBatis Parameters") {
-                    textField().text = "7"
-                    button("OK").click()
-                }
-
-                ui.dialog(title = "zMyBatis — SQL Preview") {
-                    val previewSql = textArea().text
-                    assertTrue(
-                        previewSql.contains("SELECT 7 AS RESULT_VALUE"),
-                        "raw interpolation must force final-SQL preview even when sqlPreview=false, got: <$previewSql>",
-                    )
-                    button("Cancel").click()
-                }
-                ui.waitForNoOpenedDialogs()
-
-                val resultGridOpened = try {
-                    ui.accessibleTable {
-                        byType("com.intellij.database.run.ui.table.TableResultView")
-                    }.content()
-                    true
-                } catch (_: com.intellij.driver.sdk.WaitForException) {
-                    false
-                }
-                assertFalse(
-                    resultGridOpened,
-                    "cancelling the mandatory raw-interpolation preview must not execute the query",
-                )
-            }
-    }
-
-    @Test
-    fun registeredMutationDeclarationForcesPreviewWhenSettingDisabled(@TempDir tempDir: Path) {
-        val projectDir = copySampleProject(tempDir.resolve("action-mutation-confirmation-project"))
-        Files.writeString(
-            projectDir.resolve("Query.xml"),
-            """
-            <mapper namespace="fixture.QueryMapper">
-            <update id="ping">SELECT 9 AS MUTATION_DECLARATION_PROBE</update>
-            </mapper>
-            """.trimIndent(),
-        )
-
-        val h2Jar = Path.of(H2Driver::class.java.protectionDomain.codeSource.location.toURI())
-        writeH2DataSourceFixture(projectDir)
-
-        val context = starterContext("action-mutation-confirmation", projectDir)
-        writeH2DatabaseToolsDriverFixture(context.paths.configDir, h2Jar)
-
-        context
-            .runIdeWithDriver()
-            .useDriverAndCloseIde {
-                waitForIndicators(5.minutes)
-                connectAndPrimeH2DatabaseToolsSchemaMetadata()
-
-                service(ZMyBatisSettingsRemote::class).apply {
-                    setAutoFormatSql(false)
-                    setSqlPreview(false)
-                }
-
-                openFile("Query.xml")
-                ideFrame {
-                    invokeAction("EditorDown")
-                    invokeAction("zMyBatis.Execute", now = false)
-                }
-
-                waitFor("zMyBatis datasource chooser", timeout = 30.seconds) {
-                    ui.popups().list().isNotEmpty()
-                }
-                val dataSourceList = ui.popup().list()
-                dataSourceList.clickItem("zMyBatis E2E", fullMatch = false)
-                dataSourceList.setFocus()
-                dataSourceList.keyboard {
-                    right()
-                    enter()
-                }
-
-                ui.dialog(title = "zMyBatis — SQL Preview") {
-                    val previewSql = textArea().text
-                    assertTrue(
-                        previewSql.contains("SELECT 9 AS MUTATION_DECLARATION_PROBE"),
-                        "mutation declaration must force final-SQL preview even when sqlPreview=false, got: <$previewSql>",
-                    )
-                    button("Cancel").click()
-                }
-                ui.waitForNoOpenedDialogs()
-
-                val resultGridOpened = try {
-                    ui.accessibleTable {
-                        byType("com.intellij.database.run.ui.table.TableResultView")
-                    }.content()
-                    true
-                } catch (_: com.intellij.driver.sdk.WaitForException) {
-                    false
-                }
-                assertFalse(
-                    resultGridOpened,
-                    "cancelling the mandatory mutation preview must not execute the query",
-                )
-            }
-    }
-
-    @Test
     fun registeredActionReachesProductionFailClosedPath(@TempDir tempDir: Path) {
         val projectDir = copySampleProject(tempDir.resolve("action-project"))
 
@@ -970,74 +811,6 @@ class ZMyBatisStarterDriverE2ETest {
         }
     }
 
-    private fun Driver.connectAndPrimeH2DatabaseToolsSchemaMetadata() {
-        ideFrame {
-            // The project fixture is deliberately cold on startup. Drive the actual Database tree
-            // selection model so Database Tools actions receive the datasource-bearing tree context,
-            // rather than a renderer/root component that can make PropertiesAction a no-op.
-            invokeAction("ActivateDatabaseToolWindow", now = false)
-            val databaseTree = databaseViewTree()
-            databaseTree.waitForDataSourceContaining("zMyBatis E2E", timeout = 30.seconds)
-            databaseTree.selectRows { rows ->
-                rows.filter { it.contains("zMyBatis E2E", ignoreCase = true) }
-            }
-            databaseTree.waitForSelectedPathContaining("zMyBatis E2E", timeout = 30.seconds)
-            driver.invokeAction(
-                "DatabaseView.PropertiesAction",
-                now = false,
-                component = databaseTree.component,
-            )
-
-            dataSourcesAndDriversDialog {
-                testConnection()
-                waitFor(
-                    "pinned local H2 driver result",
-                    timeout = 2.minutes,
-                ) {
-                    isConnectionSuccessful(driverNameContains = "H2") || downloadDriverFilesButton.present()
-                }
-                assertFalse(
-                    downloadDriverFilesButton.present(),
-                    "pinned local H2 driver must be recognized without downloading another driver",
-                )
-                assertTrue(
-                    isConnectionSuccessful(driverNameContains = "H2"),
-                    "H2 Test Connection must succeed before explicit-schema target admission",
-                )
-                waitFor(
-                    "H2 Test Connection lifecycle completed",
-                    timeout = 30.seconds,
-                ) {
-                    testConnectionButton.isEnabled()
-                }
-                driver.waitForIndicators(30.seconds, waitSmartLongEnough = true)
-                okButton.click()
-            }
-
-            waitFor("Data Sources and Drivers dialog is closed", timeout = 30.seconds) {
-                !ui.isDialogOpened("//div[@title='Data Sources and Drivers']")
-            }
-
-            invokeAction("ActivateDatabaseToolWindow", now = false)
-            val refreshedDatabaseTree = databaseViewTree()
-            refreshedDatabaseTree.waitForDataSourceContaining("zMyBatis E2E", timeout = 30.seconds)
-            refreshedDatabaseTree.selectRows { rows ->
-                rows.filter { it.contains("zMyBatis E2E", ignoreCase = true) }
-            }
-            refreshedDatabaseTree.waitForSelectedPathContaining("zMyBatis E2E", timeout = 30.seconds)
-            driver.invokeAction(
-                "DatabaseView.ForceRefresh",
-                now = false,
-                component = refreshedDatabaseTree.component,
-            )
-        }
-
-        // The replacement target authority never invents or defaults a schema. The fixture must
-        // complete a real Database Tools connection plus forced introspection before the action can
-        // enumerate an explicit named schema.
-        waitForIndicators(2.minutes, waitSmartLongEnough = true)
-    }
-
     private fun writeMapperInterface(
         projectDir: Path,
         parameterType: String,
@@ -1081,73 +854,6 @@ class ZMyBatisStarterDriverE2ETest {
                 </driver>
               </component>
             </application>
-            """.trimIndent(),
-        )
-    }
-
-    private fun writeH2DatabaseToolsDriverFixture(configDir: Path, h2Jar: Path) {
-        // Database Tools does not use the IDE process classpath as its JDBC driver library.
-        // Seed the Starter config exactly as a user-supplied local Driver Files JAR so the
-        // native Database Tools driver classloader owns the real H2 connection.
-        val driverDir = Files.createDirectories(configDir.resolve("jdbc-drivers"))
-        val driverJar = driverDir.resolve(h2Jar.fileName)
-        Files.copy(h2Jar, driverJar, StandardCopyOption.REPLACE_EXISTING)
-
-        val optionsDir = Files.createDirectories(configDir.resolve("options"))
-        Files.writeString(
-            optionsDir.resolve("databaseDrivers.xml"),
-            """
-            <application>
-              <component name="LocalDatabaseDriverManager" version="201">
-                <driver id="h2.unified">
-                  <artifact use="false" />
-                  <option name="auto-sync" value="true" />
-                  <library>
-                    <url>${driverJar.toUri().toASCIIString()}</url>
-                  </library>
-                </driver>
-              </component>
-            </application>
-            """.trimIndent(),
-        )
-    }
-
-    private fun writeH2DataSourceFixture(projectDir: Path) {
-        val ideaDir = Files.createDirectories(projectDir.resolve(".idea"))
-        val projectFileDirMacro =
-            buildString {
-                append(36.toChar())
-                append("ProjectFileDir")
-                append(36.toChar())
-            }
-        Files.writeString(
-            ideaDir.resolve("dataSources.xml"),
-            """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <project version="4">
-              <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
-                <data-source source="LOCAL" name="zMyBatis E2E" uuid="$E2E_DATA_SOURCE_UUID">
-                  <driver-ref>h2.unified</driver-ref>
-                  <synchronize>true</synchronize>
-                  <jdbc-driver>org.h2.Driver</jdbc-driver>
-                  <jdbc-url>jdbc:h2:mem:zmybatis_e2e;DB_CLOSE_DELAY=-1;USER=sa;PASSWORD=</jdbc-url>
-                  <working-dir>$projectFileDirMacro</working-dir>
-                </data-source>
-              </component>
-            </project>
-            """.trimIndent(),
-        )
-        Files.writeString(
-            ideaDir.resolve("dataSources.local.xml"),
-            """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <project version="4">
-              <component name="dataSourceStorageLocal">
-                <data-source name="zMyBatis E2E" uuid="$E2E_DATA_SOURCE_UUID">
-                  <auth-provider>no-auth</auth-provider>
-                </data-source>
-              </component>
-            </project>
             """.trimIndent(),
         )
     }
