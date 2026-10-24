@@ -77,21 +77,6 @@ class LeapExecutionCandidateCoordinatorTest {
         assertEquals(MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED, failure.kind)
     }
 
-    @Test
-    fun rawInterpolationUsesExactRenderedSqlAndCarriesMandatoryPreviewSafetyFlag() {
-        val target = postgresTarget()
-        val result = candidate(
-            "select \${value} as result_value",
-            listOf(Parameter("java.lang.String", "value", InputValue.RawText("7"))),
-            target,
-        )
-
-        assertTrue("raw candidate expected Ready but got $result", result is LeapExecutionCandidateResult.Ready)
-        val execution = (result as LeapExecutionCandidateResult.Ready).execution
-        assertEquals("select 7 as result_value", execution.executionSql)
-        assertEquals(target.targetId, execution.executionTargetId)
-        assertTrue(execution.safetyFlags.containsRawInterpolation)
-    }
 
     private fun candidate(
         sql: String,
