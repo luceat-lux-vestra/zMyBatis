@@ -1,5 +1,10 @@
 package com.algorist.zMyBatis.core.materialization
 
+import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
+import com.algorist.zMyBatis.core.execution.ExecutionTargetId
+import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
+import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
+import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputKind
@@ -91,6 +96,35 @@ class MaterializationTest {
             "materialization-raw-interpolation-policy-required",
         )
         assertFalse(failure.toString().contains("select * from users"))
+    }
+
+    @Test
+    fun targetBoundRawPolicyPreservesExactRenderedSqlAndForcesRawSafetyFlag() {
+        val target = ResolvedExecutionTarget(
+            ExecutionTargetDescriptor(
+                ExecutionTargetId(
+                    StableDataSourceId("raw-ds"),
+                    ExplicitSchemaIdentity("public"),
+                ),
+                "raw target",
+            ),
+        )
+        val prepared = prepared(
+            sql = "select 7 as result_value",
+            rawInterpolations = listOf(
+                PreparedRawInterpolation(
+                    requirementId = InputRequirementId("raw-value"),
+                    provenance = provenance(InputKind.RAW_INTERPOLATION, "value"),
+                    origin = ExecutionInputOrigin.USER_ENTERED,
+                ),
+            ),
+        )
+
+        val execution = success(TargetBoundRawExecutionMaterializer(target).materialize(prepared))
+
+        assertEquals(prepared.sqlWithPlaceholders, execution.executionSql)
+        assertEquals(target.targetId, execution.executionTargetId)
+        assertTrue(execution.safetyFlags.containsRawInterpolation)
     }
 
     @Test

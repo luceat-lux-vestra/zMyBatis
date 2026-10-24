@@ -608,7 +608,7 @@ class ZMyBatisStarterDriverE2ETest {
         Files.writeString(
             projectDir.resolve("Query.xml"),
             """
-            <mapper namespace="fixture.QueryMapper">
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd"><mapper namespace="fixture.QueryMapper">
             <select id="ping">SELECT $rawToken AS RESULT_VALUE</select>
             </mapper>
             """.trimIndent(),

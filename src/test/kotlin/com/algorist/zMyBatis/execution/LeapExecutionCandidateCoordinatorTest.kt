@@ -78,21 +78,19 @@ class LeapExecutionCandidateCoordinatorTest {
     }
 
     @Test
-    fun rawInterpolationCannotSlipThroughZeroBindingCandidate() {
+    fun rawInterpolationUsesExactRenderedSqlAndCarriesMandatoryPreviewSafetyFlag() {
+        val target = postgresTarget()
         val result = candidate(
-            "select * from \${table}",
-            listOf(Parameter("java.lang.String", "table", InputValue.RawText("users"))),
-            postgresTarget(),
+            "select \${value} as result_value",
+            listOf(Parameter("java.lang.String", "value", InputValue.RawText("7"))),
+            target,
         )
 
-        when (result) {
-            is LeapExecutionCandidateResult.PreparationFailed -> Unit
-            is LeapExecutionCandidateResult.MaterializationFailed ->
-                assertEquals(MaterializationFailureKind.RAW_INTERPOLATION_REQUIRES_POLICY, result.failure.kind)
-            is LeapExecutionCandidateResult.Ready,
-            is LeapExecutionCandidateResult.TargetIdentityMismatch,
-            -> throw AssertionError("raw interpolation must fail closed before candidate authority")
-        }
+        assertTrue(result is LeapExecutionCandidateResult.Ready)
+        val execution = (result as LeapExecutionCandidateResult.Ready).execution
+        assertEquals("select 7 as result_value", execution.executionSql)
+        assertEquals(target.targetId, execution.executionTargetId)
+        assertTrue(execution.safetyFlags.containsRawInterpolation)
     }
 
     private fun candidate(

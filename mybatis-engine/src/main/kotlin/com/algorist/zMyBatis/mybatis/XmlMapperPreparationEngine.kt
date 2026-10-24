@@ -6,6 +6,8 @@ import com.algorist.zMyBatis.core.input.XmlBooleanGuardSyntax
 import com.algorist.zMyBatis.core.input.InputKind
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InputShape
+import com.algorist.zMyBatis.core.input.InputScalarType
+import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
@@ -15,6 +17,7 @@ import com.algorist.zMyBatis.core.preparation.PreparedBinding
 import com.algorist.zMyBatis.core.preparation.PreparedBindingMetadata
 import com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin
 import com.algorist.zMyBatis.core.preparation.PreparedExecution
+import com.algorist.zMyBatis.core.preparation.PreparedRawInterpolation
 import com.algorist.zMyBatis.core.preparation.XmlMapperPreparationSource
 import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.XmlStatementId
@@ -65,6 +68,8 @@ object XmlMapperPreparationEngine {
         "xml-preparation-named-map-property-missing"
     private const val PARAMETER_OBJECT_FALLBACK_RULE =
         "mybatis-3.5.19-default-parameter-handler-type-handler-fallback"
+    private const val RAW_PARAMETER_OBJECT_FALLBACK_RULE =
+        "mybatis-3.5.19-dynamic-context-fallback-parameter-object"
     private const val PARAMETER_OBJECT_PROPERTY_RULE =
         "mybatis-3.5.19-default-parameter-handler-meta-object-property"
     private const val NAMED_MAP_PROPERTY_RULE =
@@ -194,6 +199,10 @@ object XmlMapperPreparationEngine {
             preflight(snapshot)?.let { return PreparationResult.Failed(it) }
         }
 
+        val hasRawInterpolation = request.parameterContract.requirements.any {
+            it.kind == InputKind.RAW_INTERPOLATION
+        }
+
         if (booleanIf != null || foreach != null) {
             for ((_, _, content) in source.sourceGraph.sourceSnapshots) {
                 DynamicBoundTokenTopologyAdmission.failureOrNull(
@@ -210,7 +219,7 @@ object XmlMapperPreparationEngine {
         }
 
         return try {
-            if (foreach == null && booleanIf == null) {
+            if (foreach == null && booleanIf == null && !hasRawInterpolation) {
                 prepareWithContextLoader(isolatedRuntime, source, statementId, request, parameterPayload, null, null)
             } else {
                 val runtime = createIsolatedRuntime(fresh = true)
@@ -338,7 +347,15 @@ object XmlMapperPreparationEngine {
 
         val sqlSource = mappedStatementClass.getMethod("getSqlSource").invoke(mappedStatement)
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
-        if (dynamicSqlSourceClass.isInstance(sqlSource) && foreach == null && booleanIf == null) {
+        val rawRequirements = request.parameterContract.requirements.filter {
+            it.kind == InputKind.RAW_INTERPOLATION
+        }
+        if (
+            dynamicSqlSourceClass.isInstance(sqlSource) &&
+            foreach == null &&
+            booleanIf == null &&
+            rawRequirements.isEmpty()
+        ) {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, DYNAMIC_UNSUPPORTED)
         }
 
@@ -377,6 +394,20 @@ object XmlMapperPreparationEngine {
             is XmlBindingCapture.Failed -> return PreparationResult.Failed(captured.failure)
         }
 
+        val rawInterpolations = mutableListOf<PreparedRawInterpolation>()
+        for (requirement in rawRequirements) {
+            val provided = request.inputEnvironment.value(requirement.id)
+                ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, RAW_INPUT_UNSUPPORTED)
+            if (provided.value !is InputValue.RawText) {
+                return failed(PreparationFailureKind.PREPARATION_INVARIANT, RAW_INPUT_UNSUPPORTED)
+            }
+            rawInterpolations += PreparedRawInterpolation(
+                requirementId = requirement.id,
+                provenance = requirement.provenance,
+                origin = provided.origin,
+            )
+        }
+
         val languageDriver = mappedStatementClass.getMethod("getLang").invoke(mappedStatement)
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
         if (languageDriver.javaClass.classLoader !== runtime.loader) {
@@ -391,7 +422,7 @@ object XmlMapperPreparationEngine {
                     sourceRevisions = request.sourceRevisions,
                     sqlWithPlaceholders = sql,
                     orderedBindings = bindings,
-                    rawInterpolations = emptyList(),
+                    rawInterpolations = rawInterpolations,
                     preparationMetadata = PreparationMetadata(
                         engineIdentity = ENGINE_ID,
                         engineVersion = ENGINE_VERSION,
@@ -491,9 +522,6 @@ object XmlMapperPreparationEngine {
 
     private fun preflight(snapshot: SourceSnapshot): PreparationFailure? {
         val content = snapshot.content
-        if (containsRawInterpolation(content)) {
-            return PreparationFailure(PreparationFailureKind.UNSUPPORTED_SEMANTIC, RAW_INPUT_UNSUPPORTED)
-        }
         if (dangerousAttribute.containsMatchIn(content) || dangerousElement.containsMatchIn(content)) {
             return PreparationFailure(PreparationFailureKind.UNSUPPORTED_SEMANTIC, CLASS_LOADING_UNSUPPORTED)
         }
@@ -507,13 +535,6 @@ object XmlMapperPreparationEngine {
         return null
     }
 
-    private fun containsRawInterpolation(content: String): Boolean =
-        content.indices.any { index ->
-            index + 1 < content.length &&
-                content[index].code == 36 &&
-                content[index + 1] == '{'
-        }
-
     private fun inputContractFailure(
         request: MyBatisPreparationRequest,
         foreachRequirementIds: Set<InputRequirementId>,
@@ -524,7 +545,13 @@ object XmlMapperPreparationEngine {
                 INPUT_CONTRACT_UNSUPPORTED,
             )
         }
-        if (request.parameterContract.requirements.any { it.kind != InputKind.BOUND }) {
+        if (
+            request.parameterContract.requirements.any {
+                it.kind == InputKind.RAW_INTERPOLATION &&
+                    (it.expectedType.shape != InputShape.RAW_TEXT ||
+                        it.expectedType.scalarType != InputScalarType.STRING)
+            }
+        ) {
             return PreparationFailure(
                 PreparationFailureKind.UNSUPPORTED_SEMANTIC,
                 RAW_INPUT_UNSUPPORTED,
@@ -532,11 +559,13 @@ object XmlMapperPreparationEngine {
         }
         if (
             request.parameterContract.requirements.any {
-                it.id !in foreachRequirementIds && it.expectedType.shape !in setOf(
-                    InputShape.SCALAR,
-                    InputShape.TEMPORAL,
-                    InputShape.MAP,
-                )
+                it.kind == InputKind.BOUND &&
+                    it.id !in foreachRequirementIds &&
+                    it.expectedType.shape !in setOf(
+                        InputShape.SCALAR,
+                        InputShape.TEMPORAL,
+                        InputShape.MAP,
+                    )
             }
         ) {
             return PreparationFailure(
@@ -617,16 +646,29 @@ object XmlMapperPreparationEngine {
                     request.parameterContract.aliases.all { it.kind == InputAliasKind.PARAMETER_OBJECT } &&
                     parameterObjectAliases.all { it.requirementId == directRequirement.id }
 
+            val expectedFallbackRule = when (directRequirement?.kind) {
+                InputKind.BOUND -> PARAMETER_OBJECT_FALLBACK_RULE
+                InputKind.RAW_INTERPOLATION -> RAW_PARAMETER_OBJECT_FALLBACK_RULE
+                null -> null
+            }
+            val fallbackShapeCoherent = when (directRequirement?.kind) {
+                InputKind.BOUND ->
+                    directRequirement.expectedType.shape in setOf(InputShape.SCALAR, InputShape.TEMPORAL)
+                InputKind.RAW_INTERPOLATION ->
+                    directRequirement.expectedType.shape == InputShape.RAW_TEXT &&
+                        directRequirement.expectedType.scalarType == InputScalarType.STRING
+                null -> false
+            }
             val fallbackCoherence =
                 commonCoherence &&
-                    directRequirement.expectedType.shape in
-                    setOf(InputShape.SCALAR, InputShape.TEMPORAL) &&
+                    fallbackShapeCoherent &&
+                    expectedFallbackRule != null &&
                     aliasProperties.all { (_, property) -> property == null } &&
                     aliasFallbacks.all { (alias, fallback) ->
                         fallback != null &&
                             fallback.parameterIndex == directParameterIndex &&
                             fallback.mappingProperty == alias.name &&
-                            fallback.ruleId == PARAMETER_OBJECT_FALLBACK_RULE
+                            fallback.ruleId == expectedFallbackRule
                     } &&
                     directRequirement.provenance.evidence
                         .filterIsInstance<InputEvidence.ParameterObjectFallback>()
@@ -950,11 +992,11 @@ object XmlMapperPreparationEngine {
                     ?: return XmlBindingCapture.Failed(
                         PreparationFailure(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE),
                     )
-                val value = parameterPayload.namedValues[guard.callerAlias] as? Boolean
+                val active = guard.isActive(parameterPayload.namedValues[guard.callerAlias])
                     ?: return XmlBindingCapture.Failed(
                         PreparationFailure(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE),
                     )
-                expression to guard.isActive(value)
+                expression to active
             }
             val placeholders = request.parameterContract.requirements
                 .flatMap { it.provenance.evidence }
@@ -981,6 +1023,7 @@ object XmlMapperPreparationEngine {
         }
 
         val expectedMappingCounts = request.parameterContract.requirements
+            .filter { it.kind == InputKind.BOUND }
             .filter { it.id !in foreach?.collectionRequirementIds.orEmpty() }
             .associate { requirement ->
                 requirement.id to requirement.provenance.evidence

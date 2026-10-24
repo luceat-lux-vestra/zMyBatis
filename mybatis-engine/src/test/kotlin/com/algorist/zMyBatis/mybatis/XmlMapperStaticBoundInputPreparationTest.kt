@@ -288,17 +288,52 @@ class XmlMapperStaticBoundInputPreparationTest {
     }
 
     @Test
-    fun rawXmlInputRemainsBlockedBeforeDynamicEvaluation() {
+    fun soleUnannotatedRawStringIsRenderedByStockMyBatisAndRetainsRawProvenance() {
         val fixture = fixture(
-            "SELECT * FROM " + raw("table"),
-            listOf(parameter(0, "java.lang.String", "table", "table")),
+            "SELECT " + raw("value") + " AS RESULT_VALUE",
+            listOf(parameter(0, "java.lang.String", "value", null)),
         )
 
-        assertFailure(
-            prepare(fixture, listOf(InputValue.RawText("users"))),
-            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "xml-preparation-raw-input-unsupported",
+        val execution = success(
+            prepare(fixture, listOf(InputValue.RawText("7"))),
         )
+
+        assertEquals("SELECT 7 AS RESULT_VALUE", normalize(execution.sqlWithPlaceholders))
+        assertTrue(execution.orderedBindings.isEmpty())
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(
+            contract(fixture).requirements.single().id,
+            execution.rawInterpolations.single().requirementId,
+        )
+    }
+
+    @Test
+    fun soleUnannotatedLongDrivesStockPositiveIfAndBigintBinding() {
+        val fixture = fixture(
+            "SELECT #{value,jdbcType=BIGINT}::BIGINT AS RESULT_VALUE" +
+                "<if test=\"value > 0\">, 1::BIGINT AS POSITIVE_MARKER</if>",
+            listOf(parameter(0, "long", "value", null)),
+        )
+
+        val positive = success(
+            prepare(fixture, listOf(InputValue.IntegerValue(BigInteger.valueOf(7)))),
+        )
+        val negative = success(
+            prepare(fixture, listOf(InputValue.IntegerValue(BigInteger.valueOf(-7)))),
+        )
+
+        assertEquals(
+            "SELECT ?::BIGINT AS RESULT_VALUE , 1::BIGINT AS POSITIVE_MARKER",
+            normalize(positive.sqlWithPlaceholders),
+        )
+        assertEquals(
+            "SELECT ?::BIGINT AS RESULT_VALUE",
+            normalize(negative.sqlWithPlaceholders),
+        )
+        assertEquals(1, positive.orderedBindings.size)
+        assertEquals(1, negative.orderedBindings.size)
+        assertEquals("value", positive.orderedBindings.single().property)
+        assertEquals("value", negative.orderedBindings.single().property)
     }
 
     private fun prepare(

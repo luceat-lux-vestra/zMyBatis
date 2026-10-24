@@ -9,6 +9,7 @@ import com.algorist.zMyBatis.core.materialization.MaterializationFailure
 import com.algorist.zMyBatis.core.materialization.MaterializationResult
 import com.algorist.zMyBatis.core.materialization.MaterializedExecution
 import com.algorist.zMyBatis.core.materialization.PostgreSqlBigintExecutionMaterializer
+import com.algorist.zMyBatis.core.materialization.TargetBoundRawExecutionMaterializer
 import com.algorist.zMyBatis.core.materialization.TargetBoundZeroBindingExecutionMaterializer
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
@@ -70,10 +71,13 @@ internal object LeapExecutionCandidateCoordinator {
         prepared: PreparedExecution,
         target: ResolvedExecutionTarget,
     ): ExecutionMaterializer =
-        if (prepared.orderedBindings.isEmpty()) {
-            TargetBoundZeroBindingExecutionMaterializer(target)
-        } else {
-            PostgreSqlBigintExecutionMaterializer(target)
+        when {
+            prepared.rawInterpolations.isNotEmpty() && prepared.orderedBindings.isEmpty() ->
+                TargetBoundRawExecutionMaterializer(target)
+            prepared.orderedBindings.isEmpty() ->
+                TargetBoundZeroBindingExecutionMaterializer(target)
+            else ->
+                PostgreSqlBigintExecutionMaterializer(target)
         }
 }
 
