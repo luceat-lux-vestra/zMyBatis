@@ -81,11 +81,22 @@ class MyBatisActionUpdateBoundaryTest {
             assertTrue("typed diagnostic code must remain observable: $code", diagnostic.contains(code))
         }
 
+        assertTrue(
+            "preparation failure diagnostic must expose stable kind metadata",
+            diagnostic.contains("failure.failure.kind.name.lowercase().replace('_', '-')"),
+        )
+        assertTrue(
+            "preparation failure diagnostic must expose stable problem code",
+            diagnostic.contains("failure.failure.code"),
+        )
+
         listOf(
             "executionSql",
             "inputEnvironment",
             "sourceFileId",
             "dataSourceDisplayName",
+            "bindingProperty",
+            "diagnosticType",
             ".message",
         ).forEach { forbidden ->
             assertFalse(
