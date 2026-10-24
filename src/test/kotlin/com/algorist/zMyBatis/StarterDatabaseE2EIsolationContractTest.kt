@@ -77,7 +77,8 @@ class StarterDatabaseE2EIsolationContractTest {
             "cold H2 fixture must establish datasource-bearing Database tree context before connection and introspection",
             e2e.contains("connectAndPrimeH2DatabaseToolsSchemaMetadata") &&
                 e2e.contains("databaseViewTree()") &&
-                e2e.contains("clickRow { it.contains(\"zMyBatis E2E\", ignoreCase = true) }") &&
+                e2e.contains("selectRows { rows ->") &&
+                e2e.contains("rows.filter { it.contains(\"zMyBatis E2E\", ignoreCase = true) }") &&
                 e2e.contains("waitForSelectedPathContaining(\"zMyBatis E2E\"") &&
                 e2e.contains("component = databaseTree.component") &&
                 e2e.contains("DatabaseView.PropertiesAction") &&
