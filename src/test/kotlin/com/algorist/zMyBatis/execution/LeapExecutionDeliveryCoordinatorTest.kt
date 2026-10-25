@@ -147,8 +147,9 @@ class LeapExecutionDeliveryCoordinatorTest {
         )
 
         val firstAdmission = coordinator.indexOf("val initialTarget = when (")
-        val candidate = coordinator.indexOf("LeapExecutionCandidateCoordinator.build(")
-        val approval = coordinator.indexOf("approvalAdapter.requestApproval(")
+        val candidate = coordinator.indexOf("candidateAdapter.requestCandidate(")
+        val continuation = coordinator.indexOf("private fun continueWithCandidate(")
+        val approval = coordinator.indexOf("approvalAdapter.requestApproval(", continuation)
         val approvedDelivery = coordinator.indexOf("private fun deliverApproved(")
         val secondAdmission = coordinator.indexOf("val deliveryTarget = when (", approvedDelivery)
         val acquire = coordinator.indexOf("consoleAdapter.acquireAndDeliverConsole(", approvedDelivery)
@@ -156,7 +157,8 @@ class LeapExecutionDeliveryCoordinatorTest {
 
         assertTrue(firstAdmission >= 0)
         assertTrue(firstAdmission < candidate)
-        assertTrue(candidate < approval)
+        assertTrue(candidate < continuation)
+        assertTrue(continuation < approval)
         assertTrue(approval < approvedDelivery)
         assertTrue(approvedDelivery < secondAdmission)
         assertTrue(secondAdmission < acquire)
@@ -164,6 +166,8 @@ class LeapExecutionDeliveryCoordinatorTest {
         assertTrue(coordinator.contains("LeapExecutionApprovalResult.UserCancelled -> onCancelled()"))
         assertTrue(coordinator.contains("StatementSourceGraphRevalidator::revalidateSnapshots"))
         assertTrue(coordinator.contains("targetResolver.resolve(targetDescriptor)"))
+        assertTrue(coordinator.contains("LeapExecutionCandidateResult.InvocationInvalidated"))
+        assertFalse(coordinator.contains("LeapExecutionCandidateCoordinator.build("))
     }
 
     private fun missingTarget(): DatabaseToolsTargetResolution =

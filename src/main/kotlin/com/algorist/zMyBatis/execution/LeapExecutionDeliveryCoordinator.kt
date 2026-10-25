@@ -25,6 +25,7 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
     private val targetResolver = DatabaseToolsTargetResolver(project)
     private val consoleAdapter = DatabaseToolsConsoleAdapter.getInstance(project)
     private val approvalAdapter = LeapExecutionApprovalAdapter(project)
+    private val candidateAdapter = LeapExecutionCandidateAdapter(project)
 
     fun execute(
         source: PreparationSource,
@@ -54,14 +55,47 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
             }
         }
 
-        val artifact = when (
-            val candidate = LeapExecutionCandidateCoordinator.build(
-                source = source,
-                parameterContract = parameterContract,
-                inputEnvironment = inputEnvironment,
-                target = initialTarget,
-            )
-        ) {
+        candidateAdapter.requestCandidate(
+            source = source,
+            parameterContract = parameterContract,
+            inputEnvironment = inputEnvironment,
+            target = initialTarget,
+            isInvocationActive = isInvocationActive,
+            onResult = { candidate ->
+                continueWithCandidate(
+                    authority = authority,
+                    candidate = candidate,
+                    targetDescriptor = targetDescriptor,
+                    resourceKey = resourceKey,
+                    forceNewConsole = forceNewConsole,
+                    approvalOptions = approvalOptions,
+                    isInvocationActive = isInvocationActive,
+                    onExecuted = onExecuted,
+                    onCancelled = onCancelled,
+                    onFailure = onFailure,
+                )
+            },
+            onCancelled = onCancelled,
+        )
+    }
+
+    private fun continueWithCandidate(
+        authority: PreparationSourceAuthority,
+        candidate: LeapExecutionCandidateResult,
+        targetDescriptor: ExecutionTargetDescriptor,
+        resourceKey: String,
+        forceNewConsole: Boolean,
+        approvalOptions: LeapExecutionApprovalOptions,
+        isInvocationActive: () -> Boolean,
+        onExecuted: () -> Unit,
+        onCancelled: () -> Unit,
+        onFailure: (LeapExecutionDeliveryFailure) -> Unit,
+    ) {
+        val artifact = when (candidate) {
+            LeapExecutionCandidateResult.InvocationInvalidated -> {
+                onFailure(LeapExecutionDeliveryFailure.InvocationInvalidated)
+                return
+            }
             is LeapExecutionCandidateResult.Ready -> candidate.execution
             is LeapExecutionCandidateResult.PreparationFailed -> {
                 onFailure(LeapExecutionDeliveryFailure.PreparationFailed(candidate.failure))
@@ -82,6 +116,10 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
             }
         }
 
+        if (!isInvocationActive()) {
+            onFailure(LeapExecutionDeliveryFailure.InvocationInvalidated)
+            return
+        }
         if (artifact.sourceRevisions != authority.sourceRevisions) {
             onFailure(LeapExecutionDeliveryFailure.ArtifactSourceAuthorityMismatch)
             return
