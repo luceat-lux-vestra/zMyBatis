@@ -32,8 +32,8 @@ import javax.swing.text.JTextComponent
  * submission policy to [ContractInputSubmissionPolicy], then typed decoding/final environment
  * validation to [ContractInputAdapter].
  *
- * The registered #66 action now reaches this contract-driven input boundary. The legacy dialog may
- * remain only as unregistered cleanup debt until #67 removes the old execution implementation.
+ * The registered action uses this contract-driven input boundary as its production parameter UI.
+ * The former legacy dialog/extractor/history implementation was deleted after the Leap cutover.
  */
 @Suppress("MagicNumber", "LongMethod")
 class ContractParameterInputDialog(

@@ -478,7 +478,7 @@ Only genuine internal invariants use fatal/error-level diagnostic reporting. Use
 - unknown XML/OGNL is parsed as untrusted project source and must not gain additional host capabilities through custom global accessors;
 - confirmation is a UX safety boundary, not authorization.
 
-A separate immediate safety patch may remove existing INFO leakage before full Leap cutover; doing so does not freeze the legacy architecture.
+PR #117 removed the known normal-level SQL/input leakage before cutover. Current logging evidence remains intentionally bounded rather than a semantic taint proof, and #67 still owns final privacy/diagnostic review; there is no retained legacy execution architecture to preserve.
 
 ## 14. Migration and deletion sequence (updated 2026-10-25)
 

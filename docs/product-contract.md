@@ -174,7 +174,7 @@ The sole execution authority after materialization is an immutable **exact SQL-t
 - Revalidate source, target, cancellation/disposal and confirmation immediately before dispatch; any material change invalidates the artifact.
 - DML and raw `${}` require explicit final-artifact confirmation; no implicit execution after preview.
 - A prepared statement with nonzero bindings is not an executable text artifact until *all* dialect/type/placeholder obligations are proven. Unsupported cases fail closed.
-- The registered action has one Leap production authority. Unsupported materialization never falls back to the retained legacy evaluator/action by mapping count, mapper flavor, setting, or failure path.
+- The registered action has one Leap production authority. Unsupported materialization fails closed; the deleted legacy evaluator/action is not available as fallback by mapping count, mapper flavor, setting, or failure path.
 
 ## 11. Safety posture
 
@@ -209,11 +209,10 @@ Preserve the proven #57 safety invariants:
 
 Current shipping v3 target persistence stores project-scoped canonical source-to-target descriptors (stable datasource UUID plus explicit named schema), not live `JdbcConsole` objects. Development-only v2 persistence was never distributed and has no runtime migration reader; see [session persistence](session-persistence.md).
 
-Leap target rules:
+Current target/session rules:
 
-- replace the current coupling where persisted-record creation/removal follows live-console cache registration/disposal;
-- evolve the record into a versioned `ExecutionTargetDescriptor`/session descriptor that remains independently meaningful and revalidatable without a live console cache entry;
-- do not eagerly recreate consoles on startup merely to restore persisted target selection;
+- the v3 `ExecutionTargetDescriptor` remains independently meaningful and revalidatable without a live console cache entry;
+- startup may prune stale current-v3 source associations but does not recreate consoles or migrate deleted legacy state;
 - console/editor/document resources are ephemeral Database Tools adapter resources;
 - `REUSE`/`NEW_EACH` are optional in-memory resource policies, not target identities;
 - default-schema restart remains unsupported until stable search-path identity exists.
