@@ -562,12 +562,12 @@ internal class LeapActionContextAdmissionCoordinator(
                 onFailure(LeapActionContextAdmissionFailure.MissingPsiFile)
                 return
             }
-        val liveInvocation = {
+        val captureContextActive = {
             !project.isDisposed &&
                 !editor.isDisposed &&
                 !cache.isShuttingDown()
         }
-        if (!liveInvocation()) {
+        if (!captureContextActive()) {
             onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
             return
         }
@@ -581,7 +581,17 @@ internal class LeapActionContextAdmissionCoordinator(
                 return
             }
         }
+        if (!captureContextActive()) {
+            onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
+            return
+        }
 
+        // Source evidence is immutable from this point. Do not retain the live editor across
+        // asynchronous target/input/candidate boundaries.
+        val liveInvocation = {
+            !project.isDisposed &&
+                !cache.isShuttingDown()
+        }
         continueWithCapturedEvidence(
             evidence = evidence,
             dataContext = event.dataContext,

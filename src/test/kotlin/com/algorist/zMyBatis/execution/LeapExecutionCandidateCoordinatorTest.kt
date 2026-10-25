@@ -27,9 +27,11 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
+import com.intellij.openapi.progress.ProcessCanceledException
 import java.math.BigInteger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -78,10 +80,60 @@ class LeapExecutionCandidateCoordinatorTest {
     }
 
 
+    @Test
+    fun inactiveInvocationStopsBeforeCandidatePreparation() {
+        var cancellationChecks = 0
+
+        val result = candidate(
+            "select 1",
+            emptyList(),
+            postgresTarget(),
+            isInvocationActive = { false },
+            checkCanceled = { cancellationChecks++ },
+        )
+
+        assertSame(LeapExecutionCandidateResult.InvocationInvalidated, result)
+        assertEquals(1, cancellationChecks)
+    }
+
+    @Test
+    fun successfulCandidateChecksCancellationAtEveryStageBoundary() {
+        var cancellationChecks = 0
+
+        val result = candidate(
+            "select 1",
+            emptyList(),
+            postgresTarget(),
+            checkCanceled = { cancellationChecks++ },
+        )
+
+        assertTrue(result is LeapExecutionCandidateResult.Ready)
+        assertEquals(4, cancellationChecks)
+    }
+
+    @Test
+    fun cancellationProbePreservesProcessCanceledExceptionIdentity() {
+        val cancellation = ProcessCanceledException()
+
+        try {
+            candidate(
+                "select 1",
+                emptyList(),
+                postgresTarget(),
+                checkCanceled = { throw cancellation },
+            )
+            error("cancellation must escape candidate construction")
+        } catch (actual: ProcessCanceledException) {
+            assertSame(cancellation, actual)
+        }
+    }
+
     private fun candidate(
         sql: String,
         parameters: List<Parameter>,
         target: ResolvedExecutionTarget,
+        isInvocationActive: () -> Boolean = { true },
+        checkCanceled: () -> Unit = {},
     ): LeapExecutionCandidateResult {
         val capture = capture(sql, parameters)
         val contract = JavaAnnotationParameterContractFactory.build(capture)
@@ -99,6 +151,8 @@ class LeapExecutionCandidateCoordinatorTest {
             parameterContract = contract,
             inputEnvironment = (environment as InputEnvironmentResult.Success).environment,
             target = target,
+            isInvocationActive = isInvocationActive,
+            checkCanceled = checkCanceled,
         )
     }
 

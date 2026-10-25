@@ -31,30 +31,51 @@ internal object LeapExecutionCandidateCoordinator {
         parameterContract: ParameterContract,
         inputEnvironment: InputEnvironment,
         target: ResolvedExecutionTarget,
+        isInvocationActive: () -> Boolean = { true },
+        checkCanceled: () -> Unit = {},
     ): LeapExecutionCandidateResult {
-        val request = when (
-            val result = MyBatisPreparationRequest.create(
-                source = source,
-                parameterContract = parameterContract,
-                inputEnvironment = inputEnvironment,
-                effectiveDatabaseId = target.effectiveDatabaseId,
-            )
-        ) {
-            is PreparationRequestResult.Ready -> result.request
+        fun invocationStillActive(): Boolean {
+            checkCanceled()
+            return isInvocationActive()
+        }
+
+        if (!invocationStillActive()) {
+            return LeapExecutionCandidateResult.InvocationInvalidated
+        }
+
+        val requestResult = MyBatisPreparationRequest.create(
+            source = source,
+            parameterContract = parameterContract,
+            inputEnvironment = inputEnvironment,
+            effectiveDatabaseId = target.effectiveDatabaseId,
+        )
+        if (!invocationStillActive()) {
+            return LeapExecutionCandidateResult.InvocationInvalidated
+        }
+        val request = when (requestResult) {
+            is PreparationRequestResult.Ready -> requestResult.request
             is PreparationRequestResult.Failed ->
-                return LeapExecutionCandidateResult.PreparationFailed(result.failure)
+                return LeapExecutionCandidateResult.PreparationFailed(requestResult.failure)
         }
 
-        val prepared = when (val result = MyBatisPreparationBoundary.prepare(request)) {
-            is PreparationResult.Success -> result.execution
+        val preparationResult = MyBatisPreparationBoundary.prepare(request)
+        if (!invocationStillActive()) {
+            return LeapExecutionCandidateResult.InvocationInvalidated
+        }
+        val prepared = when (preparationResult) {
+            is PreparationResult.Success -> preparationResult.execution
             is PreparationResult.Failed ->
-                return LeapExecutionCandidateResult.PreparationFailed(result.failure)
+                return LeapExecutionCandidateResult.PreparationFailed(preparationResult.failure)
         }
 
-        val execution = when (val result = materializer(prepared, target).materialize(prepared)) {
-            is MaterializationResult.Success -> result.execution
+        val materializationResult = materializer(prepared, target).materialize(prepared)
+        if (!invocationStillActive()) {
+            return LeapExecutionCandidateResult.InvocationInvalidated
+        }
+        val execution = when (materializationResult) {
+            is MaterializationResult.Success -> materializationResult.execution
             is MaterializationResult.Failed ->
-                return LeapExecutionCandidateResult.MaterializationFailed(result.failure)
+                return LeapExecutionCandidateResult.MaterializationFailed(materializationResult.failure)
         }
 
         if (execution.executionTargetId != target.targetId) {
@@ -82,6 +103,8 @@ internal object LeapExecutionCandidateCoordinator {
 }
 
 internal sealed interface LeapExecutionCandidateResult {
+    data object InvocationInvalidated : LeapExecutionCandidateResult
+
     data class Ready(
         val execution: MaterializedExecution,
     ) : LeapExecutionCandidateResult
