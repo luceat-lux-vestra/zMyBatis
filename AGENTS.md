@@ -44,9 +44,9 @@ The registered action has no retained legacy execution fallback. Removed proxy/e
 
 ### Privacy/logging hardened baseline
 
-PR #117 removed the known INFO-level leakage of raw parameter values, extracted/dialog values, and rendered SQL from the shipping action. Current normal logging retains only non-sensitive metadata such as parameter counts and SQL length. `SensitiveLoggingContractTest` guards the known direct-interpolation regression patterns across production Kotlin logging call sites.
+PR #117 removed the known INFO-level leakage of raw parameter values, extracted/dialog values, and rendered SQL from the shipping action. #458 extends the same boundary to source/target identities and platform exception detail. Current normal logging retains only non-sensitive metadata such as stage/type, parameter counts, and SQL length. `SensitiveLoggingContractTest` guards the maintained direct-interpolation regression patterns across production Kotlin logging call sites.
 
-This is a bounded source-level regression guard, not semantic taint analysis or proof that every possible future alias/sink is safe. New code must not log raw parameter/input values, remembered values, raw `${}` content, rendered/materialized SQL, credentials, or equivalent sensitive source-derived content. This hardening does **not** validate or preserve the legacy action/evaluator architecture; #67 continues to own the final privacy/diagnostic evidence.
+This is a bounded source-level regression guard, not semantic taint analysis or proof that every possible future alias/sink is safe. New code must not log raw parameter/input values, remembered values, raw `${}` content, rendered/materialized SQL, credentials, mapper/source identities, datasource/schema display names, console titles, persisted selection IDs, platform exception messages, or equivalent sensitive source-derived content. Genuine fatal/platform throwables may still be attached to fatal diagnostics and rethrown; ordinary expected failures remain typed without retaining raw detail payload solely for logging. This hardening does **not** validate or preserve the legacy action/evaluator architecture; #67 continues to own the final privacy/diagnostic evidence.
 
 ## 3. DataGrip action and IDE boundary
 

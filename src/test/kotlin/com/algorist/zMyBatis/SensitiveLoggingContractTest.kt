@@ -10,24 +10,39 @@ class SensitiveLoggingContractTest {
 
     companion object {
         private val LOG_CALL = Regex("""\bLOG\.(?:trace|debug|info|warn|error)\s*\(""")
+        private const val SENSITIVE_ALIAS =
+            "rawSql|pureSql|sqlContent|sql|script|paramValues|values|password|credential|credentials|" +
+                "secret|token|sourceFileId|resourceKey|mapperKey|dataSourceName|schemaName|consoleTitle|consoleName"
         private val DIRECT_SENSITIVE_INTERPOLATION = Regex(
-            """\$(?:rawSql|pureSql|sqlContent|sql|script|paramValues|values|password|credential|credentials|secret|token)\b"""
+            """\$(?:$SENSITIVE_ALIAS)\b"""
         )
         private val BRACED_SENSITIVE_INTERPOLATION = Regex(
-            """\$\{(?:rawSql|pureSql|sqlContent|sql|script|paramValues|values|password|credential|credentials|secret|token)(?!\.(?:length|size)\b)[^}]*}"""
+            """\$\{(?:$SENSITIVE_ALIAS)(?!\.(?:length|size)\b)[^}]*}"""
         )
         private val EXTRACTED_SENSITIVE_INTERPOLATION = Regex(
             """\$\{extracted\.(?:params|objectParams)(?!\.size\b)[^}]*}"""
+        )
+        private val TARGET_OBJECT_PROPERTY_INTERPOLATION = Regex(
+            """\$\{(?:dataSource\.name|schema\.name|console\.title)(?:[^}]*)}"""
+        )
+        private val EXCEPTION_MESSAGE_DETAIL = Regex(
+            """\b(?:ex|exception|error|failure|fatal|restoreEx|cleanupFailure|cleanupFatal)\.message\b"""
+        )
+        private val PERSISTENCE_ID_INTERPOLATION = Regex(
+            """target-selection[^"\n]*""" + Regex.escape("$") + """(?:id|\{id})"""
         )
         private val FORBIDDEN = listOf(
             DIRECT_SENSITIVE_INTERPOLATION,
             BRACED_SENSITIVE_INTERPOLATION,
             EXTRACTED_SENSITIVE_INTERPOLATION,
+            TARGET_OBJECT_PROPERTY_INTERPOLATION,
+            EXCEPTION_MESSAGE_DETAIL,
+            PERSISTENCE_ID_INTERPOLATION,
         )
     }
 
     @Test
-    fun `production logs do not directly interpolate known sensitive query data`() {
+    fun `production logs do not directly interpolate sensitive query or identity data`() {
         val productionRoot = Path.of("src", "main", "kotlin")
         val productionFiles = Files.walk(productionRoot).use { paths ->
             paths
@@ -46,20 +61,26 @@ class SensitiveLoggingContractTest {
         }
 
         assertTrue(
-            "production logging must not directly interpolate known sensitive query/input data:\n" +
+            "production logging must not directly interpolate sensitive query/input/source/target data:\n" +
                 violations.joinToString("\n"),
             violations.isEmpty(),
         )
     }
 
     @Test
-    fun `logging detector rejects values but permits count and length metadata`() {
+    fun `logging detector rejects sensitive values but permits metadata`() {
         val dollar = '$'
         val unsafe = listOf(
             "LOG.info(\"sql=$dollar" + "rawSql\")",
             "LOG.warn(\"values=$dollar{values.keys}\")",
             "LOG.debug(\"input=$dollar" + "paramValues\")",
             "LOG.error(\"secret=$dollar{credential.value}\")",
+            "LOG.info(\"source=$dollar" + "resourceKey\")",
+            "LOG.warn(\"datasource=$dollar{dataSource.name}\")",
+            "LOG.warn(\"schema=$dollar{schema.name}\")",
+            "LOG.info(\"console=$dollar{console.title}\")",
+            "LOG.warn(\"target-selection index id '$dollar" + "id'\")",
+            "LOG.warn(\"failure=$dollar{ex.message}\")",
         )
         unsafe.forEach { sample ->
             assertFalse("unsafe sample must be rejected: $sample", findSensitiveInterpolations(sample).isEmpty())
@@ -69,6 +90,8 @@ class SensitiveLoggingContractTest {
             "LOG.info(\"sqlLength=$dollar{sql.length}\")",
             "LOG.info(\"parameterCount=$dollar{values.size}\")",
             "LOG.info(\"discovered=$dollar{extracted.params.size}\")",
+            "LOG.warn(\"failureType=$dollar{ex.javaClass.name}\")",
+            "LOG.info(\"stage=target-resolution-failed\")",
         )
         safeMetadata.forEach { sample ->
             assertTrue("metadata-only sample must remain allowed: $sample", findSensitiveInterpolations(sample).isEmpty())

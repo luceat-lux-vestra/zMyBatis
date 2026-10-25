@@ -32,19 +32,16 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.testFramework.LightVirtualFile
 
 internal sealed interface DatabaseToolsConsoleAcquisitionFailure {
-    data class SchemaSwitchFailed(val schemaName: String) : DatabaseToolsConsoleAcquisitionFailure
-    data class ConsoleCreationFailed(
-        val dataSourceName: String,
-        val detail: String?,
-    ) : DatabaseToolsConsoleAcquisitionFailure
+    data object SchemaSwitchFailed : DatabaseToolsConsoleAcquisitionFailure
+    data object ConsoleCreationFailed : DatabaseToolsConsoleAcquisitionFailure
 }
 
 internal sealed interface DatabaseToolsSqlExecutionFailure {
     data object InvocationInvalidated : DatabaseToolsSqlExecutionFailure
     data object ConsoleUnavailable : DatabaseToolsSqlExecutionFailure
-    data class EditorUnavailable(val consoleTitle: String) : DatabaseToolsSqlExecutionFailure
+    data object EditorUnavailable : DatabaseToolsSqlExecutionFailure
     data object ScriptModelUnavailable : DatabaseToolsSqlExecutionFailure
-    data class ExecutionFailed(val detail: String) : DatabaseToolsSqlExecutionFailure
+    data object ExecutionFailed : DatabaseToolsSqlExecutionFailure
 }
 
 /**
@@ -88,17 +85,15 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 .build()
             // Keep disposal authority with this resource, independently of Disposer diagnostics.
             val consoleLifetime = Disposer.newCheckedDisposable(console)
-            LOG.info("zMyBatis: console created for ${dataSource.name} (name=$consoleName)")
+            LOG.info("zMyBatis: console created")
 
             if (schema != null && !switchSchemaOnConsole(console, schema)) {
-                val schemaName = schema.name
                 Disposer.dispose(console)
                 console = null
-                onFailure(DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed(schemaName))
+                onFailure(DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed)
                 return
             }
 
-            val schemaName = schema?.name
             val targetId = databaseToolsExecutionTargetId(dataSource, schema)
 
             if (!forceNew) {
@@ -108,7 +103,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                     targetId = targetId,
                 )
                 if (cache.get(resourceKey, targetId) !== console) {
-                    LOG.warn("zMyBatis: console was not live after cache registration for $resourceKey — skipping query")
+                    LOG.warn("zMyBatis: console was not live after cache registration — skipping query")
                     if (!consoleLifetime.isDisposed) {
                         Disposer.dispose(console)
                     }
@@ -125,26 +120,15 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
 
             onConsoleReady(console)
             console = null
-            LOG.info(
-                "zMyBatis: session prepared for $resourceKey " +
-                    "(ds=${dataSource.name}, schema=${schemaName ?: "<default>"})"
-            )
+            LOG.info("zMyBatis: session prepared")
         } catch (ex: ProcessCanceledException) {
             console?.let { Disposer.dispose(it) }
             throw ex
         } catch (ex: Exception) {
             console?.let { Disposer.dispose(it) }
-            LOG.warn(
-                "zMyBatis: console creation failed " +
-                    "(dataSource=${dataSource.name}, type=${ex.javaClass.name})"
-            )
+            LOG.warn("zMyBatis: console creation failed (type=${ex.javaClass.name})")
             if (!isProjectUnavailable()) {
-                onFailure(
-                    DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed(
-                        dataSourceName = dataSource.name,
-                        detail = ex.message,
-                    )
-                )
+                onFailure(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
             }
         } catch (fatal: Throwable) {
             console?.let { Disposer.dispose(it) }
@@ -158,15 +142,12 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             val kind = DasUtil.getKind(schema)
             val path = ObjectPath.create(schema.name, kind)
             console.switchSchema(SearchPath.of(path), false)
-            LOG.info("zMyBatis: schema '${schema.name}' (kind=$kind) switched on console")
+            LOG.info("zMyBatis: schema switched on console (kind=$kind)")
             true
         } catch (ex: ProcessCanceledException) {
             throw ex
         } catch (ex: Exception) {
-            LOG.warn(
-                "zMyBatis: schema switch failed " +
-                    "(schema=${schema.name}, type=${ex.javaClass.name})"
-            )
+            LOG.warn("zMyBatis: schema switch failed (type=${ex.javaClass.name})")
             false
         } catch (fatal: Throwable) {
             LOG.error("zMyBatis: fatal schema-switch failure", fatal)
@@ -251,7 +232,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             .firstOrNull { it is EditorEx && !it.isDisposed } as? EditorEx
 
         if (existingEditor == null) {
-            LOG.info("zMyBatis: no existing editor for console '${console.title}', attempting to open...")
+            LOG.info("zMyBatis: no existing console editor, attempting to open one")
             val vFile = consolePsiFile.virtualFile
             if (vFile != null) {
                 FileEditorManager.getInstance(project).openFile(vFile, true)
@@ -278,8 +259,8 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                             onFailure,
                         )
                     } else {
-                        LOG.warn("zMyBatis: editor still null after opening for '${console.title}'")
-                        onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable(console.title))
+                        LOG.warn("zMyBatis: console editor still unavailable after opening")
+                        onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
                     }
                 }, ModalityState.defaultModalityState())
             } else {
@@ -318,7 +299,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         }
         if (consoleEditor.isDisposed) {
             LOG.warn("zMyBatis: console editor unavailable before execution preparation")
-            onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable(console.title))
+            onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
             return
         }
 
@@ -369,11 +350,11 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             if (consoleEditor.isDisposed) {
                 LOG.warn("zMyBatis: console editor unavailable before native query invocation")
                 restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
-                onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable(console.title))
+                onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
                 return
             }
 
-            LOG.info("zMyBatis: executing on console '${console.title}'")
+            LOG.info("zMyBatis: executing prepared artifact on console")
             JdbcConsoleProvider.doRunQueryInConsole(console, info)
             onExecuted()
         } catch (ex: ProcessCanceledException) {
@@ -383,11 +364,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             LOG.warn("zMyBatis: SQL execution failed (type=${ex.javaClass.name})")
             restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
             if (!isProjectUnavailable()) {
-                onFailure(
-                    DatabaseToolsSqlExecutionFailure.ExecutionFailed(
-                        ex.message ?: ex.javaClass.simpleName,
-                    )
-                )
+                onFailure(DatabaseToolsSqlExecutionFailure.ExecutionFailed)
             }
         } catch (fatal: Throwable) {
             LOG.error("zMyBatis: fatal SQL execution failure", fatal)

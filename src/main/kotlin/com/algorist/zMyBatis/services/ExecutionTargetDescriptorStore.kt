@@ -75,7 +75,7 @@ internal class ExecutionTargetDescriptorStore(project: Project) {
             val valid = mutableListOf<PersistedExecutionTargetSelection>()
             for (id in ids) {
                 if (!ExecutionTargetSelectionPersistenceFormat.isValidSelectionId(id)) {
-                    LOG.warn("zMyBatis: pruning malformed target-selection index id '$id'")
+                    LOG.warn("zMyBatis: pruning malformed target-selection index entry")
                     removeFromIndexLocked(id)
                     continue
                 }
@@ -85,7 +85,7 @@ internal class ExecutionTargetDescriptorStore(project: Project) {
                     selection == null ||
                     ExecutionTargetSelectionPersistenceFormat.selectionId(selection.association.sourceFileId) != id
                 ) {
-                    LOG.info("zMyBatis: pruning stale or mismatched target-selection record '$id'")
+                    LOG.info("zMyBatis: pruning stale or mismatched target-selection record")
                     removeRecordByIdLocked(id)
                     continue
                 }

@@ -42,16 +42,17 @@ class ConsoleCacheDiagnosticSeverityContractTest {
         assertFalse(
             "ordinary diagnostics must not attach the exception object",
             ordinaryBranch.contains(
-                "LOG.warn(\"zMyBatis: failed to register console sentinel for \$mapperKey\", ex)"
+                "LOG.warn(\"zMyBatis: failed to register console sentinel\", ex)"
             ),
         )
 
         val fatalBranch = registration.substring(fatalCatch)
         assertTrue(
             fatalBranch.contains(
-                "LOG.error(\"zMyBatis: fatal console sentinel registration failure for \$mapperKey\", fatal)"
+                "LOG.error(\"zMyBatis: fatal console sentinel registration failure\", fatal)"
             )
         )
+        assertFalse("fatal diagnostic must not interpolate mapper/source identity", fatalBranch.contains("\$mapperKey"))
         assertTrue(fatalBranch.contains("disposeSentinelAfterRegistrationFailure(sentinel, fatal)"))
         assertTrue(fatalBranch.contains("throw fatal"))
     }
