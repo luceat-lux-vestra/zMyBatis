@@ -44,18 +44,28 @@ class ConsoleCacheOwnedResourceDisposalContractTest {
     }
 
     @Test
-    fun `adapter cache rejection avoids double disposal after shutdown race`() {
+    fun `REUSE checks matching cache under a keyed lease before constructing a replacement`() {
         val adapter = Files.readString(
             repositoryRoot().resolve(
                 "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt",
             ),
         )
-        val registrationCheck = adapter
-            .substringAfter("if (cache.get(resourceKey, targetId) !== console) {")
-            .substringBefore("console = null")
+        val acquisition = adapter
+            .substringAfter("fun acquireAndDeliverConsole(")
+            .substringBefore("private fun switchSchemaOnConsole")
 
-        assertTrue(registrationCheck.contains("if (!consoleLifetime.isDisposed) {"))
-        assertTrue(registrationCheck.contains("Disposer.dispose(console)"))
+        val lease = acquisition.indexOf("cache.beginReuseLease(resourceKey)")
+        val cached = acquisition.indexOf("cache.get(resourceKey, targetId)")
+        val schemaRecheck = acquisition.indexOf("switchSchemaOnConsole(cached, schema)")
+        val reuse = acquisition.indexOf("onConsoleReady(cached, releaseReuseLease)")
+        val construct = acquisition.indexOf("JdbcConsole.newConsole(project)")
+
+        assertTrue("REUSE must acquire same-source ownership before cache access", lease >= 0)
+        assertTrue("matching cache lookup must occur after keyed ownership", cached > lease)
+        assertTrue("cached explicit schema must be re-applied before handoff", schemaRecheck > cached)
+        assertTrue("a matching live console must be handed off directly", reuse > schemaRecheck)
+        assertTrue("cache reuse must be attempted before constructing a replacement", construct > reuse)
+        assertTrue(adapter.contains("data object ReuseBusy : DatabaseToolsConsoleAcquisitionFailure"))
     }
 
     @Test

@@ -88,7 +88,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     )
 
     private val cache = ConcurrentHashMap<String, Entry>()
-    private val activeSelections = ConcurrentHashMap.newKeySet<String>()
+    private val activeReuseLeases = ConcurrentHashMap.newKeySet<String>()
     private val lifecycleLock = Any()
 
     @Volatile
@@ -143,6 +143,13 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
                 }
                 return@synchronized null
             }
+            if (!entry.console.isValid) {
+                if (cache.remove(mapperKey, entry)) {
+                    rejectedEntry = entry
+                    LOG.info("zMyBatis: invalid ephemeral console observed — evicting")
+                }
+                return@synchronized null
+            }
             if (!consoleCacheTargetIdentityMatches(entry.targetId, expectedTargetId)) {
                 if (cache.remove(mapperKey, entry)) {
                     rejectedEntry = entry
@@ -171,12 +178,14 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         }
     }
 
-    internal fun beginSelection(mapperKey: String): Boolean = synchronized(lifecycleLock) {
-        !shuttingDown && activeSelections.add(mapperKey)
+    internal fun beginReuseLease(mapperKey: String): Boolean = synchronized(lifecycleLock) {
+        !shuttingDown && activeReuseLeases.add(mapperKey)
     }
 
-    internal fun endSelection(mapperKey: String) {
-        activeSelections.remove(mapperKey)
+    internal fun endReuseLease(mapperKey: String) {
+        synchronized(lifecycleLock) {
+            activeReuseLeases.remove(mapperKey)
+        }
     }
 
 
@@ -301,7 +310,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     fun markShuttingDown() {
         synchronized(lifecycleLock) {
             shuttingDown = true
-            activeSelections.clear()
+            activeReuseLeases.clear()
         }
         LOG.info("zMyBatis: markShuttingDown — console acquisition disabled")
     }
@@ -317,7 +326,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     override fun dispose() {
         val detachedEntries = synchronized(lifecycleLock) {
             shuttingDown = true
-            activeSelections.clear()
+            activeReuseLeases.clear()
             val entries = cache.values.toList()
             cache.clear()
             entries

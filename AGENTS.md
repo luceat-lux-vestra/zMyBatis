@@ -82,8 +82,8 @@ Hardening #57 established the stable datasource/schema safety baseline, and #260
 - development-only v2 project-scoped records were never distributed and are not read or migrated;
 - startup only prunes stale current-v3 source associations and creates no `JdbcConsole`;
 - datasource/schema resources are resolved exactly when an explicit action needs a console;
-- `REUSE`/`NEW_EACH` are ephemeral resource policies; live console registration/disposal is not v3 target-persistence authority; the project-scoped REUSE cache owns retained live consoles and must dispose superseded entries and all remaining cached consoles when the service is disposed;
-- cancellation and shutdown remain fail-closed across target resolution/resource acquisition.
+- `REUSE`/`NEW_EACH` are ephemeral resource policies; live console registration/disposal is not v3 target-persistence authority. REUSE first checks the matching live console under a project-scoped source-key lease, so same-source invocations cannot concurrently mutate or replace one console; unrelated source keys remain independent. The cache owns retained live consoles and must dispose stale/superseded entries and all remaining cached consoles when the service is disposed.
+- cancellation, terminal execution callbacks, and shutdown release or clear REUSE ownership fail-closed across target resolution/resource acquisition.
 
 Development-only v2 persistence was never distributed and has no runtime reader or migration path. `ConsoleCacheService` owns live resource/selection/shutdown lifecycle only and has no persistence storage surface.
 
