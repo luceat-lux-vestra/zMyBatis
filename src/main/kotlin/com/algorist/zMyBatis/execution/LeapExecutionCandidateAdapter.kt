@@ -87,10 +87,6 @@ internal class LeapExecutionCandidateAdapter(
                     onResult(LeapExecutionCandidateResult.InvocationInvalidated)
                 }
             }
-
-            override fun onThrowable(error: Throwable) {
-                throw error
-            }
         }.queue()
     }
 }

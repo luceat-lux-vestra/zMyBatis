@@ -28,7 +28,6 @@ class LeapExecutionCandidateAdapterTest {
         assertTrue(adapter.contains("if (!liveInvocation())"))
         assertTrue(adapter.contains("LeapExecutionCandidateResult.InvocationInvalidated"))
         assertTrue(adapter.contains("override fun onCancel()"))
-        assertTrue(adapter.contains("override fun onThrowable(error: Throwable)"))
         assertFalse(adapter.contains("AnActionEvent"))
         assertFalse(adapter.contains("Editor"))
         assertFalse(adapter.contains("JdbcConsole"))
