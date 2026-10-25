@@ -1,6 +1,6 @@
 # zMyBatis test contracts
 
-The required `Test` CI context is product evidence, not a line-coverage target. `./gradlew check` must fail when one of the automated contracts below regresses. Template fixtures, empty files, debug-only reproductions, and `println` output are not considered evidence.
+The required `Test` CI context is product evidence, not a line-coverage target. `./gradlew check` must fail when one of the automated contracts below regresses. Template fixtures, empty files, debug-only reproductions, and `println` output are not considered evidence. The old IntelliJ template rename test and evaluator debug/reproduction files were removed because they do not own current product behavior.
 
 ## Automated contract map
 
@@ -64,7 +64,7 @@ The maintained Starter/Driver E2E supplies representative full click-throughs fo
 
 Automated persistence/lifecycle evidence covers only current v3 state. Development-only v2 persistence was never distributed and has no compatibility reader.
 
-The tests prove project-scoped v3 persistence, stable datasource UUID + explicit schema identity, stale-source pruning without console creation, exact target re-resolution, cache target matching, shutdown gating, disposal, and immutable artifact delivery. Real host evidence is still required when changing JetBrains datasource/schema semantics, DataGrip behavior, or delayed native console lifecycle interactions.
+The tests prove project-scoped v3 persistence, stable datasource UUID + explicit schema identity, stale-source pruning without console creation, exact target re-resolution, cache target matching, shutdown gating, disposal, and immutable artifact delivery. Real host evidence is still required when changing JetBrains datasource/schema semantics, DataGrip behavior, or delayed native console lifecycle interactions. Those gaps are explicit so a green `Test` context is not misrepresented as broader platform proof.
 
 ## Other gates
 
