@@ -386,3 +386,29 @@ Platform evidence owner #67 must remove this isolation when the SDK/test loader 
 preserve the two namespaces. The Java annotation and XML mapper-method fixtures permit
 VFS access only to their actual MyBatis dependency JAR, scoped to each fixture disposable, so they also work
 when the checkout/sandbox is outside the user's home directory.
+
+## Leap candidate background responsiveness and cancellation handoff evidence
+
+`LeapExecutionCandidateAdapterProjectFixtureTest` runs the shipping
+`LeapExecutionCandidateAdapter` inside the real IntelliJ test application rather than treating
+source-order assertions as scheduler evidence. A latch-controlled injected candidate deliberately
+holds the `Task.Backgroundable` worker while an independent EDT sentinel is posted; the sentinel
+must complete before the candidate is released, and the candidate records that it is not running
+on the dispatch thread.
+
+The same fixture captures the Progress API indicator associated with the shipping background task,
+cancels it through `ProgressIndicator.cancel()`, releases the controlled producer, and requires
+the next bounded `checkCanceled()` probe to take the task through cancellation without emitting a
+normal candidate result. A separate delayed-completion case invalidates the invocation while the
+candidate is outstanding and proves the adapter converts that completion to
+`InvocationInvalidated`; the delivery coordinator's existing typed branch returns before approval
+or Database Tools delivery.
+
+All coordination is latch/future based. Fixture timeouts only fail a hung test; they are not product
+latency targets. This evidence proves the #462 candidate scheduling/cancellation handoff, not a hard
+interruption bound inside one stock-MyBatis parse/evaluation call, large-mapper/source-graph
+responsiveness, large-input responsiveness, retained-resource behavior, or DataGrip host parity.
+
+E2E applicability: the fixture owns the scheduler/cancellation invariant directly. The normal
+Starter/Driver suite remains required on the exact final HEAD as packaged-plugin regression evidence,
+but it does not replace this controlled IntelliJ scheduler proof.
