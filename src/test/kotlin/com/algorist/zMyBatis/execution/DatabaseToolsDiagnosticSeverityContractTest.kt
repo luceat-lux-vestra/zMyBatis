@@ -23,6 +23,17 @@ class DatabaseToolsDiagnosticSeverityContractTest {
         assertTrue(adapter.contains("zMyBatis: schema switch failed"))
         assertTrue(adapter.contains("zMyBatis: SQL execution failed"))
 
+        listOf(
+            "data object SchemaSwitchFailed",
+            "data object ConsoleCreationFailed",
+            "data object EditorUnavailable",
+            "data object ExecutionFailed",
+        ).forEach { payloadFreeFailure ->
+            assertTrue("handled failure must remain typed without raw payload: $payloadFreeFailure", adapter.contains(payloadFreeFailure))
+        }
+        assertFalse(adapter.contains("detail = ex.message"))
+        assertFalse(adapter.contains("ex.message ?: ex.javaClass.simpleName"))
+
         assertFalse(adapter.contains("LOG.error(\"zMyBatis: failed to create console"))
         assertFalse(adapter.contains("LOG.error(\"zMyBatis: execution failed\""))
 

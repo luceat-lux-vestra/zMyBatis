@@ -139,7 +139,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             val entry = cache[mapperKey] ?: return@synchronized null
             if (entry.sentinel.isDisposed) {
                 if (cache.remove(mapperKey, entry)) {
-                    LOG.info("zMyBatis: disposed ephemeral console observed for $mapperKey")
+                    LOG.info("zMyBatis: disposed ephemeral console observed")
                 }
                 return@synchronized null
             }
@@ -198,7 +198,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     ): Boolean {
         val sentinel = Disposer.newCheckedDisposable(console)
         if (sentinel.isDisposed) {
-            LOG.warn("zMyBatis: console already disposed at registration for $mapperKey — rejecting")
+            LOG.warn("zMyBatis: console already disposed at registration — rejecting")
             return false
         }
 
@@ -207,9 +207,9 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             Disposer.register(sentinel) {
                 synchronized(lifecycleLock) {
                     if (!cache.remove(mapperKey, entry)) {
-                        LOG.info("zMyBatis: stale sentinel fired for $mapperKey — ignoring")
+                        LOG.info("zMyBatis: stale console sentinel fired — ignoring")
                     } else {
-                        LOG.info("zMyBatis: ephemeral console disposed for $mapperKey")
+                        LOG.info("zMyBatis: ephemeral console disposed")
                     }
                 }
             }
@@ -218,13 +218,13 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             throw ex
         } catch (ex: Exception) {
             LOG.warn(
-                "zMyBatis: failed to register console sentinel for $mapperKey " +
+                "zMyBatis: failed to register console sentinel " +
                     "(type=${ex.javaClass.name})"
             )
             disposeSentinelAfterRegistrationFailure(sentinel, ex)
             return false
         } catch (fatal: Throwable) {
-            LOG.error("zMyBatis: fatal console sentinel registration failure for $mapperKey", fatal)
+            LOG.error("zMyBatis: fatal console sentinel registration failure", fatal)
             disposeSentinelAfterRegistrationFailure(sentinel, fatal)
             throw fatal
         }
@@ -240,7 +240,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         }
 
         if (!accepted) {
-            LOG.info("zMyBatis: rejecting console registration during shutdown/disposal for $mapperKey")
+            LOG.info("zMyBatis: rejecting console registration during shutdown/disposal")
             if (!sentinel.isDisposed) Disposer.dispose(sentinel)
             return false
         }
@@ -249,7 +249,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             ?.takeIf { it.console !== console }
             ?.let { disposeDetachedEntries(listOf(it)) }
 
-        LOG.info("zMyBatis: ephemeral console cached for $mapperKey")
+        LOG.info("zMyBatis: ephemeral console cached")
         return true
     }
 
