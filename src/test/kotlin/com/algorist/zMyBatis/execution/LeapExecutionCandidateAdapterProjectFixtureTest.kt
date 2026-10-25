@@ -35,6 +35,8 @@ import java.util.concurrent.atomic.AtomicReference
 
 class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
 
+    override fun runInDispatchThread(): Boolean = false
+
     fun testBlockedCandidateRunsOffEdtAndLeavesEdtResponsive() {
         val inputs = candidateInputs()
         val started = CountDownLatch(1)
