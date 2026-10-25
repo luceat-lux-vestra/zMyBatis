@@ -18,6 +18,10 @@ import java.util.jar.JarFile
  * of the MyBatis classes loaded from this artifact.
  */
 internal object MyBatisRuntimeArtifact {
+    fun resolve(type: Class<*>): URL? =
+        type.protectionDomain?.codeSource?.location
+            ?: fromClassResource(type)
+
     fun fromClassResource(type: Class<*>): URL? {
         val resourcePath = type.name.replace('.', '/') + ".class"
         val resource = type.getResource("/$resourcePath") ?: return null

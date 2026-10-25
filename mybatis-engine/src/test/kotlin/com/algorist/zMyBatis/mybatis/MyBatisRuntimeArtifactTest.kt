@@ -18,7 +18,7 @@ class MyBatisRuntimeArtifactTest {
 
     @Test
     fun actualMyBatisArtifactCanLoadIsolatedConfigurationAndMapperBuilder() {
-        val location = MyBatisRuntimeArtifact.fromClassResource(Configuration::class.java)
+        val location = MyBatisRuntimeArtifact.resolve(Configuration::class.java)
         assertNotNull(location)
         URLClassLoader(arrayOf(location!!), ClassLoader.getPlatformClassLoader()).use { loader ->
             assertSame(loader, Class.forName("org.apache.ibatis.session.Configuration", false, loader).classLoader)
@@ -39,7 +39,7 @@ class MyBatisRuntimeArtifactTest {
             val classFromResourceOnlyLoader = defineWithoutCodeSource(classResource)
             assertNull(classFromResourceOnlyLoader.protectionDomain?.codeSource?.location)
 
-            val recovered = MyBatisRuntimeArtifact.fromClassResource(classFromResourceOnlyLoader)
+            val recovered = MyBatisRuntimeArtifact.resolve(classFromResourceOnlyLoader)
             assertEquals(jarPath.toUri().toURL(), recovered)
             URLClassLoader(arrayOf(recovered!!), ClassLoader.getPlatformClassLoader()).use { loader ->
                 assertSame(loader, Class.forName(probeType.name, false, loader).classLoader)
@@ -59,7 +59,7 @@ class MyBatisRuntimeArtifactTest {
             val classFromResourceOnlyLoader = defineWithoutCodeSource(classFile.toUri().toURL())
             assertNull(classFromResourceOnlyLoader.protectionDomain?.codeSource?.location)
 
-            val recovered = MyBatisRuntimeArtifact.fromClassResource(classFromResourceOnlyLoader)
+            val recovered = MyBatisRuntimeArtifact.resolve(classFromResourceOnlyLoader)
             assertEquals(root.toUri().toURL(), recovered)
         } finally {
             Files.deleteIfExists(classFile)
