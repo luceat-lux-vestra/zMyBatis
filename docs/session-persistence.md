@@ -32,6 +32,7 @@ On an explicit zMyBatis execution action:
 
 - persisted v3 target authority is resolved before console reuse;
 - a REUSE cache entry carries its immutable `ExecutionTargetId` and is returned only when it matches the current exact target;
+- REUSE acquisition is guarded by one project-scoped source-key lease held through the terminal execution callback. A second overlapping invocation for the same source fails closed instead of sharing, replacing, or disposing the active console; unrelated source keys are independent;
 - otherwise the v3 descriptor resolves to exactly one live datasource and one named schema through `DatabaseToolsTargetResolver`;
 - missing/ambiguous datasource or schema invalidates the stored selection and requires explicit re-selection;
 - target validity is rechecked after modal/background boundaries and before native query dispatch;
@@ -39,7 +40,7 @@ On an explicit zMyBatis execution action:
 - `NEW_EACH` acquires a fresh console but uses the same target authority;
 - explicit named datasource/schema selection updates v3 independently of live-console registration.
 
-Live console caching is an ephemeral optimization. Closing/disposal does not delete persisted v3 target identity, and service disposal releases owned console resources without mutating persistence.
+Live console caching is an ephemeral optimization. A matching live REUSE console has its explicit schema re-applied before handoff and is used before any replacement is constructed; disposed/invalid, schema-switch-failed, or target-mismatched entries are evicted. Cancellation/failure releases the keyed REUSE lease, while shutdown clears acquisition ownership and rejects new leases. Closing/disposal does not delete persisted v3 target identity, and service disposal releases owned console resources without mutating persistence.
 
 ## Unsupported historical state
 

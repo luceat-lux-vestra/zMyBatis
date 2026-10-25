@@ -84,6 +84,24 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         )
     }
 
+    @Test
+    fun `REUSE lease is held through terminal execution instead of acquisition only`() {
+        val adapter = source(
+            "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"
+        )
+        val delivery = source(
+            "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionDeliveryCoordinator.kt"
+        )
+
+        assertTrue(adapter.contains("cache.beginReuseLease(resourceKey)"))
+        assertTrue(adapter.contains("cache.endReuseLease(resourceKey)"))
+        assertTrue(adapter.contains("onConsoleReady: (JdbcConsole, () -> Unit) -> Unit"))
+        assertTrue(delivery.contains("onConsoleReady = { console, releaseConsole ->"))
+        assertTrue(delivery.contains("onFinished = releaseConsole"))
+        assertFalse(adapter.contains("beginSelection("))
+        assertFalse(adapter.contains("endSelection("))
+    }
+
     private fun source(relativePath: String): String =
         Files.readString(repositoryRoot().resolve(relativePath))
 

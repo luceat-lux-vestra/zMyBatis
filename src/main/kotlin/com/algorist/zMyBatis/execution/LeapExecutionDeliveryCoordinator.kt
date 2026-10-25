@@ -145,7 +145,7 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
             schema = deliveryTarget.schema,
             resourceKey = resourceKey,
             forceNew = forceNewConsole,
-            onConsoleReady = { console ->
+            onConsoleReady = { console, releaseConsole ->
                 consoleAdapter.executeMaterialized(
                     console = console,
                     artifact = artifact,
@@ -161,6 +161,7 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
                     onFailure = { failure ->
                         onFailure(LeapExecutionDeliveryFailure.SqlExecutionFailed(failure))
                     },
+                    onFinished = releaseConsole,
                 )
             },
             onFailure = { failure ->

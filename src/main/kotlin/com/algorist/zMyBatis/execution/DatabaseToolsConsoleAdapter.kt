@@ -30,8 +30,10 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.testFramework.LightVirtualFile
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal sealed interface DatabaseToolsConsoleAcquisitionFailure {
+    data object ReuseBusy : DatabaseToolsConsoleAcquisitionFailure
     data object SchemaSwitchFailed : DatabaseToolsConsoleAcquisitionFailure
     data object ConsoleCreationFailed : DatabaseToolsConsoleAcquisitionFailure
 }
@@ -68,13 +70,50 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         schema: DasNamespace?,
         resourceKey: String,
         forceNew: Boolean,
-        onConsoleReady: (JdbcConsole) -> Unit,
+        onConsoleReady: (JdbcConsole, () -> Unit) -> Unit,
         onFailure: (DatabaseToolsConsoleAcquisitionFailure) -> Unit,
     ) {
+        if (isProjectUnavailable()) return
+
+        val cache = ConsoleCacheService.getInstance(project)
+        val reuseLeaseHeld = !forceNew && cache.beginReuseLease(resourceKey)
+        if (!forceNew && !reuseLeaseHeld) {
+            if (!isProjectUnavailable()) {
+                onFailure(DatabaseToolsConsoleAcquisitionFailure.ReuseBusy)
+            }
+            return
+        }
+
+        val reuseLeaseReleased = AtomicBoolean(false)
+        val releaseReuseLease = {
+            if (reuseLeaseHeld && reuseLeaseReleased.compareAndSet(false, true)) {
+                cache.endReuseLease(resourceKey)
+            }
+        }
+
         var console: JdbcConsole? = null
         try {
-            if (isProjectUnavailable()) return
-            val cache = ConsoleCacheService.getInstance(project)
+            if (isProjectUnavailable()) {
+                releaseReuseLease()
+                return
+            }
+
+            val targetId = databaseToolsExecutionTargetId(dataSource, schema)
+            if (!forceNew) {
+                val cached = cache.get(resourceKey, targetId)
+                if (cached != null) {
+                    if (schema != null && !switchSchemaOnConsole(cached, schema)) {
+                        cache.evict(resourceKey)
+                        releaseReuseLease()
+                        onFailure(DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed)
+                        return
+                    }
+                    onConsoleReady(cached, releaseReuseLease)
+                    LOG.info("zMyBatis: matching live console reused")
+                    return
+                }
+            }
+
             val sqlFileType = FileTypeManager.getInstance().getFileTypeByExtension("sql")
             val consoleName = resourceKey.substringAfterLast('/').substringAfterLast('\\') + " - zMyBatis"
             val lightFile = LightVirtualFile(consoleName, sqlFileType, "")
@@ -90,24 +129,35 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             if (schema != null && !switchSchemaOnConsole(console, schema)) {
                 Disposer.dispose(console)
                 console = null
+                releaseReuseLease()
                 onFailure(DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed)
                 return
             }
 
-            val targetId = databaseToolsExecutionTargetId(dataSource, schema)
-
             if (!forceNew) {
-                cache.putEphemeral(
-                    mapperKey = resourceKey,
-                    console = console,
-                    targetId = targetId,
-                )
+                if (!cache.putEphemeral(
+                        mapperKey = resourceKey,
+                        console = console,
+                        targetId = targetId,
+                    )
+                ) {
+                    if (!consoleLifetime.isDisposed) {
+                        Disposer.dispose(console)
+                    }
+                    console = null
+                    releaseReuseLease()
+                    if (!isProjectUnavailable()) {
+                        onFailure(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
+                    }
+                    return
+                }
                 if (cache.get(resourceKey, targetId) !== console) {
                     LOG.warn("zMyBatis: console was not live after cache registration — skipping query")
                     if (!consoleLifetime.isDisposed) {
                         Disposer.dispose(console)
                     }
                     console = null
+                    releaseReuseLease()
                     return
                 }
             }
@@ -115,23 +165,27 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             if (isProjectUnavailable()) {
                 Disposer.dispose(console)
                 console = null
+                releaseReuseLease()
                 return
             }
 
-            onConsoleReady(console)
+            onConsoleReady(console, releaseReuseLease)
             console = null
             LOG.info("zMyBatis: session prepared")
         } catch (ex: ProcessCanceledException) {
             console?.let { Disposer.dispose(it) }
+            releaseReuseLease()
             throw ex
         } catch (ex: Exception) {
             console?.let { Disposer.dispose(it) }
+            releaseReuseLease()
             LOG.warn("zMyBatis: console creation failed (type=${ex.javaClass.name})")
             if (!isProjectUnavailable()) {
                 onFailure(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
             }
         } catch (fatal: Throwable) {
             console?.let { Disposer.dispose(it) }
+            releaseReuseLease()
             LOG.error("zMyBatis: fatal console creation failure", fatal)
             throw fatal
         }
@@ -171,19 +225,28 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         areSourceRevisionsCurrent: (Map<SourceFileId, SourceRevision>) -> Boolean,
         onExecuted: () -> Unit,
         onFailure: (DatabaseToolsSqlExecutionFailure) -> Unit,
+        onFinished: () -> Unit = {},
     ) {
         val boundTarget = artifact.executionTargetId
         val sourceRevisions = artifact.sourceRevisions
-        if (
-            !materializedDeliveryValid(
+        val deliveryValid = try {
+            materializedDeliveryValid(
                 boundTarget = boundTarget,
                 sourceRevisions = sourceRevisions,
                 currentTarget = currentTarget,
                 isInvocationActive = isInvocationActive,
                 areSourceRevisionsCurrent = areSourceRevisionsCurrent,
             )
-        ) {
-            onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
+        } catch (failure: Throwable) {
+            onFinished()
+            throw failure
+        }
+        if (!deliveryValid) {
+            try {
+                onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
+            } finally {
+                onFinished()
+            }
             return
         }
 
@@ -201,6 +264,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             },
             onExecuted = onExecuted,
             onFailure = onFailure,
+            onFinished = onFinished,
         )
     }
 
@@ -210,19 +274,38 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         preExecutionCheck: () -> Boolean,
         onExecuted: () -> Unit,
         onFailure: (DatabaseToolsSqlExecutionFailure) -> Unit,
+        onFinished: () -> Unit = {},
     ) {
-        if (isProjectUnavailable()) return
+        val finished = AtomicBoolean(false)
+        val finish = {
+            if (finished.compareAndSet(false, true)) {
+                onFinished()
+            }
+        }
+        fun fail(failure: DatabaseToolsSqlExecutionFailure) {
+            try {
+                onFailure(failure)
+            } finally {
+                finish()
+            }
+        }
+
+        if (isProjectUnavailable()) {
+            finish()
+            return
+        }
         if (!preExecutionCheck()) {
-            onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
+            fail(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
             return
         }
         if (!console.isValid) {
             LOG.warn("zMyBatis: console unavailable before SQL execution")
-            onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
+            fail(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
             return
         }
         if (sql.isBlank()) {
             LOG.warn("zMyBatis: SQL is blank, skipping execution")
+            finish()
             return
         }
 
@@ -237,34 +320,40 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             if (vFile != null) {
                 FileEditorManager.getInstance(project).openFile(vFile, true)
                 ApplicationManager.getApplication().invokeLater({
-                    if (isProjectUnavailable()) return@invokeLater
-                    if (!preExecutionCheck()) {
-                        onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
-                        return@invokeLater
-                    }
-                    if (!console.isValid) {
-                        LOG.warn("zMyBatis: console unavailable after editor-open scheduling")
-                        onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
-                        return@invokeLater
-                    }
-                    val retryEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
-                        .firstOrNull { it is EditorEx && !it.isDisposed } as? EditorEx
-                    if (retryEditor != null) {
-                        performExecution(
-                            console,
-                            sql,
-                            retryEditor,
-                            preExecutionCheck,
-                            onExecuted,
-                            onFailure,
-                        )
-                    } else {
-                        LOG.warn("zMyBatis: console editor still unavailable after opening")
-                        onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
+                    try {
+                        if (isProjectUnavailable()) return@invokeLater
+                        if (!preExecutionCheck()) {
+                            onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
+                            return@invokeLater
+                        }
+                        if (!console.isValid) {
+                            LOG.warn("zMyBatis: console unavailable after editor-open scheduling")
+                            onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
+                            return@invokeLater
+                        }
+                        val retryEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
+                            .firstOrNull { it is EditorEx && !it.isDisposed } as? EditorEx
+                        if (retryEditor != null) {
+                            performExecution(
+                                console,
+                                sql,
+                                retryEditor,
+                                preExecutionCheck,
+                                onExecuted,
+                                onFailure,
+                                finish,
+                            )
+                        } else {
+                            LOG.warn("zMyBatis: console editor still unavailable after opening")
+                            onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
+                        }
+                    } finally {
+                        finish()
                     }
                 }, ModalityState.defaultModalityState())
             } else {
                 LOG.warn("zMyBatis: console virtual file is null")
+                finish()
             }
         } else {
             performExecution(
@@ -274,6 +363,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 preExecutionCheck,
                 onExecuted,
                 onFailure,
+                finish,
             )
         }
     }
@@ -286,20 +376,36 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         preExecutionCheck: () -> Boolean,
         onExecuted: () -> Unit,
         onFailure: (DatabaseToolsSqlExecutionFailure) -> Unit,
+        onFinished: () -> Unit,
     ) {
-        if (isProjectUnavailable()) return
+        if (isProjectUnavailable()) {
+            onFinished()
+            return
+        }
         if (!preExecutionCheck()) {
-            onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
+            try {
+                onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
+            } finally {
+                onFinished()
+            }
             return
         }
         if (!console.isValid) {
             LOG.warn("zMyBatis: console unavailable before execution preparation")
-            onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
+            try {
+                onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
+            } finally {
+                onFinished()
+            }
             return
         }
         if (consoleEditor.isDisposed) {
             LOG.warn("zMyBatis: console editor unavailable before execution preparation")
-            onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
+            try {
+                onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
+            } finally {
+                onFinished()
+            }
             return
         }
 
@@ -370,6 +476,8 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             LOG.error("zMyBatis: fatal SQL execution failure", fatal)
             restoreConsoleDocumentAfterFailure(consoleDoc, originalText)
             throw fatal
+        } finally {
+            onFinished()
         }
     }
 

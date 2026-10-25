@@ -15,11 +15,15 @@ import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.XmlStatementId
+import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAcquisitionFailure
 import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAdapter
 import com.algorist.zMyBatis.execution.DatabaseToolsSqlExecutionFailure
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.dataSource.LocalDataSource
 import com.intellij.database.dataSource.LocalDataSourceManager
+import com.intellij.database.psi.DbDataSource
+import com.intellij.database.psi.DbPsiFacade
+import com.intellij.database.util.DbImplUtil
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.fileTypes.FileTypeManager
@@ -155,6 +159,7 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         val artifact = materialized("SELECT 417", target)
         var executed = false
         var failure: DatabaseToolsSqlExecutionFailure? = null
+        var finished = 0
 
         try {
             DatabaseToolsConsoleAdapter.getInstance(project).executeMaterialized(
@@ -165,6 +170,7 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
                 areSourceRevisionsCurrent = { true },
                 onExecuted = { executed = true },
                 onFailure = { failure = it },
+                onFinished = { finished++ },
             )
             fail("ProcessCanceledException must propagate")
         } catch (_: ProcessCanceledException) {
@@ -173,6 +179,7 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
 
         assertFalse(executed)
         assertNull(failure)
+        assertEquals("cancellation must release terminal ownership exactly once", 1, finished)
     }
 
     fun testMaterializedDeliveryRejectsDisposedRealConsole() {
@@ -238,15 +245,139 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         }
     }
 
-    fun testSelectionGuardIsScopedToProjectService() {
+    fun testAdapterReuseReturnsSameConsoleAndRejectsOverlapUntilRelease() {
+        val cache = ConsoleCacheService.getInstance(project)
+        val dataSource = registeredDbDataSource(
+            name = "zMyBatis reuse fixture",
+            url = "jdbc:h2:mem:zmybatis_reuse",
+        )
+
+        val key = "file:///tmp/zmybatis/ReuseMapper.xml"
+        val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
+        var first: JdbcConsole? = null
+        var firstRelease: (() -> Unit)? = null
+        var failure: DatabaseToolsConsoleAcquisitionFailure? = null
+
+        try {
+            adapter.acquireAndDeliverConsole(
+                dataSource = dataSource,
+                schema = null,
+                resourceKey = key,
+                forceNew = false,
+                onConsoleReady = { console, release ->
+                    first = console
+                    firstRelease = release
+                },
+                onFailure = { failure = it },
+            )
+            assertNotNull(first)
+            assertNull(failure)
+
+            var overlapping: JdbcConsole? = null
+            adapter.acquireAndDeliverConsole(
+                dataSource = dataSource,
+                schema = null,
+                resourceKey = key,
+                forceNew = false,
+                onConsoleReady = { console, release ->
+                    overlapping = console
+                    release()
+                },
+                onFailure = { failure = it },
+            )
+
+            assertNull("same-source overlapping REUSE must not share the active console", overlapping)
+            assertSame(DatabaseToolsConsoleAcquisitionFailure.ReuseBusy, failure)
+
+            firstRelease!!.invoke()
+            failure = null
+
+            var reused: JdbcConsole? = null
+            adapter.acquireAndDeliverConsole(
+                dataSource = dataSource,
+                schema = null,
+                resourceKey = key,
+                forceNew = false,
+                onConsoleReady = { console, release ->
+                    reused = console
+                    release()
+                },
+                onFailure = { failure = it },
+            )
+
+            assertNull(failure)
+            assertSame("released matching REUSE resource must be reused", first, reused)
+        } finally {
+            firstRelease?.invoke()
+            cache.evict(key)
+        }
+    }
+
+    fun testAdapterNewEachReturnsDistinctUncachedResources() {
+        val cache = ConsoleCacheService.getInstance(project)
+        val dataSource = registeredDbDataSource(
+            name = "zMyBatis new-each fixture",
+            url = "jdbc:h2:mem:zmybatis_new_each",
+        )
+
+        val key = "file:///tmp/zmybatis/NewEachMapper.xml"
+        val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
+        val consoles = mutableListOf<JdbcConsole>()
+        var failure: DatabaseToolsConsoleAcquisitionFailure? = null
+
+        try {
+            repeat(2) {
+                adapter.acquireAndDeliverConsole(
+                    dataSource = dataSource,
+                    schema = null,
+                    resourceKey = key,
+                    forceNew = true,
+                    onConsoleReady = { console, release ->
+                        consoles += console
+                        release()
+                    },
+                    onFailure = { failure = it },
+                )
+            }
+
+            assertNull(failure)
+            assertEquals(2, consoles.size)
+            assertNotSame("NEW_EACH must acquire a distinct console resource", consoles[0], consoles[1])
+            assertNull("NEW_EACH must not populate the REUSE cache", cache.get(key))
+        } finally {
+            consoles.forEach { console ->
+                val lifetime = Disposer.newCheckedDisposable(console)
+                if (!lifetime.isDisposed) Disposer.dispose(console)
+            }
+            cache.evict(key)
+        }
+    }
+
+    fun testCacheTargetMismatchEvictsInsteadOfReusingWrongTarget() {
+        val cache = newIsolatedCache()
+        val console = newConsole()
+        val lifetime = Disposer.newCheckedDisposable(console)
+        val key = "file:///tmp/zmybatis/TargetMismatch.xml"
+        val targetA = targetId("ds-a", "public")
+        val targetB = targetId("ds-b", "public")
+
+        assertTrue(cache.putEphemeral(key, console, targetA))
+        assertNull(cache.get(key, targetB))
+        assertTrue("wrong-target cache entry must be disposed after eviction", lifetime.isDisposed)
+    }
+
+    fun testReuseLeaseIsKeyScopedAndReleasable() {
         val cache = ConsoleCacheService.getInstance(project)
         val mapperKey = "file:///tmp/zmybatis/Mapper.xml"
+        val otherKey = "file:///tmp/zmybatis/OtherMapper.xml"
 
-        assertTrue(cache.beginSelection(mapperKey))
-        assertFalse(cache.beginSelection(mapperKey))
-        cache.endSelection(mapperKey)
-        assertTrue(cache.beginSelection(mapperKey))
-        cache.endSelection(mapperKey)
+        assertTrue(cache.beginReuseLease(mapperKey))
+        assertFalse("same source must not have overlapping REUSE ownership", cache.beginReuseLease(mapperKey))
+        assertTrue("unrelated sources must remain independently usable", cache.beginReuseLease(otherKey))
+        cache.endReuseLease(mapperKey)
+        assertTrue(cache.beginReuseLease(mapperKey))
+        cache.endReuseLease(mapperKey)
+        cache.endReuseLease(otherKey)
     }
 
     fun testCacheTargetIdentityPolicyRejectsCrossTargetAndNullMismatch() {
@@ -268,13 +399,13 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         val mapperKey = "file:///tmp/zmybatis/ClosingMapper.xml"
 
         assertFalse(cache.isShuttingDown())
-        assertTrue(cache.beginSelection(mapperKey))
-        cache.endSelection(mapperKey)
+        assertTrue(cache.beginReuseLease(mapperKey))
+        cache.endReuseLease(mapperKey)
 
         cache.markShuttingDown()
 
         assertTrue(cache.isShuttingDown())
-        assertFalse(cache.beginSelection(mapperKey))
+        assertFalse(cache.beginReuseLease(mapperKey))
     }
 
     fun testProjectClosingHookEntersSameShutdownGate() {
@@ -285,7 +416,7 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         cache.handleProjectClosing(project)
 
         assertTrue(cache.isShuttingDown())
-        assertFalse(cache.beginSelection("file:///tmp/zmybatis/AfterCloseMapper.xml"))
+        assertFalse(cache.beginReuseLease("file:///tmp/zmybatis/AfterCloseMapper.xml"))
     }
 
 
@@ -332,6 +463,29 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
 
     private fun newIsolatedCache(): ConsoleCacheService =
         ConsoleCacheService(project).also { Disposer.register(testRootDisposable, it) }
+
+    private fun registeredDbDataSource(
+        name: String,
+        url: String,
+    ): DbDataSource {
+        val local = LocalDataSource().apply {
+            this.name = name
+            driverClass = "org.h2.Driver"
+            this.url = url
+            isAutoSynchronize = false
+        }
+        val manager = LocalDataSourceManager.getInstance(project)
+        manager.addDataSource(local)
+        Disposer.register(testRootDisposable) { manager.removeDataSource(local) }
+
+        return requireNotNull(
+            DbPsiFacade.getInstance(project).dataSources.firstOrNull { candidate ->
+                DbImplUtil.getMaybeLocalDataSource(candidate) === local
+            }
+        ) {
+            "registered LocalDataSource must be exposed as DbDataSource"
+        }
+    }
 
     private fun newConsole(): JdbcConsole {
         // Console validity includes registered datasource authority, even without a connection.
