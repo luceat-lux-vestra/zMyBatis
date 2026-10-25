@@ -5,30 +5,28 @@
 ## [Unreleased]
 
 ### Changed
-- **Execute (zMyBatis)** is now a standalone action (right-click menu / `Run` context group) instead of overriding DataGrip's built-in Execute action — DataGrip's own Execute, Explain Plan, and all other actions are no longer affected
-- **Session persistence hardened** — restart-persisted sessions are project-scoped and require a stable datasource UUID plus an explicit named schema; `Use Default Schema` and datasources without a stable UUID remain in-process only, and stale/missing/ambiguous restoration is rejected instead of redirected
+- **Execute (zMyBatis)** now has one registered Leap execution authority: authoritative Java/XML source capture → typed/provenanced input contract → isolated stock-MyBatis preparation → explicitly supported SQL-text materialization → final-artifact approval → exact JetBrains Database Tools delivery. Unsupported or ambiguous stages fail closed; there is no legacy evaluator/action fallback.
+- **Session persistence** now stores only current v3 project-scoped source→target descriptors using a stable datasource UUID plus an explicit named schema. Startup prunes stale v3 source associations without recreating consoles or executing SQL; live console resources remain ephemeral and independent from persisted target identity.
+- **Legacy execution compatibility state removed** — the old proxy/evaluator/extractor/dialog/history path, development-only v2 persistence migration path, and obsolete compatibility settings were deleted after the Leap cutover.
 
 ### Added
 
 #### Core Execution
-- Execute self-contained MyBatis mapper statements from XML mapper files and supported Java annotation-based mappers through the JetBrains Database Tools console path, subject to the documented evaluator/input/target evidence boundaries
-- Dynamic SQL evaluation routes `<if>`, `<choose>/<when>/<otherwise>`, `<foreach>`, `<where>`, `<set>`, `<trim>`, and `<bind>` through MyBatis `XMLScriptBuilder`; maintained tests exercise representative paths for each tag, but full application-runtime/JDBC/TypeHandler parity is not claimed
-- Java annotation extraction covers literal values, ordered multi-line string arrays, and constant-field-reference shapes; maintained project-fixture evidence exercises real Java PSI/project-index resolution of cross-file constants, without claiming every Java source shape or production action cutover
-- `@SelectProvider` / `@InsertProvider` / `@UpdateProvider` / `@DeleteProvider` methods show a clear unsupported notice instead of failing silently
+- Execute supported XML mapper statements and direct Java `@Select` / `@Insert` / `@Update` / `@Delete` annotations through the registered contract-driven action.
+- Capture canonical statement/source authority and supported `<sql>/<include>` dependencies, then delegate admitted dynamic-SQL meaning to isolated stock MyBatis semantics.
+- Preserve `#{}` bound inputs and `${}` raw interpolation as distinct contract kinds through preparation and approval.
+- Materialize only explicitly proven executable SQL-text shapes: zero-binding execution is DB-neutral, and the maintained nonzero slice is PostgreSQL BIGINT. Other nonzero dialect/type/placeholder shapes fail typed rather than claiming generic JDBC/TypeHandler parity.
+- Require explicit final-artifact approval for raw interpolation and INSERT/UPDATE/DELETE declarations; cancellation stops before native execution.
+- Kotlin direct statement annotations, Provider annotations, custom language drivers/runtime-only extensions, and unproven dialect/type materialization remain unsupported.
 
 #### Parameter Input
-- Parameter input dialog heuristically detects `#{param}`, `${param}`, and OGNL-driven inputs and prompts for values before execution; generated/runtime parameter naming is not treated as proven caller metadata
-- Object/array parameters: multi-line JSON editor for supported dot/index navigation (e.g. `#{user.name}`) and collection/`foreach` shapes
-- Supports `null`, numbers, strings, booleans, and structured/list inputs needed by the maintained navigation/`foreach` paths; direct collection/object `#{}` literal binding is not claimed as supported semantics
-- Remember Last Inputs: parameter dialog pre-fills last-used values using the current statement key; canonical statement identity and sensitive-value retention remain Leap design obligations
-- Empty Input Handling: configurable policy for blank fields — treat as `NULL` or empty string `""`
-- OGNL expression parameters are heuristically extracted while known loop variables (`item`, `index`) and `<bind>` variables are excluded from prompting
+- Derive fields from typed/provenanced `ParameterContract` requirements instead of regex/heuristic parameter discovery.
+- Validate and decode submitted values through the contract input boundary independently from Swing; unsupported or ambiguous requirements block execution.
+- Treat raw-interpolation values as explicit raw input requiring acknowledgement and never retain them as remembered input.
+- Remember Last Inputs is opt-in, project-scoped, keyed by canonical statement identity, and stores only eligible values explicitly selected for retention.
 
 #### Settings (`Settings → Tools → zMyBatis`)
-- SQL Preview: optional dialog to review resolved SQL before sending it to the database; current mutation/raw-interpolation confirmation policy is still a documented Leap safety gap
-- Auto-format SQL: reformat resolved SQL using IntelliJ's built-in SQL code-style settings before execution or preview
-- Copy to Clipboard: auto-copy the final resolved SQL to clipboard after execution (enabled by default)
-- Console Session Policy: choose between reusing an existing DB console or opening a new one per execution
-- Strict OGNL Mode: optional direct legacy-evaluator diagnostic compatibility for recognized OGNL failures (disabled by default); shipping execution fails closed independently
-- Legacy evaluator map navigation no longer installs a process-global custom OGNL accessor; qualified nested map/list access uses stock MyBatis behavior
-- Ignore Unknown Tags: direct legacy-evaluator compatibility pre-stripping only (disabled by default); shipping execution ignores this switch and fails closed on unknown tags
+- **Show SQL preview before execution** — optional for ordinary supported paths; mandatory raw/mutation approval overrides this setting.
+- **Auto-format SQL preview** — formats presentation text only and never mutates the immutable execution artifact.
+- **Console Session Policy** — `REUSE` reuses a matching live console resource; `NEW_EACH` acquires a fresh resource per execution. Neither policy is persisted target identity.
+- **Remember last parameter inputs per Mapper statement** — enables opt-in contract-driven retention; raw-interpolation values are never retained.

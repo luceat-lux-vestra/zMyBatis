@@ -1,5 +1,7 @@
 # Leap execution rebaseline — 2026-10-13
 
+> **Historical status note (2026-10-25):** this document records the decision and migration sequence as they stood on 2026-10-13. The single production cutover has since landed, and #454/PR #455 deleted the former action/evaluator/extractor/dialog/history island plus the never-distributed v2 persistence migration path. For current architecture and product claims, use `AGENTS.md`, `docs/product-contract.md`, `docs/leap-architecture.md`, and `docs/test-contracts.md`. The original observations and stop-gate language below are preserved as historical evidence.
+
 Status: **target product/architecture decision for #391**, superseding the strict bound-execution-only *target requirement* of closed #258 after this document is merged. The #251 Database Tools 2026.2 API investigation and #258's original historical decision remain preserved. This decision **does not make any unproven SQL materializer executable**. Runtime code and the shipping action remain unchanged until a separate validated code cutover.
 
 Ownership: Epic #60; product policy #61; source #62; inputs #63; MyBatis/evaluation #64; Database Tools target/execution #65; orchestration #66; quality #67.

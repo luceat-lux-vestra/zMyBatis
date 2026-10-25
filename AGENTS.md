@@ -19,7 +19,7 @@ The current registered execution path is broadly:
 5. approve the immutable artifact, then revalidate source/target/lifecycle authority;
 6. submit exactly `MaterializedExecution.executionSql` through the maintained Database Tools console adapter.
 
-The production contract is an explicitly bounded SQL-text compatibility envelope, **not** JDBC/TypeHandler equivalence. Zero-binding execution is target-bound and DB-neutral; the named nonzero production slice is the proven PostgreSQL BIGINT materializer. Other nonzero dialect/type shapes fail closed rather than routing to the legacy evaluator.
+The production contract is an explicitly bounded SQL-text compatibility envelope, **not** JDBC/TypeHandler equivalence. Zero-binding execution is target-bound and DB-neutral; the named nonzero production slice is the proven PostgreSQL BIGINT materializer. Other nonzero dialect/type shapes fail closed; the deleted legacy evaluator is not a routing option.
 
 Key current ownership areas:
 
@@ -53,7 +53,7 @@ This is a bounded source-level regression guard, not semantic taint analysis or 
 zMyBatis must not replace, wrap, unregister, reorder, or intercept DataGrip built-in Execute/Explain/console actions.
 
 - Platform action IDs remain untouched.
-- `MyBatisActionInterceptorActivity` is target-persistence migration/cleanup infrastructure despite its historical name; it does not recreate consoles and is not a global action interceptor.
+- `MyBatisActionInterceptorActivity` performs current v3 stale-source pruning despite its historical name; it does not migrate legacy state, recreate consoles, or act as a global action interceptor.
 - `MyBatisExecuteAction.getActionUpdateThread()` is BGT.
 - `update()` consumes only the bounded local `MyBatisContextAnalyzer`: supported XML statement, direct Java statement annotation, and provider-annotation contexts are enabled/visible; unrelated or missing context is hidden, and Java annotation classification fails closed while indexes are unavailable. It must not perform SQL extraction, parameter analysis, datasource enumeration, persistence, or console work.
 - UI/console work belongs on the EDT where required; PSI reads obey IntelliJ read-action requirements; blocking work must not be moved onto the EDT.
@@ -79,8 +79,8 @@ Hardening #57 established the stable datasource/schema safety baseline, and #260
 - the registered Leap action requires a stable datasource UUID + explicit named schema; `Use Default Schema` and datasources without stable identity are not production execution choices;
 - malformed, interrupted, index-mismatched, orphan, or source-stale persisted state fails closed;
 - legacy application-global hash/name records remain deliberately unread because their original ownership cannot be proven safely;
-- v2 project-scoped records are migration-only and convert to v3 only when the exact canonical source identity is proven;
-- startup performs migration/pruning only and creates no `JdbcConsole`;
+- development-only v2 project-scoped records were never distributed and are not read or migrated;
+- startup only prunes stale current-v3 source associations and creates no `JdbcConsole`;
 - datasource/schema resources are resolved exactly when an explicit action needs a console;
 - `REUSE`/`NEW_EACH` are ephemeral resource policies; live console registration/disposal is not v3 target-persistence authority; the project-scoped REUSE cache owns retained live consoles and must dispose superseded entries and all remaining cached consoles when the service is disposed;
 - cancellation and shutdown remain fail-closed across target resolution/resource acquisition.
@@ -93,13 +93,13 @@ See [docs/session-persistence.md](docs/session-persistence.md) for the current p
 
 Only the user's explicit zMyBatis execution action may execute SQL.
 
-Extraction, parameter discovery, evaluation, preview, formatting, settings, diagnostics, and startup target migration must not execute a statement as a side effect.
+Source capture, input collection, preparation, preview, formatting, settings, diagnostics, and startup v3 pruning must not execute a statement as a side effect.
 
 - No auto-confirm, auto-retry, or auto-reexecute of failed statements.
-- Project shutdown must win deterministically over migration/selection/resource-acquisition/execution work.
+- Project shutdown must win deterministically over startup pruning/selection/resource-acquisition/execution work.
 - Consoles, listeners, callbacks, dialogs, editors, PSI objects, and scheduled work must not retain disposed project state.
 - Re-check project/editor/source/target/lifecycle authority after asynchronous and modal boundaries. The source graph is revalidated before delivery; the exact target is re-resolved; the Database Tools adapter rejects disposed console/editor resources after delayed boundaries and immediately before native query invocation. Structural tests do not substitute for real IU/DataGrip disposal evidence.
-- Expected unsupported/degraded/user failures are typed outcomes and must not become SQL or IntelliJ fatal errors. Cancellation before native invocation means no query invocation. The action edge may present a redacted stage-level refusal but never retries through the legacy evaluator. Direct legacy evaluator/action tests remain characterization only; their error-string/literalization behavior has no registered production route. Project-scoped live-console cleanup still preserves cancellation/fatal precedence, and #67 owns remaining diagnostic/legacy cleanup evidence.
+- Expected unsupported/degraded/user failures are typed outcomes and must not become SQL or IntelliJ fatal errors. Cancellation before native invocation means no query invocation. The action edge may present a redacted stage-level refusal and has no alternate execution authority to retry through. The deleted legacy evaluator/action and its removed characterization tests are not current product evidence. Project-scoped live-console cleanup still preserves cancellation/fatal precedence, and #67 owns the remaining diagnostic/privacy and lifecycle evidence.
 
 ## 7. Tests and evidence
 
@@ -115,7 +115,7 @@ Baseline evidence for ordinary code changes is selected by the changed contract 
 - required CI/static-analysis gates;
 - an explicit E2E applicability assessment under [docs/e2e-testing.md](docs/e2e-testing.md); when process-level evidence applies, the maintained Starter/Driver scenario must run on the exact final PR HEAD.
 
-Leap evidence must be indexed by the new contract/domain boundary where possible rather than by continued existence of legacy class names. Legacy fixtures remain useful only when they can falsify a target invariant or protect shipping behavior during migration.
+Leap evidence must be indexed by the maintained contract/domain boundary rather than by removed legacy class names. Historical legacy evidence may explain past decisions, but current product proof comes from maintained contract tests and packaged/runtime evidence.
 
 Documentation-only CI uses a deliberately narrow syntactic fast path when **every** changed file is one of `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, or a Markdown file under `docs/**`. This is not a semantic classifier and does not prove that a documentation claim is correct. In that case the internal `Build`, `Test`, `Inspect code`, and `Verify plugin` jobs keep their evidence slots but skip product/runtime work; `Lint workflows`, `Dependency submission PR validation`, and `Dependency Review` still execute, and the required `Merge Gate` succeeds only after all eight component jobs report success. E2E and CodeQL are not scheduled for that docs-only change. Any changed file outside the allowlist, or any inability to establish the changed-file set, restores the ordinary full validation path.
 
