@@ -55,7 +55,7 @@ internal object IsolatedDynamicMyBatisPreparation {
             return Result.Failed(invariantFailure("mybatis-isolated-foreach-local-kind-invalid"))
         }
 
-        val myBatisLocation = Configuration::class.java.protectionDomain?.codeSource?.location
+        val myBatisLocation = MyBatisRuntimeArtifact.resolve(Configuration::class.java)
             ?: return Result.Failed(invariantFailure("mybatis-code-source-unavailable"))
         if (myBatisLocation.protocol != "file") {
             return Result.Failed(invariantFailure("mybatis-code-source-non-local"))

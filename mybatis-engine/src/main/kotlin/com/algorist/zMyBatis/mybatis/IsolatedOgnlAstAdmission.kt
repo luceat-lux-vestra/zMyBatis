@@ -83,7 +83,7 @@ internal object IsolatedOgnlAstAdmission {
             )
         }
 
-        val myBatisLocation = Configuration::class.java.protectionDomain?.codeSource?.location
+        val myBatisLocation = MyBatisRuntimeArtifact.resolve(Configuration::class.java)
             ?: return Result.Invariant("mybatis-code-source-unavailable")
         if (myBatisLocation.protocol != "file") {
             return Result.Invariant("mybatis-code-source-non-local")

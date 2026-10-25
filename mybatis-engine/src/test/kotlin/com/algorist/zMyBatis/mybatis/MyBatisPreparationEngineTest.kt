@@ -139,6 +139,30 @@ class MyBatisPreparationEngineTest {
     }
 
     @Test
+    fun rawOnlyStringParameterWithDatabaseIdUsesIsolatedRuntime() {
+        val result = MyBatisPreparationEngine.prepare(
+            request(
+                "SELECT ${'$'}{value} AS RESULT_VALUE",
+                listOf(
+                    Parameter(
+                        "java.lang.String",
+                        "value",
+                        InputValue.RawText("45001"),
+                    ),
+                ),
+                MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+            ),
+        )
+
+        assertTrue(result is PreparationResult.Success)
+        val execution = (result as PreparationResult.Success).execution
+        assertEquals("SELECT 45001 AS RESULT_VALUE", execution.sqlWithPlaceholders.trim())
+        assertTrue(execution.orderedBindings.isEmpty())
+        assertEquals(listOf("java-param:0"), execution.rawInterpolations.map { it.requirementId.value })
+        assertEquals("PostgreSQL", execution.preparationMetadata.databaseId)
+    }
+
+    @Test
     fun scalarAndTemporalBindingValuesRetainCoreTypeFidelity() {
         val uuid = UUID.fromString("123e4567-e89b-12d3-a456-426614174000")
         val date = LocalDate.of(2026, 9, 15)
