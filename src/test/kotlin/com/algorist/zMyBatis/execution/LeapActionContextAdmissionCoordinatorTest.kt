@@ -204,9 +204,6 @@ class LeapActionContextAdmissionCoordinatorTest {
         val shippingAction = sourceText(
             "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteAction.kt",
         )
-        val legacyAction = sourceText(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
-        )
         val pluginXml = sourceText("src/main/resources/META-INF/plugin.xml")
 
         assertTrue(coordinator.contains("JavaAnnotationSourceCaptureAdapter.capture"))
@@ -228,8 +225,8 @@ class LeapActionContextAdmissionCoordinatorTest {
         assertFalse(shippingAction.contains("StoredExecutionTargetBridge"))
         assertFalse(shippingAction.contains("runMyBatisQuery"))
 
-        assertFalse(legacyAction.contains("class MyBatisExecuteAction"))
         assertTrue(pluginXml.contains("id=\"zMyBatis.Execute\""))
+        assertFalse(pluginXml.contains("MyBatisExecuteProxyAction"))
         assertTrue(pluginXml.contains("class=\"com.algorist.zMyBatis.MyBatisExecuteAction\""))
     }
 

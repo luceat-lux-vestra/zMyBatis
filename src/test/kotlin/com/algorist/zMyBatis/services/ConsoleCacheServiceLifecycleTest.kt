@@ -258,7 +258,7 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         assertFalse(consoleCacheTargetIdentityMatches(targetA, null))
         assertFalse(consoleCacheTargetIdentityMatches(null, targetA))
         assertTrue(
-            "null-to-null is the deliberate legacy in-process path only",
+            "null-to-null is the deliberate non-persisted in-process path only",
             consoleCacheTargetIdentityMatches(null, null),
         )
     }
@@ -288,18 +288,6 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         assertFalse(cache.beginSelection("file:///tmp/zmybatis/AfterCloseMapper.xml"))
     }
 
-    fun testShutdownGateRejectsStartupMigrationTransition() {
-        val cache = newIsolatedCache()
-        var transitionRan = false
-
-        cache.markShuttingDown()
-        val completed = cache.runStartupMigrationTransitionIfActive {
-            transitionRan = true
-        }
-
-        assertFalse(completed)
-        assertFalse(transitionRan)
-    }
 
     private fun materialized(
         sql: String,

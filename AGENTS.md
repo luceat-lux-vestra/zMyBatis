@@ -2,7 +2,7 @@
 
 This is the authoritative engineering and review contract for zMyBatis. It describes the **current enforced baseline** separately from **known product gaps** and from the Leap target architecture tracked by Epic #60. Do not turn a target rule into a claim about current behavior without evidence.
 
-For Leap implementation, [docs/product-contract.md](docs/product-contract.md) is the target product-policy authority and [docs/leap-architecture.md](docs/leap-architecture.md) is the target architecture authority. **Read [the 2026-10-13 Leap execution rebaseline](docs/leap-execution-rebaseline.md) first**: #391 replaces #258's strict JDBC-binding-as-cutover-gate *target policy*, not #251's API evidence. The registered action now uses the single Leap authority after the verified zero-binding and PostgreSQL BIGINT SQL-text/native-Database-Tools verticals; every nonzero dialect/type shape outside an explicitly proven materializer remains typed fail-closed. Legacy action/evaluator/input code may remain in the source tree only as unregistered #67 cleanup/characterization debt and must not regain production routing.
+For Leap implementation, [docs/product-contract.md](docs/product-contract.md) is the target product-policy authority and [docs/leap-architecture.md](docs/leap-architecture.md) is the target architecture authority. **Read [the 2026-10-13 Leap execution rebaseline](docs/leap-execution-rebaseline.md) first**: #391 replaces #258's strict JDBC-binding-as-cutover-gate *target policy*, not #251's API evidence. The registered action now uses the single Leap authority after the verified zero-binding and PostgreSQL BIGINT SQL-text/native-Database-Tools verticals; every nonzero dialect/type shape outside an explicitly proven materializer remains typed fail-closed. The former action/evaluator/extractor/dialog/history architecture has been deleted. It must not be reintroduced as fallback, compatibility routing, or test-only semantic authority.
 
 CI green is necessary evidence, never sufficient approval. Every PASS belongs to one exact final PR HEAD SHA. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution mechanics, [docs/test-contracts.md](docs/test-contracts.md) for executable product evidence, and [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
@@ -28,10 +28,10 @@ Key current ownership areas:
 - input: source-derived `ParameterContract`, `ContractParameterInputDialog`, typed `InputEnvironment`, and contract-keyed retention;
 - preparation/materialization: `:mybatis-engine` `MyBatisPreparationBoundary` plus bounded execution materializers;
 - approval/delivery: `LeapExecutionApprovalAdapter`, `LeapExecutionDeliveryCoordinator`, and `DatabaseToolsConsoleAdapter`;
-- target persistence/resource lifecycle: `ExecutionTargetDescriptorStore`, exact Database Tools resolution, migration-only `LegacyV2ConsoleSessionMigrationStore`, and persistence-neutral `ConsoleCacheService`;
+- target persistence/resource lifecycle: `ExecutionTargetDescriptorStore`, exact Database Tools resolution, v3 stale-source pruning, and persistence-neutral `ConsoleCacheService`;
 - settings: `ZMyBatisSettings`, configurable UI.
 
-`MyBatisExecuteProxyAction`, `MyBatisEvaluator`, legacy extractors/dialog/history bridges, and related guards are no longer registered execution authority. They remain source-tree cleanup/characterization debt owned by #67 unless another track explicitly owns a narrower removal.
+The registered action has no retained legacy execution fallback. Removed proxy/evaluator/extractor/dialog/history implementations are not valid owners or characterization authorities for new work.
 
 ## 2. Mapper, parameter, and SQL fidelity
 
@@ -85,7 +85,7 @@ Hardening #57 established the stable datasource/schema safety baseline, and #260
 - `REUSE`/`NEW_EACH` are ephemeral resource policies; live console registration/disposal is not v3 target-persistence authority; the project-scoped REUSE cache owns retained live consoles and must dispose superseded entries and all remaining cached consoles when the service is disposed;
 - cancellation and shutdown remain fail-closed across target resolution/resource acquisition.
 
-The remaining v2 reader/cleanup is isolated in `LegacyV2ConsoleSessionMigrationStore` and remains compatibility debt owned by #65. `ConsoleCacheService` now owns live resource/selection/shutdown lifecycle only and has no persistence storage surface.
+Development-only v2 persistence was never distributed and has no runtime reader or migration path. `ConsoleCacheService` owns live resource/selection/shutdown lifecycle only and has no persistence storage surface.
 
 See [docs/session-persistence.md](docs/session-persistence.md) for the current persistence contract and [docs/test-contracts.md](docs/test-contracts.md) for automated versus platform-dependent evidence.
 
@@ -185,34 +185,19 @@ JetBrains Marketplace `Source Code` and `License` are Marketplace-admin metadata
 
 ## 10. Current product gaps versus Leap target
 
-Hardening is a maintained baseline, not a declaration that the current product architecture is final. Epic #60 owns the replacement product/runtime architecture.
+Epic #60 still owns final Leap completion, but the production architecture is now single-path: registered action → authoritative source/input contracts → isolated MyBatis preparation → proven materialization → exact target → Database Tools delivery. The former execution/evaluator/input compatibility architecture and undistributed v2 persistence have been removed.
 
-The authoritative target is [docs/leap-architecture.md](docs/leap-architecture.md), with product policy in [docs/product-contract.md](docs/product-contract.md). New Leap implementation must follow those dependency/ownership boundaries rather than adding new semantic responsibility to classes scheduled for deletion.
+The physical dependency graph remains enforced: root IntelliJ plugin → `:core` and `:mybatis-engine`; `:mybatis-engine` → `:core` and MyBatis; `:core` remains free of IntelliJ/Database Tools/MyBatis dependencies. Presence of the modules is not correctness evidence; exact registered-action behavior must remain proven.
 
-The registered action has replaced the legacy orchestration authority, but #67 still owns deletion/consolidation of retained implementation debt, including:
+Remaining #67 obligations are quality/readiness work, not permission to reopen architecture forks:
 
-- `MyBatisExecuteProxyAction` and legacy action orchestration helpers;
-- event-coupled raw extraction/regex input authority retained only for characterization;
-- legacy dialogs/history bridges that no longer own registered execution;
-- global/regex/literal/error-string `MyBatisEvaluator` behavior;
-- migration-only v2 compatibility at the point its supported upgrade window permits removal;
-- obsolete execution-time formatting/compatibility settings and redundant guards.
+- complete typed diagnostic/privacy review without sensitive SQL/input leakage;
+- maintain real IDEA Ultimate and separate DataGrip host evidence;
+- close responsiveness, cancellation-latency and retained-resource evidence for large/slow cases;
+- keep current docs/Marketplace wording aligned with the proven capability/materializer envelope;
+- remove any additional temporary bridge only when its current owner is identified and replacement evidence exists.
 
-The physical dependency graph is now enforced in the shipping root: root IntelliJ plugin → `:core` and `:mybatis-engine`, `:mybatis-engine` → `:core` and MyBatis; `:core` remains free of IntelliJ/Database Tools/MyBatis dependencies. Presence of these modules alone is still not correctness evidence; exact registered-action source/input/materialization/target/native-console behavior must remain proven.
-
-**Development priority after #391:** freeze stand-alone OGNL Boolean/foreach grammar-island expansion. Stock MyBatis/OGNL owns SQL meaning; verify source and caller authority without a second interpreter. Deliver a real supported nonzero-binding SQL-text materialization + native-console vertical slice before additional standalone semantics. Never claim materialized SQL equals JDBC TypeHandler fidelity, use regex `?` substitution or silently fork production execution by binding count. Any DBMS/type not explicitly proven fails closed. Preserve all existing shipping target/privacy/cancellation guards and avoid weakening CI/negative tests.
-
-Bounded safety fixes to the current path and explicitly temporary migration bridges are allowed. They must not be used to justify preserving legacy architecture and must have an owner/deletion criterion when they survive beyond one PR.
-
-Current known product gaps include, among others:
-
-- raw parameter/rendered-SQL INFO logging (#67);
-- broader IDE orchestration/threading/cancellation implementation beyond the bounded context-correct action presentation gate (policy frozen by #61; implementation owned by #66);
-- compatibility-altered OGNL/unknown-tag/literal-rendering behavior that must not be described as stock MyBatis/JDBC parity (policy frozen by #61; implementation owned by #64);
-- error/degradation paths that still need typed failure outcomes (#64/#67);
-- DataGrip/runtime integration evidence that is not exercised by the deterministic IDEA Ultimate Plugin Verifier target (target-host policy frozen by #61; final evidence owned by #67).
-
-Do not claim these are solved merely because repository hardening is green.
+Never introduce binding-count, mapper-kind, setting, source flavor, or failure-path fallback routing. Any DBMS/type shape not explicitly proven executable remains fail-closed.
 
 ## 11. Review discipline
 

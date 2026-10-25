@@ -8,19 +8,11 @@ import com.intellij.openapi.components.Storage
 import com.intellij.util.xmlb.XmlSerializerUtil
 
 /**
- * Application-level persistent settings for zMyBatis.
+ * Application-level persistent settings for the registered Leap execution path.
  *
  * Stored in: `{IDE config dir}/options/zMyBatis.xml`
  *
- * Settings:
- *  - [rememberLastInputs]    : Whether to pre-fill the parameter dialog with the last-used values.
- *  - [emptyInputPolicy]      : How to treat blank input fields in the parameter dialog.
- *  - [sqlPreview]            : Show a preview dialog before executing the resolved SQL.
- *  - [autoFormatSql]         : Reformat the resolved SQL before executing/previewing.
- *  - [consoleSessionPolicy]  : Whether to reuse an existing console or always open a new one.
- *  - [copyToClipboard]       : Copy the resolved SQL to clipboard after execution.
- *  - [strictOgnlMode]        : Direct legacy-evaluator diagnostic compatibility only; shipping execution fails closed.
- *  - [ignoreUnknownTags]     : Direct legacy-evaluator compatibility only; shipping execution fails closed.
+ * Removed legacy evaluator/dialog fields are intentionally not loaded into runtime state.
  */
 @Service(Service.Level.APP)
 @State(
@@ -31,13 +23,9 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
 
     data class State(
         var rememberLastInputs: Boolean = false,
-        var emptyInputPolicy: EmptyInputPolicy = EmptyInputPolicy.NULL,
         var sqlPreview: Boolean = false,
         var autoFormatSql: Boolean = true,
         var consoleSessionPolicy: ConsoleSessionPolicy = ConsoleSessionPolicy.REUSE,
-        var copyToClipboard: Boolean = true,
-        var strictOgnlMode: Boolean = false,
-        var ignoreUnknownTags: Boolean = false
     )
 
     private var myState = State()
@@ -48,15 +36,9 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
         XmlSerializerUtil.copyBean(state, myState)
     }
 
-    // ── Convenience accessors ─────────────────────────────────────────────
-
     var rememberLastInputs: Boolean
         get() = myState.rememberLastInputs
         set(value) { myState.rememberLastInputs = value }
-
-    var emptyInputPolicy: EmptyInputPolicy
-        get() = myState.emptyInputPolicy
-        set(value) { myState.emptyInputPolicy = value }
 
     var sqlPreview: Boolean
         get() = myState.sqlPreview
@@ -70,18 +52,6 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
         get() = myState.consoleSessionPolicy
         set(value) { myState.consoleSessionPolicy = value }
 
-    var copyToClipboard: Boolean
-        get() = myState.copyToClipboard
-        set(value) { myState.copyToClipboard = value }
-
-    var strictOgnlMode: Boolean
-        get() = myState.strictOgnlMode
-        set(value) { myState.strictOgnlMode = value }
-
-    var ignoreUnknownTags: Boolean
-        get() = myState.ignoreUnknownTags
-        set(value) { myState.ignoreUnknownTags = value }
-
     companion object {
         fun getInstance(): ZMyBatisSettings =
             ApplicationManager.getApplication().getService(ZMyBatisSettings::class.java)
@@ -89,23 +59,12 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
 }
 
 /**
- * Policy for how blank/empty parameter inputs are interpreted.
+ * Policy for DB console resource management.
  *
- * - [NULL]         : empty input → `null` for zMyBatis evaluation
- * - [EMPTY_STRING] : empty input → `""` for zMyBatis evaluation
- */
-enum class EmptyInputPolicy {
-    NULL,
-    EMPTY_STRING
-}
-
-/**
- * Policy for DB console session management.
- *
- * - [REUSE]     : reuse the already-open console for the same mapper file (default)
- * - [NEW_EACH]  : always open a brand-new console tab for every execution
+ * - [REUSE]     : reuse an existing live console when its target identity still matches.
+ * - [NEW_EACH]  : acquire a fresh console resource for every execution.
  */
 enum class ConsoleSessionPolicy {
     REUSE,
-    NEW_EACH
+    NEW_EACH,
 }

@@ -15,12 +15,11 @@ import com.intellij.openapi.util.Disposer
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Project-level owner of live JdbcConsole cache/resource lifecycle and startup lifecycle gating.
+ * Project-level owner of live JdbcConsole cache/resource lifecycle.
  *
- * Persisted target identity is owned by [ExecutionTargetDescriptorStore]. Migration-only v2 state
- * is owned by [LegacyV2ConsoleSessionMigrationStore]. This service therefore has no persistence
- * storage surface: registering, observing, or disposing a live console cannot create, mutate, or
- * delete v2/v3 target persistence.
+ * Persisted target identity is owned independently by [ExecutionTargetDescriptorStore]. This service
+ * has no persistence storage surface: registering, observing, or disposing a live console cannot
+ * create, mutate, or delete persisted target identity.
  */
 internal fun consoleCacheTargetIdentityMatches(
     cachedTargetId: ExecutionTargetId?,
@@ -127,7 +126,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     /**
      * Returns a cached console only when its immutable target identity matches the invocation.
      *
-     * A null identity is deliberate legacy in-process state (default schema or unavailable stable
+     * A null identity is deliberate in-process-only state (default schema or unavailable stable
      * datasource id). It never matches a persisted exact target id.
      */
     fun get(
@@ -180,26 +179,11 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         activeSelections.remove(mapperKey)
     }
 
-    /**
-     * Linearizes one startup migration persistence transition with project shutdown.
-     *
-     * Source/VFS discovery happens outside this lock. Once that evidence is ready, v2/v3 mutation
-     * either completes before shutdown or is rejected after shutdown wins.
-     */
-    internal fun runStartupMigrationTransitionIfActive(block: () -> Unit): Boolean =
-        synchronized(lifecycleLock) {
-            if (project.isDisposed || shuttingDown) {
-                false
-            } else {
-                block()
-                true
-            }
-        }
 
     /**
      * Registers a live console only as an in-memory REUSE optimization.
      *
-     * Registration/disposal has no v2 or v3 persistence side effects.
+     * Registration/disposal has no persisted target side effects.
      */
     fun putEphemeral(
         mapperKey: String,
@@ -309,9 +293,9 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     }
 
     /**
-     * Atomically closes resource acquisition and startup migration transitions.
+     * Atomically closes new resource acquisition.
      *
-     * Persistence stores are separate services, so shutdown never writes persistence from live
+     * Persistence is owned by a separate service, so shutdown never writes target state from live
      * console resources.
      */
     fun markShuttingDown() {
@@ -319,7 +303,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
             shuttingDown = true
             activeSelections.clear()
         }
-        LOG.info("zMyBatis: markShuttingDown — console acquisition and migration disabled")
+        LOG.info("zMyBatis: markShuttingDown — console acquisition disabled")
     }
 
     private fun disposeDetachedEntries(entries: Iterable<Entry>) {

@@ -16,31 +16,27 @@ class ZMyBatisConfigurable : BoundConfigurable("zMyBatis") {
     private val settings = ZMyBatisSettings.getInstance()
 
     override fun createPanel(): DialogPanel = panel {
-
         group("Execution & Output") {
             row {
                 checkBox("Show SQL preview before execution")
                     .bindSelected(
                         getter = { settings.sqlPreview },
-                        setter = { settings.sqlPreview = it }
+                        setter = { settings.sqlPreview = it },
                     )
-                contextHelp("When enabled, the resolved SQL is shown in a preview\ndialog before being sent to the database console.")
+                contextHelp(
+                    "Shows the final immutable execution artifact before dispatch.\n" +
+                        "Mutation and raw-interpolation safety rules can require preview regardless of this setting.",
+                )
             }
             row {
-                checkBox("Auto-format resolved SQL")
+                checkBox("Auto-format SQL preview")
                     .bindSelected(
                         getter = { settings.autoFormatSql },
-                        setter = { settings.autoFormatSql = it }
+                        setter = { settings.autoFormatSql = it },
                     )
-                contextHelp("Reformats the resolved SQL with keyword-aligned line breaks\nbefore execution or preview.")
-            }
-            row {
-                checkBox("Copy resolved SQL to clipboard after execution")
-                    .bindSelected(
-                        getter = { settings.copyToClipboard },
-                        setter = { settings.copyToClipboard = it }
-                    )
-                contextHelp("Automatically copies the resolved SQL text to the clipboard\nafter execution so you can paste it elsewhere.")
+                contextHelp(
+                    "Formats presentation text only; formatting never changes the immutable SQL artifact sent to Database Tools.",
+                )
             }
             row {
                 label("Console session:")
@@ -49,11 +45,12 @@ class ZMyBatisConfigurable : BoundConfigurable("zMyBatis") {
                 comboBox(ConsoleSessionPolicy.entries)
                     .bindItem(
                         getter = { settings.consoleSessionPolicy },
-                        setter = { settings.consoleSessionPolicy = it ?: ConsoleSessionPolicy.REUSE }
+                        setter = { settings.consoleSessionPolicy = it ?: ConsoleSessionPolicy.REUSE },
                     )
                 contextHelp(
-                    "REUSE     — reuse the existing console for the same mapper file.\n" +
-                    "NEW_EACH  — always open a brand-new console tab for every execution."
+                    "REUSE     — reuse a matching live console resource.\n" +
+                        "NEW_EACH  — acquire a fresh console for every execution.\n" +
+                        "Persisted datasource/schema identity is independent of this resource policy.",
                 )
             }
         }
@@ -63,51 +60,11 @@ class ZMyBatisConfigurable : BoundConfigurable("zMyBatis") {
                 checkBox("Remember last parameter inputs per Mapper statement")
                     .bindSelected(
                         getter = { settings.rememberLastInputs },
-                        setter = { settings.rememberLastInputs = it }
-                    )
-            }
-            row {
-                label("Empty input handling:")
-            }
-            row {
-                comboBox(EmptyInputPolicy.entries)
-                    .bindItem(
-                        getter = { settings.emptyInputPolicy },
-                        setter = { settings.emptyInputPolicy = it ?: EmptyInputPolicy.NULL }
+                        setter = { settings.rememberLastInputs = it },
                     )
                 contextHelp(
-                    "Determines how blank fields in the parameter dialog are treated.\n" +
-                    "NULL         → treats blank input as null during zMyBatis evaluation\n" +
-                    "EMPTY_STRING → treats blank input as an empty string during zMyBatis evaluation"
-                )
-            }
-        }
-
-        group("Parsing Engine") {
-            row {
-                checkBox("Strict OGNL mode")
-                    .bindSelected(
-                        getter = { settings.strictOgnlMode },
-                        setter = { settings.strictOgnlMode = it }
-                    )
-                contextHelp(
-                    "Legacy direct-evaluator diagnostic compatibility only.\n" +
-                    "Shipping execution always refuses evaluation failures before preview/execution.\n" +
-                    "ON  — recognized OGNL failures are propagated to direct legacy callers.\n" +
-                    "OFF — (default) direct legacy callers retain the plugin-error text form."
-                )
-            }
-            row {
-                checkBox("Ignore unknown tags")
-                    .bindSelected(
-                        getter = { settings.ignoreUnknownTags },
-                        setter = { settings.ignoreUnknownTags = it }
-                    )
-                contextHelp(
-                    "ON  — Unrecognised XML elements (e.g. custom / 3rd-party tags) are\n" +
-                    "      stripped before parsing; their text content is preserved.\n" +
-                    "OFF — (default) An unknown tag causes a BuilderException, making the\n" +
-                    "      problem visible immediately."
+                    "Opt-in contract-driven retention keyed by canonical statement identity. " +
+                        "Raw interpolation values are never retained.",
                 )
             }
         }
