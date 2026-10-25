@@ -72,8 +72,8 @@ dependencies {
     }
 
     testImplementation(libs.junit)
-    testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.3"))
-    testImplementation(platform("tools.jackson:jackson-bom:3.2.3"))
+    testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
+    testImplementation(platform("tools.jackson:jackson-bom:3.2.4"))
     testImplementation(platform("io.opentelemetry:opentelemetry-bom:1.67.0"))
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
@@ -121,8 +121,8 @@ dependencies {
     // runtime dependencies; remove the constraints when JetBrains' Starter graph carries
     // equivalent-or-newer fixed versions natively.
     integrationTestImplementation(platform("io.netty:netty-bom:4.2.19.Final"))
-    integrationTestImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.3"))
-    integrationTestImplementation(platform("tools.jackson:jackson-bom:3.2.3"))
+    integrationTestImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
+    integrationTestImplementation(platform("tools.jackson:jackson-bom:3.2.4"))
     integrationTestImplementation(platform("io.opentelemetry:opentelemetry-bom:1.67.0"))
     constraints {
         add("integrationTestImplementation", "org.bouncycastle:bcprov-jdk18on:1.86") {
@@ -161,10 +161,10 @@ val verifyStarterSecurityGraph = tasks.register("verifyStarterSecurityGraph") {
     doLast {
         val expected = mapOf(
             "org.jsoup:jsoup" to "1.23.2",
-            "com.fasterxml.jackson.core:jackson-core" to "2.22.3",
-            "com.fasterxml.jackson.core:jackson-databind" to "2.22.3",
-            "tools.jackson.core:jackson-core" to "3.2.3",
-            "tools.jackson.core:jackson-databind" to "3.2.3",
+            "com.fasterxml.jackson.core:jackson-core" to "2.22.4",
+            "com.fasterxml.jackson.core:jackson-databind" to "2.22.4",
+            "tools.jackson.core:jackson-core" to "3.2.4",
+            "tools.jackson.core:jackson-databind" to "3.2.4",
             "io.netty:netty-handler" to "4.2.19.Final",
             "io.netty:netty-codec-compression" to "4.2.19.Final",
             "org.bouncycastle:bcprov-jdk18on" to "1.86",
