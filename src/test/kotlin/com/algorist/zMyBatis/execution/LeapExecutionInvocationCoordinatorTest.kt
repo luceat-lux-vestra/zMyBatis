@@ -97,9 +97,6 @@ class LeapExecutionInvocationCoordinatorTest {
         val coordinator = sourceText(
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionInvocationCoordinator.kt",
         )
-        val action = sourceText(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
-        )
 
         val contract = coordinator.indexOf("val parameterContract = leapExecutionParameterContract(source)")
         val persistedTarget = coordinator.indexOf("val persistedTarget = targetStore.load(sourceFileId)")
@@ -125,7 +122,6 @@ class LeapExecutionInvocationCoordinatorTest {
         assertFalse(coordinator.contains(" ParameterInputDialog("))
         assertFalse(coordinator.contains("DbPsiFacade"))
         assertFalse(coordinator.contains("JBPopupFactory"))
-        assertFalse(action.contains("LeapExecutionInvocationCoordinator"))
     }
 
     private fun emptyEnvironment(): InputEnvironment {

@@ -53,23 +53,6 @@ class SensitiveLoggingContractTest {
     }
 
     @Test
-    fun `metadata only logging evidence remains in the shipping action`() {
-        val source = Files.readString(
-            Path.of("src", "main", "kotlin", "com", "algorist", "zMyBatis", "MyBatisExecuteProxyAction.kt")
-        )
-        val dollar = '$'
-        val metadataOnlyEvidence = listOf(
-            "parameters resolved (count=$dollar{paramValues.size})",
-            "SQL evaluated (length=$dollar{rawSql.length})",
-            "parameter values collected (count=$dollar{values.size})",
-        )
-
-        metadataOnlyEvidence.forEach { token ->
-            assertTrue("expected metadata-only logging evidence is missing: $token", source.contains(token))
-        }
-    }
-
-    @Test
     fun `logging detector rejects values but permits count and length metadata`() {
         val dollar = '$'
         val unsafe = listOf(

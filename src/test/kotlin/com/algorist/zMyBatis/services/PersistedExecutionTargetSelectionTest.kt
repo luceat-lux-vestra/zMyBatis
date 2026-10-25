@@ -90,34 +90,6 @@ class PersistedExecutionTargetSelectionTest {
     }
 
     @Test
-    fun `legacy v2 conversion requires exact externally proven canonical source identity`() {
-        val session = PersistedConsoleSession(
-            mapperKey = "file:///project/Mapper.xml",
-            dataSourceId = "ds-1",
-            dataSourceName = "orders",
-            schemaName = "public",
-        )
-        val canonical = SourceFileId("vfs:file:///project/Mapper.xml")
-
-        val migrated = requireNotNull(
-            LegacyV2TargetSelectionMigration.convert(session, canonical),
-        )
-
-        assertEquals(canonical, migrated.association.sourceFileId)
-        assertEquals("ds-1", migrated.descriptor.targetId.dataSourceId.value)
-        assertEquals("public", migrated.descriptor.targetId.schema.value)
-        assertEquals("orders", migrated.descriptor.dataSourceDisplayName)
-
-        assertNull(LegacyV2TargetSelectionMigration.convert(session, null))
-        assertNull(
-            LegacyV2TargetSelectionMigration.convert(
-                session,
-                SourceFileId("vfs:file:///project/Other.xml"),
-            ),
-        )
-    }
-
-    @Test
     fun `selection id validator rejects uppercase wrong length and non hex`() {
         val valid = "a".repeat(64)
         assertTrue(ExecutionTargetSelectionPersistenceFormat.isValidSelectionId(valid))

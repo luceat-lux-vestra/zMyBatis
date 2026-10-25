@@ -258,8 +258,6 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
     }
     task {
         filter {
-            includeTestsMatching("com.algorist.zMyBatis.AnnotationSqlExtractorProjectFixtureTest")
-            includeTestsMatching("com.algorist.zMyBatis.JavaActionContextProjectFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
             includeTestsMatching("com.algorist.zMyBatis.source.DependentMapperSourceSnapshotAdapterProjectFixtureTest")
@@ -366,8 +364,6 @@ tasks.withType<Test>().configureEach {
 tasks {
     test {
         filter {
-            excludeTestsMatching("com.algorist.zMyBatis.AnnotationSqlExtractorProjectFixtureTest")
-            excludeTestsMatching("com.algorist.zMyBatis.JavaActionContextProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.KotlinActionContextBoundaryTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")

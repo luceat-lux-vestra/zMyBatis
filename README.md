@@ -1,4 +1,4 @@
-# zMyBatis — Dynamic SQL Runner with Parameters
+# zMyBatis — Contract-driven MyBatis SQL execution for JetBrains IDEs
 
 [![Build](https://github.com/luceat-lux-vestra/zMyBatis/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/luceat-lux-vestra/zMyBatis/actions/workflows/build.yml)
 [![Marketplace Version](https://img.shields.io/jetbrains/plugin/v/com.algorist.zMyBatis)](https://plugins.jetbrains.com/plugin/index?xmlId=com.algorist.zMyBatis)
@@ -8,84 +8,53 @@
 > **Distribution status:** zMyBatis is published on [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30447-zmybatis--mybatis-dynamic-sql-runner-with-parameters-mybatis). This GitHub repository is the canonical public source repository. No public GitHub Release artifact is currently published.
 
 <!-- Plugin description -->
-<p><b>zMyBatis</b> is a JetBrains IDE plugin that lets you execute MyBatis mapper queries directly from XML mapper files or supported Java annotation-based mappers — without leaving the IDE.</p>
+<p><b>zMyBatis</b> is a JetBrains IDE plugin for executing supported MyBatis mapper statements directly from XML mapper files and direct Java statement annotations.</p>
 
-<p>It evaluates supported MyBatis dynamic SQL, prompts you for parameter values, converts the result to executable SQL using zMyBatis-owned parameter/literalization rules, and sends the final SQL through the JetBrains Database Tools JDBC-console execution path.</p>
+<p>The registered action captures authoritative mapper source, derives a provenanced input contract, prepares supported dynamic SQL through isolated stock MyBatis semantics, creates one immutable SQL-text execution artifact only for explicitly proven materialization shapes, and dispatches that exact artifact through JetBrains Database Tools.</p>
 
-<h2>Features</h2>
-
-<h3>Execution from Mapper Source</h3>
-<p>Right-click → <b>Execute (zMyBatis)</b> while the caret is inside:</p>
+<h2>Execution model</h2>
 <ul>
-  <li>A MyBatis XML mapper statement tag (<code>select</code>, <code>insert</code>, <code>update</code>, <code>delete</code>)</li>
-  <li>A supported <code>@Select</code> / <code>@Insert</code> / <code>@Update</code> / <code>@Delete</code> annotation method in Java</li>
-</ul>
-<p>Kotlin annotation-source support is not currently implemented in the execution-context path. Provider annotations are detected only to show an explicit unsupported notice.</p>
-<p>zMyBatis registers its own execution action; it does not replace or intercept the native Database Tools Execute/Explain actions. Full click-through behavior of native Database Tools UI remains a platform/integration evidence item rather than an automated unit-test claim.</p>
-
-<h3>Dynamic SQL Evaluation</h3>
-<p>The implementation routes MyBatis standard dynamic tags through <code>XMLScriptBuilder</code>, including <code>if</code>, <code>choose</code> / <code>when</code> / <code>otherwise</code>, <code>foreach</code>, <code>where</code>, <code>set</code>, <code>trim</code>, and <code>bind</code>.</p>
-<p>The maintained automated evaluator contract directly exercises <code>if</code>, <code>choose</code>/<code>when</code>/<code>otherwise</code>, <code>foreach</code>, <code>where</code>, <code>set</code>, <code>trim</code>, and <code>bind</code> at least once. This establishes a self-contained evaluator baseline, not proof of every semantic permutation. zMyBatis also owns parameter discovery, compatibility transformations, OGNL handling around that engine, and conversion of MyBatis parameter mappings to literal SQL. Using MyBatis for parsing therefore does <b>not</b> imply stock JDBC/TypeHandler semantics or arbitrary application-runtime parity.</p>
-
-<h3>Parameter Input Dialog</h3>
-<ul>
-  <li>Detects <code>#{param}</code>, <code>${param}</code>, and OGNL-driven inputs within the current heuristic extraction rules</li>
-  <li>Filters known internal <code>bind</code>/<code>foreach</code> variables before prompting; generated-name and application-runtime naming cases are not treated as proven caller metadata</li>
-  <li>Supports scalar and structured JSON input needed by supported navigation and <code>foreach</code> shapes</li>
-  <li>Supports nested objects and arrays for dot/index navigation</li>
-  <li>Validates structured JSON input before evaluation</li>
-  <li>Direct collection/object <code>#{}</code> placeholders are refused by the shipping execution path instead of executing marker-bearing <code>NULL</code> or guessed object text; structured values are intended for supported navigation/<code>foreach</code> use</li>
+  <li>Supported XML mapper statements and direct Java <code>@Select</code> / <code>@Insert</code> / <code>@Update</code> / <code>@Delete</code> annotations use one Leap execution authority.</li>
+  <li><code>#{}</code> bound inputs and <code>${}</code> raw interpolation remain distinct end-to-end.</li>
+  <li>Raw interpolation and mutation declarations require explicit final-artifact confirmation.</li>
+  <li>Unsupported or ambiguous source, input, MyBatis, materialization, target, or execution cases fail closed instead of falling back to a legacy evaluator.</li>
+  <li>Kotlin direct-annotation execution and Provider annotations are currently unsupported.</li>
 </ul>
 
-<h3>Data Source and Schema Selection</h3>
-<p>On execution without a reusable live console, a popup lets you choose the target <b>data source</b> and <b>schema</b>. Live console reuse is scoped per mapper file.</p>
-<p>Restart persistence stores only target identity: a stable datasource UUID plus an explicit named schema, associated with the canonical mapper source. <b>Use Default Schema</b> and datasources without a stable UUID are in-process only. Startup never recreates a console; the persisted target is resolved exactly when the next explicit execution needs one, and missing/ambiguous targets require re-selection rather than redirection.</p>
+<h2>Input and MyBatis preparation</h2>
+<p>Inputs come from typed/provenanced parameter contracts rather than regex-discovered names. The UI renders the contract, validates submitted values independently from Swing, and can optionally retain eligible inputs by canonical statement identity. Raw-interpolation values are never retained.</p>
 
-<h3>Annotation Support</h3>
-<ul>
-  <li>The extractor contract covers Java annotation literal values, ordered string arrays, and constant-field reference shapes</li>
-  <li>Real Java project/index-backed cross-file constant resolution is exercised by <code>AnnotationSqlExtractorProjectFixtureTest</code>; this proves the tested parser/index path, not every Java source shape or production action cutover</li>
-  <li>Unsupported <code>@SelectProvider</code> / <code>@InsertProvider</code> / <code>@UpdateProvider</code> / <code>@DeleteProvider</code> annotations show a clear unsupported notice instead of being executed</li>
-</ul>
+<p>MyBatis is the semantic authority for admitted dynamic-SQL behavior. Source graphs, including supported <code>&lt;sql&gt;</code>/<code>&lt;include&gt;</code> dependencies, are captured and revalidated before execution. Missing, ambiguous, cyclic, stale, or otherwise unsupported authority is a typed refusal.</p>
 
-<h3>Database Tools Integration</h3>
-<p>The final SQL is injected into a JetBrains Database Tools JDBC console for execution. zMyBatis does not claim that its current automated tests prove every native result-grid, history, export, explain, editor, or restart interaction; those remain explicit platform/integration evidence boundaries where applicable.</p>
+<h2>Execution artifacts and Database Tools</h2>
+<p>A prepared statement is executable only when zMyBatis has a proven SQL-text materializer for that shape. The DB-neutral zero-binding path and the maintained PostgreSQL BIGINT path have native Database Tools execution evidence; other nonzero dialect/type shapes remain fail-closed until separately proven.</p>
 
-<h2>Current Semantic Boundary</h2>
-<p>The current implementation combines MyBatis parsing with zMyBatis-owned parameter extraction, compatibility transformations, OGNL source sanitization, and literal rendering. Legacy execution no longer installs a process-global custom OGNL map accessor; qualified nested map/list navigation is delegated to stock MyBatis OGNL. Do not interpret this plugin as a drop-in reproduction of an application's MyBatis/JDBC runtime, custom TypeHandlers, provider methods, or every dialect-specific binding rule.</p>
-<p>The authoritative Leap capability/safety policy, including explicit unsupported/degraded behavior and downstream proof obligations, is documented in <a href="https://github.com/luceat-lux-vestra/zMyBatis/blob/main/docs/product-contract.md">docs/product-contract.md</a>.</p>
+<p>Preview and native execution use the same immutable SQL artifact. Formatting is presentation-only and cannot modify the payload sent to Database Tools.</p>
 
-<h2>Current Safety Limitations</h2>
-<ul>
-  <li><code>${}</code> is raw MyBatis interpolation, not a normal bound parameter. The current UI does not yet provide the separate mandatory warning/confirmation required by the Leap target contract.</li>
-  <li>INSERT/UPDATE/DELETE currently use the same execution path as SELECT, and SQL Preview is optional. The Leap target requires explicit mutation confirmation.</li>
-  <li>Unknown or incomplete mapper semantics such as unresolved <code>&lt;sql&gt;/&lt;include&gt;</code> dependencies must not be inferred as supported from a plausible-looking SQL result.</li>
-  <li>Current evaluator failure/unsupported-value paths can still produce SQL-looking diagnostic text; Leap requires typed fail-closed outcomes before those paths are considered safe execution boundaries.</li>
-</ul>
+<h2>Datasource and schema identity</h2>
+<p>Restart persistence stores only current v3 source-to-target descriptors: canonical source identity, stable datasource UUID, and explicit named schema. Live consoles are ephemeral resources. Startup may prune stale v3 source associations but never recreates a console or executes SQL.</p>
+
+<p><b>Use Default Schema</b> and datasources without a stable UUID are in-process only. Missing or ambiguous persisted targets require explicit re-selection rather than redirection.</p>
 
 <h2>Settings</h2>
-<p>Configure via <b>Settings -> Tools -> zMyBatis</b>:</p>
-
+<p>Configure via <b>Settings → Tools → zMyBatis</b>:</p>
 <table>
   <tr><th>Category</th><th>Option</th><th>Description</th></tr>
-  <tr><td><b>Execution and Output</b></td><td>SQL Preview</td><td>Show a preview dialog to review resolved SQL before execution</td></tr>
-  <tr><td></td><td>Auto-format SQL</td><td>Reformat resolved SQL using IntelliJ's built-in SQL code style</td></tr>
-  <tr><td></td><td>Copy to Clipboard</td><td>Auto-copy the final SQL to clipboard after execution</td></tr>
-  <tr><td></td><td>Console Session Policy</td><td>REUSE (default) — reuse existing live console per mapper file / NEW_EACH — create a new console for each execution</td></tr>
-  <tr><td><b>Parameter Dialog</b></td><td>Remember Last Inputs</td><td>Pre-fill the parameter dialog with last-used values per current statement key</td></tr>
-  <tr><td></td><td>Empty Input Handling</td><td>NULL (default) — blank fields bind as SQL NULL / EMPTY_STRING — blank fields bind as empty string</td></tr>
-  <tr><td><b>Parsing Engine</b></td><td>Strict OGNL Mode</td><td>Legacy direct-evaluator diagnostic compatibility only; shipping execution refuses evaluation failures before preview/execution regardless of this switch</td></tr>
-  <tr><td></td><td>Ignore Unknown Tags</td><td>Legacy direct-evaluator compatibility only: strip unrecognised/custom XML tags while preserving inner content; shipping execution ignores this switch and fails closed on unknown tags</td></tr>
+  <tr><td><b>Execution &amp; Output</b></td><td>SQL Preview</td><td>Optional preview for safe paths; mandatory mutation/raw confirmation overrides this setting.</td></tr>
+  <tr><td></td><td>Auto-format SQL Preview</td><td>Formatting affects presentation only, never the immutable execution artifact.</td></tr>
+  <tr><td></td><td>Console Session Policy</td><td>REUSE a matching live console or acquire NEW_EACH; this is a resource policy, not persisted target identity.</td></tr>
+  <tr><td><b>Parameter Dialog</b></td><td>Remember Last Inputs</td><td>Opt-in retention for eligible contract inputs keyed by canonical statement identity; raw values are excluded.</td></tr>
 </table>
 
-<h2>Requirements and Compatibility Evidence</h2>
+<h2>Compatibility evidence</h2>
 <ul>
   <li><b>Declared minimum IDE build:</b> 262 (2026.2 line)</li>
-  <li><b>Maintained automated Plugin Verifier targets:</b> IntelliJ IDEA Ultimate 2026.2.3, plus 2026.2 for the declared minimum build</li>
-  <li>The JetBrains Database Tools plugin (<code>com.intellij.database</code>) and a configured data source are required</li>
-  <li><b>DataGrip:</b> a product integration target whose policy was frozen by completed Track #61; a separate maintained DataGrip verifier/runtime evidence line remains a #67 obligation</li>
-  <li>The declared minimum build does not by itself prove every later IDE build or other JetBrains host compatible; broader claims require explicit maintained evidence</li>
+  <li><b>Maintained Plugin Verifier targets:</b> IntelliJ IDEA Ultimate 2026.2.3 and 2026.2</li>
+  <li>JetBrains Database Tools (<code>com.intellij.database</code>) and a configured datasource are required for execution.</li>
+  <li><b>DataGrip:</b> remains a separately maintained host-evidence obligation; IDEA evidence is not automatically generalized to DataGrip.</li>
 </ul>
+
+<p>The authoritative capability matrix and fail-closed boundaries are maintained in <a href="https://github.com/luceat-lux-vestra/zMyBatis/blob/main/docs/product-contract.md">docs/product-contract.md</a>.</p>
 <!-- Plugin description end -->
 
 ## Installation
@@ -98,25 +67,23 @@ For development/testing, a locally built distribution can also be installed thro
 
 <kbd>Settings/Preferences</kbd> → <kbd>Plugins</kbd> → <kbd>⚙️</kbd> → <kbd>Install plugin from disk…</kbd>
 
-## How It Works
+## How it works
 
-1. Place the caret inside a supported MyBatis XML statement tag or supported Java statement annotation method.
-2. Right-click and choose **Execute (zMyBatis)**.
-3. The plugin extracts the current mapper statement source, heuristically discovers required inputs, evaluates the supported dynamic-SQL path, and converts mapped values into zMyBatis literal SQL.
-4. Depending on settings, the SQL may be formatted and/or previewed before it is sent to a JetBrains Database Tools JDBC console.
-5. Target reuse follows the hardened datasource/schema identity rules described above. Persisted targets are resolved exactly at action time; startup does not recreate database consoles, and stale/ambiguous targets require explicit re-selection.
+1. Place the caret inside a supported XML mapper statement or direct Java statement annotation.
+2. Invoke **Execute (zMyBatis)**.
+3. zMyBatis captures and revalidates the source/statement authority and exact datasource/schema target.
+4. The contract-driven input UI collects required values; cancellation terminates the invocation.
+5. Isolated MyBatis preparation produces structured SQL/mapping evidence.
+6. A supported materializer freezes one target-bound SQL artifact; unsupported shapes fail closed.
+7. Required approval is shown for raw interpolation/mutations, then the exact approved artifact is executed through Database Tools.
 
-## Product Contract
+## Engineering documentation
 
-The current and target capability/safety matrix is maintained in [docs/product-contract.md](./docs/product-contract.md). Completed Track #61 froze that product policy for Leap Epic #60; downstream implementation and final evidence continue under Tracks #62–#67. The contract explicitly distinguishes supported, unsupported, compatibility-altered, degraded, and unknown behavior.
-
-## Engineering Documentation
-
-- [Product contract](./docs/product-contract.md) — current/target capability and safety policy
-- [Leap architecture](./docs/leap-architecture.md) — target boundaries plus current migration-state notes
+- [Product contract](./docs/product-contract.md) — supported/unsupported capability and safety policy
+- [Leap architecture](./docs/leap-architecture.md) — current architecture and ownership boundaries
 - [Test contracts](./docs/test-contracts.md) — what automated evidence does and does not prove
 - [Starter / Driver E2E](./docs/e2e-testing.md) — process-level applicability and maintained scenarios
-- [Session persistence](./docs/session-persistence.md) — current datasource/schema persistence contract
+- [Session persistence](./docs/session-persistence.md) — v3 datasource/schema persistence contract
 - [Release recovery](./docs/release-recovery.md) — fail-closed Marketplace recovery procedure
 - [Contributing](./CONTRIBUTING.md) and [Security](./SECURITY.md) — repository mechanics and vulnerability reporting
 
@@ -132,7 +99,7 @@ zMyBatis is licensed under the [Apache License 2.0](./LICENSE).
 
 ## Changelog
 
-See [CHANGELOG.md](./CHANGELOG.md) for a detailed list of changes.
+See [CHANGELOG.md](./CHANGELOG.md) for historical changes.
 
 ---
 

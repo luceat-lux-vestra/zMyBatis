@@ -141,12 +141,9 @@ class LeapExecutionDeliveryCoordinatorTest {
     }
 
     @Test
-    fun coordinatorComposesMaintainedBoundariesWithoutShippingActionCutover() {
+    fun coordinatorComposesMaintainedDeliveryBoundaries() {
         val coordinator = sourceText(
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionDeliveryCoordinator.kt",
-        )
-        val action = sourceText(
-            "src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt",
         )
 
         val firstAdmission = coordinator.indexOf("val initialTarget = when (")
@@ -167,7 +164,6 @@ class LeapExecutionDeliveryCoordinatorTest {
         assertTrue(coordinator.contains("LeapExecutionApprovalResult.UserCancelled -> onCancelled()"))
         assertTrue(coordinator.contains("StatementSourceGraphRevalidator::revalidateSnapshots"))
         assertTrue(coordinator.contains("targetResolver.resolve(targetDescriptor)"))
-        assertFalse(action.contains("LeapExecutionDeliveryCoordinator"))
     }
 
     private fun missingTarget(): DatabaseToolsTargetResolution =

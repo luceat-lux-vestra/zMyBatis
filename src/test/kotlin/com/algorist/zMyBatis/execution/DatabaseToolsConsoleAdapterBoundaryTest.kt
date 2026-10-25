@@ -9,10 +9,14 @@ import org.junit.Test
 class DatabaseToolsConsoleAdapterBoundaryTest {
 
     @Test
-    fun `shipping action delegates low level Database Tools console mechanics`() {
-        val action = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteProxyAction.kt")
+    fun `registered action keeps low level Database Tools mechanics behind delivery adapter`() {
+        val action = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteAction.kt")
+        val delivery = source(
+            "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionDeliveryCoordinator.kt"
+        )
 
-        assertTrue(action.contains("DatabaseToolsConsoleAdapter.getInstance"))
+        assertTrue(delivery.contains("consoleAdapter.acquireAndDeliverConsole("))
+        assertTrue(delivery.contains("consoleAdapter.executeMaterialized("))
         assertFalse(action.contains("JdbcConsole.newConsole"))
         assertFalse(action.contains(".switchSchema("))
         assertFalse(action.contains("JdbcConsoleProvider.findScriptModelNoInject"))

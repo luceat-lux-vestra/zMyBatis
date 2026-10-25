@@ -46,32 +46,21 @@ Target contract baseline: product decisions frozen from fresh `main` `249d3a5058
 | DataGrip | target host; maintained claim requires separate verifier/runtime evidence | #67 |
 | Generic other JetBrains hosts | **UNSUPPORTED/UNKNOWN** without maintained matrix | #67 |
 
-## 3. Current shipping implementation is not the target
+## 3. Shipping architecture after Leap cutover
 
-Current `main` still contains legacy behaviors that Leap will replace. They must not be reclassified as target guarantees merely because they are tested today.
+The registered product now uses one contract-driven execution authority. The former proxy action, heuristic SQL/parameter extractors, compatibility evaluator, legacy parameter dialog/history, and development-only v2 persistence migration are not production fallbacks.
 
-Known replacement targets include:
+Current ownership is:
 
-- `MyBatisExecuteProxyAction` god-object orchestration;
-- `MyBatisContextAnalyzer` event-coupled source model;
-- `AnnotationSqlExtractor` raw-string extraction boundary;
-- regex/keyword-based `ParameterExtractor` as caller-input authority;
-- `ParameterInputDialog` semantic/type/history ownership;
-- raw-string `ParameterHistoryService` identity/persistence;
-- `MyBatisEvaluator` regex OGNL/source transformations, literal rendering, and retained direct-call error-as-SQL compatibility; the previous process-global custom map accessor mutation has been removed from the retained legacy evaluator;
-- v2 persisted-record/live-console-cache lifecycle coupling and startup eager console recreation;
-- execution-time formatting mutation;
-- `Strict OGNL Mode` and `Ignore Unknown Tags` are retained only as direct legacy-evaluator compatibility; shipping evaluation fails closed independently of both switches.
+- action/context presentation: `MyBatisExecuteAction` + bounded `MyBatisContextAnalyzer`;
+- authoritative source/statement capture: Leap Java/XML source adapters and source graphs;
+- parameter/input authority: typed contracts, codecs, contract UI and canonical-identity retention;
+- preparation: isolated stock MyBatis in `:mybatis-engine`;
+- execution representation: structured prepared evidence followed by an explicitly proven target-bound SQL-text materializer;
+- target persistence: v3 `ExecutionTargetDescriptorStore`;
+- live Database Tools resources: `ConsoleCacheService` + `DatabaseToolsConsoleAdapter`.
 
-Current positive evidence remains useful as regression/falsification evidence during migration, but it does not dictate the target class or package design.
-
-The registered Leap action resolves supported XML `<sql>/<include>` dependencies through the authoritative source graph and fails typed on missing, ambiguous, cyclic, or unavailable dependencies. The retained legacy evaluator still lacks authoritative fragment resolution, but it is no longer a production fallback; its old refusal guards remain characterization/cleanup debt only.
-
-The same temporary fail-closed rule applies to legacy bound-value fallback shapes: direct `MyBatisEvaluator.evaluate(...)` may still produce compatibility strings for characterization, but shipping `evaluateForExecution(...)` refuses direct List/Map marker-bearing NULL and arbitrary-object `toString()` before console mutation. This is not type/dialect-fidelity proof or permission to implement an unverified #391 renderer.
-
-Unknown-tag compatibility is likewise isolated from shipping evaluation: direct `evaluate(...)` may still honor `Ignore Unknown Tags` for characterization, but `evaluateForExecution(...)` explicitly disables regex stripping and treats unknown elements as non-executable evaluation failures. This is a temporary legacy safety guard, not the #62/#64 source/preparation architecture.
-
-Legacy OGNL map navigation no longer installs process-global custom accessors; qualified nested map/list paths use stock MyBatis OGNL. This existing shipping safety fix remains required during #391 migration and does not demonstrate an executable new materializer.
+Safety is not configurable through compatibility evaluator switches, and unsupported behavior does not degrade to an older path.
 
 ## 4. Source authority and canonical identity
 
@@ -177,9 +166,9 @@ Standard MyBatis `databaseId` semantics depend on target-derived effective datab
 
 SQL text materialization is a deliberately bounded compatibility feature: no generic regex replacement of `?`, string/comment/dialect-operator confusion, guessed null, arbitrary `toString()`, unverified raw `${}` replacement or broad DBMS support claim. Preview/execution identity and mandatory confirmation requirements remain unchanged in strength.
 
-## 10. Preview, formatting, copy, and execution identity
+## 10. Preview, formatting, and execution identity
 
-The sole execution authority after materialization is an immutable **exact SQL-text artifact** bound to the captured source revisions, canonical statement, approved inputs, statement kind and chosen target descriptor. Preview and confirmation use that artifact; the Database Tools adapter executes its exact SQL text and target. No formatting, copy projection or further substitution can change the executable payload.
+The sole execution authority after materialization is an immutable **exact SQL-text artifact** bound to the captured source revisions, canonical statement, approved inputs, statement kind and chosen target descriptor. Preview and confirmation use that artifact; the Database Tools adapter executes its exact SQL text and target. No formatting or further substitution can change the executable payload.
 
 - Preparation, parsing, formatting, history and preview do not execute SQL.
 - Revalidate source, target, cancellation/disposal and confirmation immediately before dispatch; any material change invalidates the artifact.
@@ -205,7 +194,7 @@ Source, dependency, input, MyBatis, mapping, materialization, target, console, c
 
 ### Side effects
 
-Only the explicit zMyBatis execution action may invoke SQL. Source capture, preparation, preview, formatting, clipboard preparation, settings, history, startup, restoration, and diagnostics do not execute.
+Only the explicit zMyBatis execution action may invoke SQL. Source capture, preparation, preview, formatting, settings, history, startup, restoration, and diagnostics do not execute.
 
 ## 12. Target/session contract
 
@@ -218,7 +207,7 @@ Preserve the proven #57 safety invariants:
 - malformed/interrupted persistence is cleaned safely;
 - restoration never executes SQL.
 
-Current shipping v3 target persistence stores project-scoped canonical source-to-target descriptors (stable datasource UUID plus explicit named schema), not live `JdbcConsole` objects. A bounded migration-only v2 reader remains for supported upgrades; see [session persistence](session-persistence.md).
+Current shipping v3 target persistence stores project-scoped canonical source-to-target descriptors (stable datasource UUID plus explicit named schema), not live `JdbcConsole` objects. Development-only v2 persistence was never distributed and has no runtime migration reader; see [session persistence](session-persistence.md).
 
 Leap target rules:
 
@@ -276,16 +265,16 @@ A small safety patch may remove current INFO leakage before the full Leap cutove
 11. execute exactly the approved SQL text through the configured native Database Tools console for a dialect/type slice proven executable; no DBMS allowlist for target selection;
 12. present typed result/failure with redacted diagnostics.
 
-## 17. Compatibility settings disposition
+## 17. Current settings disposition
 
-Current settings are not automatically product guarantees.
+Current settings are product behavior only where an active Leap owner consumes them:
 
-- **Strict OGNL Mode:** remove as a switch controlling fail-closed behavior. Leap execution always fails closed. A future diagnostic-verbosity option must not alter safety semantics.
-- **Ignore Unknown Tags:** remove from authoritative execution. Any retained compatibility inspection mode must be explicitly non-executable.
-- **SQL Preview:** optional presentation for safe read paths; mandatory confirmation rules override it.
-- **Auto-format SQL:** presentation only.
-- **Remember Last Inputs:** target default OFF until #63 completes safe retention.
-- **Console Session Policy:** may remain as an ephemeral resource policy if #65 proves it worthwhile; it is not target identity.
+- **SQL Preview:** optional presentation for safe read paths; mandatory mutation/raw confirmation overrides it.
+- **Auto-format SQL Preview:** presentation only; it never changes the immutable execution artifact.
+- **Remember Last Inputs:** opt-in canonical-statement retention subject to the #63 retention policy; raw interpolation is never retained.
+- **Console Session Policy:** ephemeral live-resource policy only; it is not target identity.
+
+Removed evaluator/dialog compatibility fields are intentionally absent from current runtime state and UI.
 
 ## 18. Track ownership and closure
 
