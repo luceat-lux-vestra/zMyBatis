@@ -404,8 +404,13 @@ candidate is outstanding and proves the adapter converts that completion to
 `InvocationInvalidated`; the delivery coordinator's existing typed branch returns before approval
 or Database Tools delivery.
 
-All coordination is latch/future based. Fixture timeouts only fail a hung test; they are not product
-latency targets. This evidence proves the #462 candidate scheduling/cancellation handoff, not a hard
+All coordination is latch/future based. The fixture explicitly runs with IntelliJ's
+`intellij.progress.task.ignoreHeadless=true` test switch through
+`PlatformTestUtil.withSystemProperty`, because the platform deliberately executes background progress
+tasks synchronously in unit/headless mode unless that production-style asynchronous mode is requested.
+The property is scoped and restored by the platform test helper, and every queued task is awaited before
+that scope exits. Fixture timeouts only fail a hung test; they are not product latency targets.
+This evidence proves the #462 candidate scheduling/cancellation handoff, not a hard
 interruption bound inside one stock-MyBatis parse/evaluation call, large-mapper/source-graph
 responsiveness, large-input responsiveness, retained-resource behavior, or DataGrip host parity.
 

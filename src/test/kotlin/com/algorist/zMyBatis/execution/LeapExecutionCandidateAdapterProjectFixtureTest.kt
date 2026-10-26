@@ -37,7 +37,7 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
 
     override fun runInDispatchThread(): Boolean = false
 
-    fun testBlockedCandidateRunsOffEdtAndLeavesEdtResponsive() {
+    fun testBlockedCandidateRunsOffEdtAndLeavesEdtResponsive() = withProductionStyleBackgroundTasks {
         val inputs = candidateInputs()
         val started = CountDownLatch(1)
         val release = CountDownLatch(1)
@@ -93,7 +93,7 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
         assertFalse("candidate fixture timed out waiting for deterministic release", builderTimedOut.get())
     }
 
-    fun testProgressIndicatorCancellationPreventsNormalContinuation() {
+    fun testProgressIndicatorCancellationPreventsNormalContinuation() = withProductionStyleBackgroundTasks {
         val inputs = candidateInputs()
         val started = CountDownLatch(1)
         val release = CountDownLatch(1)
@@ -143,7 +143,7 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
         assertFalse("candidate fixture timed out waiting for deterministic release", builderTimedOut.get())
     }
 
-    fun testInvocationInvalidationRejectsDelayedCandidateCompletion() {
+    fun testInvocationInvalidationRejectsDelayedCandidateCompletion() = withProductionStyleBackgroundTasks {
         val inputs = candidateInputs()
         val started = CountDownLatch(1)
         val release = CountDownLatch(1)
@@ -194,6 +194,15 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
             nonInvalidatedContinuationReached.get(),
         )
         assertFalse("candidate fixture timed out waiting for deterministic release", builderTimedOut.get())
+    }
+
+    private fun withProductionStyleBackgroundTasks(block: () -> Unit) {
+        PlatformTestUtil.withSystemProperty(
+            "intellij.progress.task.ignoreHeadless",
+            "true",
+        ) {
+            block()
+        }
     }
 
     private fun requestCandidate(
