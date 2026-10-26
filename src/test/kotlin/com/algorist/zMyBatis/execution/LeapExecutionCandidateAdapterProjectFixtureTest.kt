@@ -197,7 +197,7 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
     }
 
     private fun withProductionStyleBackgroundTasks(block: () -> Unit) {
-        PlatformTestUtil.withSystemProperty(
+        PlatformTestUtil.withSystemProperty<Nothing>(
             "intellij.progress.task.ignoreHeadless",
             "true",
         ) {
