@@ -417,3 +417,27 @@ responsiveness, large-input responsiveness, retained-resource behavior, or DataG
 E2E applicability: the fixture owns the scheduler/cancellation invariant directly. The normal
 Starter/Driver suite remains required on the exact final HEAD as packaged-plugin regression evidence,
 but it does not replace this controlled IntelliJ scheduler proof.
+
+
+## Post-target XML source-selection threading and cancellation evidence
+
+`LeapPreparationSourceSelectionAdapterProjectFixtureTest` exercises the shipping asynchronous
+selection boundary in a real IntelliJ test application. The fixture runs test orchestration off the
+EDT and enables IntelliJ's production-style asynchronous progress behavior in headless mode with the
+same scoped `intellij.progress.task.ignoreHeadless=true` test switch used by the candidate fixture.
+
+A latch-controlled selector proves that post-target XML selection work runs outside the dispatch
+thread while an independently queued EDT sentinel completes before selection is released. The same
+fixture exercises real `ProgressIndicator.cancel()` handoff and delayed invocation invalidation;
+neither path may emit a normal selection result that could continue toward input, candidate
+preparation, approval, or Database Tools delivery.
+
+The production selector keeps source-graph resolution and scalable mapper-method lookup on the
+background worker. `XmlMapperMethodCaptureAdapter` wraps PSI/index reads in IntelliJ read actions;
+only synchronization of an already-cached uncommitted document is marshalled narrowly to the EDT.
+After selection completes, the coordinator reuses its existing source-revision and exact-target
+revalidation before normal invocation continuation.
+
+This is threading/cancellation evidence, not a product latency SLA or a broad source-graph benchmark.
+Large mapper/source-graph measurement, large-input responsiveness, retained-resource behavior, and
+separate DataGrip host evidence remain independent #67 slices.

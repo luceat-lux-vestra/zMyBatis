@@ -5,8 +5,11 @@ import com.algorist.zMyBatis.core.source.JavaTypeIdentity
 import com.algorist.zMyBatis.core.source.XmlMapperMethodCapture
 import com.algorist.zMyBatis.core.source.XmlStatementId
 import com.algorist.zMyBatis.core.source.SourceRange
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiArrayType
 import com.intellij.psi.PsiClass
@@ -72,26 +75,20 @@ object XmlMapperMethodCaptureAdapter {
         project: Project,
         statementId: XmlStatementId,
         maxSourceLength: Int,
-        sourceCapture: (com.intellij.openapi.vfs.VirtualFile, Int) -> DependentMapperSourceCaptureResult,
+        sourceCapture: (VirtualFile, Int) -> DependentMapperSourceCaptureResult,
     ): XmlMapperMethodCaptureResult {
         require(maxSourceLength in 1 until Int.MAX_VALUE) {
             "max source length must be positive and leave room for the overflow probe"
         }
 
-        val initialClass = when (
-            val resolution = resolveMapperClass(project, statementId.namespace)
+        val virtualFile = when (
+            val source = ReadAction.compute<MapperSourceResolution, RuntimeException> {
+                resolveMapperSource(project, statementId.namespace)
+            }
         ) {
-            is MapperClassResolution.Resolved -> resolution.mapperClass
-            is MapperClassResolution.Failed -> return failed(resolution.failure)
+            is MapperSourceResolution.Resolved -> source.virtualFile
+            is MapperSourceResolution.Failed -> return failed(source.failure)
         }
-        if (!initialClass.isInterface) {
-            return failed(XmlMapperMethodCaptureFailure.UNSUPPORTED_MAPPER_TYPE)
-        }
-
-        val initialFile = initialClass.containingFile as? PsiJavaFile
-            ?: return failed(XmlMapperMethodCaptureFailure.MAPPER_SOURCE_UNAVAILABLE)
-        val virtualFile = initialFile.virtualFile
-            ?: return failed(XmlMapperMethodCaptureFailure.MAPPER_SOURCE_UNAVAILABLE)
 
         val beforeSynchronization = when (
             val result = sourceCapture(virtualFile, maxSourceLength)
@@ -128,6 +125,66 @@ object XmlMapperMethodCaptureAdapter {
             return failed(XmlMapperMethodCaptureFailure.SOURCE_CHANGED_DURING_CAPTURE)
         }
 
+        return ReadAction.compute<XmlMapperMethodCaptureResult, RuntimeException> {
+            captureCommittedMapperMethod(
+                project = project,
+                statementId = statementId,
+                virtualFile = virtualFile,
+                snapshot = afterSynchronization,
+            )
+        }
+    }
+
+    private fun synchronizeCachedDocument(
+        project: Project,
+        virtualFile: VirtualFile,
+    ) {
+        val synchronize = {
+            val document = FileDocumentManager.getInstance().getCachedDocument(virtualFile)
+            if (document != null) {
+                val documentManager = PsiDocumentManager.getInstance(project)
+                if (!documentManager.isCommitted(document)) {
+                    documentManager.commitDocument(document)
+                }
+            }
+        }
+
+        val application = ApplicationManager.getApplication()
+        if (application.isDispatchThread) {
+            synchronize()
+        } else {
+            application.invokeAndWait(synchronize)
+        }
+    }
+
+    private fun resolveMapperSource(
+        project: Project,
+        qualifiedName: String,
+    ): MapperSourceResolution {
+        val mapperClass = when (val resolution = resolveMapperClass(project, qualifiedName)) {
+            is MapperClassResolution.Resolved -> resolution.mapperClass
+            is MapperClassResolution.Failed -> return MapperSourceResolution.Failed(resolution.failure)
+        }
+        if (!mapperClass.isInterface) {
+            return MapperSourceResolution.Failed(XmlMapperMethodCaptureFailure.UNSUPPORTED_MAPPER_TYPE)
+        }
+        val mapperFile = mapperClass.containingFile as? PsiJavaFile
+            ?: return MapperSourceResolution.Failed(
+                XmlMapperMethodCaptureFailure.MAPPER_SOURCE_UNAVAILABLE,
+            )
+        val virtualFile = mapperFile.virtualFile
+            ?: return MapperSourceResolution.Failed(
+                XmlMapperMethodCaptureFailure.MAPPER_SOURCE_UNAVAILABLE,
+            )
+        return MapperSourceResolution.Resolved(virtualFile)
+    }
+
+    private fun captureCommittedMapperMethod(
+        project: Project,
+        statementId: XmlStatementId,
+        virtualFile: VirtualFile,
+        snapshot: com.algorist.zMyBatis.core.source.SourceSnapshot,
+    ): XmlMapperMethodCaptureResult {
         val mapperClass = when (
             val resolution = resolveMapperClass(project, statementId.namespace)
         ) {
@@ -141,7 +198,7 @@ object XmlMapperMethodCaptureAdapter {
             ?: return failed(XmlMapperMethodCaptureFailure.MAPPER_SOURCE_UNAVAILABLE)
         if (
             mapperFile.virtualFile != virtualFile ||
-            mapperFile.text != afterSynchronization.content
+            mapperFile.text != snapshot.content
         ) {
             return failed(XmlMapperMethodCaptureFailure.SOURCE_PSI_MISMATCH)
         }
@@ -163,8 +220,8 @@ object XmlMapperMethodCaptureAdapter {
         val methodRange = method.textRange
         if (
             methodRange.startOffset < 0 ||
-            methodRange.endOffset > afterSynchronization.content.length ||
-            afterSynchronization.content.substring(methodRange.startOffset, methodRange.endOffset) != method.text
+            methodRange.endOffset > snapshot.content.length ||
+            snapshot.content.substring(methodRange.startOffset, methodRange.endOffset) != method.text
         ) {
             return failed(XmlMapperMethodCaptureFailure.SOURCE_PSI_MISMATCH)
         }
@@ -194,22 +251,11 @@ object XmlMapperMethodCaptureAdapter {
         return XmlMapperMethodCaptureResult.Captured(
             XmlMapperMethodCapture(
                 statementId = statementId,
-                mapperSource = afterSynchronization,
+                mapperSource = snapshot,
                 methodSourceRange = SourceRange(methodRange.startOffset, methodRange.endOffset),
                 parameters = parameters,
             ),
         )
-    }
-
-    private fun synchronizeCachedDocument(
-        project: Project,
-        virtualFile: com.intellij.openapi.vfs.VirtualFile,
-    ) {
-        val document = FileDocumentManager.getInstance().getCachedDocument(virtualFile) ?: return
-        val documentManager = PsiDocumentManager.getInstance(project)
-        if (!documentManager.isCommitted(document)) {
-            documentManager.commitDocument(document)
-        }
     }
 
     private fun resolveMapperClass(
@@ -269,6 +315,11 @@ object XmlMapperMethodCaptureAdapter {
 
     private fun failed(failure: XmlMapperMethodCaptureFailure): XmlMapperMethodCaptureResult =
         XmlMapperMethodCaptureResult.Failed(failure)
+
+    private sealed interface MapperSourceResolution {
+        data class Resolved(val virtualFile: VirtualFile) : MapperSourceResolution
+        data class Failed(val failure: XmlMapperMethodCaptureFailure) : MapperSourceResolution
+    }
 
     private sealed interface MapperClassResolution {
         data class Resolved(val mapperClass: PsiClass) : MapperClassResolution

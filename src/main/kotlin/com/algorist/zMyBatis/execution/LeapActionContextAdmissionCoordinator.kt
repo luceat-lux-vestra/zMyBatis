@@ -27,7 +27,6 @@ import com.algorist.zMyBatis.source.XmlActionSourceCaptureAdapter
 import com.algorist.zMyBatis.source.XmlActionSourceCaptureFailure
 import com.algorist.zMyBatis.source.XmlActionSourceCaptureResult
 import com.algorist.zMyBatis.source.XmlMapperDocumentDiscovery
-import com.algorist.zMyBatis.source.XmlMapperMethodCaptureAdapter
 import com.algorist.zMyBatis.source.XmlMapperMethodCaptureFailure
 import com.algorist.zMyBatis.source.XmlMapperMethodCaptureResult
 import com.algorist.zMyBatis.source.XmlProjectMapperSourceCaptureAdapter
@@ -162,7 +161,9 @@ internal fun selectLeapPreparationSource(
     evidence: LeapActionSourceEvidence,
     effectiveDatabaseId: MyBatisDatabaseId?,
     captureXmlMapperMethod: (XmlStatementId) -> XmlMapperMethodCaptureResult,
+    checkCanceled: () -> Unit = {},
 ): LeapPreparationSourceSelectionResult {
+    checkCanceled()
     return when (evidence) {
         is LeapActionSourceEvidence.Java ->
             when (
@@ -196,6 +197,7 @@ internal fun selectLeapPreparationSource(
             }
 
         is LeapActionSourceEvidence.Xml -> {
+            checkCanceled()
             val graph = when (
                 val resolution = XmlStatementSourceGraphResolver.resolve(
                     rootStatementId = evidence.statementId,
@@ -212,6 +214,7 @@ internal fun selectLeapPreparationSource(
                         ),
                     )
             }
+            checkCanceled()
 
             val mapperMethod = when (val method = captureXmlMapperMethod(evidence.statementId)) {
                 is XmlMapperMethodCaptureResult.Captured -> method.capture
@@ -227,6 +230,7 @@ internal fun selectLeapPreparationSource(
                     }
                 }
             }
+            checkCanceled()
             LeapPreparationSourceSelectionResult.Ready(
                 XmlMapperPreparationSource(
                     sourceGraph = graph,
@@ -538,6 +542,7 @@ internal class LeapActionContextAdmissionCoordinator(
 ) {
     private val targetAdmission = LeapExecutionTargetAdmissionAdapter(project)
     private val targetResolver = DatabaseToolsTargetResolver(project)
+    private val sourceSelection = LeapPreparationSourceSelectionAdapter(project)
     private val invocationCoordinator = LeapExecutionInvocationCoordinator(project)
     private val cache = ConsoleCacheService.getInstance(project)
 
@@ -708,15 +713,55 @@ internal class LeapActionContextAdmissionCoordinator(
             return
         }
 
-        val source = when (
-            val selection = selectLeapPreparationSource(
+        if (evidence is LeapActionSourceEvidence.Xml) {
+            sourceSelection.requestSelection(
                 evidence = evidence,
                 effectiveDatabaseId = target.effectiveDatabaseId,
-                captureXmlMapperMethod = { statementId ->
-                    XmlMapperMethodCaptureAdapter.capture(project, statementId)
+                isInvocationActive = liveInvocation,
+                onResult = { result ->
+                    when (result) {
+                        is LeapPreparationSourceSelectionTaskResult.Completed ->
+                            continueWithSelectedSource(
+                                selection = result.selection,
+                                target = target,
+                                liveInvocation = liveInvocation,
+                                onExecuted = onExecuted,
+                                onCancelled = onCancelled,
+                                onFailure = onFailure,
+                            )
+                        LeapPreparationSourceSelectionTaskResult.InvocationInvalidated ->
+                            onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
+                    }
                 },
+                onCancelled = onCancelled,
             )
-        ) {
+            return
+        }
+
+        val selection = selectLeapPreparationSource(
+            evidence = evidence,
+            effectiveDatabaseId = target.effectiveDatabaseId,
+            captureXmlMapperMethod = { error("XML mapper-method capture must not run for Java source") },
+        )
+        continueWithSelectedSource(
+            selection = selection,
+            target = target,
+            liveInvocation = liveInvocation,
+            onExecuted = onExecuted,
+            onCancelled = onCancelled,
+            onFailure = onFailure,
+        )
+    }
+
+    private fun continueWithSelectedSource(
+        selection: LeapPreparationSourceSelectionResult,
+        target: LeapExecutionTargetAdmissionResult.Ready,
+        liveInvocation: () -> Boolean,
+        onExecuted: () -> Unit,
+        onCancelled: () -> Unit,
+        onFailure: (LeapActionContextAdmissionFailure) -> Unit,
+    ) {
+        val source = when (selection) {
             is LeapPreparationSourceSelectionResult.Ready -> selection.source
             is LeapPreparationSourceSelectionResult.Failed -> {
                 onFailure(
