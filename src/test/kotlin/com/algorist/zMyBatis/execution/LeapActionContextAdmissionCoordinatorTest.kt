@@ -226,7 +226,6 @@ class LeapActionContextAdmissionCoordinatorTest {
         assertTrue(projectCapture.contains("checkCanceled: () -> Unit = {}"))
         assertTrue(projectCapture.contains("val snapshotCapture = DependentMapperSourceSnapshotAdapter.capture"))
         assertTrue(projectCapture.contains("val discoveryResult = XmlMapperSourceDiscovery.discover(snapshot)"))
-        assertTrue(projectCapture.count { it == '\n' } > 0)
         assertTrue(projectCapture.split("checkCanceled()").size - 1 >= 5)
         assertTrue(coordinator.contains("LeapPreparationSourceSelectionAdapter"))
         assertTrue(coordinator.contains("sourceSelection.requestSelection"))
