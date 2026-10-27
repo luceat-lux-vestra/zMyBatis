@@ -29,7 +29,6 @@ import com.algorist.zMyBatis.source.XmlActionSourceCaptureResult
 import com.algorist.zMyBatis.source.XmlMapperDocumentDiscovery
 import com.algorist.zMyBatis.source.XmlMapperMethodCaptureFailure
 import com.algorist.zMyBatis.source.XmlMapperMethodCaptureResult
-import com.algorist.zMyBatis.source.XmlProjectMapperSourceCaptureAdapter
 import com.algorist.zMyBatis.source.XmlProjectMapperSourceCaptureResult
 import com.algorist.zMyBatis.source.XmlStatementSourceGraphFailure
 import com.algorist.zMyBatis.source.XmlStatementSourceGraphResolver
