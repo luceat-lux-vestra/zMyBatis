@@ -37,7 +37,9 @@ internal object XmlProjectMapperSourceCaptureAdapter {
         project: Project,
         rootSnapshot: SourceSnapshot,
         rootDiscovery: XmlMapperDocumentDiscovery,
+        checkCanceled: () -> Unit = {},
     ): XmlProjectMapperSourceCaptureResult {
+        checkCanceled()
         val xmlFiles = try {
             ReadAction.compute<List<VirtualFile>, RuntimeException> {
                 FilenameIndex.getAllFilesByExt(
@@ -49,6 +51,7 @@ internal object XmlProjectMapperSourceCaptureAdapter {
         } catch (_: IndexNotReadyException) {
             return XmlProjectMapperSourceCaptureResult.IndexUnavailable
         }
+        checkCanceled()
 
         val snapshotsById = linkedMapOf(rootSnapshot.fileId to rootSnapshot)
         val discoveriesById = linkedMapOf(rootDiscovery.sourceFileId to rootDiscovery)
@@ -57,15 +60,16 @@ internal object XmlProjectMapperSourceCaptureAdapter {
             ?.removePrefix(VFS_ID_PREFIX)
 
         for (virtualFile in xmlFiles) {
+            checkCanceled()
             if (virtualFile.url == rootUrl) continue
 
-            val snapshot = when (
-                val capture = DependentMapperSourceSnapshotAdapter.capture(
-                    virtualFile = virtualFile,
-                    maxContentLength = MAX_DEPENDENT_CONTENT_LENGTH,
-                )
-            ) {
-                is DependentMapperSourceCaptureResult.Captured -> capture.snapshot
+            val snapshotCapture = DependentMapperSourceSnapshotAdapter.capture(
+                virtualFile = virtualFile,
+                maxContentLength = MAX_DEPENDENT_CONTENT_LENGTH,
+            )
+            checkCanceled()
+            val snapshot = when (snapshotCapture) {
+                is DependentMapperSourceCaptureResult.Captured -> snapshotCapture.snapshot
                 is DependentMapperSourceCaptureResult.ContentTooLarge,
                 DependentMapperSourceCaptureResult.InvalidSource,
                 DependentMapperSourceCaptureResult.SourceChangedDuringCapture,
@@ -73,14 +77,17 @@ internal object XmlProjectMapperSourceCaptureAdapter {
                 -> continue
             }
 
-            val discovery = when (val result = XmlMapperSourceDiscovery.discover(snapshot)) {
-                is XmlMapperDiscoveryResult.Discovered -> result.mapper
+            val discoveryResult = XmlMapperSourceDiscovery.discover(snapshot)
+            checkCanceled()
+            val discovery = when (discoveryResult) {
+                is XmlMapperDiscoveryResult.Discovered -> discoveryResult.mapper
                 is XmlMapperDiscoveryResult.Failed -> continue
             }
 
             snapshotsById[snapshot.fileId] = snapshot
             discoveriesById[discovery.sourceFileId] = discovery
         }
+        checkCanceled()
 
         return XmlProjectMapperSourceCaptureResult.Captured(
             XmlProjectMapperSourceCapture(
