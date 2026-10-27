@@ -441,3 +441,29 @@ revalidation before normal invocation continuation.
 This is threading/cancellation evidence, not a product latency SLA or a broad source-graph benchmark.
 Large mapper/source-graph measurement, large-input responsiveness, retained-resource behavior, and
 separate DataGrip host evidence remain independent #67 slices.
+
+
+## Pre-target project XML expansion threading and cancellation evidence
+
+`LeapProjectXmlMapperExpansionAdapterProjectFixtureTest` exercises the shipping pre-target project
+XML mapper expansion boundary in a real IntelliJ test application. The fixture uses the same scoped
+`intellij.progress.task.ignoreHeadless=true` production-style task semantics as the candidate and
+post-target source-selection fixtures.
+
+A latch-controlled expander proves project XML expansion runs outside the dispatch thread while an
+independently queued EDT sentinel completes before the worker is released. The cancellation case
+captures the real task `ProgressIndicator`, calls `cancel()`, releases the worker and requires the
+next cooperative probe to prevent a normal expansion completion. A delayed-completion case invalidates
+the invocation while expansion is outstanding and requires `InvocationInvalidated` rather than a
+continuation toward target selection.
+
+The production `XmlProjectMapperSourceCaptureAdapter` now accepts the task cancellation probe and
+checks it before and after project XML enumeration, before each candidate file, after dependent
+snapshot capture, and after mapper discovery before accumulation. Existing deterministic URL
+ordering, root exclusion, the 2 MiB per-dependent-source limit, typed `IndexUnavailable`, and
+fail-closed omission behavior are unchanged.
+
+All fixture coordination is latch/future based; timeouts are hung-test guards rather than latency
+targets. This evidence closes the structural cancellation-ownership gap only. Large mapper/source-
+graph scale measurement, large-input responsiveness, retained-resource behavior, and separate
+DataGrip host evidence remain later #67 slices.
