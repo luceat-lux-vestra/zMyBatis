@@ -29,7 +29,6 @@ import com.algorist.zMyBatis.source.XmlActionSourceCaptureResult
 import com.algorist.zMyBatis.source.XmlMapperDocumentDiscovery
 import com.algorist.zMyBatis.source.XmlMapperMethodCaptureFailure
 import com.algorist.zMyBatis.source.XmlMapperMethodCaptureResult
-import com.algorist.zMyBatis.source.XmlProjectMapperSourceCaptureAdapter
 import com.algorist.zMyBatis.source.XmlProjectMapperSourceCaptureResult
 import com.algorist.zMyBatis.source.XmlStatementSourceGraphFailure
 import com.algorist.zMyBatis.source.XmlStatementSourceGraphResolver
@@ -540,6 +539,7 @@ internal sealed interface LeapActionContextAdmissionFailure {
 internal class LeapActionContextAdmissionCoordinator(
     private val project: Project,
 ) {
+    private val projectXmlExpansion = LeapProjectXmlMapperExpansionAdapter(project)
     private val targetAdmission = LeapExecutionTargetAdmissionAdapter(project)
     private val targetResolver = DatabaseToolsTargetResolver(project)
     private val sourceSelection = LeapPreparationSourceSelectionAdapter(project)
@@ -627,40 +627,39 @@ internal class LeapActionContextAdmissionCoordinator(
             return
         }
 
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val expanded = XmlProjectMapperSourceCaptureAdapter.capture(
-                project = project,
-                rootSnapshot = evidence.snapshots.single(),
-                rootDiscovery = evidence.discoveries.single(),
-            )
-            ApplicationManager.getApplication().invokeLater({
-                if (!liveInvocation()) {
-                    onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
-                    return@invokeLater
+        projectXmlExpansion.requestExpansion(
+            rootSnapshot = evidence.snapshots.single(),
+            rootDiscovery = evidence.discoveries.single(),
+            isInvocationActive = liveInvocation,
+            onResult = { result ->
+                when (result) {
+                    is LeapProjectXmlMapperExpansionTaskResult.Completed ->
+                        when (val expanded = result.expansion) {
+                            is XmlProjectMapperSourceCaptureResult.Captured ->
+                                requestTarget(
+                                    evidence = evidence.copy(
+                                        snapshots = expanded.capture.snapshots,
+                                        discoveries = expanded.capture.discoveries,
+                                    ),
+                                    dataContext = dataContext,
+                                    liveInvocation = liveInvocation,
+                                    onExecuted = onExecuted,
+                                    onCancelled = onCancelled,
+                                    onFailure = onFailure,
+                                )
+                            XmlProjectMapperSourceCaptureResult.IndexUnavailable ->
+                                onFailure(
+                                    LeapActionContextAdmissionFailure.SourceCaptureFailed(
+                                        LeapActionSourceEvidenceFailure.XmlProjectIndexUnavailable,
+                                    ),
+                                )
+                        }
+                    LeapProjectXmlMapperExpansionTaskResult.InvocationInvalidated ->
+                        onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
                 }
-
-                when (expanded) {
-                    is XmlProjectMapperSourceCaptureResult.Captured ->
-                        requestTarget(
-                            evidence = evidence.copy(
-                                snapshots = expanded.capture.snapshots,
-                                discoveries = expanded.capture.discoveries,
-                            ),
-                            dataContext = dataContext,
-                            liveInvocation = liveInvocation,
-                            onExecuted = onExecuted,
-                            onCancelled = onCancelled,
-                            onFailure = onFailure,
-                        )
-                    XmlProjectMapperSourceCaptureResult.IndexUnavailable ->
-                        onFailure(
-                            LeapActionContextAdmissionFailure.SourceCaptureFailed(
-                                LeapActionSourceEvidenceFailure.XmlProjectIndexUnavailable,
-                            ),
-                        )
-                }
-            }, ModalityState.any())
-        }
+            },
+            onCancelled = onCancelled,
+        )
     }
 
     private fun requestTarget(
