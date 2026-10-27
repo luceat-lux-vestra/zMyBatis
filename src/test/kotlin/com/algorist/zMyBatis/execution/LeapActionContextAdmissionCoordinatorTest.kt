@@ -206,10 +206,28 @@ class LeapActionContextAdmissionCoordinatorTest {
         )
         val pluginXml = sourceText("src/main/resources/META-INF/plugin.xml")
 
+        val projectExpansion = sourceText(
+            "src/main/kotlin/com/algorist/zMyBatis/execution/LeapProjectXmlMapperExpansionAdapter.kt",
+        )
+        val projectCapture = sourceText(
+            "src/main/kotlin/com/algorist/zMyBatis/source/XmlProjectMapperSourceCaptureAdapter.kt",
+        )
+
         assertTrue(coordinator.contains("JavaAnnotationSourceCaptureAdapter.capture"))
         assertTrue(coordinator.contains("XmlActionSourceCaptureAdapter.capture"))
-        assertTrue(coordinator.contains("XmlProjectMapperSourceCaptureAdapter.capture"))
-        assertTrue(coordinator.contains("executeOnPooledThread"))
+        assertTrue(coordinator.contains("LeapProjectXmlMapperExpansionAdapter"))
+        assertTrue(coordinator.contains("projectXmlExpansion.requestExpansion"))
+        assertFalse(coordinator.contains("executeOnPooledThread"))
+        assertTrue(projectExpansion.contains("Task.Backgroundable"))
+        assertTrue(projectExpansion.contains("indicator::checkCanceled"))
+        assertFalse(projectExpansion.contains("AnActionEvent"))
+        assertFalse(projectExpansion.contains("Editor"))
+        assertFalse(projectExpansion.contains("JdbcConsole"))
+        assertTrue(projectCapture.contains("checkCanceled: () -> Unit = {}"))
+        assertTrue(projectCapture.contains("val snapshotCapture = DependentMapperSourceSnapshotAdapter.capture"))
+        assertTrue(projectCapture.contains("val discoveryResult = XmlMapperSourceDiscovery.discover(snapshot)"))
+        assertTrue(projectCapture.count { it == '\n' } > 0)
+        assertTrue(projectCapture.split("checkCanceled()").size - 1 >= 5)
         assertTrue(coordinator.contains("LeapPreparationSourceSelectionAdapter"))
         assertTrue(coordinator.contains("sourceSelection.requestSelection"))
         assertTrue(coordinator.contains("continueWithSelectedSource"))
