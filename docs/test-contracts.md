@@ -492,7 +492,7 @@ cost and reachable-graph cost remain distinguishable. It exercises the maintaine
 dependency/source capture and emitting elapsed time plus exact graph/source dimensions under the same
 `ZMYBATIS_XML_SCALE` prefix.
 
-These are reproducible CI evidence dimensions, not product-wide performance limits. Test timeouts
+The root `test` task promotes only `ZMYBATIS_XML_SCALE` standard-output records into the Gradle lifecycle log, so successful CI retains the measured values without enabling all test standard streams. These are reproducible CI evidence dimensions, not product-wide performance limits. Test timeouts
 remain hang guards only, and elapsed values are observations for before/after comparison. The slice
 adds no mapper cache/index and no new XML count/byte limit. Large parameter/input responsiveness,
 retained-resource behavior, and separate DataGrip host evidence remain independent #67 work.
