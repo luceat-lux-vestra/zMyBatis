@@ -477,7 +477,7 @@ dependent mapper XML documents**, each with an 8 KiB inert payload, then runs th
 asserts that all 129 mapper snapshots/discoveries survive capture, computes the exact aggregate
 UTF-8 source bytes from the captured immutable snapshots, and emits a
 `ZMYBATIS_XML_SCALE phase=project-expansion` record containing candidate count, aggregate bytes,
-cooperative-probe count and observed elapsed time.
+cooperative-probe count and observed elapsed time with the deterministic fixture-gate wait excluded.
 
 The responsiveness case pauses the real capture loop at its 64th cooperative probe, after project
 enumeration has entered per-candidate work, and requires an independently queued EDT sentinel to
