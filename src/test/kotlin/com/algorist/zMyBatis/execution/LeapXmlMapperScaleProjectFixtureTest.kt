@@ -21,6 +21,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 class LeapXmlMapperScaleProjectFixtureTest : BasePlatformTestCase() {
@@ -33,6 +34,7 @@ class LeapXmlMapperScaleProjectFixtureTest : BasePlatformTestCase() {
             val gateReached = CountDownLatch(1)
             val releaseGate = CountDownLatch(1)
             val gateTimedOut = AtomicBoolean(false)
+            val gateBlockedNanos = AtomicLong()
             val expansionWasOnEdt = AtomicBoolean(true)
             val probeCount = AtomicInteger()
             val result = CompletableFuture<LeapProjectXmlMapperExpansionTaskResult>()
@@ -48,9 +50,11 @@ class LeapXmlMapperScaleProjectFixtureTest : BasePlatformTestCase() {
                         val probe = probeCount.incrementAndGet()
                         if (probe == RESPONSIVENESS_GATE_PROBE) {
                             gateReached.countDown()
+                            val gateStartedNanos = System.nanoTime()
                             if (!releaseGate.await(FIXTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                                 gateTimedOut.set(true)
                             }
+                            gateBlockedNanos.set(System.nanoTime() - gateStartedNanos)
                         }
                     },
                 )
@@ -89,7 +93,9 @@ class LeapXmlMapperScaleProjectFixtureTest : BasePlatformTestCase() {
 
             val completed = PlatformTestUtil.waitForFuture(result, FIXTURE_TIMEOUT_MILLIS)
             val capture = captured(completed)
-            val elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)
+            val elapsedNanos =
+                (System.nanoTime() - startedNanos - gateBlockedNanos.get()).coerceAtLeast(0L)
+            val elapsedMillis = TimeUnit.NANOSECONDS.toMillis(elapsedNanos)
             val aggregateBytes = capture.snapshots.sumOf { snapshot ->
                 snapshot.content.toByteArray(Charsets.UTF_8).size.toLong()
             }
@@ -112,7 +118,7 @@ class LeapXmlMapperScaleProjectFixtureTest : BasePlatformTestCase() {
                     "total_mapper_documents=${capture.snapshots.size} " +
                     "aggregate_source_bytes=$aggregateBytes " +
                     "probe_count=${probeCount.get()} " +
-                    "elapsed_ms=$elapsedMillis " +
+                    "elapsed_excluding_fixture_gate_ms=$elapsedMillis " +
                     "edt_sentinel_completed=true",
             )
         }
