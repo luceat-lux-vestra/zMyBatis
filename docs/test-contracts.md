@@ -467,3 +467,33 @@ All fixture coordination is latch/future based; timeouts are hung-test guards ra
 targets. This evidence closes the structural cancellation-ownership gap only. Large mapper/source-
 graph scale measurement, large-input responsiveness, retained-resource behavior, and separate
 DataGrip host evidence remain later #67 slices.
+
+## Large XML mapper/source-graph responsiveness measurement evidence
+
+`LeapXmlMapperScaleProjectFixtureTest` extends the #468 shipping-boundary evidence from controlled
+scheduler handoff to a bounded real project scan. The fixture creates one root mapper plus **128
+dependent mapper XML documents**, each with an 8 KiB inert payload, then runs the production
+`LeapProjectXmlMapperExpansionAdapter` and `XmlProjectMapperSourceCaptureAdapter` path. The test
+asserts that all 129 mapper snapshots/discoveries survive capture, computes the exact aggregate
+UTF-8 source bytes from the captured immutable snapshots, and emits a
+`ZMYBATIS_XML_SCALE phase=project-expansion` record containing candidate count, aggregate bytes,
+cooperative-probe count and observed elapsed time with the deterministic fixture-gate wait excluded.
+
+The responsiveness case pauses the real capture loop at its 64th cooperative probe, after project
+enumeration has entered per-candidate work, and requires an independently queued EDT sentinel to
+complete before the scan is released. The cancellation case pauses at the same bounded production
+probe, cancels the task's real `ProgressIndicator`, then requires cancellation to stop the capture
+at that probe without a normal expansion continuation. It records observed cancellation handoff
+time but does not assert a latency SLA.
+
+`XmlStatementSourceGraphResolverScaleTest` measures the resolver separately so candidate-enumeration
+cost and reachable-graph cost remain distinguishable. It exercises the maintained iterative
+**2,000-deep** include chain and a **512-wide cross-document** include graph, asserting complete
+dependency/source capture and emitting elapsed time plus exact graph/source dimensions under the same
+`ZMYBATIS_XML_SCALE` prefix.
+
+The root `test` task promotes only `ZMYBATIS_XML_SCALE` standard-output records into the Gradle lifecycle log, so successful CI retains the measured values without enabling all test standard streams. These are reproducible CI evidence dimensions, not product-wide performance limits. Test timeouts
+remain hang guards only, and elapsed values are observations for before/after comparison. The slice
+adds no mapper cache/index and no new XML count/byte limit. Large parameter/input responsiveness,
+retained-resource behavior, and separate DataGrip host evidence remain independent #67 work.
+
