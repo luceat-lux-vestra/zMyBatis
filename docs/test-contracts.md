@@ -492,8 +492,40 @@ cost and reachable-graph cost remain distinguishable. It exercises the maintaine
 dependency/source capture and emitting elapsed time plus exact graph/source dimensions under the same
 `ZMYBATIS_XML_SCALE` prefix.
 
-The root `test` task promotes only `ZMYBATIS_XML_SCALE` standard-output records into the Gradle lifecycle log, so successful CI retains the measured values without enabling all test standard streams. These are reproducible CI evidence dimensions, not product-wide performance limits. Test timeouts
+The root `test` task promotes only the dedicated `ZMYBATIS_XML_SCALE` / `ZMYBATIS_INPUT_SCALE` measurement records into the Gradle lifecycle log, so successful CI retains measured values without enabling all test standard streams. These are reproducible CI evidence dimensions, not product-wide performance limits. Test timeouts
 remain hang guards only, and elapsed values are observations for before/after comparison. The slice
 adds no mapper cache/index and no new XML count/byte limit. Large parameter/input responsiveness,
 retained-resource behavior, and separate DataGrip host evidence remain independent #67 work.
+
+## Large parameter/input responsiveness measurement evidence
+
+`ContractInputScaleProjectFixtureTest` measures the shipping contract-driven input boundary without
+changing its semantics or introducing a product limit. The large-dialog case builds a real
+`ContractParameterInputDialog` on the EDT from **128 required text inputs** with **128 retained
+drafts**, each 4 KiB. This exercises production presentation creation, project-scoped history load,
+one Swing editor/component set per field, dialog initialization, and the retained-draft population
+path. The fixture records the exact retained bytes and construction elapsed time.
+
+The dialog case also queues an independent EDT sentinel from inside the same EDT turn immediately
+before construction. The sentinel must remain pending until the synchronous constructor returns and
+must complete immediately afterward. That evidence characterizes the current shipping ownership:
+large eager dialog construction is bounded synchronous EDT work; the fixture does not claim or
+simulate background rendering.
+
+A separate large-submission case uses **256 required text inputs**, each 4 KiB, for approximately
+1 MiB of explicit input text. It invokes the real `ContractInputSubmissionPolicy` ->
+`ContractInputAdapter` -> core `InputEnvironment` validation pipeline synchronously on the EDT,
+asserts that all 256 validated values survive, and uses the same queued-sentinel pattern to
+characterize EDT ownership of submission/decode/validation.
+
+Successful runs emit `ZMYBATIS_INPUT_SCALE` lifecycle records containing requirement/editor counts,
+aggregate input or retained bytes, validated-value count, EDT ownership, sentinel observation, and
+elapsed time. The root test task surfaces only this prefix and the existing XML-scale prefix rather
+than enabling arbitrary test stdout.
+
+These values are reproducible comparison evidence, not latency SLAs. Timeouts are hang guards only.
+This slice adds no pagination, virtualization, lazy rendering, cache, parameter-count limit, or
+input-byte limit. If the measured baseline exposes a material responsiveness/resource defect, that
+optimization is owned by a separate evidence-backed issue. Retained-resource/lifecycle evidence and
+separate DataGrip host evidence remain independent #67 work.
 
