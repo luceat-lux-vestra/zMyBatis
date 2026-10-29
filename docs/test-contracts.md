@@ -494,8 +494,8 @@ dependency/source capture and emitting elapsed time plus exact graph/source dime
 
 The root `test` task promotes only the dedicated `ZMYBATIS_XML_SCALE` / `ZMYBATIS_INPUT_SCALE` measurement records into the Gradle lifecycle log, so successful CI retains measured values without enabling all test standard streams. These are reproducible CI evidence dimensions, not product-wide performance limits. Test timeouts
 remain hang guards only, and elapsed values are observations for before/after comparison. The slice
-adds no mapper cache/index and no new XML count/byte limit. Large parameter/input responsiveness,
-retained-resource behavior, and separate DataGrip host evidence remain independent #67 work.
+adds no mapper cache/index and no new XML count/byte limit. Retained-resource behavior and separate
+DataGrip host evidence remain independent #67 work.
 
 ## Large parameter/input responsiveness measurement evidence
 
