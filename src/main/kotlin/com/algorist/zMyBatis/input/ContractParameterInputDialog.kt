@@ -158,6 +158,9 @@ class ContractParameterInputDialog(
 
     internal fun materializedRequirementIdsForTest(): List<InputRequirementId> = fields.keys.toList()
 
+    internal fun materializedRetainedDraftCountForTest(): Int =
+        fields.count { (id, ui) -> retainedDrafts[id] == ui.editor.text }
+
     private fun scheduleNextFieldPopulationChunk() {
         if (
             populationScheduled ||
