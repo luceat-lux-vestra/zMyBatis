@@ -378,7 +378,10 @@ tasks {
         addTestOutputListener { _, event ->
             event.message
                 .lineSequence()
-                .filter { it.startsWith("ZMYBATIS_XML_SCALE ") }
+                .filter {
+                    it.startsWith("ZMYBATIS_XML_SCALE ") ||
+                        it.startsWith("ZMYBATIS_INPUT_SCALE ")
+                }
                 .forEach { logger.lifecycle(it) }
         }
     }
