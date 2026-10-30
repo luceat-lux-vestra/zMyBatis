@@ -529,3 +529,34 @@ input-byte limit. If the measured baseline exposes a material responsiveness/res
 optimization is owned by a separate evidence-backed issue. Retained-resource/lifecycle evidence and
 separate DataGrip host evidence remain independent #67 work.
 
+## Incremental large input dialog population responsiveness evidence
+
+#474 consumes the scale baseline recorded by #472 without changing parameter/input semantics.
+`ContractParameterInputDialog` no longer creates every field/editor/component in its constructor.
+For a submittable non-empty contract it returns the shell first with OK disabled, then materializes
+fields in ordered **8-field EDT chunks**. Each next chunk is scheduled only after the current EDT
+turn returns, so unrelated queued EDT work has an opportunity to advance between chunks. Swing
+component creation and mutation remain on the EDT; no input meaning, codec, provenance, retention,
+or submission authority moves into background work.
+
+`ContractInputScaleProjectFixtureTest` reuses the #472 **128 required text fields + 128 retained
+4 KiB drafts** fixture. It queues an independent EDT sentinel before constructing the shipping
+dialog and requires both constructor completion and that first sentinel to observe **zero materialized
+fields**. It then waits through the real incremental population chain without sleeps, requires all
+128 fields to appear in exact contract order, and verifies all 128 retained drafts were applied.
+The emitted `ZMYBATIS_INPUT_SCALE phase=retained-dialog-construction` record now includes
+constructor elapsed time, full-population elapsed time, chunk size, first-sentinel field count, and
+completion state for direct comparison with the #472 eager-construction baseline.
+
+A separate lifecycle case closes the dialog before the first deferred chunk. The already-queued
+population callback must observe the disposed `DialogWrapper` disposable and leave the materialized
+field count unchanged. Project disposal is checked at the same scheduling boundary. This proves
+deferred population does not continue mutating a dead dialog/project.
+
+The maintained 256-input / approximately 1 MiB submission/decode/validation measurement remains
+unchanged because #472 did not identify that path as the dominant cost. Chunk size is an
+implementation responsiveness batch, not a product parameter limit or latency SLA. The fix adds no
+pagination, virtualization, field omission, input-size rejection limit, or background Swing mutation.
+Retained-resource/lifecycle campaigning beyond this dialog callback ownership and separate DataGrip
+host evidence remain independent #67 work.
+

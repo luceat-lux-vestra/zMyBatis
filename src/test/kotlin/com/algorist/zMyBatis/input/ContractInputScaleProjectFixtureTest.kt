@@ -24,12 +24,13 @@ import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class ContractInputScaleProjectFixtureTest : BasePlatformTestCase() {
 
     override fun runInDispatchThread(): Boolean = false
 
-    fun testLargeRetainedDialogConstructionRecordsEdtScaleEnvelope() {
+    fun testLargeRetainedDialogPopulationYieldsEdtAndPreservesOrder() {
         val settings = ZMyBatisSettings.getInstance()
         val originalRetention = settings.rememberLastInputs
         settings.rememberLastInputs = true
@@ -50,44 +51,68 @@ class ContractInputScaleProjectFixtureTest : BasePlatformTestCase() {
         )
         assertEquals(DIALOG_REQUIREMENT_COUNT, history.load(contract).size)
 
-        val sentinel = CompletableFuture<Unit>()
-        val result = CompletableFuture<DialogMeasurement>()
+        val dialogRef = AtomicReference<ContractParameterInputDialog>()
+        val constructorResult = CompletableFuture<DialogMeasurement>()
+        val firstSentinelFieldCount = CompletableFuture<Int>()
 
         try {
             ApplicationManager.getApplication().invokeLater(
                 {
-                    assertTrue(
-                        "shipping parameter dialog construction must execute on the EDT",
-                        ApplicationManager.getApplication().isDispatchThread,
-                    )
                     ApplicationManager.getApplication().invokeLater(
-                        { sentinel.complete(Unit) },
+                        {
+                            firstSentinelFieldCount.complete(
+                                dialogRef.get().materializedFieldCountForTest(),
+                            )
+                        },
                         ModalityState.any(),
                     )
 
                     val startedNanos = System.nanoTime()
                     val dialog = ContractParameterInputDialog(project, contract)
-                    val elapsedNanos = System.nanoTime() - startedNanos
-                    val sentinelCompletedBeforeConstructorReturned = sentinel.isDone
-                    dialog.close(DialogWrapper.CANCEL_EXIT_CODE)
-
-                    result.complete(
+                    val constructorElapsedNanos = System.nanoTime() - startedNanos
+                    dialogRef.set(dialog)
+                    constructorResult.complete(
                         DialogMeasurement(
-                            elapsedNanos = elapsedNanos,
-                            sentinelCompletedBeforeConstructorReturned =
-                                sentinelCompletedBeforeConstructorReturned,
+                            dialog = dialog,
+                            startedNanos = startedNanos,
+                            constructorElapsedNanos = constructorElapsedNanos,
+                            constructorMaterializedFields = dialog.materializedFieldCountForTest(),
                         ),
                     )
                 },
                 ModalityState.any(),
             )
 
-            val measurement = PlatformTestUtil.waitForFuture(result, FIXTURE_TIMEOUT_MILLIS)
-            PlatformTestUtil.waitForFuture(sentinel, FIXTURE_TIMEOUT_MILLIS)
+            val measurement = PlatformTestUtil.waitForFuture(constructorResult, FIXTURE_TIMEOUT_MILLIS)
+            val sentinelFieldCount = PlatformTestUtil.waitForFuture(
+                firstSentinelFieldCount,
+                FIXTURE_TIMEOUT_MILLIS,
+            )
 
-            assertFalse(
-                "queued EDT work must not run while the synchronous shipping dialog constructor is outstanding",
-                measurement.sentinelCompletedBeforeConstructorReturned,
+            assertEquals(
+                "large input dialog must not eagerly materialize fields in its constructor",
+                0,
+                measurement.constructorMaterializedFields,
+            )
+            assertEquals(
+                "queued EDT work must advance before the first deferred population chunk",
+                0,
+                sentinelFieldCount,
+            )
+
+            val fullPopulationElapsedNanos = waitForFullPopulation(
+                measurement.dialog,
+                measurement.startedNanos,
+            )
+
+            assertEquals(DIALOG_REQUIREMENT_COUNT, measurement.dialog.materializedFieldCountForTest())
+            assertEquals(
+                contract.requirements.map { it.id },
+                measurement.dialog.materializedRequirementIdsForTest(),
+            )
+            assertEquals(
+                DIALOG_REQUIREMENT_COUNT,
+                measurement.dialog.materializedRetainedDraftCountForTest(),
             )
 
             println(
@@ -97,12 +122,74 @@ class ContractInputScaleProjectFixtureTest : BasePlatformTestCase() {
                     "retained_values=$DIALOG_REQUIREMENT_COUNT " +
                     "retained_bytes=$retainedBytes " +
                     "execution_thread=EDT " +
-                    "sentinel_during_constructor=false " +
-                    "sentinel_after_constructor=true " +
-                    "elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(measurement.elapsedNanos)}",
+                    "population_chunk_size=${ContractParameterInputDialog.FIELD_POPULATION_CHUNK_SIZE} " +
+                    "constructor_materialized_fields=${measurement.constructorMaterializedFields} " +
+                    "first_sentinel_materialized_fields=$sentinelFieldCount " +
+                    "sentinel_before_complete=true " +
+                    "full_population_complete=true " +
+                    "constructor_elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(measurement.constructorElapsedNanos)} " +
+                    "full_population_elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(fullPopulationElapsedNanos)}",
             )
+
+            ApplicationManager.getApplication().invokeAndWait {
+                measurement.dialog.close(DialogWrapper.CANCEL_EXIT_CODE)
+            }
         } finally {
             history.clear(contract.statementId)
+            settings.rememberLastInputs = originalRetention
+        }
+    }
+
+    fun testClosingBeforeFirstPopulationChunkSuppressesDeferredUiMutation() {
+        val settings = ZMyBatisSettings.getInstance()
+        val originalRetention = settings.rememberLastInputs
+        settings.rememberLastInputs = false
+
+        val contract = contract(DIALOG_REQUIREMENT_COUNT)
+        val dialogRef = AtomicReference<ContractParameterInputDialog>()
+        val closedObservation = CompletableFuture<ClosedDialogMeasurement>()
+
+        try {
+            ApplicationManager.getApplication().invokeLater(
+                {
+                    ApplicationManager.getApplication().invokeLater(
+                        {
+                            val dialog = dialogRef.get()
+                            val beforeClose = dialog.materializedFieldCountForTest()
+                            dialog.close(DialogWrapper.CANCEL_EXIT_CODE)
+
+                            ApplicationManager.getApplication().invokeLater(
+                                {
+                                    closedObservation.complete(
+                                        ClosedDialogMeasurement(
+                                            beforeClose = beforeClose,
+                                            afterDeferredCallback = dialog.materializedFieldCountForTest(),
+                                        ),
+                                    )
+                                },
+                                ModalityState.any(),
+                            )
+                        },
+                        ModalityState.any(),
+                    )
+
+                    val dialog = ContractParameterInputDialog(project, contract)
+                    dialogRef.set(dialog)
+                },
+                ModalityState.any(),
+            )
+
+            val measurement = PlatformTestUtil.waitForFuture(
+                closedObservation,
+                FIXTURE_TIMEOUT_MILLIS,
+            )
+            assertEquals(0, measurement.beforeClose)
+            assertEquals(
+                "deferred population must not mutate a closed dialog",
+                measurement.beforeClose,
+                measurement.afterDeferredCallback,
+            )
+        } finally {
             settings.rememberLastInputs = originalRetention
         }
     }
@@ -180,6 +267,29 @@ class ContractInputScaleProjectFixtureTest : BasePlatformTestCase() {
         )
     }
 
+    private fun waitForFullPopulation(
+        dialog: ContractParameterInputDialog,
+        startedNanos: Long,
+    ): Long {
+        val completed = CompletableFuture<Long>()
+
+        fun probe() {
+            ApplicationManager.getApplication().invokeLater(
+                {
+                    if (dialog.materializedFieldCountForTest() == DIALOG_REQUIREMENT_COUNT) {
+                        completed.complete(System.nanoTime() - startedNanos)
+                    } else {
+                        probe()
+                    }
+                },
+                ModalityState.any(),
+            )
+        }
+
+        probe()
+        return PlatformTestUtil.waitForFuture(completed, FIXTURE_TIMEOUT_MILLIS)
+    }
+
     private fun contract(requirementCount: Int): ParameterContract {
         val requirements = (0 until requirementCount).map { index ->
             val id = InputRequirementId("input-${index.toString().padStart(4, '0')}")
@@ -214,8 +324,15 @@ class ContractInputScaleProjectFixtureTest : BasePlatformTestCase() {
     }
 
     private data class DialogMeasurement(
-        val elapsedNanos: Long,
-        val sentinelCompletedBeforeConstructorReturned: Boolean,
+        val dialog: ContractParameterInputDialog,
+        val startedNanos: Long,
+        val constructorElapsedNanos: Long,
+        val constructorMaterializedFields: Int,
+    )
+
+    private data class ClosedDialogMeasurement(
+        val beforeClose: Int,
+        val afterDeferredCallback: Int,
     )
 
     private data class SubmissionMeasurement(

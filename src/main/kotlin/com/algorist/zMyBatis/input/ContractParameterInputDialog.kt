@@ -6,7 +6,10 @@ import com.algorist.zMyBatis.core.input.InputRequiredness
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.settings.ZMyBatisSettings
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.ui.components.JBCheckBox
@@ -48,7 +51,9 @@ class ContractParameterInputDialog(
         val retainSelection: JBCheckBox?,
     )
 
+    private val ownerProject = project
     private val presentation = ContractInputPresentationFactory.create(contract)
+    private val presentationFields = presentation.fields
     private val retentionEnabled = ZMyBatisSettings.getInstance().rememberLastInputs
     private val history = ContractInputHistoryService.getInstance(project)
     private val retainedDrafts = if (retentionEnabled && presentation.canSubmit) {
@@ -60,7 +65,11 @@ class ContractParameterInputDialog(
     private var suppressDocumentTracking = false
     private val acceptRetained = JBCheckBox("Use unchanged remembered values for this execution")
     private val clearRetained = JButton("Clear remembered values")
-    private val fields = presentation.fields.associate { field -> field.requirementId to createFieldUi(field) }
+    private val fields = linkedMapOf<InputRequirementId, FieldUi>()
+    private var fieldPanel: JPanel? = null
+    private var nextFieldIndex = 0
+    private var populationScheduled = false
+    private var submissionHintAdded = false
     private var acceptedEnvironment: InputEnvironment? = null
     private var preparedRawValues: Map<InputRequirementId, String> = emptyMap()
 
@@ -69,7 +78,7 @@ class ContractParameterInputDialog(
         acceptRetained.isSelected = false
         clearRetained.addActionListener { clearRememberedValues() }
         init()
-        isOKActionEnabled = presentation.canSubmit
+        isOKActionEnabled = presentation.canSubmit && presentationFields.isEmpty()
     }
 
     override fun createCenterPanel(): JComponent {
@@ -79,6 +88,7 @@ class ContractParameterInputDialog(
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             border = BorderFactory.createEmptyBorder(8, 8, 8, 8)
         }
+        fieldPanel = panel
 
         if (retainedDrafts.isNotEmpty()) {
             panel.add(
@@ -92,55 +102,28 @@ class ContractParameterInputDialog(
             panel.add(Box.createVerticalStrut(8))
         }
 
-        presentation.fields.forEach { field ->
-            val ui = fields.getValue(field.requirementId)
-            val requiredMarker = if (field.requiredness == InputRequiredness.REQUIRED) " *" else ""
-            val kindMarker = if (field.inputKind == InputKind.RAW_INTERPOLATION) " — raw interpolation" else ""
-            val provenance = ContractInputProvenancePresenter.present(field.provenance)
-            panel.add(
-                JBLabel("${displayName(field.requirementId)}$requiredMarker$kindMarker").apply {
-                    toolTipText = provenance.details
-                    alignmentX = java.awt.Component.LEFT_ALIGNMENT
-                },
-            )
-            panel.add(Box.createVerticalStrut(2))
-            panel.add(provenanceLabel(provenance))
-            panel.add(Box.createVerticalStrut(4))
-            panel.add(ui.component)
-
-            ui.optionalSupply?.let {
-                panel.add(Box.createVerticalStrut(2))
-                panel.add(it.apply { alignmentX = java.awt.Component.LEFT_ALIGNMENT })
-            }
-            ui.rawConfirmation?.let {
-                panel.add(Box.createVerticalStrut(2))
-                panel.add(it.apply { alignmentX = java.awt.Component.LEFT_ALIGNMENT })
-            }
-            ui.retainSelection?.let {
-                panel.add(Box.createVerticalStrut(2))
-                panel.add(it.apply { alignmentX = java.awt.Component.LEFT_ALIGNMENT })
-            }
-            panel.add(Box.createVerticalStrut(10))
+        if (presentationFields.isEmpty()) {
+            addSubmissionHint(panel)
+        } else {
+            scheduleNextFieldPopulationChunk()
         }
 
-        panel.add(
-            JBLabel("* Required. Placeholder examples are not submitted as input.").apply {
-                alignmentX = java.awt.Component.LEFT_ALIGNMENT
-            },
-        )
-
         return JBScrollPane(panel).apply {
-            preferredSize = Dimension(620, (presentation.fields.size * 146 + 80).coerceIn(220, 680))
+            preferredSize = Dimension(620, (presentationFields.size * 146 + 80).coerceIn(220, 680))
             border = BorderFactory.createEmptyBorder()
         }
     }
 
-    override fun doValidate(): ValidationInfo? = when (val prepared = prepareCurrentInput()) {
-        is ContractInputAdapterResult.Success -> null
-        is ContractInputAdapterResult.Failure -> validationInfo(prepared.failures.first())
+    override fun doValidate(): ValidationInfo? {
+        if (!isFieldPopulationComplete()) return null
+        return when (val prepared = prepareCurrentInput()) {
+            is ContractInputAdapterResult.Success -> null
+            is ContractInputAdapterResult.Failure -> validationInfo(prepared.failures.first())
+        }
     }
 
     override fun doOKAction() {
+        if (!isFieldPopulationComplete()) return
         when (val prepared = prepareCurrentInput()) {
             is ContractInputAdapterResult.Success -> {
                 acceptedEnvironment = prepared.environment
@@ -170,6 +153,107 @@ class ContractParameterInputDialog(
     fun inputEnvironment(): InputEnvironment = requireNotNull(acceptedEnvironment) {
         "input environment is available only after successful dialog acceptance"
     }
+
+    internal fun materializedFieldCountForTest(): Int = fields.size
+
+    internal fun materializedRequirementIdsForTest(): List<InputRequirementId> = fields.keys.toList()
+
+    internal fun materializedRetainedDraftCountForTest(): Int =
+        fields.count { (id, ui) -> retainedDrafts[id] == ui.editor.text }
+
+    private fun scheduleNextFieldPopulationChunk() {
+        if (
+            populationScheduled ||
+            isFieldPopulationComplete() ||
+            ownerProject.isDisposed ||
+            Disposer.isDisposed(myDisposable)
+        ) {
+            return
+        }
+        populationScheduled = true
+        ApplicationManager.getApplication().invokeLater(
+            {
+                populationScheduled = false
+                if (ownerProject.isDisposed || Disposer.isDisposed(myDisposable)) {
+                    return@invokeLater
+                }
+                populateNextFieldChunk()
+            },
+            ModalityState.any(),
+        )
+    }
+
+    private fun populateNextFieldChunk() {
+        val panel = fieldPanel ?: return
+        val endExclusive =
+            (nextFieldIndex + FIELD_POPULATION_CHUNK_SIZE).coerceAtMost(presentationFields.size)
+
+        while (nextFieldIndex < endExclusive) {
+            val field = presentationFields[nextFieldIndex]
+            val ui = createFieldUi(field)
+            fields[field.requirementId] = ui
+            addFieldComponents(panel, field, ui)
+            nextFieldIndex += 1
+        }
+
+        panel.revalidate()
+        panel.repaint()
+
+        if (isFieldPopulationComplete()) {
+            addSubmissionHint(panel)
+            isOKActionEnabled = true
+            panel.revalidate()
+            panel.repaint()
+        } else {
+            scheduleNextFieldPopulationChunk()
+        }
+    }
+
+    private fun addFieldComponents(
+        panel: JPanel,
+        field: ContractInputField,
+        ui: FieldUi,
+    ) {
+        val requiredMarker = if (field.requiredness == InputRequiredness.REQUIRED) " *" else ""
+        val kindMarker = if (field.inputKind == InputKind.RAW_INTERPOLATION) " — raw interpolation" else ""
+        val provenance = ContractInputProvenancePresenter.present(field.provenance)
+        panel.add(
+            JBLabel("${displayName(field.requirementId)}$requiredMarker$kindMarker").apply {
+                toolTipText = provenance.details
+                alignmentX = java.awt.Component.LEFT_ALIGNMENT
+            },
+        )
+        panel.add(Box.createVerticalStrut(2))
+        panel.add(provenanceLabel(provenance))
+        panel.add(Box.createVerticalStrut(4))
+        panel.add(ui.component)
+
+        ui.optionalSupply?.let {
+            panel.add(Box.createVerticalStrut(2))
+            panel.add(it.apply { alignmentX = java.awt.Component.LEFT_ALIGNMENT })
+        }
+        ui.rawConfirmation?.let {
+            panel.add(Box.createVerticalStrut(2))
+            panel.add(it.apply { alignmentX = java.awt.Component.LEFT_ALIGNMENT })
+        }
+        ui.retainSelection?.let {
+            panel.add(Box.createVerticalStrut(2))
+            panel.add(it.apply { alignmentX = java.awt.Component.LEFT_ALIGNMENT })
+        }
+        panel.add(Box.createVerticalStrut(10))
+    }
+
+    private fun addSubmissionHint(panel: JPanel) {
+        if (submissionHintAdded) return
+        panel.add(
+            JBLabel("* Required. Placeholder examples are not submitted as input.").apply {
+                alignmentX = java.awt.Component.LEFT_ALIGNMENT
+            },
+        )
+        submissionHintAdded = true
+    }
+
+    private fun isFieldPopulationComplete(): Boolean = fields.size == presentationFields.size
 
     private fun createFieldUi(field: ContractInputField): FieldUi {
         val rendered = ContractInputSwingRenderer.create(field)
@@ -216,7 +300,7 @@ class ContractParameterInputDialog(
     }
 
     private fun prepareCurrentInput(): ContractInputAdapterResult {
-        val drafts = presentation.fields.map { field ->
+        val drafts = presentationFields.map { field ->
             val ui = fields.getValue(field.requirementId)
             ContractInputDraft(
                 requirementId = field.requirementId,
@@ -318,4 +402,8 @@ class ContractParameterInputDialog(
         .replace('-', ' ')
         .replace('_', ' ')
         .lowercase()
+
+    companion object {
+        internal const val FIELD_POPULATION_CHUNK_SIZE = 8
+    }
 }
