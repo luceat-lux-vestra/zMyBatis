@@ -642,7 +642,11 @@ jobs:
           ./actionlint -version
 
       - name: actionlint
-        run: ./actionlint .github/workflows/*.yml
+        run: |
+          # actionlint 1.7.12 predates GitHub's $/ self-repository syntax.
+          # Retire this adapter when rhysd/actionlint#732 lands in a stable release.
+          python3 .github/workflow-policy/actionlint_compat.py --self-test
+          python3 .github/workflow-policy/actionlint_compat.py ./actionlint .github/workflows/*.yml
 
       - name: zizmor
         run: |

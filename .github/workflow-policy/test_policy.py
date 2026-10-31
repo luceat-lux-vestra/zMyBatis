@@ -399,6 +399,22 @@ jobs:
            failures)
 
     build_source = (WORKFLOWS_DIR / "build.yml").read_text(encoding="utf-8")
+    actionlint_compat_source = (POLICY_DIR / "actionlint_compat.py").read_text(
+        encoding="utf-8"
+    )
+    expect(
+        "actionlint self-repository shim is version-scoped and retirement-documented",
+        all(fragment in actionlint_compat_source for fragment in (
+            'EXPECTED_ACTIONLINT_VERSION = "1.7.12"',
+            "rhysd/actionlint#711",
+            "rhysd/actionlint#732",
+            "Retire this adapter when a stable actionlint release supports",
+            'SELF_REPOSITORY_WORKFLOW = "$/.github/workflows/e2e.yml"',
+        ))
+        and "actionlint_compat.py --self-test" in build_source
+        and "actionlint_compat.py ./actionlint .github/workflows/*.yml" in build_source,
+        failures,
+    )
     e2e_source = (WORKFLOWS_DIR / "e2e.yml").read_text(encoding="utf-8")
     expect("E2E PR execution is reusable and has no independent PR trigger",
            "  workflow_call:" in e2e_source and "  pull_request:" not in e2e_source,
@@ -629,11 +645,53 @@ def check_actionlint(failures: list[str]) -> None:
         expect("actionlint is available", False, failures)
         return
 
-    good_rc = run([actionlint, *[str(path) for path in GOOD_FIXTURES]])
+    compat = str(POLICY_DIR / "actionlint_compat.py")
+    compat_self_test_rc = run(["python3", compat, "--self-test"])
+    expect(
+        "actionlint self-repository compatibility shim is narrowly scoped",
+        compat_self_test_rc == 0,
+        failures,
+    )
+
+    good_rc = run([
+        "python3",
+        compat,
+        actionlint,
+        *[str(path) for path in GOOD_FIXTURES],
+    ])
     expect("actionlint accepts the good fixtures", good_rc == 0, failures)
 
-    real_rc = run([actionlint, *[str(path) for path in REAL_WORKFLOWS]])
+    real_rc = run([
+        "python3",
+        compat,
+        actionlint,
+        *[str(path) for path in REAL_WORKFLOWS],
+    ])
     expect("actionlint accepts every real workflow", real_rc == 0, failures)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        unrelated = Path(tmp) / "unrelated-workflow-call.yml"
+        unrelated.write_text(
+            """name: Unrelated workflow-call fixture
+on:
+  workflow_dispatch:
+jobs:
+  invalid:
+    uses: not-a-valid-workflow-call
+""",
+            encoding="utf-8",
+        )
+        unrelated_rc = run([
+            "python3",
+            compat,
+            actionlint,
+            str(unrelated),
+        ])
+        expect(
+            "actionlint compatibility shim does not suppress unrelated workflow-call errors",
+            unrelated_rc != 0,
+            failures,
+        )
 
 
 def check_zizmor(failures: list[str]) -> None:
