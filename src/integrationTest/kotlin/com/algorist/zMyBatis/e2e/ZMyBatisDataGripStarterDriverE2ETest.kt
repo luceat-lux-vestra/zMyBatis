@@ -1,5 +1,6 @@
 package com.algorist.zMyBatis.e2e
 
+import com.intellij.driver.client.Driver
 import com.intellij.driver.sdk.arePluginsInitialized
 import com.intellij.driver.sdk.invokeAction
 import com.intellij.driver.sdk.isPluginLoaded
@@ -20,7 +21,6 @@ import com.intellij.ide.starter.models.TestCase
 import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
-import com.intellij.ide.starter.runner.startIdeWithoutProject
 import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTestKind
 import com.intellij.tools.ide.starter.product.datagrip.DataGrip
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -31,7 +31,6 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import kotlin.io.path.Path as pathOf
 import kotlin.time.Duration.Companion.minutes
 
@@ -47,15 +46,10 @@ class ZMyBatisDataGripStarterDriverE2ETest {
 
     companion object {
         private const val DATAGRIP_RELEASE = "2026.2.3"
-        private const val DATAGRIP_LICENSE_FILE = "datagrip.key"
         private val pluginArchive: Path =
             pathOf(System.getProperty("path.to.build.plugin")).toAbsolutePath()
         private val sampleProject: Path =
             pathOf("src/integrationTest/testProject").toAbsolutePath()
-        private val activationSeedLock = Any()
-
-        @Volatile
-        private var sharedActivationSeedConfigDir: Path? = null
 
         init {
             // DataGrip gets the strict failure boundary with no IDEA-only exception exemption.
@@ -89,6 +83,7 @@ class ZMyBatisDataGripStarterDriverE2ETest {
         dataGripStarterContext("datagrip-production-service", projectDir)
             .runIdeWithDriver()
             .useDriverAndCloseIde {
+                assertDataGripRuntimeReady()
                 waitForIndicators(5.minutes)
                 waitFor("zMyBatis plugin loaded in DataGrip", timeout = 2.minutes) {
                     isPluginLoaded("com.algorist.zMyBatis")
@@ -114,6 +109,7 @@ class ZMyBatisDataGripStarterDriverE2ETest {
         dataGripStarterContext("datagrip-action-no-datasource", projectDir)
             .runIdeWithDriver()
             .useDriverAndCloseIde {
+                assertDataGripRuntimeReady()
                 waitForIndicators(5.minutes)
                 openFile("Query.xml")
 
@@ -141,81 +137,42 @@ class ZMyBatisDataGripStarterDriverE2ETest {
         testName: String,
         projectDir: Path,
     ): IDETestContext {
+        val starterLicense =
+            System.getenv("LICENSE_KEY")
+                ?.takeIf { it.isNotBlank() }
+
         val context =
             Starter.newContext(
                 testName,
                 TestCase(IdeInfo.DataGrip, LocalProjectInfo(projectDir)).useRelease(DATAGRIP_RELEASE),
             ).apply {
-                System.getenv("LICENSE_KEY")
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { setLicense(it) }
+                starterLicense?.let { setLicense(it) }
                 PluginConfigurator(this).installPluginFromPath(pluginArchive)
             }
 
-        val seedKey = dataGripActivationSeedConfigDir().resolve(DATAGRIP_LICENSE_FILE)
-        Files.createDirectories(context.paths.configDir)
-        Files.copy(
-            seedKey,
-            context.paths.configDir.resolve(DATAGRIP_LICENSE_FILE),
-            StandardCopyOption.REPLACE_EXISTING,
-        )
-        assertTrue(
-            Files.isRegularFile(context.paths.configDir.resolve(DATAGRIP_LICENSE_FILE)),
-            "DataGrip activation seed must materialize an independent licensed scenario config",
+        println(
+            "ZMYBATIS_DATAGRIP_BOOTSTRAP_CONFIG host=DATAGRIP release=$DATAGRIP_RELEASE " +
+                "starter_license_configured=${starterLicense != null}",
         )
         return context
     }
 
-    private fun dataGripActivationSeedConfigDir(): Path {
-        sharedActivationSeedConfigDir?.let { return it }
-        return synchronized(activationSeedLock) {
-            sharedActivationSeedConfigDir
-                ?: createDataGripActivationSeedConfig().also {
-                    sharedActivationSeedConfigDir = it
-                }
+    private fun Driver.assertDataGripRuntimeReady() {
+        waitFor("DataGrip plugins initialized", timeout = 2.minutes) {
+            arePluginsInitialized()
         }
-    }
 
-    private fun createDataGripActivationSeedConfig(): Path {
-        val seedContext =
-            Starter.newContext(
-                "datagrip-activation-seed",
-                TestCase(IdeInfo.DataGrip, LocalProjectInfo(sampleProject))
-                    .useRelease(DATAGRIP_RELEASE),
-            ).apply {
-                System.getenv("LICENSE_KEY")
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { setLicense(it) }
-                PluginConfigurator(this).installPluginFromPath(pluginArchive)
-            }
-
-        activateDataGripBeforeOpeningProject(seedContext)
-        assertTrue(
-            Files.isRegularFile(seedContext.paths.configDir.resolve(DATAGRIP_LICENSE_FILE)),
-            "DataGrip activation must persist before project scenarios start",
+        val nativeTrialActionAvailable =
+            service(TrialStateServiceRemote::class).getTrialAvailable().getValue()
+        println(
+            "ZMYBATIS_DATAGRIP_BOOTSTRAP host=DATAGRIP release=$DATAGRIP_RELEASE result=READY " +
+                "native_trial_action_available=$nativeTrialActionAvailable",
         )
-        return seedContext.paths.configDir
-    }
-
-    private fun activateDataGripBeforeOpeningProject(context: IDETestContext) {
-        context.runIdeWithDriver(
-            commandLine = ::startIdeWithoutProject,
-            launchName = "datagrip-activation",
-        ).useDriverAndCloseIde {
-            waitFor("DataGrip plugins initialized", timeout = 2.minutes) {
-                arePluginsInitialized()
-            }
-
-            if (!Files.isRegularFile(context.paths.configDir.resolve(DATAGRIP_LICENSE_FILE))) {
-                waitFor("DataGrip native trial action available", timeout = 2.minutes) {
-                    service(TrialStateServiceRemote::class).getTrialAvailable().getValue() == true
-                }
-                invokeAction("StartTrial", now = false)
-                waitFor("DataGrip trial activation complete", timeout = 2.minutes) {
-                    service(TrialStateServiceRemote::class).getTrialAvailable().getValue() != true
-                }
-            }
-        }
+        assertTrue(
+            nativeTrialActionAvailable != true,
+            "DataGrip $DATAGRIP_RELEASE still reports a startable native trial; " +
+                "the DataGrip harness must not invoke the IDEA-specific StartTrial action",
+        )
     }
 
     private fun copySampleProject(destination: Path): Path {
