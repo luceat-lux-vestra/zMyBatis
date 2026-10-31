@@ -295,6 +295,23 @@ jobs:
            failures)
 
     build_source = (WORKFLOWS_DIR / "build.yml").read_text(encoding="utf-8")
+    e2e_source = (WORKFLOWS_DIR / "e2e.yml").read_text(encoding="utf-8")
+    expect("E2E PR execution is reusable and has no independent PR trigger",
+           "  workflow_call:" in e2e_source and "  pull_request:" not in e2e_source,
+           failures)
+    expect("called E2E keeps a concurrency identity distinct from the Build caller",
+           "group: zmybatis-e2e-" in e2e_source
+           and "group: ${{ github.workflow }}-" not in e2e_source,
+           failures)
+    expect("Build is the canonical PR DAG for Starter / Driver E2E",
+           all(fragment in build_source for fragment in (
+               "\n  prScope:",
+               "\n  starterDriver:",
+               "uses: ./.github/workflows/e2e.yml",
+               "needs: [ prScope, build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview, starterDriver ]",
+               "E2E_RESULT: ${{ needs.starterDriver.result }}",
+               "E2E_REQUIRED:",
+           )), failures)
     classifier_source = (POLICY_DIR / "classify_qodana_scope.py").read_text(encoding="utf-8")
     expect("Qodana PR scope classifier self-test remains in lint",
            "Verify Qodana PR scope classifier policy" in build_source
