@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Immutable action pin enforcement.
 
-Every `uses:` reference to a third-party (or first-party) Action must be pinned
-to a full-length 40-character commit SHA, not a floating tag or branch. A tag
-such as `@v7` can be force-moved by the action owner (or anyone who compromises
+Every remote `uses:` reference to a third-party (or first-party) Action must
+be pinned to a full-length 40-character commit SHA, not a floating tag or
+branch. Repository-local references beginning with `./` identify code from
+the same checked-out revision and therefore do not take an `@ref`. A tag such
+as `@v7` can be force-moved by the action owner (or anyone who compromises
 that owner's account) to point at different, unreviewed code that this
 repository's workflows would then execute automatically. A trailing `# v7`
 comment is fine and expected - Dependabot keeps the SHA and the comment in
-sync - only the ref before the comment must be a SHA.
+sync - only remote refs require an immutable SHA.
 
 Usage:
     check_pins.py <workflow-file-or-directory> [...]
@@ -23,6 +25,7 @@ import sys
 from pathlib import Path
 
 PIN_PATTERN = re.compile(r"^uses:\s*[^#\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
+LOCAL_PATTERN = re.compile(r"^uses:\s*\./[^#\s]+(?:\s+#.*)?$")
 USES_PATTERN = re.compile(r"^uses:\s*(.+)$")
 
 
@@ -42,7 +45,9 @@ def find_unpinned(path: Path) -> list[str]:
     failures = []
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         stripped = line.strip()
-        if stripped.startswith("uses:") and not PIN_PATTERN.match(stripped):
+        if stripped.startswith("uses:") and not (
+            LOCAL_PATTERN.match(stripped) or PIN_PATTERN.match(stripped)
+        ):
             failures.append(f"{path}:{number}: {stripped}")
     return failures
 

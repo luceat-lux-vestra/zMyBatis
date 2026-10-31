@@ -203,6 +203,72 @@ jobs:
             failures,
         )
 
+    # Immutable pinning applies to remote Actions/workflows. Repository-local
+    # uses references execute from the same checked-out revision and do not
+    # have an independent ref to pin.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        checker = str(POLICY_DIR / "check_pins.py")
+
+        local_uses = root / "local-uses.yml"
+        local_uses.write_text(
+            """name: Local uses fixture
+on:
+  workflow_dispatch:
+jobs:
+  reusable:
+    uses: ./.github/workflows/e2e.yml
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/example
+""",
+            encoding="utf-8",
+        )
+        expect(
+            "check_pins.py accepts repository-local action and reusable-workflow references",
+            run(["python3", checker, str(local_uses)]) == 0,
+            failures,
+        )
+
+        remote_floating = root / "remote-floating.yml"
+        remote_floating.write_text(
+            """name: Remote floating fixture
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+""",
+            encoding="utf-8",
+        )
+        expect(
+            "check_pins.py rejects a floating remote Action ref",
+            run(["python3", checker, str(remote_floating)]) != 0,
+            failures,
+        )
+
+        remote_pinned = root / "remote-pinned.yml"
+        remote_pinned.write_text(
+            """name: Remote pinned fixture
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+""",
+            encoding="utf-8",
+        )
+        expect(
+            "check_pins.py accepts an immutable remote Action ref",
+            run(["python3", checker, str(remote_pinned)]) == 0,
+            failures,
+        )
+
     pins_rc = run(
         [
             "python3",
