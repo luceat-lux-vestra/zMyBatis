@@ -1,13 +1,30 @@
 package com.algorist.zMyBatis.services
 
+import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
+import com.algorist.zMyBatis.core.execution.ExecutionTargetId
+import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
+import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
+import com.algorist.zMyBatis.core.execution.StableDataSourceId
+import com.algorist.zMyBatis.core.materialization.MaterializationResult
+import com.algorist.zMyBatis.core.materialization.MaterializedExecution
+import com.algorist.zMyBatis.core.materialization.TargetBoundZeroBindingExecutionMaterializer
+import com.algorist.zMyBatis.core.preparation.PreparationMetadata
+import com.algorist.zMyBatis.core.preparation.PreparedExecution
+import com.algorist.zMyBatis.core.source.SourceFileId
+import com.algorist.zMyBatis.core.source.SourceRevision
+import com.algorist.zMyBatis.core.source.StatementKind
+import com.algorist.zMyBatis.core.source.XmlStatementId
 import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAcquisitionFailure
 import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAdapter
+import com.algorist.zMyBatis.execution.DatabaseToolsSqlExecutionFailure
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.dataSource.LocalDataSource
 import com.intellij.database.dataSource.LocalDataSourceManager
 import com.intellij.database.psi.DbDataSource
 import com.intellij.database.psi.DbPsiFacade
 import com.intellij.database.util.DbImplUtil
+import com.intellij.openapi.editor.EditorFactory
+import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.util.CheckedDisposable
 import com.intellij.openapi.util.Disposer
@@ -122,6 +139,213 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
         )
     }
 
+    fun testRepeatedReuseMaterializedDeliveryReleasesLeaseAfterEditorDocumentTerminalPath() {
+        val cache = ConsoleCacheService.getInstance(project)
+        val dataSource = registeredDbDataSource(
+            name = "zMyBatis resource lifecycle materialized reuse",
+            url = "jdbc:h2:mem:zmybatis_resource_materialized_reuse",
+        )
+        val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
+        val key = "file:///tmp/zmybatis/ResourceMaterializedReuseMapper.xml"
+        val target = targetId("resource-materialized-reuse", "public")
+        val uniqueConsoles = mutableListOf<JdbcConsole>()
+        var editorPeak = 0
+        var terminalFailures = 0
+
+        try {
+            repeat(MATERIALIZED_DELIVERY_ITERATIONS) { iteration ->
+                var acquisitionFailure: DatabaseToolsConsoleAcquisitionFailure? = null
+                adapter.acquireAndDeliverConsole(
+                    dataSource = dataSource,
+                    schema = null,
+                    resourceKey = key,
+                    forceNew = false,
+                    onConsoleReady = { console, release ->
+                        if (uniqueConsoles.none { it === console }) {
+                            uniqueConsoles += console
+                        }
+                        val editor = EditorFactory.getInstance()
+                            .createEditor(console.document, project) as EditorEx
+                        try {
+                            editorPeak = maxOf(
+                                editorPeak,
+                                EditorFactory.getInstance().getEditors(console.document, project).size,
+                            )
+                            val artifact = materialized(
+                                sql = "SELECT ${iteration + 1} AS resource_probe",
+                                target = target,
+                            )
+                            var invocationChecks = 0
+                            var executed = false
+                            var deliveryFailure: DatabaseToolsSqlExecutionFailure? = null
+                            var finished = 0
+
+                            adapter.executeMaterialized(
+                                console = console,
+                                artifact = artifact,
+                                currentTarget = { resolvedTarget(target) },
+                                isInvocationActive = {
+                                    invocationChecks += 1
+                                    invocationChecks < LATE_INVALIDATION_CHECK
+                                },
+                                areSourceRevisionsCurrent = { it == artifact.sourceRevisions },
+                                onExecuted = { executed = true },
+                                onFailure = { deliveryFailure = it },
+                                onFinished = {
+                                    finished += 1
+                                    release()
+                                },
+                            )
+
+                            assertEquals(
+                                DatabaseToolsSqlExecutionFailure.InvocationInvalidated,
+                                deliveryFailure,
+                            )
+                            assertFalse("late invalidation must stop native query invocation", executed)
+                            assertEquals(1, finished)
+                            assertEquals(
+                                "failed delivery must restore the reusable console document",
+                                "",
+                                console.document.text,
+                            )
+                            terminalFailures += 1
+                        } finally {
+                            EditorFactory.getInstance().releaseEditor(editor)
+                        }
+                    },
+                    onFailure = { acquisitionFailure = it },
+                )
+
+                assertNull(acquisitionFailure)
+                assertTrue(
+                    "executeMaterialized onFinished must release REUSE ownership",
+                    cache.beginReuseLease(key),
+                )
+                cache.endReuseLease(key)
+            }
+
+            assertEquals(1, uniqueConsoles.size)
+            assertSame(uniqueConsoles.single(), cache.get(key))
+            val lifetime = Disposer.newCheckedDisposable(uniqueConsoles.single())
+            cache.evict(key)
+            assertTrue(lifetime.isDisposed)
+
+            println(
+                "ZMYBATIS_RESOURCE_LIFECYCLE phase=materialized-delivery-terminal " +
+                    "policy=REUSE iterations=$MATERIALIZED_DELIVERY_ITERATIONS " +
+                    "distinct_consoles=${uniqueConsoles.size} editor_peak=$editorPeak " +
+                    "terminal_failures=$terminalFailures native_invocations=0 " +
+                    "lease_stranded=false document_restored=true disposed_after_evict=true",
+            )
+        } finally {
+            cache.evict(key)
+        }
+    }
+
+    fun testRepeatedNewEachMaterializedDeliveryKeepsUncachedConsoleLiveAfterTerminal() {
+        val cache = ConsoleCacheService.getInstance(project)
+        val dataSource = registeredDbDataSource(
+            name = "zMyBatis resource lifecycle materialized new-each",
+            url = "jdbc:h2:mem:zmybatis_resource_materialized_new_each",
+        )
+        val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
+        val key = "file:///tmp/zmybatis/ResourceMaterializedNewEachMapper.xml"
+        val target = targetId("resource-materialized-new-each", "public")
+        val consoles = mutableListOf<JdbcConsole>()
+        val lifetimes = mutableListOf<CheckedDisposable>()
+        var editorPeakPerConsole = 0
+        var terminalFailures = 0
+
+        try {
+            repeat(MATERIALIZED_DELIVERY_ITERATIONS) { iteration ->
+                var acquisitionFailure: DatabaseToolsConsoleAcquisitionFailure? = null
+                adapter.acquireAndDeliverConsole(
+                    dataSource = dataSource,
+                    schema = null,
+                    resourceKey = key,
+                    forceNew = true,
+                    onConsoleReady = { console, release ->
+                        consoles += console
+                        lifetimes += Disposer.newCheckedDisposable(console)
+                        val editor = EditorFactory.getInstance()
+                            .createEditor(console.document, project) as EditorEx
+                        try {
+                            editorPeakPerConsole = maxOf(
+                                editorPeakPerConsole,
+                                EditorFactory.getInstance().getEditors(console.document, project).size,
+                            )
+                            val artifact = materialized(
+                                sql = "SELECT ${iteration + 1} AS resource_probe",
+                                target = target,
+                            )
+                            var invocationChecks = 0
+                            var executed = false
+                            var deliveryFailure: DatabaseToolsSqlExecutionFailure? = null
+                            var finished = 0
+
+                            adapter.executeMaterialized(
+                                console = console,
+                                artifact = artifact,
+                                currentTarget = { resolvedTarget(target) },
+                                isInvocationActive = {
+                                    invocationChecks += 1
+                                    invocationChecks < LATE_INVALIDATION_CHECK
+                                },
+                                areSourceRevisionsCurrent = { it == artifact.sourceRevisions },
+                                onExecuted = { executed = true },
+                                onFailure = { deliveryFailure = it },
+                                onFinished = {
+                                    finished += 1
+                                    release()
+                                },
+                            )
+
+                            assertEquals(
+                                DatabaseToolsSqlExecutionFailure.InvocationInvalidated,
+                                deliveryFailure,
+                            )
+                            assertFalse("late invalidation must stop native query invocation", executed)
+                            assertEquals(1, finished)
+                            assertEquals("", console.document.text)
+                            terminalFailures += 1
+                        } finally {
+                            EditorFactory.getInstance().releaseEditor(editor)
+                        }
+                    },
+                    onFailure = { acquisitionFailure = it },
+                )
+                assertNull(acquisitionFailure)
+            }
+
+            assertEquals(MATERIALIZED_DELIVERY_ITERATIONS, consoles.size)
+            assertEquals(
+                MATERIALIZED_DELIVERY_ITERATIONS,
+                consoles.distinctBy { System.identityHashCode(it) }.size,
+            )
+            assertNull(cache.get(key))
+            assertEquals(
+                MATERIALIZED_DELIVERY_ITERATIONS,
+                lifetimes.count { !it.isDisposed },
+            )
+
+            println(
+                "ZMYBATIS_RESOURCE_LIFECYCLE phase=materialized-delivery-terminal " +
+                    "policy=NEW_EACH iterations=$MATERIALIZED_DELIVERY_ITERATIONS " +
+                    "distinct_consoles=${consoles.size} editor_peak_per_console=$editorPeakPerConsole " +
+                    "terminal_failures=$terminalFailures native_invocations=0 " +
+                    "cache_retained=0 live_after_terminal=${lifetimes.count { !it.isDisposed }} " +
+                    "document_restored=true",
+            )
+        } finally {
+            consoles.forEachIndexed { index, console ->
+                if (!lifetimes[index].isDisposed) {
+                    Disposer.dispose(console)
+                }
+            }
+            cache.evict(key)
+        }
+    }
+
     fun testCancellationAndFailureDoNotStrandReuseOwnershipOrCacheResources() {
         val cache = ConsoleCacheService.getInstance(project)
         val dataSource = registeredDbDataSource(
@@ -228,6 +452,44 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
         }
     }
 
+    private fun materialized(
+        sql: String,
+        target: ExecutionTargetId,
+    ): MaterializedExecution {
+        val file = SourceFileId("vfs:/ResourceLifecycle.xml")
+        val prepared = PreparedExecution(
+            statementId = XmlStatementId(file, "fixture.ResourceLifecycleMapper", "probe"),
+            statementKind = StatementKind.SELECT,
+            sourceRevisions = mapOf(file to SourceRevision("resource-lifecycle-r1")),
+            sqlWithPlaceholders = sql,
+            orderedBindings = emptyList(),
+            rawInterpolations = emptyList(),
+            preparationMetadata = PreparationMetadata(
+                engineIdentity = "org.mybatis:mybatis",
+                engineVersion = "3.5.19",
+                languageDriverIdentity = "org.apache.ibatis.scripting.xmltags.XMLLanguageDriver",
+            ),
+        )
+        val result = TargetBoundZeroBindingExecutionMaterializer(resolvedTarget(target))
+            .materialize(prepared)
+        return (result as MaterializationResult.Success).execution
+    }
+
+    private fun resolvedTarget(target: ExecutionTargetId): ResolvedExecutionTarget =
+        ResolvedExecutionTarget(
+            ExecutionTargetDescriptor(target, "fixture"),
+            effectiveDatabaseId = null,
+        )
+
+    private fun targetId(
+        dataSourceId: String,
+        schema: String,
+    ): ExecutionTargetId =
+        ExecutionTargetId(
+            StableDataSourceId(dataSourceId),
+            ExplicitSchemaIdentity(schema),
+        )
+
     private fun registeredDbDataSource(
         name: String,
         url: String,
@@ -270,6 +532,8 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
     companion object {
         private const val REUSE_ITERATIONS = 32
         private const val NEW_EACH_ITERATIONS = 16
+        private const val MATERIALIZED_DELIVERY_ITERATIONS = 8
+        private const val LATE_INVALIDATION_CHECK = 4
         private const val SERVICE_OWNED_RESOURCES = 8
     }
 }
