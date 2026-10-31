@@ -15,6 +15,8 @@ import tempfile
 import sys
 from pathlib import Path
 
+from check_required_contexts import declared_components, required_entries
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 POLICY_DIR = Path(__file__).resolve().parent
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
@@ -66,6 +68,23 @@ def expect(label: str, condition: bool, failures: list[str]) -> None:
     print(f"{'ok  ' if condition else 'FAIL'} - {label}")
     if not condition:
         failures.append(label)
+
+
+def merge_gate_components_line(policy_text: str) -> tuple[int, str]:
+    lines = policy_text.splitlines()
+    in_merge_gate = False
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == "- context: Merge Gate":
+            in_merge_gate = True
+            continue
+        if in_merge_gate and stripped.startswith("- context:"):
+            break
+        if in_merge_gate and line and not line[0].isspace():
+            break
+        if in_merge_gate and stripped.startswith("components:"):
+            return index, stripped[len("components:"):].strip()
+    raise RuntimeError("Merge Gate components declaration not found")
 
 
 def check_local_policy(failures: list[str]) -> None:
@@ -422,6 +441,29 @@ jobs:
                'qodana-relevant:',
            )), failures)
 
+    policy_text = (REPO_ROOT / ".github" / "merge-gate-policy.yml").read_text(
+        encoding="utf-8"
+    )
+    merge_gate_entries = [
+        entry for entry in required_entries(policy_text)
+        if entry["context"] == "Merge Gate"
+    ]
+    expect(
+        "required-context parser finds exactly one Merge Gate policy entry",
+        len(merge_gate_entries) == 1,
+        failures,
+    )
+    if len(merge_gate_entries) == 1:
+        components, component_error = declared_components(merge_gate_entries[0])
+        expect(
+            "required-context parser reads a valid non-empty Merge Gate components declaration",
+            component_error is None
+            and components is not None
+            and bool(components)
+            and len(components) == len(set(components)),
+            failures,
+        )
+
     required_rc = run(
         [
             "python3",
@@ -479,17 +521,21 @@ jobs:
         shutil.copytree(REPO_ROOT, aggregate_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
         aggregate_policy = aggregate_root / ".github" / "merge-gate-policy.yml"
         text = aggregate_policy.read_text(encoding="utf-8")
-        match = re.search(
-            r"(?m)^    components: \\[(?P<items>[^\\]]+)\\]$",
-            text,
-        )
-        if match is None:
-            raise RuntimeError("Merge Gate components declaration not found")
-        components = [item.strip() for item in match.group("items").split(",")]
+        lines = text.splitlines()
+        component_index, raw_components = merge_gate_components_line(text)
+        if not (raw_components.startswith("[") and raw_components.endswith("]")):
+            raise RuntimeError("Merge Gate components declaration is not an inline list")
+        components = [
+            item.strip()
+            for item in raw_components[1:-1].split(",")
+            if item.strip()
+        ]
         components.remove("dependencySubmissionValidation")
-        mutated = f"    components: [ {', '.join(components)} ]"
-        text = text[:match.start()] + mutated + text[match.end():]
-        aggregate_policy.write_text(text, encoding="utf-8")
+        indent = lines[component_index][:-len(lines[component_index].lstrip())]
+        lines[component_index] = (
+            f"{indent}components: [ {', '.join(components)} ]"
+        )
+        aggregate_policy.write_text("\n".join(lines) + "\n", encoding="utf-8")
         aggregate_bad_rc = run([
             "python3",
             str(POLICY_DIR / "check_required_contexts.py"),
@@ -507,15 +553,10 @@ jobs:
         shutil.copytree(REPO_ROOT, missing_components_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
         missing_components_policy = missing_components_root / ".github" / "merge-gate-policy.yml"
         text = missing_components_policy.read_text(encoding="utf-8")
-        text, count = re.subn(
-            r"(?m)^    components: \\[[^\\]]+\\]\\n",
-            "",
-            text,
-            count=1,
-        )
-        if count != 1:
-            raise RuntimeError("Merge Gate components declaration was not removed")
-        missing_components_policy.write_text(text, encoding="utf-8")
+        lines = text.splitlines()
+        component_index, _ = merge_gate_components_line(text)
+        del lines[component_index]
+        missing_components_policy.write_text("\n".join(lines) + "\n", encoding="utf-8")
         missing_components_rc = run([
             "python3",
             str(POLICY_DIR / "check_required_contexts.py"),
@@ -525,6 +566,28 @@ jobs:
         expect(
             "check_required_contexts.py fails closed when Merge Gate components are undeclared",
             missing_components_rc != 0,
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        malformed_components_root = Path(tmp) / "repo"
+        shutil.copytree(REPO_ROOT, malformed_components_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
+        malformed_components_policy = malformed_components_root / ".github" / "merge-gate-policy.yml"
+        text = malformed_components_policy.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        component_index, _ = merge_gate_components_line(text)
+        indent = lines[component_index][:-len(lines[component_index].lstrip())]
+        lines[component_index] = f"{indent}components: prScope, build"
+        malformed_components_policy.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        malformed_components_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_required_contexts.py"),
+            str(malformed_components_policy),
+            str(malformed_components_root),
+        ])
+        expect(
+            "check_required_contexts.py fails closed on malformed components syntax",
+            malformed_components_rc != 0,
             failures,
         )
 

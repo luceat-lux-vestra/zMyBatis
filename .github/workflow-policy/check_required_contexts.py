@@ -10,26 +10,57 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_trust_boundary import Job, indent_of, workflow_has_pull_request_trigger, split_jobs  # noqa: E402
 
-ENTRY_PATTERN = re.compile(
-    r"^[ \\t]*-[ \\t]*context:[ \\t]*(?P<context>.+?)[ \\t]*\\n"
-    r"[ \\t]*producedBy:[ \\t]*(?P<produced_by>\\S+)[ \\t]*\\n"
-    r"[ \\t]*job:[ \\t]*(?P<job>\\S+)[ \\t]*"
-    r"(?:\\n[ \\t]*components:[ \\t]*\\[(?P<components>[^\\]\\n]*)\\][ \\t]*)?"
-    r"(?:\\n[ \\t]*trigger:[ \\t]*(?P<trigger>\\S+)[ \\t]*)?$",
-    re.MULTILINE,
-)
+POLICY_FIELDS = {
+    "producedBy": "produced_by",
+    "job": "job",
+    "components": "components",
+    "trigger": "trigger",
+}
 
 
 def section_entries(policy_text: str, section_name: str) -> list[dict[str, str]]:
+    """Parse the shallow required-check policy list without a YAML dependency."""
+    lines = policy_text.splitlines()
     marker = f"{section_name}:"
     try:
-        start = policy_text.index(marker)
-    except ValueError:
+        start = next(i for i, line in enumerate(lines) if line == marker)
+    except StopIteration:
         return []
-    rest = policy_text[start + len(marker):]
-    end_match = re.search(r"^\S[^\n]*:\s*$", rest, re.MULTILINE)
-    section = rest[:end_match.start()] if end_match else rest
-    return [m.groupdict() for m in ENTRY_PATTERN.finditer(section)]
+
+    entries: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    for line in lines[start + 1:]:
+        if line and not line[0].isspace():
+            break
+
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        if stripped.startswith("- context:"):
+            if current is not None:
+                entries.append(current)
+            current = {
+                "context": stripped[len("- context:"):].strip(),
+                "produced_by": None,
+                "job": None,
+                "components": None,
+                "trigger": None,
+            }
+            continue
+
+        if current is None:
+            continue
+
+        for policy_key, entry_key in POLICY_FIELDS.items():
+            prefix = f"{policy_key}:"
+            if stripped.startswith(prefix):
+                current[entry_key] = stripped[len(prefix):].strip()
+                break
+
+    if current is not None:
+        entries.append(current)
+    return entries
 
 
 def required_entries(policy_text: str) -> list[dict[str, str]]:
@@ -41,11 +72,23 @@ def staged_required_entries(policy_text: str) -> list[dict[str, str]]:
     return section_entries(policy_text, "stagedRequiredChecks")
 
 
-def declared_components(entry: dict[str, str]) -> list[str] | None:
+def declared_components(
+    entry: dict[str, str],
+) -> tuple[list[str] | None, str | None]:
     raw = entry.get("components")
     if raw is None:
-        return None
-    return [item.strip() for item in raw.split(",") if item.strip()]
+        return None, None
+    if not (raw.startswith("[") and raw.endswith("]")):
+        return None, "must be an inline [job, ...] list"
+
+    body = raw[1:-1].strip()
+    if not body:
+        return [], None
+
+    components = [item.strip() for item in body.split(",")]
+    if any(not item for item in components):
+        return None, "contains an empty job id"
+    return components, None
 
 
 def find_job(all_lines: list[str], job_id: str) -> Job | None:
@@ -135,8 +178,12 @@ def check_entry(entry: dict[str, str], repo_root: Path, classification: str) -> 
     if name != context:
         failures.append(f"'{context}': job '{job_id}' in {produced_by} has name '{name}', expected '{context}'")
 
-    components = declared_components(entry)
-    if context == "Merge Gate" and components is None:
+    components, components_error = declared_components(entry)
+    if components_error is not None:
+        failures.append(
+            f"'{context}': policy components declaration {components_error}"
+        )
+    elif context == "Merge Gate" and components is None:
         failures.append(
             "'Merge Gate': policy entry must declare a non-empty components list"
         )
