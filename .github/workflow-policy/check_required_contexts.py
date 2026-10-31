@@ -11,10 +11,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_trust_boundary import Job, indent_of, workflow_has_pull_request_trigger, split_jobs  # noqa: E402
 
 ENTRY_PATTERN = re.compile(
-    r"^\s*-\s*context:\s*(?P<context>.+?)\s*\n"
-    r"\s*producedBy:\s*(?P<produced_by>\S+)\s*\n"
-    r"\s*job:\s*(?P<job>\S+)\s*"
-    r"(?:\n\s*trigger:\s*(?P<trigger>\S+)\s*)?$",
+    r"^[ \\t]*-[ \\t]*context:[ \\t]*(?P<context>.+?)[ \\t]*\\n"
+    r"[ \\t]*producedBy:[ \\t]*(?P<produced_by>\\S+)[ \\t]*\\n"
+    r"[ \\t]*job:[ \\t]*(?P<job>\\S+)[ \\t]*"
+    r"(?:\\n[ \\t]*components:[ \\t]*\\[(?P<components>[^\\]\\n]*)\\][ \\t]*)?"
+    r"(?:\\n[ \\t]*trigger:[ \\t]*(?P<trigger>\\S+)[ \\t]*)?$",
     re.MULTILINE,
 )
 
@@ -38,6 +39,13 @@ def required_entries(policy_text: str) -> list[dict[str, str]]:
 
 def staged_required_entries(policy_text: str) -> list[dict[str, str]]:
     return section_entries(policy_text, "stagedRequiredChecks")
+
+
+def declared_components(entry: dict[str, str]) -> list[str] | None:
+    raw = entry.get("components")
+    if raw is None:
+        return None
+    return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 def find_job(all_lines: list[str], job_id: str) -> Job | None:
@@ -127,13 +135,28 @@ def check_entry(entry: dict[str, str], repo_root: Path, classification: str) -> 
     if name != context:
         failures.append(f"'{context}': job '{job_id}' in {produced_by} has name '{name}', expected '{context}'")
 
-    if context == "Merge Gate":
-        expected_needs = {"build", "test", "qodanaScope", "inspectCode", "dependencySubmissionValidation", "verify", "lint", "dependencyReview"}
-        actual_needs = job_needs(job)
-        if actual_needs != expected_needs:
+    components = declared_components(entry)
+    if context == "Merge Gate" and components is None:
+        failures.append(
+            "'Merge Gate': policy entry must declare a non-empty components list"
+        )
+    elif components is not None:
+        if not components:
             failures.append(
-                f"'Merge Gate': expected needs={sorted(expected_needs)!r}, got {sorted(actual_needs)!r}"
+                f"'{context}': policy components declaration must not be empty"
             )
+        elif len(set(components)) != len(components):
+            failures.append(
+                f"'{context}': policy components declaration contains duplicates: {components!r}"
+            )
+        else:
+            expected_needs = set(components)
+            actual_needs = job_needs(job)
+            if actual_needs != expected_needs:
+                failures.append(
+                    f"'{context}': policy components={sorted(expected_needs)!r}, "
+                    f"workflow needs={sorted(actual_needs)!r}"
+                )
 
     job_if = job_if_value(job)
     if job_if not in (None, "${{ always() }}", "always()"):

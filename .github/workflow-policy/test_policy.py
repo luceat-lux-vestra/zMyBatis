@@ -477,23 +477,54 @@ jobs:
     with tempfile.TemporaryDirectory() as tmp:
         aggregate_root = Path(tmp) / "repo"
         shutil.copytree(REPO_ROOT, aggregate_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
-        aggregate_workflow = aggregate_root / ".github" / "workflows" / "build.yml"
-        text = aggregate_workflow.read_text(encoding="utf-8")
-        text = text.replace(
-            "needs: [ build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview ]",
-            "needs: [ build, test, qodanaScope, inspectCode, verify, lint, dependencyReview ]",
-            1,
+        aggregate_policy = aggregate_root / ".github" / "merge-gate-policy.yml"
+        text = aggregate_policy.read_text(encoding="utf-8")
+        match = re.search(
+            r"(?m)^    components: \\[(?P<items>[^\\]]+)\\]$",
+            text,
         )
-        aggregate_workflow.write_text(text, encoding="utf-8")
+        if match is None:
+            raise RuntimeError("Merge Gate components declaration not found")
+        components = [item.strip() for item in match.group("items").split(",")]
+        components.remove("dependencySubmissionValidation")
+        mutated = f"    components: [ {', '.join(components)} ]"
+        text = text[:match.start()] + mutated + text[match.end():]
+        aggregate_policy.write_text(text, encoding="utf-8")
         aggregate_bad_rc = run([
             "python3",
             str(POLICY_DIR / "check_required_contexts.py"),
-            str(aggregate_root / ".github" / "merge-gate-policy.yml"),
+            str(aggregate_policy),
             str(aggregate_root),
         ])
         expect(
-            "check_required_contexts.py rejects a Merge Gate missing one component",
+            "check_required_contexts.py rejects policy/workflow component drift",
             aggregate_bad_rc != 0,
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        missing_components_root = Path(tmp) / "repo"
+        shutil.copytree(REPO_ROOT, missing_components_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
+        missing_components_policy = missing_components_root / ".github" / "merge-gate-policy.yml"
+        text = missing_components_policy.read_text(encoding="utf-8")
+        text, count = re.subn(
+            r"(?m)^    components: \\[[^\\]]+\\]\\n",
+            "",
+            text,
+            count=1,
+        )
+        if count != 1:
+            raise RuntimeError("Merge Gate components declaration was not removed")
+        missing_components_policy.write_text(text, encoding="utf-8")
+        missing_components_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_required_contexts.py"),
+            str(missing_components_policy),
+            str(missing_components_root),
+        ])
+        expect(
+            "check_required_contexts.py fails closed when Merge Gate components are undeclared",
+            missing_components_rc != 0,
             failures,
         )
 
