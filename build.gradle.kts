@@ -95,7 +95,7 @@ dependencies {
         testFramework(TestFrameworkType.Plugin.Java)
         testFramework(TestFrameworkType.Starter, configurationName = "integrationTestImplementation")
 
-        implementation("org.mybatis:mybatis:3.5.19")
+        implementation("org.mybatis:mybatis:3.6.0")
     }
 
     // Keep the process-level Starter/JUnit 6 stack isolated from the existing JUnit 4 fixture
@@ -134,7 +134,7 @@ dependencies {
         add("integrationTestImplementation", "org.bouncycastle:bcutil-jdk18on:1.86") {
             because("keep Bouncy Castle Starter tooling modules version-aligned")
         }
-        add("integrationTestImplementation", "at.yawk.lz4:lz4-java:1.12.0") {
+        add("integrationTestImplementation", "at.yawk.lz4:lz4-java:1.12.1") {
             because("1.11.3 includes the security fixes released in 1.11.2")
         }
         add("integrationTestImplementation", "org.jsoup:jsoup:1.23.2") {
@@ -170,7 +170,7 @@ val verifyStarterSecurityGraph = tasks.register("verifyStarterSecurityGraph") {
             "org.bouncycastle:bcprov-jdk18on" to "1.86",
             "org.bouncycastle:bcpkix-jdk18on" to "1.86",
             "org.bouncycastle:bcutil-jdk18on" to "1.86",
-            "at.yawk.lz4:lz4-java" to "1.12.0",
+            "at.yawk.lz4:lz4-java" to "1.12.1",
         )
         val resolved = securityResolutionResult.allComponents
             .mapNotNull { component ->

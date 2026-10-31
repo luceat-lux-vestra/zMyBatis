@@ -12,7 +12,7 @@ repositories {
 
 dependencies {
     implementation(project(":core"))
-    implementation("org.mybatis:mybatis:3.5.19")
+    implementation("org.mybatis:mybatis:3.6.0")
     implementation(kotlin("stdlib"))
 
     testImplementation(libs.junit)
