@@ -560,3 +560,55 @@ pagination, virtualization, field omission, input-size rejection limit, or backg
 Retained-resource/lifecycle campaigning beyond this dialog callback ownership and separate DataGrip
 host evidence remain independent #67 work.
 
+## Repeated console resource lifecycle and retention evidence
+
+`ConsoleResourceLifecycleScaleProjectFixtureTest` measures the repeated resource envelope of the
+shipping Database Tools acquisition boundary using real IntelliJ `JdbcConsole` instances.
+
+The REUSE case performs **32 same-source/same-target completed acquisitions** through
+`DatabaseToolsConsoleAdapter`. Every terminal callback releases keyed ownership before the next
+iteration. The fixture records the number of distinct console identities, verifies that the cache
+retains exactly the single matching console, proves the lease can be reacquired after every
+completion, then evicts that bounded owner and requires the console lifetime to be disposed.
+
+The NEW_EACH case performs **16 completed acquisitions** through the same shipping adapter. It
+requires one distinct console per iteration and verifies that none enters the zMyBatis REUSE cache.
+The real console lifetimes are deliberately left untouched by fixture cleanup so the platform test
+project teardown can establish the actual post-terminal lifetime boundary. The fixture records how
+many NEW_EACH consoles remain live immediately after terminal handoff and, from `tearDown()`, how
+many are disposed when the owning IntelliJ test project is torn down. A live NEW_EACH console after
+terminal handoff is therefore recorded as outside zMyBatis cache ownership rather than being
+silently classified as a leak.
+
+Terminal cleanup evidence separately injects `ProcessCanceledException` and an ordinary delivery
+failure from the real acquisition callback. Both paths must remove any newly registered REUSE
+console and release keyed ownership so the same key can be acquired again. An isolated real-console
+service fixture additionally owns **8 REUSE resources** and requires explicit
+`ConsoleCacheService` disposal to dispose all eight.
+
+Successful runs emit `ZMYBATIS_RESOURCE_LIFECYCLE` records for repeated completion, materialized
+delivery terminal ownership, terminal cleanup, service disposal, and project disposal. The root test
+task surfaces this prefix alongside the existing XML/input measurement prefixes without enabling
+arbitrary test stdout.
+
+The materialized-delivery fixture adds **8 repeated cycles per policy** through the real
+`acquireAndDeliverConsole -> executeMaterialized -> onFinished` shipping chain. It provides one real
+editor for each delivered console, lets the adapter inject/commit the exact artifact SQL and build
+the Database Tools script model, then deterministically invalidates the invocation at the final
+pre-native revalidation boundary. That forces document restoration and the real `onFinished`
+callback without turning an asynchronous database query into a timing oracle. REUSE must release
+its keyed lease on every cycle and retain only one console; NEW_EACH must remain uncached and live
+until its explicit/platform owner disposes it. Editor cardinality is observed at the execution
+boundary and fixture-created editors are explicitly released.
+
+This repeated fixture deliberately records `native_invocations=0`: it is resource-lifecycle
+evidence, not a substitute for the maintained Starter/Driver E2E that proves successful native
+Database Tools query invocation from the packaged plugin. The separation keeps lifecycle assertions
+deterministic while still exercising the shipping document/editor/script-model terminal path.
+
+These fixtures measure zMyBatis cache/lease ownership plus real console lifetime convergence; they
+do not claim every native Database Tools result/editor/history object is owned by zMyBatis. Native
+visible-console/history behavior remains platform-owned evidence and separate DataGrip host parity
+remains an independent #67 obligation. No forced GC, heap-size threshold, arbitrary console-count
+limit, or REUSE/NEW_EACH policy redesign is introduced by this measurement slice.
+
