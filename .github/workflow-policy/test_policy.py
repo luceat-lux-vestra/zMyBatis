@@ -222,9 +222,9 @@ jobs:
             failures,
         )
 
-    # Immutable pinning applies to remote Actions/workflows. Repository-local
-    # uses references execute from the same checked-out revision and do not
-    # have an independent ref to pin.
+    # Immutable pinning applies to remote Actions/workflows. GitHub self-repository
+    # references resolve to the exact running commit and do not have an
+    # independent ref to pin; workspace-relative ./ references are rejected.
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         checker = str(POLICY_DIR / "check_pins.py")
@@ -236,7 +236,7 @@ on:
   workflow_dispatch:
 jobs:
   reusable:
-    uses: ./.github/workflows/e2e.yml
+    uses: $/.github/workflows/e2e.yml
   action:
     runs-on: ubuntu-latest
     steps:
@@ -245,8 +245,27 @@ jobs:
             encoding="utf-8",
         )
         expect(
-            "check_pins.py accepts repository-local action and reusable-workflow references",
+            "check_pins.py accepts self-repository action and reusable-workflow references",
             run(["python3", checker, str(local_uses)]) == 0,
+            failures,
+        )
+
+        workspace_relative = root / "workspace-relative.yml"
+        workspace_relative.write_text(
+            """name: Workspace-relative fixture
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/example
+""",
+            encoding="utf-8",
+        )
+        expect(
+            "check_pins.py rejects workspace-relative same-repository references",
+            run(["python3", checker, str(workspace_relative)]) != 0,
             failures,
         )
 
@@ -392,7 +411,7 @@ jobs:
            all(fragment in build_source for fragment in (
                "\n  prScope:",
                "\n  starterDriver:",
-               "uses: ./.github/workflows/e2e.yml",
+               "uses: $/.github/workflows/e2e.yml",
                "needs: [ prScope, build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview, starterDriver ]",
                "E2E_RESULT: ${{ needs.starterDriver.result }}",
                "E2E_REQUIRED:",

@@ -72,8 +72,9 @@ trustBoundary:
     - id: pins
       statement: >-
         Every remote uses reference must be pinned to a full 40-hex-character
-        commit SHA, never a floating tag or branch. Repository-local ./ references
-        execute from the same checked-out revision and have no independent ref.
+        commit SHA, never a floating tag or branch. GitHub self-repository $/
+        references resolve to the repository at the running commit and have no
+        independent ref; workspace-relative ./ references are not accepted.
   workflowDefault: contents:read
   explicitPermissionsRequired: true
   privilegedJobs:
