@@ -15,6 +15,8 @@ import tempfile
 import sys
 from pathlib import Path
 
+from check_required_contexts import declared_components, required_entries
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 POLICY_DIR = Path(__file__).resolve().parent
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
@@ -66,6 +68,23 @@ def expect(label: str, condition: bool, failures: list[str]) -> None:
     print(f"{'ok  ' if condition else 'FAIL'} - {label}")
     if not condition:
         failures.append(label)
+
+
+def merge_gate_components_line(policy_text: str) -> tuple[int, str]:
+    lines = policy_text.splitlines()
+    in_merge_gate = False
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == "- context: Merge Gate":
+            in_merge_gate = True
+            continue
+        if in_merge_gate and stripped.startswith("- context:"):
+            break
+        if in_merge_gate and line and not line[0].isspace():
+            break
+        if in_merge_gate and stripped.startswith("components:"):
+            return index, stripped[len("components:"):].strip()
+    raise RuntimeError("Merge Gate components declaration not found")
 
 
 def check_local_policy(failures: list[str]) -> None:
@@ -203,6 +222,125 @@ jobs:
             failures,
         )
 
+    # Immutable pinning applies to remote Actions/workflows. GitHub self-repository
+    # references resolve to the exact running commit and do not have an
+    # independent ref to pin; workspace-relative ./ references are rejected.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        checker = str(POLICY_DIR / "check_pins.py")
+
+        local_uses = root / "local-uses.yml"
+        local_uses.write_text(
+            """name: Local uses fixture
+on:
+  workflow_dispatch:
+jobs:
+  reusable:
+    uses: $/.github/workflows/e2e.yml
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: $/.github/actions/example
+""",
+            encoding="utf-8",
+        )
+        expect(
+            "check_pins.py accepts self-repository action and reusable-workflow references",
+            run(["python3", checker, str(local_uses)]) == 0,
+            failures,
+        )
+
+        workspace_relative = root / "workspace-relative.yml"
+        workspace_relative.write_text(
+            """name: Workspace-relative fixture
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/example
+""",
+            encoding="utf-8",
+        )
+        expect(
+            "check_pins.py rejects workspace-relative same-repository references",
+            run(["python3", checker, str(workspace_relative)]) != 0,
+            failures,
+        )
+
+        remote_floating = root / "remote-floating.yml"
+        remote_floating.write_text(
+            """name: Remote floating fixture
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+""",
+            encoding="utf-8",
+        )
+        expect(
+            "check_pins.py rejects a floating remote Action ref",
+            run(["python3", checker, str(remote_floating)]) != 0,
+            failures,
+        )
+
+        reusable_floating = root / "reusable-floating.yml"
+        reusable_floating.write_text(
+            """name: Floating reusable-workflow fixture
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    uses: owner/repo/.github/workflows/example.yml@main
+""",
+            encoding="utf-8",
+        )
+        expect(
+            "check_pins.py rejects a floating remote reusable-workflow ref",
+            run(["python3", checker, str(reusable_floating)]) != 0,
+            failures,
+        )
+
+        reusable_pinned = root / "reusable-pinned.yml"
+        reusable_pinned.write_text(
+            """name: Pinned reusable-workflow fixture
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    uses: owner/repo/.github/workflows/example.yml@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+""",
+            encoding="utf-8",
+        )
+        expect(
+            "check_pins.py accepts an immutable remote reusable-workflow ref",
+            run(["python3", checker, str(reusable_pinned)]) == 0,
+            failures,
+        )
+
+        remote_pinned = root / "remote-pinned.yml"
+        remote_pinned.write_text(
+            """name: Remote pinned fixture
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+""",
+            encoding="utf-8",
+        )
+        expect(
+            "check_pins.py accepts an immutable remote Action ref",
+            run(["python3", checker, str(remote_pinned)]) == 0,
+            failures,
+        )
+
     pins_rc = run(
         [
             "python3",
@@ -295,6 +433,39 @@ jobs:
            failures)
 
     build_source = (WORKFLOWS_DIR / "build.yml").read_text(encoding="utf-8")
+    actionlint_compat_source = (POLICY_DIR / "actionlint_compat.py").read_text(
+        encoding="utf-8"
+    )
+    expect(
+        "actionlint self-repository shim is version-scoped and retirement-documented",
+        all(fragment in actionlint_compat_source for fragment in (
+            'EXPECTED_ACTIONLINT_VERSION = "1.7.12"',
+            "rhysd/actionlint#711",
+            "rhysd/actionlint#732",
+            "Retire this adapter when a stable actionlint release supports",
+            'SELF_REPOSITORY_WORKFLOW = "$/.github/workflows/e2e.yml"',
+        ))
+        and "actionlint_compat.py --self-test" in build_source
+        and "actionlint_compat.py ./actionlint .github/workflows/*.yml" in build_source,
+        failures,
+    )
+    e2e_source = (WORKFLOWS_DIR / "e2e.yml").read_text(encoding="utf-8")
+    expect("E2E PR execution is reusable and has no independent PR trigger",
+           "  workflow_call:" in e2e_source and "  pull_request:" not in e2e_source,
+           failures)
+    expect("called E2E keeps a concurrency identity distinct from the Build caller",
+           "group: zmybatis-e2e-" in e2e_source
+           and "group: ${{ github.workflow }}-" not in e2e_source,
+           failures)
+    expect("Build is the canonical PR DAG for Starter / Driver E2E",
+           all(fragment in build_source for fragment in (
+               "\n  prScope:",
+               "\n  starterDriver:",
+               "uses: $/.github/workflows/e2e.yml",
+               "needs: [ prScope, build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview, starterDriver ]",
+               "E2E_RESULT: ${{ needs.starterDriver.result }}",
+               "E2E_REQUIRED:",
+           )), failures)
     classifier_source = (POLICY_DIR / "classify_qodana_scope.py").read_text(encoding="utf-8")
     expect("Qodana PR scope classifier self-test remains in lint",
            "Verify Qodana PR scope classifier policy" in build_source
@@ -338,6 +509,29 @@ jobs:
                '"status-unknown"',
                'qodana-relevant:',
            )), failures)
+
+    policy_text = (REPO_ROOT / ".github" / "merge-gate-policy.yml").read_text(
+        encoding="utf-8"
+    )
+    merge_gate_entries = [
+        entry for entry in required_entries(policy_text)
+        if entry["context"] == "Merge Gate"
+    ]
+    expect(
+        "required-context parser finds exactly one Merge Gate policy entry",
+        len(merge_gate_entries) == 1,
+        failures,
+    )
+    if len(merge_gate_entries) == 1:
+        components, component_error = declared_components(merge_gate_entries[0])
+        expect(
+            "required-context parser reads a valid non-empty Merge Gate components declaration",
+            component_error is None
+            and components is not None
+            and bool(components)
+            and len(components) == len(set(components)),
+            failures,
+        )
 
     required_rc = run(
         [
@@ -394,23 +588,75 @@ jobs:
     with tempfile.TemporaryDirectory() as tmp:
         aggregate_root = Path(tmp) / "repo"
         shutil.copytree(REPO_ROOT, aggregate_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
-        aggregate_workflow = aggregate_root / ".github" / "workflows" / "build.yml"
-        text = aggregate_workflow.read_text(encoding="utf-8")
-        text = text.replace(
-            "needs: [ build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview ]",
-            "needs: [ build, test, qodanaScope, inspectCode, verify, lint, dependencyReview ]",
-            1,
+        aggregate_policy = aggregate_root / ".github" / "merge-gate-policy.yml"
+        text = aggregate_policy.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        component_index, raw_components = merge_gate_components_line(text)
+        if not (raw_components.startswith("[") and raw_components.endswith("]")):
+            raise RuntimeError("Merge Gate components declaration is not an inline list")
+        components = [
+            item.strip()
+            for item in raw_components[1:-1].split(",")
+            if item.strip()
+        ]
+        components.remove("dependencySubmissionValidation")
+        indent = lines[component_index][:-len(lines[component_index].lstrip())]
+        lines[component_index] = (
+            f"{indent}components: [ {', '.join(components)} ]"
         )
-        aggregate_workflow.write_text(text, encoding="utf-8")
+        aggregate_policy.write_text("\n".join(lines) + "\n", encoding="utf-8")
         aggregate_bad_rc = run([
             "python3",
             str(POLICY_DIR / "check_required_contexts.py"),
-            str(aggregate_root / ".github" / "merge-gate-policy.yml"),
+            str(aggregate_policy),
             str(aggregate_root),
         ])
         expect(
-            "check_required_contexts.py rejects a Merge Gate missing one component",
+            "check_required_contexts.py rejects policy/workflow component drift",
             aggregate_bad_rc != 0,
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        missing_components_root = Path(tmp) / "repo"
+        shutil.copytree(REPO_ROOT, missing_components_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
+        missing_components_policy = missing_components_root / ".github" / "merge-gate-policy.yml"
+        text = missing_components_policy.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        component_index, _ = merge_gate_components_line(text)
+        del lines[component_index]
+        missing_components_policy.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        missing_components_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_required_contexts.py"),
+            str(missing_components_policy),
+            str(missing_components_root),
+        ])
+        expect(
+            "check_required_contexts.py fails closed when Merge Gate components are undeclared",
+            missing_components_rc != 0,
+            failures,
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        malformed_components_root = Path(tmp) / "repo"
+        shutil.copytree(REPO_ROOT, malformed_components_root, ignore=shutil.ignore_patterns(".git", ".gradle", "build"))
+        malformed_components_policy = malformed_components_root / ".github" / "merge-gate-policy.yml"
+        text = malformed_components_policy.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        component_index, _ = merge_gate_components_line(text)
+        indent = lines[component_index][:-len(lines[component_index].lstrip())]
+        lines[component_index] = f"{indent}components: prScope, build"
+        malformed_components_policy.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        malformed_components_rc = run([
+            "python3",
+            str(POLICY_DIR / "check_required_contexts.py"),
+            str(malformed_components_policy),
+            str(malformed_components_root),
+        ])
+        expect(
+            "check_required_contexts.py fails closed on malformed components syntax",
+            malformed_components_rc != 0,
             failures,
         )
 
@@ -433,11 +679,53 @@ def check_actionlint(failures: list[str]) -> None:
         expect("actionlint is available", False, failures)
         return
 
-    good_rc = run([actionlint, *[str(path) for path in GOOD_FIXTURES]])
+    compat = str(POLICY_DIR / "actionlint_compat.py")
+    compat_self_test_rc = run(["python3", compat, "--self-test"])
+    expect(
+        "actionlint self-repository compatibility shim is narrowly scoped",
+        compat_self_test_rc == 0,
+        failures,
+    )
+
+    good_rc = run([
+        "python3",
+        compat,
+        actionlint,
+        *[str(path) for path in GOOD_FIXTURES],
+    ])
     expect("actionlint accepts the good fixtures", good_rc == 0, failures)
 
-    real_rc = run([actionlint, *[str(path) for path in REAL_WORKFLOWS]])
+    real_rc = run([
+        "python3",
+        compat,
+        actionlint,
+        *[str(path) for path in REAL_WORKFLOWS],
+    ])
     expect("actionlint accepts every real workflow", real_rc == 0, failures)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        unrelated = Path(tmp) / "unrelated-workflow-call.yml"
+        unrelated.write_text(
+            """name: Unrelated workflow-call fixture
+on:
+  workflow_dispatch:
+jobs:
+  invalid:
+    uses: not-a-valid-workflow-call
+""",
+            encoding="utf-8",
+        )
+        unrelated_rc = run([
+            "python3",
+            compat,
+            actionlint,
+            str(unrelated),
+        ])
+        expect(
+            "actionlint compatibility shim does not suppress unrelated workflow-call errors",
+            unrelated_rc != 0,
+            failures,
+        )
 
 
 def check_zizmor(failures: list[str]) -> None:

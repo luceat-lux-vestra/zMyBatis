@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 """Immutable action pin enforcement.
 
-Every `uses:` reference to a third-party (or first-party) Action must be pinned
-to a full-length 40-character commit SHA, not a floating tag or branch. A tag
-such as `@v7` can be force-moved by the action owner (or anyone who compromises
+Every remote `uses:` reference to a third-party (or first-party) Action must
+be pinned to a full-length 40-character commit SHA, not a floating tag or
+branch. Self-repository references beginning with `$/` resolve to this repository at
+the exact running commit and therefore do not take an `@ref`. Workspace-relative
+`./` references are intentionally rejected because they resolve against mutable
+runner workspace state rather than GitHub's self-repository identity. A tag such
+as `@v7` can be force-moved by the action owner (or anyone who compromises
 that owner's account) to point at different, unreviewed code that this
 repository's workflows would then execute automatically. A trailing `# v7`
 comment is fine and expected - Dependabot keeps the SHA and the comment in
-sync - only the ref before the comment must be a SHA.
+sync - only remote refs require an immutable SHA.
 
 Usage:
     check_pins.py <workflow-file-or-directory> [...]
 
-Exits non-zero and prints every offending line if any `uses:` line is not
-pinned to a 40-hex-character SHA. This must stay fail-closed: do not add an
+Exits non-zero and prints every offending line if any job-level `uses:` or
+step-level `- uses:` reference violates the self-repository/full-SHA policy. This must stay fail-closed: do not add an
 allowlist/ignore mechanism to make a finding go away, fix the pin instead.
 """
 from __future__ import annotations
@@ -22,8 +26,9 @@ import re
 import sys
 from pathlib import Path
 
-PIN_PATTERN = re.compile(r"^uses:\s*[^#\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
-USES_PATTERN = re.compile(r"^uses:\s*(.+)$")
+PIN_PATTERN = re.compile(r"^[^#\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
+SELF_PATTERN = re.compile(r"^\$/[^#\s]+(?:\s+#.*)?$")
+USES_PATTERN = re.compile(r"^(?:-\s*)?uses:\s*(?P<reference>.+)$")
 
 
 def iter_workflow_files(targets: list[str]) -> list[Path]:
@@ -42,7 +47,14 @@ def find_unpinned(path: Path) -> list[str]:
     failures = []
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         stripped = line.strip()
-        if stripped.startswith("uses:") and not PIN_PATTERN.match(stripped):
+        match = USES_PATTERN.match(stripped)
+        if match is None:
+            continue
+
+        reference = match.group("reference")
+        if not (
+            SELF_PATTERN.fullmatch(reference) or PIN_PATTERN.fullmatch(reference)
+        ):
             failures.append(f"{path}:{number}: {stripped}")
     return failures
 

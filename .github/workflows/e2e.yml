@@ -1,14 +1,8 @@
 name: E2E
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths-ignore:
-      - "README.md"
-      - "CONTRIBUTING.md"
-      - "AGENTS.md"
-      - "docs/*.md"
-      - "docs/**/*.md"
+  # PR execution is owned by the canonical Build DAG via workflow_call.
+  workflow_call:
   # Same trusted-main cache owner as manual E2E; only actual Gradle inputs
   # schedule a bounded cache prime. Product-source merges do not launch E2E.
   push:
@@ -26,7 +20,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Keep a distinct identity when invoked from Build; github.workflow in a called
+  # workflow resolves to the caller and must not cancel its own parent run.
+  group: zmybatis-e2e-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:

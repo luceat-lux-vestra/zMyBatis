@@ -16,14 +16,15 @@ mergeStrategy:
   requireBranchUpToDate: true
   requireLinearHistory: true
 
-# The live ruleset requires one stable aggregate context. Build/Test/Qodana/
-# Plugin Verifier/workflow-policy/dependency evidence and the read-only dependency-
-# submission compatibility adapter remain separate jobs inside build.yml; Merge Gate
-# runs with always() and fails unless every component is success.
+# The live ruleset requires one stable aggregate context. PR scope, Build/Test/Qodana/
+# Plugin Verifier/workflow-policy/dependency evidence and conditional Starter/Driver
+# E2E remain separate jobs inside build.yml; Merge Gate runs with always() and fails
+# unless every policy-declared component has the required result.
 requiredStatusChecks:
   - context: Merge Gate
     producedBy: .github/workflows/build.yml
     job: mergeGate
+    components: [ prScope, build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview, starterDriver ]
 
 excludedFromRequiredChecks:
   - workflow: release.yml
@@ -70,8 +71,10 @@ trustBoundary:
         persist-credentials:false on every actions/checkout step.
     - id: pins
       statement: >-
-        Every uses reference must be pinned to a full 40-hex-character commit
-        SHA, never a floating tag or branch.
+        Every remote uses reference must be pinned to a full 40-hex-character
+        commit SHA, never a floating tag or branch. GitHub self-repository $/
+        references resolve to the repository at the running commit and have no
+        independent ref; workspace-relative ./ references are not accepted.
   workflowDefault: contents:read
   explicitPermissionsRequired: true
   privilegedJobs:

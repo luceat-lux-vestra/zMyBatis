@@ -72,7 +72,7 @@ The first local run can download IDE/Starter artifacts. Semantic correctness of 
 
 ## CI evidence
 
-`.github/workflows/e2e.yml` exposes process evidence separately as `E2E / Starter / Driver E2E`.
+For pull requests, the canonical `.github/workflows/build.yml` DAG invokes `.github/workflows/e2e.yml` as the reusable `Starter / Driver E2E` job and aggregates its applicable result into `Merge Gate`. The E2E workflow remains independently triggerable only for trusted-main cache seeding and explicit manual recovery.
 
 For every run it records:
 
