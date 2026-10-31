@@ -518,6 +518,16 @@ def check_main_e2e_cache_seed(failures: list[str]) -> None:
     expect("existing E2E cache job identity remains unchanged",
            "  starterDriver:" in workflow and "    name: Starter / Driver E2E" in workflow,
            failures)
+    expect("DataGrip host evidence has a separately visible job",
+           "  dataGripStarterDriver:" in workflow
+           and "    name: Starter / Driver E2E (DataGrip)" in workflow
+           and "dataGripIntegrationTest --stacktrace" in workflow
+           and 'echo "host=DATAGRIP"' in workflow,
+           failures)
+    expect("DataGrip host evidence never becomes a second protected-main cache writer",
+           "          cache-read-only: true" in workflow
+           and "github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)" in workflow,
+           failures)
     expect("PRs are always read-only and main only may publish caches",
            "github.ref != 'refs/heads/main' || (github.event_name != 'push' && github.event_name != 'workflow_dispatch')" in workflow,
            failures)
