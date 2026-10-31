@@ -240,7 +240,7 @@ jobs:
   action:
     runs-on: ubuntu-latest
     steps:
-      - uses: ./.github/actions/example
+      - uses: $/.github/actions/example
 """,
             encoding="utf-8",
         )
@@ -285,6 +285,40 @@ jobs:
         expect(
             "check_pins.py rejects a floating remote Action ref",
             run(["python3", checker, str(remote_floating)]) != 0,
+            failures,
+        )
+
+        reusable_floating = root / "reusable-floating.yml"
+        reusable_floating.write_text(
+            """name: Floating reusable-workflow fixture
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    uses: owner/repo/.github/workflows/example.yml@main
+""",
+            encoding="utf-8",
+        )
+        expect(
+            "check_pins.py rejects a floating remote reusable-workflow ref",
+            run(["python3", checker, str(reusable_floating)]) != 0,
+            failures,
+        )
+
+        reusable_pinned = root / "reusable-pinned.yml"
+        reusable_pinned.write_text(
+            """name: Pinned reusable-workflow fixture
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    uses: owner/repo/.github/workflows/example.yml@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+""",
+            encoding="utf-8",
+        )
+        expect(
+            "check_pins.py accepts an immutable remote reusable-workflow ref",
+            run(["python3", checker, str(reusable_pinned)]) == 0,
             failures,
         )
 
