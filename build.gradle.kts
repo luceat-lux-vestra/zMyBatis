@@ -380,7 +380,8 @@ tasks {
                 .lineSequence()
                 .filter {
                     it.startsWith("ZMYBATIS_XML_SCALE ") ||
-                        it.startsWith("ZMYBATIS_INPUT_SCALE ")
+                        it.startsWith("ZMYBATIS_INPUT_SCALE ") ||
+                        it.startsWith("ZMYBATIS_RESOURCE_LIFECYCLE ")
                 }
                 .forEach { logger.lifecycle(it) }
         }
