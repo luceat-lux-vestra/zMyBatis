@@ -9,7 +9,8 @@
 # - verify:      plugin structure verification + IntelliJ Plugin Verifier.
 # - lint:        workflow/security/governance policy validation.
 # - dependencyReview: pull-request dependency admission control.
-# - mergeGate:   fail-closed aggregate over all required evidence jobs.
+# - starterDriver: reusable Starter/Driver E2E for ready non-documentation PRs.
+# - mergeGate:   fail-closed aggregate over all required evidence jobs, including E2E when applicable.
 #
 # This workflow never creates release identity or publishes. SemVer release tags are selected
 # explicitly outside ordinary CI and are consumed only by release.yml.
@@ -29,6 +30,61 @@ permissions:
   pull-requests: read # Read the exact PR changed-file set for the bounded docs-only fast path.
 
 jobs:
+  prScope:
+    name: PR scope
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+    steps:
+      - name: Detect documentation-only scope
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "docs-only=false (non-PR validation)"
+            exit 0
+          fi
+
+          changed="$RUNNER_TEMP/pr-changed-files.json"
+          if ! gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" > "$changed"; then
+            echo "::warning::Could not establish the changed-file set; using full validation."
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! jq -e '[.[][]] | length > 0' "$changed" >/dev/null; then
+            echo "::warning::Changed-file set is empty or unreadable; using full validation."
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if jq -e '
+            [ .[][] | .filename ] as $files
+            | all($files[];
+                . == "README.md"
+                or . == "CONTRIBUTING.md"
+                or . == "AGENTS.md"
+                or test("^docs/.*[.]md$")
+              )
+          ' "$changed" >/dev/null; then
+            docs_only=true
+          else
+            docs_only=false
+          fi
+
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          echo "docs-only=$docs_only"
+
   build:
     name: Build
     runs-on: ubuntu-24.04-arm
@@ -617,15 +673,25 @@ jobs:
         if: ${{ github.event_name != 'pull_request' }}
         run: echo "Dependency Review is pull-request-only; no dependency diff exists for manual dispatch."
 
+  starterDriver:
+    name: Starter / Driver E2E
+    needs: [ prScope ]
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.prScope.outputs.docs_only != 'true' }}
+    uses: ./.github/workflows/e2e.yml
+
   mergeGate:
     name: Merge Gate
-    needs: [ build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview ]
+    needs: [ prScope, build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview, starterDriver ]
     if: ${{ always() }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
     steps:
       - name: Require every merge-gate component to succeed
         env:
+          PR_SCOPE_RESULT: ${{ needs.prScope.result }}
+          PR_DOCS_ONLY: ${{ needs.prScope.outputs.docs_only }}
+          E2E_RESULT: ${{ needs.starterDriver.result }}
+          E2E_REQUIRED: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.prScope.outputs.docs_only != 'true' }}
           BUILD_RESULT: ${{ needs.build.result }}
           TEST_RESULT: ${{ needs.test.result }}
           QODANA_SCOPE_RESULT: ${{ needs.qodanaScope.result }}
@@ -639,6 +705,7 @@ jobs:
           set -euo pipefail
           failed=0
           for entry in \
+            "PR scope=$PR_SCOPE_RESULT" \
             "Build=$BUILD_RESULT" \
             "Test=$TEST_RESULT" \
             "Qodana scope=$QODANA_SCOPE_RESULT" \
@@ -655,4 +722,23 @@ jobs:
               failed=1
             fi
           done
+
+          case "$PR_DOCS_ONLY" in
+            true|false) ;;
+            *)
+              echo "::error::PR scope emitted invalid docs-only value '$PR_DOCS_ONLY'."
+              failed=1
+              ;;
+          esac
+
+          if [ "$E2E_REQUIRED" = "true" ]; then
+            if [ "$E2E_RESULT" != "success" ]; then
+              echo "::error::Starter / Driver E2E concluded '$E2E_RESULT' but is required for this PR."
+              failed=1
+            fi
+          elif [ "$E2E_RESULT" != "skipped" ]; then
+            echo "::error::Starter / Driver E2E concluded '$E2E_RESULT' when it should be non-applicable."
+            failed=1
+          fi
+
           exit "$failed"
