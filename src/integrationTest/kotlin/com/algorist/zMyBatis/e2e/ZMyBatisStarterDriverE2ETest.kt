@@ -516,7 +516,11 @@ class ZMyBatisStarterDriverE2ETest {
                 ) {
                     testConnectionButton.isEnabled()
                 }
-                driver.waitForIndicators(30.seconds, waitSmartLongEnough = true)
+                // Datasource readiness is established by the connection result and lifecycle
+                // checks above. Do not gate persistence on global IDE/code-analysis quiescence:
+                // Java fixtures can keep unrelated daemon analysis unsettled after the datasource
+                // is already usable. The dialog-close and dataSources.xml checks below provide the
+                // bounded persistence evidence this helper actually owns.
                 okButton.click()
             }
         }
