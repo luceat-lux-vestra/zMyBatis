@@ -64,7 +64,15 @@ The maintained Starter/Driver E2E supplies representative full click-throughs fo
 
 Automated persistence/lifecycle evidence covers only current v3 state. Development-only v2 persistence was never distributed and has no compatibility reader.
 
-The tests prove project-scoped v3 persistence, stable datasource UUID + explicit schema identity, stale-source pruning without console creation, exact target re-resolution, cache target matching, source-key REUSE ownership, terminal lease release, shutdown gating, disposal, and immutable artifact delivery. Structural evidence verifies that the shipping adapter checks a matching cached console before constructing a replacement and carries lease release through the execution terminal callback. Real host evidence is still required when changing JetBrains datasource/schema semantics, DataGrip behavior, or delayed native console lifecycle interactions; these tests do not claim scheduler fairness or DataGrip-specific concurrent-console behavior. Those gaps are explicit so a green `Test` context is not misrepresented as broader platform proof.
+The tests prove project-scoped v3 persistence, stable datasource UUID + explicit schema identity, stale-source pruning without console creation, exact target re-resolution, cache target matching, source-key REUSE ownership, terminal lease release, shutdown gating, disposal, and immutable artifact delivery. Structural evidence verifies that the shipping adapter checks a matching cached console before constructing a replacement and carries lease release through the execution terminal callback. These lower-level fixtures still do not claim scheduler fairness or host-specific native console behavior.
+
+## Separate DataGrip host evidence boundary
+
+#478 adds DataGrip as an explicit, independently visible host proof rather than reusing IDEA Ultimate evidence.
+
+`verifyPlugin` targets DataGrip 2026.2.3 and the 2026.2 minimum line in addition to the existing IU targets. The process layer uses `ZMyBatisDataGripStarterDriverE2ETest` through the separate `dataGripIntegrationTest` task and `Starter / Driver E2E (DataGrip)` CI job. The exact packaged plugin must load in DataGrip 2026.2.3, expose the shipping settings service, register the XML action, reach the typed no-datasource refusal, remain Driver-responsive, and close cleanly under a strict IDE-failure boundary.
+
+DataGrip evidence is deliberately narrower than the IU PostgreSQL golden path. It does not prove Java annotation source behavior, native PostgreSQL result/history parity, every datasource/schema lifecycle case, or wider JetBrains host compatibility. A successful IU run cannot satisfy the DataGrip obligation, and a successful DataGrip smoke cannot widen the Java-source or DBMS capability matrix. Those gaps are explicit so a green `Test` context is not misrepresented as broader platform proof.
 
 ## Other gates
 

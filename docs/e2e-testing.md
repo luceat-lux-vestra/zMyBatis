@@ -46,13 +46,29 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
 
 No production method exists solely for this harness. The process database stack uses only pinned pgJDBC on the `integrationTestImplementation` graph; before IDE startup, the test copies that JAR into the isolated Starter config and records it as a local Driver Files library. Driver then creates the datasource through maintained Database Tools UI, performs a real Test Connection, refreshes Database Tools, and selects explicit `public` through shipping UI. No H2-specific cold-datasource/introspection harness participates in #448 evidence.
 
+### Separate DataGrip host scenarios
+
+`ZMyBatisDataGripStarterDriverE2ETest` is a separate host proof against DataGrip 2026.2.3. It never treats the IDEA Ultimate suite as DataGrip evidence.
+
+It installs the exact same packaged plugin ZIP and proves two bounded claims:
+
+1. **Packaged plugin/service smoke** — DataGrip starts under a strict Starter `CIServer` failure boundary with no IDEA-only exception exemption, the zMyBatis plugin loads, and the shipping `ZMyBatisSettings` service is callable.
+2. **Registered XML action fail-closed path** — a real XML mapper is opened in DataGrip, the registered `zMyBatis.Execute` action is invoked, and with no datasource configured the shipping path reaches the typed `zMyBatis: Execution Target Unavailable` refusal without an IDE fatal error or stale dialog.
+
+Each scenario closes its DataGrip process through `useDriverAndCloseIde` and emits a `ZMYBATIS_HOST_EVIDENCE host=DATAGRIP` record with release, scenario, result, shutdown state and observed duration. These durations are observations, not latency SLAs.
+
+This host smoke deliberately does **not** claim Java-annotation parity or successful native PostgreSQL execution in DataGrip. Java PSI availability is not inferred from IDEA Ultimate, and the maintained IU PostgreSQL golden path remains separate. DataGrip Plugin Verifier evidence for 2026.2.3 plus the 2026.2 minimum line is required alongside this process smoke.
+
 ## Local execution
 
-Run the process suite separately from the normal fixture suite:
+Run each host suite separately from the normal fixture suite:
 
 ```bash
 ./gradlew integrationTest
+./gradlew dataGripIntegrationTest
 ```
+
+`integrationTest` is the IntelliJ IDEA Ultimate suite. `dataGripIntegrationTest` targets DataGrip 2026.2.3 and filters to the DataGrip-specific process class.
 
 The IntelliJ Platform Gradle Plugin's `testIdeUi` task supplies `path.to.build.plugin` from the `buildPlugin` archive. The test installs that exact archive with Starter before launching the IDE.
 
@@ -63,7 +79,7 @@ The first local run can download IDE/Starter artifacts. Semantic correctness of 
 - each test receives a fresh JUnit temporary directory;
 - the checked-in `src/integrationTest/testProject` sample is copied into that directory before IDE startup, so IDE metadata cannot mutate the repository fixture or a later scenario;
 - each scenario starts and closes its own IDE process through `runIdeWithDriver().useDriverAndCloseIde`;
-- before opening the project, a separate no-project launch completes the supplied-license or native `StartTrial` activation in that scenario's isolated config, waits for Ultimate/plugin initialization, and proves activation state was persisted; the project launch then uses that config without overlapping project-tree reads with activation's dynamic scheme reload;
+- before opening the project, each host uses a separate no-project activation seed: IDEA Ultimate persists `idea.key`, while DataGrip persists `datagrip.key`; supplied-license or native `StartTrial` activation completes before project-tree reads begin;
 - the database scenarios create PostgreSQL datasource state only inside each temporary Starter project through maintained Database Tools UI; pinned pgJDBC is copied only into the isolated Starter IDE config and registered as a local Database Tools driver library, while the exact normal plugin ZIP remains unchanged;
 - datasource choice, parameter input, preview confirmation, and result-table observation use maintained Driver component APIs rather than screen coordinates or correctness sleeps;
 - readiness uses Driver `waitForIndicators` / bounded component waits, not correctness sleeps;
@@ -72,14 +88,17 @@ The first local run can download IDE/Starter artifacts. Semantic correctness of 
 
 ## CI evidence
 
-`.github/workflows/e2e.yml` exposes process evidence separately as `E2E / Starter / Driver E2E`.
+`.github/workflows/e2e.yml` exposes the existing IU evidence as `E2E / Starter / Driver E2E` and DataGrip separately as `E2E / Starter / Driver E2E (DataGrip)`.
 
-For every run it records:
+Each host manifest records:
 
 - the actual checked-out commit (`git rev-parse HEAD`);
 - the workflow SHA supplied by GitHub;
 - the exact plugin distribution path;
-- the SHA-256 digest of that plugin ZIP.
+- the SHA-256 digest of that plugin ZIP;
+- the exact IDE release; the DataGrip manifest additionally records `host=DATAGRIP`.
+
+The DataGrip job is permanently cache-read-only and never becomes a second protected-main cache writer.
 
 On failure it archives the Gradle/JUnit result plus bounded per-test IDE diagnostics (`log/idea.log` and screenshots when present); it deliberately does not archive the entire Starter test tree. E2E remains separate from the required `Merge Gate`; the gate aggregates the ordinary Build, Test, Qodana, Plugin Verifier, workflow-policy, and Dependency Review component jobs.
 
@@ -102,4 +121,4 @@ Pure value objects, deterministic source-graph algorithms, isolated parser seman
 
 Do not move stable semantic matrices into this suite merely to label them E2E. Prefer Driver API/service interaction to Swing traversal. UI interaction is used only when registration or visible product behavior is itself the claim.
 
-The maintained registered-action suite now uses one PostgreSQL Database Tools stack for complementary production paths through the same Leap authority: the DB-neutral zero-binding artifact executes against an explicit PostgreSQL target, the named BIGINT nonzero slice proves contract input/materialization/native results/history, and the raw-interpolation scenario proves mandatory preview cancellation without native execution. It does **not** prove every DBMS/dialect, every datasource/schema identity case, DataGrip parity, or console disposal/reuse lifecycle; those remain explicit #67 compatibility/lifecycle obligations. The harness remains repository-wide and is extended according to the applicability rule above.
+The maintained IU registered-action suite uses one PostgreSQL Database Tools stack for complementary production paths through the same Leap authority: the DB-neutral zero-binding artifact executes against an explicit PostgreSQL target, the named BIGINT nonzero slice proves contract input/materialization/native results/history, and the raw-interpolation scenario proves mandatory preview cancellation without native execution. That IU proof does not generalize to DataGrip. The separate DataGrip suite proves packaged-plugin/service loading and the registered XML action's typed no-datasource refusal only; it does not claim Java-source parity, successful native PostgreSQL execution, every DBMS/dialect, or every datasource/schema lifecycle case. Those broader claims require their own evidence.

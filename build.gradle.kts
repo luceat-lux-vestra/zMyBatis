@@ -242,6 +242,10 @@ intellijPlatform {
             create(IntelliJPlatformType.IntellijIdeaUltimate, providers.gradleProperty("platformVersion").get())
             // Preserve evidence for the declared minimum 262 line after compiling on the patch baseline.
             create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.2")
+            // DataGrip is a separate maintained host claim. Keep its patch baseline and
+            // minimum 262 line explicit rather than inferring compatibility from IDEA Ultimate.
+            create(IntelliJPlatformType.DataGrip, providers.gradleProperty("platformVersion").get())
+            create(IntelliJPlatformType.DataGrip, "2026.2")
         }
     }
 }
@@ -303,6 +307,35 @@ intellijPlatformTesting.testIdeUi.register("integrationTest") {
             languageVersion = JavaLanguageVersion.of(25)
         }
         useJUnitPlatform()
+        filter {
+            includeTestsMatching("com.algorist.zMyBatis.e2e.ZMyBatisStarterDriverE2ETest")
+        }
+        testLogging {
+            events("passed", "failed")
+            showStandardStreams = true
+        }
+    }
+}
+
+// DataGrip is validated as a separate host rather than by re-labeling IDEA Ultimate evidence.
+// The Starter dependencies supplied by IntelliJ Platform Gradle Plugin 2.19 include the 262+
+// DataGrip product module, so the process test can use IdeInfo.DataGrip directly.
+intellijPlatformTesting.testIdeUi.register("dataGripIntegrationTest") {
+    type = IntelliJPlatformType.DataGrip
+    version = providers.gradleProperty("platformVersion").get()
+
+    task {
+        dependsOn(verifyStarterSecurityGraph)
+        val integrationTestSourceSet = sourceSets.getByName("integrationTest")
+        testClassesDirs = integrationTestSourceSet.output.classesDirs
+        classpath = integrationTestSourceSet.runtimeClasspath
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
+        useJUnitPlatform()
+        filter {
+            includeTestsMatching("com.algorist.zMyBatis.e2e.ZMyBatisDataGripStarterDriverE2ETest")
+        }
         testLogging {
             events("passed", "failed")
             showStandardStreams = true
@@ -324,6 +357,7 @@ kover {
             // Process-level Starter/Driver evidence is independent from the normal `check`
             // lifecycle and must not be pulled into Kover's default "all JVM test tasks" graph.
             disabledForTestTasks.add("integrationTest")
+            disabledForTestTasks.add("dataGripIntegrationTest")
         }
     }
     reports {
@@ -356,7 +390,7 @@ tasks.named<PrepareSandboxTask>("prepareTestSandbox") {
 // Keep the unit/PSI fixtures independent of a desktop session on every host.
 // The separate Starter/Driver launcher retains its real UI process.
 tasks.withType<Test>().configureEach {
-    if (name != "integrationTest") {
+    if (name != "integrationTest" && name != "dataGripIntegrationTest") {
         systemProperty("java.awt.headless", "true")
     }
 }

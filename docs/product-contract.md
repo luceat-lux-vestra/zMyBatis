@@ -245,9 +245,11 @@ A small safety patch may remove current INFO leakage before the full Leap cutove
 ## 15. IDE compatibility policy
 
 - IDEA Ultimate and DataGrip are evaluated independently.
-- Current IDEA Ultimate 2026.2.3 Plugin Verifier (plus 2026.2 minimum-build verification) is maintained baseline evidence, not proof of DataGrip or every later IDE.
+- IDEA Ultimate 2026.2.3 plus the 2026.2 minimum line remain separate Plugin Verifier targets and retain the full maintained Starter/Driver PostgreSQL scenarios.
+- DataGrip 2026.2.3 plus the 2026.2 minimum line are separate Plugin Verifier targets. Its process proof is separately visible and currently bounded to packaged-plugin/service loading plus the registered XML action's typed no-datasource refusal and clean shutdown.
+- DataGrip host evidence does not imply Java-annotation parity or native PostgreSQL result/history parity; those claims require explicit host-specific proof before they can be added.
 - Database Tools APIs are isolated behind adapters so platform drift has a bounded replacement surface.
-- Public Marketplace/README compatibility claims must match #67 evidence before Leap release.
+- Public Marketplace/README compatibility claims must match exact-head #67 evidence before Leap release.
 
 ## 16. Product workflow
 

@@ -178,3 +178,91 @@ jobs:
             out/ide-tests/tests/**/log/idea.log
             out/ide-tests/tests/**/screenshots/**
           if-no-files-found: warn
+
+  dataGripStarterDriver:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) }}
+    name: Starter / Driver E2E (DataGrip)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup Java 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          # DataGrip evidence is never a protected-main cache writer. Keep the existing
+          # starterDriver job as the single trusted cache owner.
+          cache-read-only: true
+
+      - name: Build exact DataGrip evidence artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME buildPlugin
+
+          mapfile -t archives < <(find build/distributions -maxdepth 1 -type f -name '*.zip' -print)
+          if [[ ${#archives[@]} -ne 1 ]]; then
+            echo "::error::Expected exactly one plugin distribution, found ${#archives[@]}"
+            printf '%s\n' "${archives[@]}"
+            exit 1
+          fi
+
+          tested_commit="$(git rev-parse HEAD)"
+          artifact="${archives[0]}"
+          artifact_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
+          {
+            echo "tested_commit=$tested_commit"
+            echo "workflow_sha=$GITHUB_SHA"
+            echo "java_target=25"
+            echo "host=DATAGRIP"
+            echo "ide_release=2026.2.3"
+            echo "plugin_artifact=$artifact"
+            echo "plugin_sha256=$artifact_sha256"
+          } | tee datagrip-e2e-artifact-manifest.txt
+
+      - name: Install ARM64 EGL runtime for DataGrip Skiko
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "aarch64"
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libegl1
+          ldconfig -p | grep -F 'libEGL.so.1'
+
+      - name: Run DataGrip Starter / Driver E2E
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME dataGripIntegrationTest --stacktrace 2>&1 | tee datagrip-e2e.log
+
+      - name: Upload DataGrip E2E artifact identity
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: datagrip-e2e-artifact-identity
+          path: datagrip-e2e-artifact-manifest.txt
+          if-no-files-found: error
+
+      - name: Upload DataGrip E2E failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: datagrip-e2e-failure-diagnostics
+          path: |
+            datagrip-e2e.log
+            build/reports/tests/dataGripIntegrationTest
+            build/test-results/dataGripIntegrationTest
+            out/ide-tests/tests/**/log/idea.log
+            out/ide-tests/tests/**/screenshots/**
+          if-no-files-found: warn
+
