@@ -17,7 +17,7 @@ import com.algorist.zMyBatis.core.source.XmlStatementId
 import com.algorist.zMyBatis.core.source.selectJavaAnnotationStatementVariant
 import com.algorist.zMyBatis.services.ConsoleCacheService
 import com.algorist.zMyBatis.services.ExecutionTargetDescriptorStore
-import com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapter
+import com.algorist.zMyBatis.host.JavaPsiCapabilities
 import com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureFailure
 import com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureResult
 import com.algorist.zMyBatis.source.SourceGraphRevalidationFailure
@@ -49,7 +49,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.popup.JBPopupListener
 import com.intellij.openapi.ui.popup.LightweightWindowEvent
-import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiFile
 import com.intellij.psi.xml.XmlFile
 import java.util.concurrent.atomic.AtomicBoolean
@@ -97,40 +96,41 @@ internal object LeapActionSourceEvidenceAdapter {
         project: Project,
         editor: Editor,
         psiFile: PsiFile,
-    ): LeapActionSourceEvidenceResult =
-        when (psiFile) {
-            is PsiJavaFile ->
-                when (val result = JavaAnnotationSourceCaptureAdapter.capture(project, editor)) {
-                    is JavaAnnotationSourceCaptureResult.Captured ->
-                        LeapActionSourceEvidenceResult.Captured(
-                            LeapActionSourceEvidence.Java(result.capture),
-                        )
-                    is JavaAnnotationSourceCaptureResult.Failed ->
-                        LeapActionSourceEvidenceResult.Failed(
-                            LeapActionSourceEvidenceFailure.Java(result.failure),
-                        )
-                }
+    ): LeapActionSourceEvidenceResult {
+        if (psiFile is XmlFile) {
+            return when (val result = XmlActionSourceCaptureAdapter.capture(project, editor)) {
+                is XmlActionSourceCaptureResult.Captured ->
+                    LeapActionSourceEvidenceResult.Captured(
+                        LeapActionSourceEvidence.Xml(
+                            statementId = result.capture.statementId,
+                            snapshots = listOf(result.capture.snapshot),
+                            discoveries = listOf(result.capture.discovery),
+                        ),
+                    )
+                is XmlActionSourceCaptureResult.Failed ->
+                    LeapActionSourceEvidenceResult.Failed(
+                        LeapActionSourceEvidenceFailure.Xml(result.failure),
+                    )
+            }
+        }
 
-            is XmlFile ->
-                when (val result = XmlActionSourceCaptureAdapter.capture(project, editor)) {
-                    is XmlActionSourceCaptureResult.Captured ->
-                        LeapActionSourceEvidenceResult.Captured(
-                            LeapActionSourceEvidence.Xml(
-                                statementId = result.capture.statementId,
-                                snapshots = listOf(result.capture.snapshot),
-                                discoveries = listOf(result.capture.discovery),
-                            ),
-                        )
-                    is XmlActionSourceCaptureResult.Failed ->
-                        LeapActionSourceEvidenceResult.Failed(
-                            LeapActionSourceEvidenceFailure.Xml(result.failure),
-                        )
-                }
-
-            else -> LeapActionSourceEvidenceResult.Failed(
+        val javaCapture = JavaPsiCapabilities.current()
+            ?.captureAnnotationSource(project, editor, psiFile)
+            ?: return LeapActionSourceEvidenceResult.Failed(
                 LeapActionSourceEvidenceFailure.UnsupportedContext,
             )
+
+        return when (javaCapture) {
+            is JavaAnnotationSourceCaptureResult.Captured ->
+                LeapActionSourceEvidenceResult.Captured(
+                    LeapActionSourceEvidence.Java(javaCapture.capture),
+                )
+            is JavaAnnotationSourceCaptureResult.Failed ->
+                LeapActionSourceEvidenceResult.Failed(
+                    LeapActionSourceEvidenceFailure.Java(javaCapture.failure),
+                )
         }
+    }
 }
 
 internal sealed interface LeapPreparationSourceSelectionResult {

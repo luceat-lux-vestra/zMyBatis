@@ -116,11 +116,17 @@ class MyBatisActionUpdateBoundaryTest {
     }
 
     @Test
-    fun `java update classification fails closed while indexes are unavailable`() {
+    fun `java update classification is optional and fails closed while indexes are unavailable`() {
         val analyzer = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisContextAnalyzer.kt")
+        val javaCapability = source(
+            "src/main/kotlin/com/algorist/zMyBatis/host/IntellijJavaPsiCapability.kt",
+        )
 
-        assertTrue(analyzer.contains("DumbService.isDumb(project)"))
-        assertTrue(analyzer.contains("catch (_: IndexNotReadyException)"))
+        assertTrue(analyzer.contains("JavaPsiCapabilities.current()"))
+        assertFalse(analyzer.contains("PsiJavaFile"))
+        assertFalse(analyzer.contains("PsiMethod"))
+        assertTrue(javaCapability.contains("DumbService.isDumb(project)"))
+        assertTrue(javaCapability.contains("catch (_: IndexNotReadyException)"))
         assertTrue(analyzer.contains("project.isDisposed"))
         assertTrue(analyzer.contains("!psiFile.isValid"))
     }

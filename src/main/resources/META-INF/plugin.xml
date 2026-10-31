@@ -9,8 +9,14 @@
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.database</depends>
+    <depends optional="true" config-file="zMyBatis-withJava.xml">com.intellij.java</depends>
 
     <resource-bundle>messages.MyBundle</resource-bundle>
+
+    <extensionPoints>
+        <extensionPoint name="javaPsiCapability"
+                        interface="com.algorist.zMyBatis.host.JavaPsiCapability"/>
+    </extensionPoints>
 
     <extensions defaultExtensionNs="com.intellij">
         <postStartupActivity implementation="com.algorist.zMyBatis.startup.MyBatisActionInterceptorActivity"/>
