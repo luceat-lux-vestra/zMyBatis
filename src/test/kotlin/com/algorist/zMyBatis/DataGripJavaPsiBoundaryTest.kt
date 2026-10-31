@@ -25,6 +25,7 @@ class DataGripJavaPsiBoundaryTest {
             ),
         )
         assertTrue(pluginXml.contains("interface=\"com.algorist.zMyBatis.host.JavaPsiCapability\""))
+        assertTrue(pluginXml.contains("dynamic=\"true\""))
         assertTrue(
             javaDescriptor.contains(
                 "implementation=\"com.algorist.zMyBatis.host.IntellijJavaPsiCapability\"",
