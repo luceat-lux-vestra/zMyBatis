@@ -53,9 +53,9 @@ class XmlMapperStaticBoundInputPreparationTest {
             prepare(fixture, listOf(InputValue.IntegerValue(BigInteger.valueOf(42)))),
         )
         val binding = prepared.orderedBindings.single()
-        assertEquals("java.lang.Object", binding.metadata.mappingJavaTypeIdentity)
+        assertEquals("java.lang.Long", binding.metadata.mappingJavaTypeIdentity)
         assertEquals("BIGINT", binding.metadata.jdbcTypeIdentity)
-        assertEquals("org.apache.ibatis.type.UnknownTypeHandler", binding.metadata.typeHandlerIdentity)
+        assertEquals("org.apache.ibatis.type.LongTypeHandler", binding.metadata.typeHandlerIdentity)
 
         val targetId = ExecutionTargetId(
             StableDataSourceId("postgres-proof"),
