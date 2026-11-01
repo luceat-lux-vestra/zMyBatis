@@ -957,8 +957,12 @@ class ZMyBatisStarterDriverE2ETest {
         val mapping = boundSql.parameterMappings.single()
         assertEquals("value", mapping.property)
         assertEquals("BIGINT", mapping.jdbcType?.name)
-        assertEquals("java.lang.Object", mapping.javaType.name)
-        assertEquals("org.apache.ibatis.type.UnknownTypeHandler", mapping.typeHandler.javaClass.name)
+        assertEquals("java.lang.Object", mapping.javaType?.name)
+        assertEquals(null, mapping.typeHandler)
+        val effectiveTypeHandler = checkNotNull(
+            configuration.typeHandlerRegistry.getTypeHandler(Long::class.javaObjectType, mapping.jdbcType),
+        )
+        assertEquals("org.apache.ibatis.type.LongTypeHandler", effectiveTypeHandler.javaClass.name)
 
         val fileId = SourceFileId("vfs:/PostgreSqlQuery.xml")
         val revision = SourceRevision(
@@ -998,9 +1002,9 @@ class ZMyBatisStarterDriverE2ETest {
                     ),
                     metadata = PreparedBindingMetadata(
                         declaredJavaTypeIdentity = JavaTypeIdentity("long"),
-                        mappingJavaTypeIdentity = mapping.javaType.name,
+                        mappingJavaTypeIdentity = Long::class.javaObjectType.name,
                         jdbcTypeIdentity = mapping.jdbcType?.name,
-                        typeHandlerIdentity = mapping.typeHandler.javaClass.name,
+                        typeHandlerIdentity = effectiveTypeHandler.javaClass.name,
                         parameterMode = mapping.mode.name,
                         numericScale = mapping.numericScale,
                     ),
