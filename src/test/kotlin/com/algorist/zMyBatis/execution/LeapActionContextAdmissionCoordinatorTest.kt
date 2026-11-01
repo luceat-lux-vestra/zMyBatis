@@ -213,7 +213,10 @@ class LeapActionContextAdmissionCoordinatorTest {
             "src/main/kotlin/com/algorist/zMyBatis/source/XmlProjectMapperSourceCaptureAdapter.kt",
         )
 
-        assertTrue(coordinator.contains("JavaAnnotationSourceCaptureAdapter.capture"))
+        assertTrue(coordinator.contains("JavaPsiCapabilities.current()"))
+        assertTrue(coordinator.contains("captureAnnotationSource"))
+        assertFalse(coordinator.contains("PsiJavaFile"))
+        assertFalse(coordinator.contains("JavaAnnotationSourceCaptureAdapter.capture"))
         assertTrue(coordinator.contains("XmlActionSourceCaptureAdapter.capture"))
         assertTrue(coordinator.contains("LeapProjectXmlMapperExpansionAdapter"))
         assertTrue(coordinator.contains("projectXmlExpansion.requestExpansion"))
