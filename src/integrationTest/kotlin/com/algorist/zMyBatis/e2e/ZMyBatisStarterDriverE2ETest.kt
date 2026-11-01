@@ -108,7 +108,7 @@ interface JTextComponentRemote {
 
 @Remote("java.awt.Component")
 interface AwtComponentIdentityRemote {
-    fun hashCode(): Int
+    override fun hashCode(): Int
 }
 
 @Remote(
