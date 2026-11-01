@@ -175,11 +175,18 @@ class XmlBooleanIfRuntimePreparationTest {
         assertEquals(listOf(integer(42), InputValue.BooleanValue(true), integer(42), integer(42)), active.orderedBindings.map { it.value })
         assertEquals("BOOLEAN", active.orderedBindings[1].metadata.jdbcTypeIdentity)
         assertEquals("boolean", active.orderedBindings[1].metadata.declaredJavaTypeIdentity?.value)
-        val stock = stockBoundSql(fixture, true, 42)
-        assertEquals(stock.sql, active.sqlWithPlaceholders)
-        assertEquals("org.apache.ibatis.type.UnknownTypeHandler", stock.parameterMappings[1].typeHandler.javaClass.name)
-        assertEquals(stock.parameterMappings[1].typeHandler.javaClass.name, active.orderedBindings[1].metadata.typeHandlerIdentity)
-        assertEquals(stock.parameterMappings[1].javaType.name, active.orderedBindings[1].metadata.mappingJavaTypeIdentity)
+        val stock = stockPreparation(fixture, true, 42)
+        assertEquals(stock.boundSql.sql, active.sqlWithPlaceholders)
+        val stockMetadata = stockEffectiveParameterMappingMetadata(
+            stock.configuration,
+            stock.boundSql,
+            stock.parameterObject,
+            stock.boundSql.parameterMappings[1],
+        )
+        assertEquals("java.lang.Boolean", stockMetadata.javaTypeIdentity)
+        assertEquals("org.apache.ibatis.type.BooleanTypeHandler", stockMetadata.typeHandlerIdentity)
+        assertEquals(stockMetadata.typeHandlerIdentity, active.orderedBindings[1].metadata.typeHandlerIdentity)
+        assertEquals(stockMetadata.javaTypeIdentity, active.orderedBindings[1].metadata.mappingJavaTypeIdentity)
         assertTrue(active.orderedBindings.none { it.additionalParameter })
         assertTrue(active.rawInterpolations.isEmpty())
         assertEquals(contract(fixture).sourceRevisions, active.sourceRevisions)
@@ -464,32 +471,54 @@ class XmlBooleanIfRuntimePreparationTest {
     }
 
     private fun assertStockParity(fixture: Fixture, enabled: Boolean, execution: PreparedExecution) {
-        val stock = stockBoundSql(fixture, enabled, 42)
-        assertEquals(stock.sql, execution.sqlWithPlaceholders)
-        assertEquals(stock.parameterMappings.map { it.property }, execution.orderedBindings.map { it.property })
-        stock.parameterMappings.zip(execution.orderedBindings).forEach { (mapping, binding) ->
-            assertEquals(mapping.javaType.name, binding.metadata.mappingJavaTypeIdentity)
-            assertEquals(mapping.jdbcType?.name, binding.metadata.jdbcTypeIdentity)
-            assertEquals(mapping.typeHandler.javaClass.name, binding.metadata.typeHandlerIdentity)
-            assertEquals(mapping.mode.name, binding.metadata.parameterMode)
-            assertEquals(mapping.numericScale, binding.metadata.numericScale)
+        val stock = stockPreparation(fixture, enabled, 42)
+        assertEquals(stock.boundSql.sql, execution.sqlWithPlaceholders)
+        assertEquals(stock.boundSql.parameterMappings.map { it.property }, execution.orderedBindings.map { it.property })
+        stock.boundSql.parameterMappings.zip(execution.orderedBindings).forEach { (mapping, binding) ->
+            val metadata = stockEffectiveParameterMappingMetadata(
+                stock.configuration,
+                stock.boundSql,
+                stock.parameterObject,
+                mapping,
+            )
+            assertEquals(metadata.javaTypeIdentity, binding.metadata.mappingJavaTypeIdentity)
+            assertEquals(metadata.jdbcTypeIdentity, binding.metadata.jdbcTypeIdentity)
+            assertEquals(metadata.typeHandlerIdentity, binding.metadata.typeHandlerIdentity)
+            assertEquals(metadata.parameterMode, binding.metadata.parameterMode)
+            assertEquals(metadata.numericScale, binding.metadata.numericScale)
         }
     }
 
-    private fun stockBoundSql(fixture: Fixture, enabled: Boolean, id: Int): org.apache.ibatis.mapping.BoundSql {
+    private fun stockBoundSql(fixture: Fixture, enabled: Boolean, id: Int): org.apache.ibatis.mapping.BoundSql =
+        stockPreparation(fixture, enabled, id).boundSql
+
+    private fun stockPreparation(fixture: Fixture, enabled: Boolean, id: Int): StockPreparation {
         val configuration = Configuration()
         val snapshot = fixture.graph.sourceSnapshots.single()
         ByteArrayInputStream(snapshot.content.toByteArray(Charsets.UTF_8)).use { input ->
             XMLMapperBuilder(input, configuration, "stock-oracle", configuration.sqlFragments).parse()
         }
-        return configuration.getMappedStatement("example.Mapper.find").getBoundSql(
-            linkedMapOf("enabled" to enabled, "id" to id.toLong(), "param1" to enabled, "param2" to id.toLong()),
+        val parameterObject = linkedMapOf(
+            "enabled" to enabled,
+            "id" to id.toLong(),
+            "param1" to enabled,
+            "param2" to id.toLong(),
+        )
+        return StockPreparation(
+            configuration,
+            configuration.getMappedStatement("example.Mapper.find").getBoundSql(parameterObject),
+            parameterObject,
         )
     }
 
     private fun integer(value: Int) = InputValue.IntegerValue(BigInteger.valueOf(value.toLong()))
     private fun normalize(sql: String) = sql.trim().replace(Regex("\\s+"), " ")
     private data class Fixture(val graph: StatementSourceGraph, val mapper: XmlMapperMethodCapture)
+    private data class StockPreparation(
+        val configuration: Configuration,
+        val boundSql: org.apache.ibatis.mapping.BoundSql,
+        val parameterObject: Map<String, Any?>,
+    )
     private companion object {
         val XML_FILE = SourceFileId("mapper.xml")
         val JAVA_FILE = SourceFileId("Mapper.java")
