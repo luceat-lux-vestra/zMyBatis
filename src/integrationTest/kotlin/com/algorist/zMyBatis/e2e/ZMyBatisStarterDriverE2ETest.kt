@@ -1009,7 +1009,7 @@ class ZMyBatisStarterDriverE2ETest {
             rawInterpolations = emptyList(),
             preparationMetadata = PreparationMetadata(
                 engineIdentity = "org.mybatis:mybatis",
-                engineVersion = "3.5.19",
+                engineVersion = "3.6.0",
                 languageDriverIdentity = statement.lang.javaClass.name,
                 databaseId = configuration.databaseId,
             ),
@@ -1034,7 +1034,7 @@ class ZMyBatisStarterDriverE2ETest {
 
     private fun writeDirectJavaRawMapper(projectDir: Path) {
         // The Starter sample is intentionally build-tool-free. Minimal source stubs give Java PSI
-        // resolvable MyBatis annotation FQNs; real MyBatis 3.5.19 annotation resolution is already
+        // resolvable MyBatis annotation FQNs; real MyBatis 3.6.0 annotation resolution is already
         // covered by JavaAnnotationSourceCaptureAdapterProjectFixtureTest.
         val annotationDir = Files.createDirectories(
             projectDir.resolve("org/apache/ibatis/annotations"),
