@@ -21,7 +21,7 @@ RELEVANT_PATHS = frozenset({
     ".github/workflow-policy/trusted_dependency_submission_validation.py",
 })
 REQUIRED_COORDINATES = frozenset({
-    "org.mybatis:mybatis:3.5.19",
+    "org.mybatis:mybatis:3.6.0",
     "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:2.19.0",
 })
 
@@ -327,7 +327,7 @@ def self_test() -> None:
             f"example:dep:{i}": {"relationship": "indirect"}
             for i in range(648)
         }
-        resolved["org.mybatis:mybatis:3.5.19"] = {
+        resolved["org.mybatis:mybatis:3.6.0"] = {
             "relationship": "direct"
         }
         resolved[
