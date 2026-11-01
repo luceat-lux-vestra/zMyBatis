@@ -26,7 +26,7 @@ import org.apache.ibatis.session.Configuration
 
 object MyBatisPreparationEngine {
     private const val ENGINE_ID = "org.mybatis:mybatis"
-    private const val ENGINE_VERSION = "3.5.19"
+    private const val ENGINE_VERSION = "3.6.0"
     private const val UNSUPPORTED_SOURCE = "preparation-source-kind-unsupported"
     private const val UNSUPPORTED_PARAMETER_TYPE = "java-annotation-parameter-type-unavailable"
     private const val UNSUPPORTED_PARAMETER_MODE = "mybatis-parameter-mode-unsupported"
@@ -331,7 +331,7 @@ object MyBatisPreparationEngine {
         return MyBatisParameterMappingSnapshot(
             property = property,
             additionalParameter = additional,
-            generatedLocal = null,
+            foreachLocal = null,
             runtimeValue = runtimeValue,
             mappingJavaTypeIdentity = mapping.javaType?.name,
             jdbcTypeIdentity = mapping.jdbcType?.name,
@@ -412,7 +412,7 @@ object MyBatisPreparationEngine {
             val alias = aliasCandidates.singleOrNull()
             val requirement = alias?.let { request.parameterContract.requirement(it.requirementId) }
 
-            val origin = if (mapping.additionalParameter) {
+            val origin = if (mapping.foreachLocal != null || mapping.additionalParameter) {
                 when (val resolved = resolveAdditionalBinding(mapping, rootProperty, request)) {
                     is AdditionalBindingResult.Ready -> PreparedBindingOrigin.MyBatisAdditional(resolved.binding)
                     is AdditionalBindingResult.Failed -> return BindingCaptureResult.Failed(resolved.failure)
@@ -505,13 +505,13 @@ object MyBatisPreparationEngine {
         rootProperty: String,
         request: MyBatisPreparationRequest,
     ): AdditionalBindingResult {
-        val generated = mapping.generatedLocal
-        if (generated != null) {
+        val foreachLocal = mapping.foreachLocal
+        if (foreachLocal != null) {
             return resolveInternalBinding(
                 candidates = request.parameterContract.internalBindings.filter {
-                    it.name == generated.sourceLocalName
+                    it.name == foreachLocal.sourceLocalName
                 },
-                expectedKind = generated.kind,
+                expectedKind = foreachLocal.kind,
                 property = mapping.property,
             )
         }
