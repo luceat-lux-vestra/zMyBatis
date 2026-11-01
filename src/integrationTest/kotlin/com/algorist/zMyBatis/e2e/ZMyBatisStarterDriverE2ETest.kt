@@ -106,6 +106,11 @@ interface JTextComponentRemote {
     fun setText(value: String)
 }
 
+@Remote("java.awt.Component")
+interface AwtComponentIdentityRemote {
+    fun hashCode(): Int
+}
+
 @Remote(
     "com.intellij.platform.trialPromotion.common.TrialStateService",
     plugin = "com.intellij/intellij.platform.trialPromotion.common",
@@ -495,6 +500,14 @@ class ZMyBatisStarterDriverE2ETest {
                     "//div[@accessiblename='Password:' and @class='JBPasswordField']",
                 ).text = "zmybatis"
 
+                val urlPropertiesPanelXPath =
+                    "//div[@javaclass='com.intellij.database.dataSource.url.ui.UrlPropertiesPanel']"
+                val urlPropertiesPanelIdentityBeforeTest =
+                    driver.cast(
+                        x(urlPropertiesPanelXPath, UiComponent::class.java).component,
+                        AwtComponentIdentityRemote::class,
+                    ).hashCode()
+
                 testConnection()
                 waitFor(
                     "pinned local PostgreSQL driver result",
@@ -516,11 +529,23 @@ class ZMyBatisStarterDriverE2ETest {
                 ) {
                     testConnectionButton.isEnabled()
                 }
-                // Test Connection completion still has asynchronous Database Tools UI cleanup.
-                // Wait for active progress indicators to drain before closing the configurable,
-                // but do not require global smart/code-analysis quiescence: Java fixtures may keep
-                // unrelated daemon analysis unsettled after the datasource is already usable.
-                driver.waitForIndicators(30.seconds, waitSmartLongEnough = false)
+                // DataSourceTestConnectionManager completes by resetting the selected configurable;
+                // DynamicJdbcUrlEditor.reset() recreates UrlPropertiesPanel. Observe that exact UI
+                // lifecycle transition instead of inferring callback completion from global progress
+                // indicators or project smart mode.
+                waitFor(
+                    "PostgreSQL Test Connection configurable reset completed",
+                    timeout = 30.seconds,
+                ) {
+                    runCatching {
+                        val currentIdentity =
+                            driver.cast(
+                                x(urlPropertiesPanelXPath, UiComponent::class.java).component,
+                                AwtComponentIdentityRemote::class,
+                            ).hashCode()
+                        currentIdentity != urlPropertiesPanelIdentityBeforeTest
+                    }.getOrDefault(false)
+                }
                 okButton.click()
             }
         }
