@@ -1,0 +1,5 @@
+<idea-plugin>
+    <extensions defaultExtensionNs="com.algorist.zMyBatis">
+        <javaPsiCapability implementation="com.algorist.zMyBatis.host.IntellijJavaPsiCapability"/>
+    </extensions>
+</idea-plugin>

@@ -44,7 +44,7 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
    - invokes the real production action from the supported statement context;
    - requires the typed `zMyBatis: Execution Target Unavailable` refusal instead of preparation or execution.
 
-No production method exists solely for this harness. The process database stack uses only pinned pgJDBC on the `integrationTestImplementation` graph; before IDE startup, the test copies that JAR into the isolated Starter config and records it as a local Driver Files library. Driver then creates the datasource through maintained Database Tools UI, performs a real Test Connection, refreshes Database Tools, and selects explicit `public` through shipping UI. No H2-specific cold-datasource/introspection harness participates in #448 evidence.
+No production method exists solely for this harness. The process database stack uses only pinned pgJDBC on the `integrationTestImplementation` graph; before IDE startup, the test copies that JAR into the isolated Starter config and records it as a local Driver Files library. Driver then creates and persists the datasource through maintained Database Tools UI, refreshes Database Tools, and selects explicit `public` through shipping UI. Connectivity is proven by the downstream packaged zMyBatis execution reaching native Database Tools result/history evidence rather than by the separate asynchronous Test Connection UI lifecycle. No H2-specific cold-datasource/introspection harness participates in #448 evidence.
 
 ### Separate DataGrip host scenarios
 
