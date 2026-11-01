@@ -35,7 +35,7 @@ class JavaAnnotationSourceCaptureAdapterProjectFixtureTest : LightJavaCodeInsigh
         PsiTestUtil.addSourceRoot(module, tempRoot)
 
         val myBatisJar = File(PathUtil.getJarPathForClass(Select::class.java))
-        PsiTestUtil.addLibrary(module, "mybatis-3.5.19", myBatisJar.parent, myBatisJar.name)
+        PsiTestUtil.addLibrary(module, "mybatis-3.6.0", myBatisJar.parent, myBatisJar.name)
     }
 
     override fun getTempDirFixture(): TempDirTestFixture =
