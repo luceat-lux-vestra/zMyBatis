@@ -38,8 +38,6 @@ import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
 import java.math.BigInteger
-import java.net.URLClassLoader
-import org.apache.ibatis.session.Configuration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -74,7 +72,7 @@ class MyBatisForeachRuntimeFidelityTest {
     }
 
     @Test
-    fun generatedSnapshotIdentityMatchesPinnedMyBatisItemizeItem() {
+    fun capturedForeachIdentityMatchesMyBatis360DirectProperty() {
         val script = """
             <script>
               select
@@ -91,26 +89,14 @@ class MyBatisForeachRuntimeFidelityTest {
         assertTrue(isolated is IsolatedDynamicMyBatisPreparation.Result.Ready)
         isolated as IsolatedDynamicMyBatisPreparation.Result.Ready
         val mapping = isolated.boundSql.mappings.single()
-        val generated = requireNotNull(mapping.generatedLocal)
+        val foreachLocal = requireNotNull(mapping.foreachLocal)
 
-        val myBatisLocation = requireNotNull(Configuration::class.java.protectionDomain.codeSource?.location)
-        URLClassLoader(arrayOf(myBatisLocation), ClassLoader.getPlatformClassLoader()).use { loader ->
-            val foreachClass = Class.forName(
-                "org.apache.ibatis.scripting.xmltags.ForEachSqlNode",
-                true,
-                loader,
-            )
-            val itemize = foreachClass.getDeclaredMethod(
-                "itemizeItem",
-                String::class.java,
-                Int::class.javaPrimitiveType,
-            )
-            itemize.isAccessible = true
-            val expectedRoot = itemize.invoke(null, "item", generated.uniqueNumber) as String
-            assertEquals(expectedRoot, requireNotNull(mapping.property).substringBefore('.'))
-        }
-        assertEquals("item", generated.sourceLocalName)
-        assertEquals(InternalBindingKind.FOREACH_ITEM, generated.kind)
+        assertEquals("item", mapping.property)
+        assertTrue(!mapping.additionalParameter)
+        assertEquals("item", foreachLocal.sourceLocalName)
+        assertEquals(InternalBindingKind.FOREACH_ITEM, foreachLocal.kind)
+        val runtime = mapping.runtimeValue as MyBatisRuntimeValueSnapshot.Ready
+        assertEquals(17L, runtime.value)
     }
 
     private fun request(script: String, values: List<Long>): MyBatisPreparationRequest {
