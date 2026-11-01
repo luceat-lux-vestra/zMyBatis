@@ -42,6 +42,14 @@ internal data class MyBatisForeachLocalSnapshot(
     }
 }
 
+internal data class MyBatisEffectiveMappingMetadata(
+    val javaTypeIdentity: String?,
+    val jdbcTypeIdentity: String?,
+    val typeHandlerIdentity: String?,
+    val parameterMode: String?,
+    val numericScale: Int?,
+)
+
 internal sealed interface MyBatisRuntimeValueSnapshot {
     data class Ready(
         val value: Any?,
