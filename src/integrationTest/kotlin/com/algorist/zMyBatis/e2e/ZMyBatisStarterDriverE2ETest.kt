@@ -490,9 +490,9 @@ class ZMyBatisStarterDriverE2ETest {
                     message = "custom pinned PostgreSQL driver must be selectable",
                     timeout = 30.seconds,
                 ).click()
-                textField(
-                    "//div[contains(@visible_text, 'jdbc:postgresql:')]",
-                ).text = "jdbc:postgresql://127.0.0.1:5432/zmybatis?user=zmybatis"
+                val jdbcUrlFieldXPath = "//div[contains(@visible_text, 'jdbc:postgresql:')]"
+                val jdbcUrlField = textField(jdbcUrlFieldXPath)
+                jdbcUrlField.text = "jdbc:postgresql://127.0.0.1:5432/zmybatis?user=zmybatis"
                 textField(
                     "//div[@accessiblename='User:' and @class='JBTextField']",
                 ).text = "zmybatis"
@@ -500,11 +500,9 @@ class ZMyBatisStarterDriverE2ETest {
                     "//div[@accessiblename='Password:' and @class='JBPasswordField']",
                 ).text = "zmybatis"
 
-                val urlPropertiesPanelXPath =
-                    "//div[@javaclass='com.intellij.database.dataSource.url.ui.UrlPropertiesPanel']"
-                val urlPropertiesPanelIdentityBeforeTest =
+                val jdbcUrlFieldIdentityBeforeTest =
                     driver.cast(
-                        x(urlPropertiesPanelXPath, UiComponent::class.java).component,
+                        jdbcUrlField.component,
                         AwtComponentIdentityRemote::class,
                     ).hashCode()
 
@@ -530,20 +528,20 @@ class ZMyBatisStarterDriverE2ETest {
                     testConnectionButton.isEnabled()
                 }
                 // DataSourceTestConnectionManager completes by resetting the selected configurable;
-                // DynamicJdbcUrlEditor.reset() recreates UrlPropertiesPanel. Observe that exact UI
-                // lifecycle transition instead of inferring callback completion from global progress
-                // indicators or project smart mode.
+                // DynamicJdbcUrlEditor.reset() rebuilds the JDBC URL editor. Observe replacement of
+                // the same maintained JDBC URL text-field surface the harness already edits, rather
+                // than depending on an internal implementation-class XPath or global smart mode.
                 waitFor(
-                    "PostgreSQL Test Connection configurable reset completed",
+                    "PostgreSQL Test Connection JDBC URL editor reset completed",
                     timeout = 30.seconds,
                 ) {
                     runCatching {
                         val currentIdentity =
                             driver.cast(
-                                x(urlPropertiesPanelXPath, UiComponent::class.java).component,
+                                textField(jdbcUrlFieldXPath).component,
                                 AwtComponentIdentityRemote::class,
                             ).hashCode()
-                        currentIdentity != urlPropertiesPanelIdentityBeforeTest
+                        currentIdentity != jdbcUrlFieldIdentityBeforeTest
                     }.getOrDefault(false)
                 }
                 okButton.click()
