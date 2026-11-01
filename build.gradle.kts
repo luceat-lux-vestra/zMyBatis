@@ -134,8 +134,8 @@ dependencies {
         add("integrationTestImplementation", "org.bouncycastle:bcutil-jdk18on:1.86") {
             because("keep Bouncy Castle Starter tooling modules version-aligned")
         }
-        add("integrationTestImplementation", "at.yawk.lz4:lz4-java:1.12.0") {
-            because("1.11.3 includes the security fixes released in 1.11.2")
+        add("integrationTestImplementation", "at.yawk.lz4:lz4-java:1.12.1") {
+            because("1.12.1 contains the security fix for GHSA-48mj-8f7c-7qfm")
         }
         add("integrationTestImplementation", "org.jsoup:jsoup:1.23.2") {
             because("1.23.2 contains the XmlTreeBuilder resource-consumption fix commit 862ba2f")
@@ -170,7 +170,7 @@ val verifyStarterSecurityGraph = tasks.register("verifyStarterSecurityGraph") {
             "org.bouncycastle:bcprov-jdk18on" to "1.86",
             "org.bouncycastle:bcpkix-jdk18on" to "1.86",
             "org.bouncycastle:bcutil-jdk18on" to "1.86",
-            "at.yawk.lz4:lz4-java" to "1.12.0",
+            "at.yawk.lz4:lz4-java" to "1.12.1",
         )
         val resolved = securityResolutionResult.allComponents
             .mapNotNull { component ->
