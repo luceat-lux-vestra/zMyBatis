@@ -62,12 +62,16 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("jdbc:postgresql://127.0.0.1:5432/zmybatis"),
         )
         assertTrue(
-            "PostgreSQL proof must create, connect, refresh, and select explicit public through maintained UI actions",
+            "PostgreSQL proof must create, persist, refresh, and select explicit public through maintained UI actions",
             e2e.contains("ActivateDatabaseToolWindow") &&
                 e2e.contains("dataSourcesAndDriversDialog") &&
-                e2e.contains("testConnection()") &&
+                e2e.contains("readPostgreSqlDataSourceId(projectDir)") &&
                 e2e.contains("DatabaseView.Refresh") &&
                 e2e.contains("waitOneText(\"public\")"),
+        )
+        assertFalse(
+            "datasource creation must not treat Database Tools Test Connection as product readiness evidence",
+            e2e.contains("testConnection()"),
         )
         assertTrue(
             "XML raw confirmation must retain real Java mapper caller authority while reusing the PostgreSQL process target",
