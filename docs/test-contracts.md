@@ -335,10 +335,11 @@ for example `AND` followed by a newline is not stripped by the admitted `AND ` o
 Stock MyBatis owns that result; preparation does not normalize whitespace or supply default
 override tokens. Native where/set remain attribute-free and general trim is unsupported. Production executability is decided later by the registered action's bounded materializer envelope rather than by this preparation fixture.
 
-An independent stock-MyBatis oracle checks byte-identical SQL and metadata. In this named-Map runtime
-path, a declared Boolean input can legitimately retain `Object` mapping type and `UnknownTypeHandler`;
-preparation captures that stock result separately from declared input type rather than inventing a
-Boolean handler or claiming JDBC parity. Named Map leaf reads remain presence-aware in emitted
+An independent stock-MyBatis oracle checks byte-identical SQL and effective binding metadata. In
+MyBatis 3.6, a mapping may intentionally retain no type handler until parameter binding; preparation
+therefore resolves the same stock handler from the runtime value plus any explicit JDBC type instead
+of treating a null `ParameterMapping.typeHandler` as unsupported. Declared input type remains
+separate authority. Named Map leaf reads remain presence-aware in emitted
 mappings: present-null binds as null, a missing active leaf fails, and an inactive leaf does not become
 an invented caller requirement. The materializer still refuses every non-zero binding.
 
