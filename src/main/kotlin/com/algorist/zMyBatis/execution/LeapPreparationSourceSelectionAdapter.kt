@@ -1,7 +1,9 @@
 package com.algorist.zMyBatis.execution
 
 import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
-import com.algorist.zMyBatis.source.XmlMapperMethodCaptureAdapter
+import com.algorist.zMyBatis.host.JavaPsiCapabilities
+import com.algorist.zMyBatis.source.XmlMapperMethodCaptureFailure
+import com.algorist.zMyBatis.source.XmlMapperMethodCaptureResult
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
@@ -37,9 +39,12 @@ internal class LeapPreparationSourceSelectionAdapter(
                 effectiveDatabaseId = effectiveDatabaseId,
                 captureXmlMapperMethod = { statementId ->
                     checkCanceled()
-                    XmlMapperMethodCaptureAdapter.capture(project, statementId).also {
-                        checkCanceled()
-                    }
+                    val capture = JavaPsiCapabilities.current()
+                        ?.captureXmlMapperMethod(project, statementId)
+                        ?: XmlMapperMethodCaptureResult.Failed(
+                            XmlMapperMethodCaptureFailure.UNRESOLVED_MAPPER_TYPE,
+                        )
+                    capture.also { checkCanceled() }
                 },
                 checkCanceled = checkCanceled,
             )
