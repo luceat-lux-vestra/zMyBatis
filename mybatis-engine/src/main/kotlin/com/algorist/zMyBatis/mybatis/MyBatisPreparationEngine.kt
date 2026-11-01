@@ -23,6 +23,7 @@ import org.apache.ibatis.mapping.BoundSql
 import org.apache.ibatis.mapping.ParameterMapping
 import org.apache.ibatis.reflection.ReflectionException
 import org.apache.ibatis.session.Configuration
+import org.apache.ibatis.type.ObjectTypeHandler
 
 object MyBatisPreparationEngine {
     private const val ENGINE_ID = "org.mybatis:mybatis"
@@ -327,15 +328,54 @@ object MyBatisPreparationEngine {
                 )
             }
         }
+        val metadata = when (runtimeValue) {
+            is MyBatisRuntimeValueSnapshot.Ready ->
+                effectiveStaticMappingMetadata(configuration, mapping, runtimeValue.value)
+            is MyBatisRuntimeValueSnapshot.Failed ->
+                MyBatisEffectiveMappingMetadata(
+                    javaTypeIdentity = mapping.javaType?.name,
+                    jdbcTypeIdentity = mapping.jdbcType?.name,
+                    typeHandlerIdentity = mapping.typeHandler?.javaClass?.name,
+                    parameterMode = mapping.mode?.name,
+                    numericScale = mapping.numericScale,
+                )
+        }
 
         return MyBatisParameterMappingSnapshot(
             property = property,
             additionalParameter = additional,
             foreachLocal = null,
             runtimeValue = runtimeValue,
-            mappingJavaTypeIdentity = mapping.javaType?.name,
+            mappingJavaTypeIdentity = metadata.javaTypeIdentity,
+            jdbcTypeIdentity = metadata.jdbcTypeIdentity,
+            typeHandlerIdentity = metadata.typeHandlerIdentity,
+            parameterMode = metadata.parameterMode,
+            numericScale = metadata.numericScale,
+        )
+    }
+
+    private fun effectiveStaticMappingMetadata(
+        configuration: Configuration,
+        mapping: ParameterMapping,
+        runtimeValue: Any?,
+    ): MyBatisEffectiveMappingMetadata {
+        val mappingHandler = mapping.typeHandler
+        val effectiveHandler = when {
+            mappingHandler != null -> mappingHandler
+            runtimeValue == null -> ObjectTypeHandler.INSTANCE
+            else -> configuration.typeHandlerRegistry.getTypeHandler(runtimeValue.javaClass, mapping.jdbcType)
+                ?: mapping.jdbcType?.let(configuration.typeHandlerRegistry::getTypeHandler)
+        }
+        val effectiveJavaType = when {
+            mappingHandler != null -> mapping.javaType?.name
+            runtimeValue != null -> runtimeValue.javaClass.name
+            mapping.javaType != null -> mapping.javaType.name
+            else -> Object::class.java.name
+        }
+        return MyBatisEffectiveMappingMetadata(
+            javaTypeIdentity = effectiveJavaType,
             jdbcTypeIdentity = mapping.jdbcType?.name,
-            typeHandlerIdentity = mapping.typeHandler?.javaClass?.name,
+            typeHandlerIdentity = effectiveHandler?.javaClass?.name,
             parameterMode = mapping.mode?.name,
             numericScale = mapping.numericScale,
         )
@@ -442,21 +482,6 @@ object MyBatisPreparationEngine {
                 PreparedBindingOrigin.CallerInput(requirement.id, requirement.provenance)
             }
 
-            val typeHandlerName = mapping.typeHandlerIdentity
-                ?: return bindingFailure(
-                    PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER,
-                    UNSUPPORTED_TYPE_HANDLER,
-                    property,
-                )
-            if (!typeHandlerName.startsWith("org.apache.ibatis.type.")) {
-                return bindingFailure(
-                    PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER,
-                    UNSUPPORTED_TYPE_HANDLER,
-                    property,
-                    typeHandlerName,
-                )
-            }
-
             val runtimeValue = when (val value = mapping.runtimeValue) {
                 is MyBatisRuntimeValueSnapshot.Ready -> value.value
                 is MyBatisRuntimeValueSnapshot.Failed ->
@@ -470,6 +495,21 @@ object MyBatisPreparationEngine {
                         property,
                         value.diagnosticType,
                     )
+            }
+
+            val typeHandlerName = mapping.typeHandlerIdentity
+                ?: return bindingFailure(
+                    PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER,
+                    UNSUPPORTED_TYPE_HANDLER,
+                    property,
+                )
+            if (!typeHandlerName.startsWith("org.apache.ibatis.type.")) {
+                return bindingFailure(
+                    PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER,
+                    UNSUPPORTED_TYPE_HANDLER,
+                    property,
+                    typeHandlerName,
+                )
             }
 
             val callerRequirement = (origin as? PreparedBindingOrigin.CallerInput)?.let { requirement }
