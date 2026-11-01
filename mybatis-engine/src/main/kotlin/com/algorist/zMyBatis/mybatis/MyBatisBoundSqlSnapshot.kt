@@ -21,7 +21,7 @@ internal data class MyBatisBoundSqlSnapshot(
 internal data class MyBatisParameterMappingSnapshot(
     val property: String?,
     val additionalParameter: Boolean,
-    val generatedLocal: MyBatisGeneratedLocalSnapshot?,
+    val foreachLocal: MyBatisForeachLocalSnapshot?,
     val runtimeValue: MyBatisRuntimeValueSnapshot,
     val mappingJavaTypeIdentity: String?,
     val jdbcTypeIdentity: String?,
@@ -30,17 +30,15 @@ internal data class MyBatisParameterMappingSnapshot(
     val numericScale: Int?,
 )
 
-internal data class MyBatisGeneratedLocalSnapshot(
+internal data class MyBatisForeachLocalSnapshot(
     val sourceLocalName: String,
     val kind: InternalBindingKind,
-    val uniqueNumber: Int,
 ) {
     init {
-        require(sourceLocalName.isNotBlank()) { "generated local source name must not be blank" }
+        require(sourceLocalName.isNotBlank()) { "foreach local source name must not be blank" }
         require(kind == InternalBindingKind.FOREACH_ITEM || kind == InternalBindingKind.FOREACH_INDEX) {
-            "generated local kind must be foreach item or index"
+            "foreach local kind must be foreach item or index"
         }
-        require(uniqueNumber >= 0) { "generated local unique number must not be negative" }
     }
 }
 
