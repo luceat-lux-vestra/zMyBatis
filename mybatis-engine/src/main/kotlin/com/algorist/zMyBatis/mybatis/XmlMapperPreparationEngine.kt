@@ -382,6 +382,7 @@ object XmlMapperPreparationEngine {
                 mappings = mappings,
                 request = request,
                 parameterPayload = parameterPayload,
+                configuration = configuration,
                 isolatedLoader = runtime.loader,
                 foreachMappings = foreach?.let {
                     IsolatedDynamicMyBatisPreparation.snapshotMappings(
@@ -763,6 +764,7 @@ object XmlMapperPreparationEngine {
         mappings: List<*>,
         request: MyBatisPreparationRequest,
         parameterPayload: XmlParameterPayload.Ready,
+        configuration: Any,
         isolatedLoader: ClassLoader,
         foreachMappings: List<MyBatisParameterMappingSnapshot>?,
         foreach: XmlForeachPreparationAdmission.Result.Admitted?,
@@ -954,7 +956,13 @@ object XmlMapperPreparationEngine {
                 parameterPayload.namedValues.getValue(property)
             }
 
-            val parameterMode = (mappingClass.getMethod("getMode").invoke(mapping) as? Enum<*>)?.name
+            val metadata = IsolatedDynamicMyBatisPreparation.effectiveMappingMetadata(
+                isolatedLoader,
+                configuration,
+                mapping,
+                runtimeValue,
+            )
+            val parameterMode = metadata.parameterMode
                 ?: return XmlBindingCapture.Failed(
                     PreparationFailure(
                         PreparationFailureKind.PREPARATION_INVARIANT,
@@ -972,7 +980,7 @@ object XmlMapperPreparationEngine {
                 )
             }
 
-            val typeHandler = mappingClass.getMethod("getTypeHandler").invoke(mapping)
+            val typeHandlerIdentity = metadata.typeHandlerIdentity
                 ?: return XmlBindingCapture.Failed(
                     PreparationFailure(
                         PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER,
@@ -980,11 +988,7 @@ object XmlMapperPreparationEngine {
                         property,
                     ),
                 )
-            val typeHandlerIdentity = typeHandler.javaClass.name
-            if (
-                typeHandler.javaClass.classLoader !== isolatedLoader ||
-                !typeHandlerIdentity.startsWith("org.apache.ibatis.type.")
-            ) {
+            if (!typeHandlerIdentity.startsWith("org.apache.ibatis.type.")) {
                 return XmlBindingCapture.Failed(
                     PreparationFailure(
                         PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER,
@@ -1005,10 +1009,6 @@ object XmlMapperPreparationEngine {
                     ),
                 )
 
-            val javaType = mappingClass.getMethod("getJavaType").invoke(mapping) as? Class<*>
-            val jdbcType = mappingClass.getMethod("getJdbcType").invoke(mapping) as? Enum<*>
-            val numericScale = mappingClass.getMethod("getNumericScale").invoke(mapping) as? Int
-
             bindings += PreparedBinding(
                 index = index,
                 property = property,
@@ -1016,11 +1016,11 @@ object XmlMapperPreparationEngine {
                 origin = PreparedBindingOrigin.CallerInput(requirement.id, requirement.provenance),
                 metadata = PreparedBindingMetadata(
                     declaredJavaTypeIdentity = requirement.expectedType.javaTypeIdentity,
-                    mappingJavaTypeIdentity = javaType?.name,
-                    jdbcTypeIdentity = jdbcType?.name,
+                    mappingJavaTypeIdentity = metadata.javaTypeIdentity,
+                    jdbcTypeIdentity = metadata.jdbcTypeIdentity,
                     typeHandlerIdentity = typeHandlerIdentity,
                     parameterMode = parameterMode,
-                    numericScale = numericScale,
+                    numericScale = metadata.numericScale,
                 ),
             )
             mappingCounts[requirement.id] = (mappingCounts[requirement.id] ?: 0) + 1
