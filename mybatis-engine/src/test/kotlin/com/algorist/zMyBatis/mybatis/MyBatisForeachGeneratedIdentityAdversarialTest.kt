@@ -1,13 +1,14 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.InternalBindingKind
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class MyBatisForeachGeneratedIdentityAdversarialTest {
+class MyBatisForeachCapturedIdentityAdversarialTest {
     @Test
-    fun generatedRootOutsideAdmittedLocalSetIsNeverClaimed() {
+    fun capturedPropertyOutsideAdmittedLocalSetIsNeverClaimed() {
         val result = IsolatedDynamicMyBatisPreparation.prepare(
             script = """
                 <script>
@@ -26,8 +27,10 @@ class MyBatisForeachGeneratedIdentityAdversarialTest {
         result as IsolatedDynamicMyBatisPreparation.Result.Ready
         val mapping = result.boundSql.mappings.single()
 
-        assertTrue(mapping.additionalParameter)
-        assertTrue(mapping.property?.startsWith("__frch_item_") == true)
-        assertNull(mapping.generatedLocal)
+        assertEquals("item", mapping.property)
+        assertTrue(!mapping.additionalParameter)
+        assertNull(mapping.foreachLocal)
+        val runtime = mapping.runtimeValue as MyBatisRuntimeValueSnapshot.Ready
+        assertEquals(41L, runtime.value)
     }
 }
