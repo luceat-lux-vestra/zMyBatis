@@ -32,7 +32,7 @@ import org.apache.ibatis.session.Configuration
 /**
  * Bounded XML mapper preparation island for #149 / #161.
  *
- * The complete captured mapper documents are parsed by an isolated stock MyBatis 3.5.19 runtime.
+ * The complete captured mapper documents are parsed by an isolated stock MyBatis 3.6.0 runtime.
  * Static zero-input statements and the deliberately narrow proven scalar/temporal bound-input
  * island and source-proven foreach/Boolean-if contracts are admitted. Dynamic preparation owns
  * a fresh runtime; flat Boolean-if siblings directly or inside bounded where/set/trim wrappers require
@@ -45,7 +45,7 @@ import org.apache.ibatis.session.Configuration
  */
 object XmlMapperPreparationEngine {
     private const val ENGINE_ID = "org.mybatis:mybatis"
-    private const val ENGINE_VERSION = "3.5.19"
+    private const val ENGINE_VERSION = "3.6.0"
     private const val CONFIGURATION = "org.apache.ibatis.session.Configuration"
     private const val XML_MAPPER_BUILDER = "org.apache.ibatis.builder.xml.XMLMapperBuilder"
     private const val MAPPED_STATEMENT = "org.apache.ibatis.mapping.MappedStatement"
@@ -798,7 +798,7 @@ object XmlMapperPreparationEngine {
                     ),
                 )
             val snapshot = foreachMappings?.get(index)
-            if (snapshot?.additionalParameter == true) {
+            if (snapshot?.foreachLocal != null) {
                 when (val additional = XmlForeachAdditionalBindingCapture.capture(index, snapshot, request, checkNotNull(foreach))) {
                     is XmlForeachAdditionalBindingCapture.Result.Ready -> bindings += additional.binding
                     is XmlForeachAdditionalBindingCapture.Result.Failed -> return XmlBindingCapture.Failed(additional.failure)
