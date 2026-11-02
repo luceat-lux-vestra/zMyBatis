@@ -365,7 +365,7 @@ class XmlForeachParameterContractTest {
                 .any {
                     it.parameterIndex == 1 &&
                         it.alias == "param2" &&
-                        it.ruleId == "mybatis-3.5.19-param-name-resolver-generic"
+                        it.ruleId == "mybatis-param-name-resolver-generic"
                 },
         )
         assertTrue(

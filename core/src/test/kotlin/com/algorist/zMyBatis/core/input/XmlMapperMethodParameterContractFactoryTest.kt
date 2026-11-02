@@ -106,7 +106,7 @@ class XmlMapperMethodParameterContractFactoryTest {
                 .single()
             assertEquals(index, generated.parameterIndex)
             assertEquals("param${index + 1}", generated.alias)
-            assertEquals("mybatis-3.5.19-param-name-resolver-generic", generated.ruleId)
+            assertEquals("mybatis-param-name-resolver-generic", generated.ruleId)
             assertTrue(
                 requirement.provenance.evidence.any {
                     it is InputEvidence.ExplicitParamAlias && it.parameterIndex == index
@@ -363,7 +363,7 @@ class XmlMapperMethodParameterContractFactoryTest {
         assertTrue(
             generatedRequirementAliases.all {
                 it.parameterIndex == 0 &&
-                    it.ruleId == "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
+                    it.ruleId == "mybatis-param-name-resolver-wrap-to-map-if-collection"
             },
         )
         contract.aliases.forEach { alias ->
@@ -373,7 +373,7 @@ class XmlMapperMethodParameterContractFactoryTest {
             assertEquals(0, generatedAlias.parameterIndex)
             assertEquals(alias.name, generatedAlias.alias)
             assertEquals(
-                "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection",
+                "mybatis-param-name-resolver-wrap-to-map-if-collection",
                 generatedAlias.ruleId,
             )
         }
@@ -564,7 +564,7 @@ class XmlMapperMethodParameterContractFactoryTest {
             .filterIsInstance<InputEvidence.ParameterObjectFallback>()
             .single()
         assertEquals(
-            "mybatis-3.5.19-dynamic-context-fallback-parameter-object",
+            "mybatis-dynamic-context-fallback-parameter-object",
             fallback.ruleId,
         )
     }

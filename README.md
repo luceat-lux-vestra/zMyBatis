@@ -49,9 +49,9 @@
 <h2>Compatibility evidence</h2>
 <ul>
   <li><b>Declared minimum IDE build:</b> 262 (2026.2 line)</li>
-  <li><b>Maintained Plugin Verifier targets:</b> IntelliJ IDEA Ultimate 2026.2.3 and 2026.2</li>
+  <li><b>Maintained Plugin Verifier targets:</b> IntelliJ IDEA Ultimate 2026.2.3 and 2026.2, plus DataGrip 2026.2.3 and 2026.2 as a separate host matrix.</li>
   <li>JetBrains Database Tools (<code>com.intellij.database</code>) and a configured datasource are required for execution.</li>
-  <li><b>DataGrip:</b> remains a separately maintained host-evidence obligation; IDEA evidence is not automatically generalized to DataGrip.</li>
+  <li><b>Runtime host evidence:</b> IDEA Ultimate retains the maintained PostgreSQL execution suite; DataGrip separately proves packaged-plugin/service loading and the registered XML action's typed no-datasource refusal. DataGrip evidence does not imply Java-annotation or native PostgreSQL parity.</li>
 </ul>
 
 <p>The authoritative capability matrix and fail-closed boundaries are maintained in <a href="https://github.com/luceat-lux-vestra/zMyBatis/blob/main/docs/product-contract.md">docs/product-contract.md</a>.</p>

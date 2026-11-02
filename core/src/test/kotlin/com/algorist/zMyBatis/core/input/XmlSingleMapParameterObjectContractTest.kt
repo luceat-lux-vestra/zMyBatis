@@ -45,7 +45,7 @@ class XmlSingleMapParameterObjectContractTest {
         assertEquals(0, property.parameterIndex)
         assertEquals("id", property.mappingProperty)
         assertEquals(
-            "mybatis-3.5.19-default-parameter-handler-meta-object-property",
+            "mybatis-default-parameter-handler-meta-object-property",
             property.ruleId,
         )
         assertTrue(

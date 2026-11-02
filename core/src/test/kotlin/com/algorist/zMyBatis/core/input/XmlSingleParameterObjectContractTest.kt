@@ -40,7 +40,7 @@ class XmlSingleParameterObjectContractTest {
         assertEquals(0, fallback.parameterIndex)
         assertEquals("arbitrary", fallback.mappingProperty)
         assertEquals(
-            "mybatis-3.5.19-default-parameter-handler-type-handler-fallback",
+            "mybatis-default-parameter-handler-type-handler-fallback",
             fallback.ruleId,
         )
         assertTrue(

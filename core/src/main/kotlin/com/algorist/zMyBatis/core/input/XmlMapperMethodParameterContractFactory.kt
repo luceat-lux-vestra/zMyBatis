@@ -27,17 +27,17 @@ object XmlMapperMethodParameterContractFactory {
     private const val FOREACH_COLLECTION_SHAPE_PROBLEM = "xml-foreach-collection-shape-unsupported"
     private const val FOREACH_LOCAL_SHADOWING_PROBLEM = "xml-foreach-local-shadowing-unsupported"
     private const val IF_CONDITION_TYPE_PROBLEM = "xml-if-condition-type-unsupported"
-    private const val GENERIC_ALIAS_RULE = "mybatis-3.5.19-param-name-resolver-generic"
+    private const val GENERIC_ALIAS_RULE = "mybatis-param-name-resolver-generic"
     private const val COLLECTION_SHORTCUT_RULE =
-        "mybatis-3.5.19-param-name-resolver-wrap-to-map-if-collection"
+        "mybatis-param-name-resolver-wrap-to-map-if-collection"
     private const val PARAMETER_OBJECT_FALLBACK_RULE =
-        "mybatis-3.5.19-default-parameter-handler-type-handler-fallback"
+        "mybatis-default-parameter-handler-type-handler-fallback"
     private const val RAW_PARAMETER_OBJECT_FALLBACK_RULE =
-        "mybatis-3.5.19-dynamic-context-fallback-parameter-object"
+        "mybatis-dynamic-context-fallback-parameter-object"
     private const val PARAMETER_OBJECT_PROPERTY_RULE =
-        "mybatis-3.5.19-default-parameter-handler-meta-object-property"
+        "mybatis-default-parameter-handler-meta-object-property"
     private const val NAMED_MAP_PROPERTY_RULE =
-        "mybatis-3.5.19-default-parameter-handler-named-map-property"
+        "mybatis-default-parameter-handler-named-map-property"
     private val simpleIdentifier = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val PARAMETER_OBJECT_TYPE_HANDLER_TYPES = setOf(
         "boolean",

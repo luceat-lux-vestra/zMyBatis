@@ -38,8 +38,9 @@ import kotlin.time.Duration.Companion.minutes
  * Separate DataGrip host evidence.
  *
  * IDEA Ultimate evidence is intentionally not reused as proof here. This class launches the exact
- * packaged plugin in DataGrip 2026.2.3, uses a DataGrip-specific activation seed, and exercises only
- * the XML/Database Tools action boundary that DataGrip can credibly own. Java-source parity remains
+ * packaged plugin in DataGrip 2026.2.3 through Starter-managed licensing/bootstrap, explicitly avoids
+ * the IDEA-specific StartTrial assumption, and exercises only the XML/Database Tools action boundary
+ * that DataGrip can credibly own. Java-source parity remains
  * outside this host proof.
  */
 class ZMyBatisDataGripStarterDriverE2ETest {

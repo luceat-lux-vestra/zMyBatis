@@ -226,7 +226,7 @@ class XmlMapperNamedMapPropertyPreparationTest {
                         alias = "payload",
                         mappingProperty = "payload.other",
                         key = "other",
-                        ruleId = "mybatis-3.5.19-default-parameter-handler-named-map-property",
+                        ruleId = "mybatis-default-parameter-handler-named-map-property",
                     ),
             ),
         )

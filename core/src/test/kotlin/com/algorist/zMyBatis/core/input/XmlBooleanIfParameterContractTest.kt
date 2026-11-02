@@ -654,7 +654,7 @@ class XmlBooleanIfParameterContractTest {
         assertEquals(InputAliasKind.GENERIC_PARAM, alias.kind)
         val naming = alias.provenance.evidence.filterIsInstance<InputEvidence.GeneratedAlias>().single()
         assertEquals(1, naming.parameterIndex)
-        assertEquals("mybatis-3.5.19-param-name-resolver-generic", naming.ruleId)
+        assertEquals("mybatis-param-name-resolver-generic", naming.ruleId)
         assertEquals(listOf("param2"), conditions(contract.requirement(alias.requirementId)!!))
     }
 

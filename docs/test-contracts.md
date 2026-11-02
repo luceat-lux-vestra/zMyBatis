@@ -215,7 +215,7 @@ by pure source/contract tests in `:mybatis-engine`; installed-plugin wiring, pro
 Database Tools behavior and packaging dependencies are unchanged. The engine's true/false
 Boolean-if producer-boundary test still requires typed refusal when complete mapper capture is absent.
 The runtime consumer below now consumes admission only when that additional authority is present;
-#258 continues to govern execution.
+production execution remains governed by the registered action's proven materialization, target, approval, and delivery boundaries.
 
 ## XML Boolean-if isolated runtime evidence
 
@@ -305,7 +305,7 @@ both proven occurrences when true. Tests additionally cover generic/repeated gua
 both source orders, Map present-null/missing active leaves, all-false/empty SQL, cross-wrapper token
 synthesis and concurrent set/where/combined/foreach invocations under poisoned parent OGNL.
 All-false conditions may omit SET, WHERE, or both; no assignment, predicate, or SQL-validity claim
-is invented. #258 and the standalone, unpackaged engine boundary remain unchanged.
+is invented. This lower-level engine evidence grants no execution authority beyond the registered production materialization boundary.
 
 Two literal `<trim>` forms share these wrapper limits:
 
@@ -341,19 +341,17 @@ therefore resolves the same stock handler from the runtime value plus any explic
 of treating a null `ParameterMapping.typeHandler` as unsupported. Declared input type remains
 separate authority. Named Map leaf reads remain presence-aware in emitted
 mappings: present-null binds as null, a missing active leaf fails, and an inactive leaf does not become
-an invented caller requirement. The materializer still refuses every non-zero binding.
+an invented caller requirement. Production materialization remains deliberately bounded: zero ordered bindings use the target-bound zero-binding/raw routes, exactly one proven PostgreSQL BIGINT binding may use the maintained BIGINT materializer, and every other non-zero binding shape fails closed.
 
 E2E applicability: not applicable to this lower-level preparation slice. Core request authority and
-standalone engine semantics change, while plugin dependency wiring, IDE actions/UI and Database Tools
-execution remain unchanged. Real IU/DataGrip lifecycle and final production cutover remain #67/#258
-obligations; these pure tests do not prove them.
+standalone engine semantics change, while installed-plugin execution authority is proven separately by the registered action's materializer/target/approval/delivery contracts and maintained IU/DataGrip host evidence.
 
 ## IDEA 2026.2.3 compatibility and console lifetime authority
 
 The build and Starter/Driver IDE are pinned to IDEA Ultimate 2026.2.3 on JDK 25.
 Plugin Verifier checks that target plus 2026.2, preserving evidence for the unchanged minimum build 262.
 Historical #251 Database Tools parameterized-execution probes remain evidence from 2026.2;
-this patch-baseline change does not rewrite those experiments or authorize a #258 execution fallback.
+this patch-baseline change does not rewrite those experiments or authorize any legacy execution fallback.
 
 `DatabaseToolsConsoleAdapter` uses public `JdbcConsole.isValid()` before resource access, after
 editor-open scheduling and immediately before native query invocation. The maintained API includes
@@ -389,10 +387,9 @@ without a license and its normal trial activation dynamically
 re-enables it: observed scheme reloads raced project-tree color reads and raised
 `ConcurrentModificationException` before the product assertions. Completing activation
 before opening the project avoids that overlap; the normal license/trial flow and strict
-exception checks remain active, with no new error exemption or retry. Broader licensing,
-dynamic-plugin and DataGrip evidence remains owned by #67.
-Platform evidence owner #67 must remove this isolation when the SDK/test loader can
-preserve the two namespaces. The Java annotation and XML mapper-method fixtures permit
+exception checks remain active, with no new error exemption or retry. Broader licensing and
+dynamic-plugin behavior remain outside this fixture's claim; DataGrip is maintained separately by its dedicated verifier/runtime evidence.
+The `prepareTestSandbox` Ultimate-wrapper exclusion is retained as a bounded unit-fixture classloader workaround; remove it when the SDK/test loader can preserve the two namespaces without the flattened-classpath collision. The Java annotation and XML mapper-method fixtures permit
 VFS access only to their actual MyBatis dependency JAR, scoped to each fixture disposable, so they also work
 when the checkout/sandbox is outside the user's home directory.
 
@@ -448,8 +445,7 @@ After selection completes, the coordinator reuses its existing source-revision a
 revalidation before normal invocation continuation.
 
 This is threading/cancellation evidence, not a product latency SLA or a broad source-graph benchmark.
-Large mapper/source-graph measurement, large-input responsiveness, retained-resource behavior, and
-separate DataGrip host evidence remain independent #67 slices.
+Subsequent #470, #472/#474, #476, and #478 slices now provide the separate source-graph, input, resource-lifecycle, and DataGrip host evidence.
 
 
 ## Pre-target project XML expansion threading and cancellation evidence
@@ -473,9 +469,8 @@ ordering, root exclusion, the 2 MiB per-dependent-source limit, typed `IndexUnav
 fail-closed omission behavior are unchanged.
 
 All fixture coordination is latch/future based; timeouts are hung-test guards rather than latency
-targets. This evidence closes the structural cancellation-ownership gap only. Large mapper/source-
-graph scale measurement, large-input responsiveness, retained-resource behavior, and separate
-DataGrip host evidence remain later #67 slices.
+targets. This evidence closes the structural cancellation-ownership gap only. The subsequent #470,
+#472/#474, #476, and #478 slices now own the separate source-graph, input, resource-lifecycle, and DataGrip evidence.
 
 ## Large XML mapper/source-graph responsiveness measurement evidence
 
@@ -503,8 +498,7 @@ dependency/source capture and emitting elapsed time plus exact graph/source dime
 
 The root `test` task promotes only the dedicated `ZMYBATIS_XML_SCALE` / `ZMYBATIS_INPUT_SCALE` measurement records into the Gradle lifecycle log, so successful CI retains measured values without enabling all test standard streams. These are reproducible CI evidence dimensions, not product-wide performance limits. Test timeouts
 remain hang guards only, and elapsed values are observations for before/after comparison. The slice
-adds no mapper cache/index and no new XML count/byte limit. Retained-resource behavior and separate
-DataGrip host evidence remain independent #67 work.
+adds no mapper cache/index and no new XML count/byte limit. Retained-resource behavior is measured by #476, and DataGrip host compatibility/runtime evidence is maintained separately by #478.
 
 ## Large parameter/input responsiveness measurement evidence
 
@@ -535,8 +529,7 @@ than enabling arbitrary test stdout.
 These values are reproducible comparison evidence, not latency SLAs. Timeouts are hang guards only.
 This slice adds no pagination, virtualization, lazy rendering, cache, parameter-count limit, or
 input-byte limit. If the measured baseline exposes a material responsiveness/resource defect, that
-optimization is owned by a separate evidence-backed issue. Retained-resource/lifecycle evidence and
-separate DataGrip host evidence remain independent #67 work.
+optimization is owned by a separate evidence-backed issue. #476 now supplies retained-resource/lifecycle evidence and #478 supplies separate DataGrip host evidence.
 
 ## Incremental large input dialog population responsiveness evidence
 
@@ -617,7 +610,27 @@ deterministic while still exercising the shipping document/editor/script-model t
 
 These fixtures measure zMyBatis cache/lease ownership plus real console lifetime convergence; they
 do not claim every native Database Tools result/editor/history object is owned by zMyBatis. Native
-visible-console/history behavior remains platform-owned evidence and separate DataGrip host parity
-remains an independent #67 obligation. No forced GC, heap-size threshold, arbitrary console-count
+visible-console/history behavior remains platform-owned evidence; the separate DataGrip host claim is maintained by #478 and does not widen this resource fixture. No forced GC, heap-size threshold, arbitrary console-count
 limit, or REUSE/NEW_EACH policy redesign is introduced by this measurement slice.
 
+
+
+## Preparation/materialization scale disposition
+
+The registered materialization envelope is intentionally cardinality-bounded rather than a generic
+large-binding renderer: zero ordered bindings use the target-bound zero-binding/raw routes, and the
+only maintained non-zero execution slice accepts exactly one proven PostgreSQL BIGINT binding.
+Accordingly, a separate "large materialization cardinality" benchmark would measure unsupported
+behavior rather than a shipping execution capability.
+
+Preparation is different because it runs **before** materialization. A source-authorized foreach
+LIST/ARRAY/MAP can expand through stock MyBatis into many parameter mappings before the later
+materializer rejects an unsupported multi-binding result. `MyBatisValueConversion` currently bounds
+structured conversion at 65,536 input nodes, while #470 measures source-graph scale and #472/#474
+measure many UI requirements/drafts rather than one large runtime collection flowing through
+isolated MyBatis preparation.
+
+#494 owns this remaining production responsiveness envelope. It must measure representative
+large-collection preparation through the registered candidate path, preserve off-EDT/cancellation
+authority, and prove the resulting unsupported multi-binding artifact still fails closed. Timings are
+comparison observations, not product SLAs; any concrete defect must be split into its own bounded fix.

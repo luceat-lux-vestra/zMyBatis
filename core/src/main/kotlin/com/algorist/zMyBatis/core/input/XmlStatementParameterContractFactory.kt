@@ -62,7 +62,7 @@ object XmlStatementParameterContractFactory {
     private val simpleRoot = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val simpleNamedProperty = Regex("[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*")
     private val reservedInternalRoots = setOf("_parameter", "_databaseId")
-    // Alphabetic token literals from the maintained MyBatis 3.5.19 OgnlParserConstants.
+    // Alphabetic token literals from the maintained MyBatis OGNL parser constants.
     // A lexically simple keyword is not an OGNL caller-variable lookup.
     private val ognlKeywords = setOf(
         "or", "and", "bor", "xor", "band", "eq", "neq", "lt", "gt", "lte", "gte",

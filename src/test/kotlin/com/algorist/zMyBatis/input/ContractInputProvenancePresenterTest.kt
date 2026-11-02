@@ -87,7 +87,7 @@ class ContractInputProvenancePresenterTest {
                 InputEvidence.ParameterObjectFallback(
                     parameterIndex = 0,
                     mappingProperty = "arbitrary",
-                    ruleId = "mybatis-3.5.19-default-parameter-handler-type-handler-fallback",
+                    ruleId = "mybatis-default-parameter-handler-type-handler-fallback",
                 ),
                 InputEvidence.MapperMethodParameter(
                     index = 0,
@@ -107,7 +107,7 @@ class ContractInputProvenancePresenterTest {
         assertTrue(
             presentation.details.startsWith(
                 "parameter-object mapping arbitrary " +
-                    "(mybatis-3.5.19-default-parameter-handler-type-handler-fallback); ",
+                    "(mybatis-default-parameter-handler-type-handler-fallback); ",
             ),
         )
         assertFalse(
@@ -125,7 +125,7 @@ class ContractInputProvenancePresenterTest {
                     alias = "payload",
                     mappingProperty = "payload.id",
                     key = "id",
-                    ruleId = "mybatis-3.5.19-default-parameter-handler-named-map-property",
+                    ruleId = "mybatis-default-parameter-handler-named-map-property",
                 ),
             ),
         )
@@ -133,7 +133,7 @@ class ContractInputProvenancePresenterTest {
         val presentation = ContractInputProvenancePresenter.present(provenance)
 
         assertEquals(
-            "named Map property payload.id (mybatis-3.5.19-default-parameter-handler-named-map-property)",
+            "named Map property payload.id (mybatis-default-parameter-handler-named-map-property)",
             presentation.details,
         )
         assertFalse(
@@ -149,7 +149,7 @@ class ContractInputProvenancePresenterTest {
                 InputEvidence.ParameterObjectProperty(
                     parameterIndex = 0,
                     mappingProperty = "id",
-                    ruleId = "mybatis-3.5.19-default-parameter-handler-meta-object-property",
+                    ruleId = "mybatis-default-parameter-handler-meta-object-property",
                 ),
                 InputEvidence.MapperMethodParameter(
                     index = 0,
@@ -172,7 +172,7 @@ class ContractInputProvenancePresenterTest {
         assertTrue(
             presentation.details.startsWith(
                 "parameter-object property id " +
-                    "(mybatis-3.5.19-default-parameter-handler-meta-object-property); ",
+                    "(mybatis-default-parameter-handler-meta-object-property); ",
             ),
         )
         assertFalse(
