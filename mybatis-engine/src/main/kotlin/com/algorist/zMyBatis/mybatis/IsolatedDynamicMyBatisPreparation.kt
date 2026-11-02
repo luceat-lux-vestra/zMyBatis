@@ -339,7 +339,7 @@ internal object IsolatedDynamicMyBatisPreparation {
                     .getMethod("getTypeHandlerRegistry")
                     .invoke(configuration)
                 val hasTypeHandler = typeHandlerRegistry.javaClass
-                    .getMethod("hasTypeHandler", Class::class.java)
+                    .getMethod("hasTypeHandler", Type::class.java)
                     .invoke(typeHandlerRegistry, parameterObject.javaClass) as Boolean
                 if (hasTypeHandler) {
                     parameterObject
