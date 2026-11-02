@@ -38,7 +38,7 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
    - uses the same maintained PostgreSQL datasource/explicit-schema lifecycle and keeps `sqlPreview=false` so raw interpolation itself must force approval;
    - cancels one exact raw artifact and proves it creates neither a native result grid nor native query-history entry;
    - invokes the same method again, proves the prior raw value was not retained, approves a different exact SQL artifact, observes its native result value, and verifies only the executed artifact reaches Database Tools history;
-   - the build-tool-free Starter sample supplies minimal source stubs for the MyBatis annotation FQNs so Java PSI can resolve the direct annotation; real MyBatis 3.5.19 annotation resolution remains independently covered by the Java source-adapter project fixture.
+   - the build-tool-free Starter sample supplies minimal source stubs for the MyBatis annotation FQNs so Java PSI can resolve the direct annotation; real MyBatis 3.6.0 annotation resolution remains independently covered by the Java source-adapter project fixture.
 6. **Registered-action fail-closed path**
    - opens the mapper fixture in a fresh IDE process without any datasource;
    - invokes the real production action from the supported statement context;

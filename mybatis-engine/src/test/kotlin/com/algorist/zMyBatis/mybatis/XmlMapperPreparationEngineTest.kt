@@ -39,7 +39,7 @@ class XmlMapperPreparationEngineTest {
         assertTrue(execution.orderedBindings.isEmpty())
         assertTrue(execution.rawInterpolations.isEmpty())
         assertEquals("org.mybatis:mybatis", execution.preparationMetadata.engineIdentity)
-        assertEquals("3.5.19", execution.preparationMetadata.engineVersion)
+        assertEquals("3.6.0", execution.preparationMetadata.engineVersion)
         assertEquals(
             "org.apache.ibatis.scripting.xmltags.XMLLanguageDriver",
             execution.preparationMetadata.languageDriverIdentity,

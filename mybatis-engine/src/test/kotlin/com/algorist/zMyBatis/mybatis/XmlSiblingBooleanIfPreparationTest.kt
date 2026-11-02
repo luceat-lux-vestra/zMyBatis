@@ -541,11 +541,12 @@ class XmlSiblingBooleanIfPreparationTest {
         assertEquals(stock.sql, execution.sqlWithPlaceholders)
         assertEquals(stock.parameterMappings.map { it.property }, execution.orderedBindings.map { it.property })
         stock.parameterMappings.zip(execution.orderedBindings).forEach { (mapping, binding) ->
-            assertEquals(mapping.javaType.name, binding.metadata.mappingJavaTypeIdentity)
-            assertEquals(mapping.jdbcType?.name, binding.metadata.jdbcTypeIdentity)
-            assertEquals(mapping.typeHandler.javaClass.name, binding.metadata.typeHandlerIdentity)
-            assertEquals(mapping.mode.name, binding.metadata.parameterMode)
-            assertEquals(mapping.numericScale, binding.metadata.numericScale)
+            val metadata = stockEffectiveParameterMappingMetadata(configuration, stock, values, mapping)
+            assertEquals(metadata.javaTypeIdentity, binding.metadata.mappingJavaTypeIdentity)
+            assertEquals(metadata.jdbcTypeIdentity, binding.metadata.jdbcTypeIdentity)
+            assertEquals(metadata.typeHandlerIdentity, binding.metadata.typeHandlerIdentity)
+            assertEquals(metadata.parameterMode, binding.metadata.parameterMode)
+            assertEquals(metadata.numericScale, binding.metadata.numericScale)
         }
     }
 

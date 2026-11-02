@@ -21,9 +21,16 @@ RELEVANT_PATHS = frozenset({
     ".github/workflow-policy/trusted_dependency_submission_validation.py",
 })
 REQUIRED_COORDINATES = frozenset({
-    "org.mybatis:mybatis:3.5.19",
+    "org.mybatis:mybatis:3.6.0",
     "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:2.19.0",
 })
+SUPPORTED_COORDINATE_KEYS = frozenset({
+    "org.mybatis:mybatis",
+    "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin",
+})
+COORDINATE_LINE = re.compile(
+    r'"(?P<coordinate>[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[^"\s]+)",\Z'
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -44,16 +51,38 @@ def require_supported_publisher_patch(entry: dict) -> None:
     require(isinstance(patch, str) and patch,
             "dependency-submission change has no reviewable patch")
     changed = [
-        line[1:].strip()
+        (line[0], line[1:].strip())
         for line in patch.splitlines()
         if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
     ]
-    allowed = re.compile(
+    require(changed, "dependency-submission change has no changed lines")
+
+    allowed_action = re.compile(
         r"uses:\s*(?:actions/checkout|actions/setup-java|gradle/actions/dependency-submission)"
         r"@[0-9a-f]{40}(?:\s+#.*)?\Z"
     )
-    require(changed and all(allowed.fullmatch(line) for line in changed),
-            "dependency-submission workflow mutation exceeds the supported action-pin adapter")
+    if all(allowed_action.fullmatch(line) for _, line in changed):
+        return
+
+    require(len(changed) == 2,
+            "dependency-submission workflow mutation exceeds the supported adapters")
+    removed = [line for sign, line in changed if sign == "-"]
+    added = [line for sign, line in changed if sign == "+"]
+    require(len(removed) == 1 and len(added) == 1,
+            "dependency-submission coordinate adapter requires one replacement pair")
+
+    old_match = COORDINATE_LINE.fullmatch(removed[0])
+    new_match = COORDINATE_LINE.fullmatch(added[0])
+    require(old_match is not None and new_match is not None,
+            "dependency-submission coordinate adapter only accepts coordinate literals")
+    old_coordinate = old_match.group("coordinate")
+    new_coordinate = new_match.group("coordinate")
+    old_key = old_coordinate.rsplit(":", 1)[0]
+    new_key = new_coordinate.rsplit(":", 1)[0]
+    require(old_key == new_key and new_key in SUPPORTED_COORDINATE_KEYS,
+            "dependency-submission coordinate adapter changed an unsupported artifact")
+    require(new_coordinate in REQUIRED_COORDINATES,
+            "dependency-submission publisher coordinate does not match PR validation policy")
 
 
 def classify(pull: dict, pages: list, expected_head: str) -> bool:
@@ -233,6 +262,17 @@ def self_test() -> None:
         "patch": allowed_patch,
     }]], sha)
 
+    coordinate_patch = (
+        "@@ -1 +1 @@\n"
+        '-              "org.mybatis:mybatis:3.5.19",\n'
+        '+              "org.mybatis:mybatis:3.6.0",'
+    )
+    assert classify(pull, [[{
+        "filename": ".github/workflows/dependency-submission.yml",
+        "status": "modified",
+        "patch": coordinate_patch,
+    }]], sha)
+
     bad_cases = [
         (
             {"head": {"sha": sha}, "changed_files": 2},
@@ -247,6 +287,19 @@ def self_test() -> None:
                 "filename": ".github/workflows/dependency-submission.yml",
                 "status": "modified",
                 "patch": "@@ -1 +1 @@\n-permissions: {}\n+permissions: write-all",
+            }]],
+            sha,
+        ),
+        (
+            pull,
+            [[{
+                "filename": ".github/workflows/dependency-submission.yml",
+                "status": "modified",
+                "patch": (
+                    "@@ -1 +1 @@\n"
+                    '-              "org.mybatis:mybatis:3.5.19",\n'
+                    '+              "org.mybatis:mybatis:3.6.1",'
+                ),
             }]],
             sha,
         ),
@@ -327,7 +380,7 @@ def self_test() -> None:
             f"example:dep:{i}": {"relationship": "indirect"}
             for i in range(648)
         }
-        resolved["org.mybatis:mybatis:3.5.19"] = {
+        resolved["org.mybatis:mybatis:3.6.0"] = {
             "relationship": "direct"
         }
         resolved[

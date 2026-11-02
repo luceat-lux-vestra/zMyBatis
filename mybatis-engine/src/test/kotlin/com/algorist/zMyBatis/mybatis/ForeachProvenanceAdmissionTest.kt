@@ -99,7 +99,7 @@ class ForeachProvenanceAdmissionTest {
     }
 
     @Test
-    fun callerAliasCannotOccupyGeneratedForeachNamespace() {
+    fun legacyGeneratedPrefixIsNotReservedForCallerAliases() {
         val result = ForeachProvenanceAdmission.inspect(
             foreachScript(),
             contract(
@@ -108,16 +108,11 @@ class ForeachProvenanceAdmissionTest {
             ),
         )
 
-        assertFailure(
-            result,
-            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "mybatis-foreach-generated-namespace-collision",
-            null,
-        )
+        assertTrue(result is ForeachProvenanceAdmission.Result.Admitted)
     }
 
     @Test
-    fun bindCannotOccupyGeneratedForeachNamespace() {
+    fun legacyGeneratedPrefixIsNotReservedForBindNames() {
         val result = ForeachProvenanceAdmission.inspect(
             foreachScript(),
             contract(
@@ -126,12 +121,7 @@ class ForeachProvenanceAdmissionTest {
             ),
         )
 
-        assertFailure(
-            result,
-            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "mybatis-foreach-generated-namespace-collision",
-            null,
-        )
+        assertTrue(result is ForeachProvenanceAdmission.Result.Admitted)
     }
 
     @Test

@@ -290,28 +290,6 @@ class MyBatisForeachPreparationEngineTest {
     }
 
     @Test
-    fun sourceCannotForgeMyBatisGeneratedForeachNamespace() {
-        val result = prepare(
-            fixture(
-                script = """
-                    <script>
-                      select #{__frch_item_0}
-                      <foreach collection="ids" item="item">#{item}</foreach>
-                    </script>
-                """.trimIndent(),
-                parameters = listOf(listParameter("ids", 1)),
-                locals = listOf(LocalSpec("item", InternalBindingKind.FOREACH_ITEM, ForeachLocalRole.ITEM)),
-            ),
-        )
-
-        assertFailure(
-            result,
-            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "mybatis-foreach-generated-namespace-collision",
-        )
-    }
-
-    @Test
     fun collectionRequiresExactForeachCollectionEvidence() {
         val result = prepare(
             fixture(

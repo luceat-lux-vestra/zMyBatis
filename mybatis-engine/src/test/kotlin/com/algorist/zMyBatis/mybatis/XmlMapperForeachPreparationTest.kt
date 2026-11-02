@@ -1136,7 +1136,7 @@ class XmlMapperForeachPreparationTest {
         assertEquals(listOf(0L, 7L, 7L, 1L, 9L, 9L).map(::integer), execution.orderedBindings.map { it.value })
         assertEquals((0..5).toList(), execution.orderedBindings.map { it.index })
         assertEquals(
-            listOf("__frch_idx_0", "__frch_item_0", "__frch_item_0", "__frch_idx_1", "__frch_item_1", "__frch_item_1"),
+            listOf("idx", "item", "item", "idx", "item", "item"),
             execution.orderedBindings.map { it.property },
         )
         val locals = request.parameterContract.internalBindings.associateBy { it.name }
@@ -1301,7 +1301,7 @@ class XmlMapperForeachPreparationTest {
     }
 
     @Test
-    fun additionalCaptureRejectsMissingGeneratedIdentityWrongKindAndNestedProperty() {
+    fun foreachCaptureRejectsMissingIdentityWrongKindAndNestedProperty() {
         val fixture = fixture(
             """SELECT <foreach collection="ids" item="item">#{item}</foreach>""",
             listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")),
@@ -1309,14 +1309,13 @@ class XmlMapperForeachPreparationTest {
         val request = request(fixture, mapOf(0 to listValue(7)))
         val admission = XmlForeachPreparationAdmission.inspect(fixture.graph, fixture.mapper, request.parameterContract) as XmlForeachPreparationAdmission.Result.Admitted
         val mapping = MyBatisParameterMappingSnapshot(
-            "__frch_item_0", true, MyBatisGeneratedLocalSnapshot("item", InternalBindingKind.FOREACH_ITEM, 0),
+            "item", false, MyBatisForeachLocalSnapshot("item", InternalBindingKind.FOREACH_ITEM),
             MyBatisRuntimeValueSnapshot.Ready(7L), "java.lang.Long", null, "org.apache.ibatis.type.LongTypeHandler", "IN", null,
         )
         for (forged in listOf(
-            mapping.copy(generatedLocal = null),
-            mapping.copy(additionalParameter = false),
-            mapping.copy(generatedLocal = MyBatisGeneratedLocalSnapshot("item", InternalBindingKind.FOREACH_INDEX, 0)),
-            mapping.copy(property = "__frch_item_0.id"),
+            mapping.copy(foreachLocal = null),
+            mapping.copy(foreachLocal = MyBatisForeachLocalSnapshot("item", InternalBindingKind.FOREACH_INDEX)),
+            mapping.copy(property = "item.id"),
         )) {
             val result = XmlForeachAdditionalBindingCapture.capture(0, forged, request, admission) as XmlForeachAdditionalBindingCapture.Result.Failed
             assertEquals("xml-foreach-additional-authority-unproven", result.failure.code)
@@ -1390,7 +1389,7 @@ class XmlMapperForeachPreparationTest {
                 }, 60, TimeUnit.SECONDS)
                 val executions = futures.map { it.get(1, TimeUnit.SECONDS) }
                 for (index in executions.indices) assertEquals(executions[index % requests.size], executions[index])
-                assertEquals(listOf("__frch_item_0", "__frch_item_1"), executions.first().orderedBindings.map { it.property })
+                assertEquals(listOf("item", "item"), executions.first().orderedBindings.map { it.property })
             }
             assertSame(poison, get.invoke(null, contextMap))
         } finally {
@@ -1419,12 +1418,13 @@ class XmlMapperForeachPreparationTest {
         assertEquals(stock.sql, execution.sqlWithPlaceholders)
         assertEquals(stock.parameterMappings.map { it.property }, execution.orderedBindings.map { it.property })
         stock.parameterMappings.zip(execution.orderedBindings).forEach { (mapping, binding) ->
-            assertEquals(mapping.javaType.name, binding.metadata.mappingJavaTypeIdentity)
-            assertEquals(mapping.jdbcType?.name, binding.metadata.jdbcTypeIdentity)
-            assertEquals(mapping.typeHandler.javaClass.name, binding.metadata.typeHandlerIdentity)
-            assertEquals(mapping.mode.name, binding.metadata.parameterMode)
-            assertEquals(mapping.numericScale, binding.metadata.numericScale)
-            val runtime = if (stock.hasAdditionalParameter(mapping.property)) stock.getAdditionalParameter(mapping.property) else values[mapping.property]
+            val metadata = stockEffectiveParameterMappingMetadata(configuration, stock, values, mapping)
+            assertEquals(metadata.javaTypeIdentity, binding.metadata.mappingJavaTypeIdentity)
+            assertEquals(metadata.jdbcTypeIdentity, binding.metadata.jdbcTypeIdentity)
+            assertEquals(metadata.typeHandlerIdentity, binding.metadata.typeHandlerIdentity)
+            assertEquals(metadata.parameterMode, binding.metadata.parameterMode)
+            assertEquals(metadata.numericScale, binding.metadata.numericScale)
+            val runtime = metadata.runtimeValue
             val value = when (runtime) {
                 null -> InputValue.NullValue
                 is Long -> integer(runtime)

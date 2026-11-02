@@ -957,8 +957,12 @@ class ZMyBatisStarterDriverE2ETest {
         val mapping = boundSql.parameterMappings.single()
         assertEquals("value", mapping.property)
         assertEquals("BIGINT", mapping.jdbcType?.name)
-        assertEquals("java.lang.Object", mapping.javaType.name)
-        assertEquals("org.apache.ibatis.type.UnknownTypeHandler", mapping.typeHandler.javaClass.name)
+        assertEquals("java.lang.Object", mapping.javaType?.name)
+        assertEquals(null, mapping.typeHandler)
+        val effectiveTypeHandler = checkNotNull(
+            configuration.typeHandlerRegistry.getTypeHandler(Long::class.javaObjectType, mapping.jdbcType),
+        )
+        assertEquals("org.apache.ibatis.type.LongTypeHandler", effectiveTypeHandler.javaClass.name)
 
         val fileId = SourceFileId("vfs:/PostgreSqlQuery.xml")
         val revision = SourceRevision(
@@ -998,9 +1002,9 @@ class ZMyBatisStarterDriverE2ETest {
                     ),
                     metadata = PreparedBindingMetadata(
                         declaredJavaTypeIdentity = JavaTypeIdentity("long"),
-                        mappingJavaTypeIdentity = mapping.javaType.name,
+                        mappingJavaTypeIdentity = Long::class.javaObjectType.name,
                         jdbcTypeIdentity = mapping.jdbcType?.name,
-                        typeHandlerIdentity = mapping.typeHandler.javaClass.name,
+                        typeHandlerIdentity = effectiveTypeHandler.javaClass.name,
                         parameterMode = mapping.mode.name,
                         numericScale = mapping.numericScale,
                     ),
@@ -1009,7 +1013,7 @@ class ZMyBatisStarterDriverE2ETest {
             rawInterpolations = emptyList(),
             preparationMetadata = PreparationMetadata(
                 engineIdentity = "org.mybatis:mybatis",
-                engineVersion = "3.5.19",
+                engineVersion = "3.6.0",
                 languageDriverIdentity = statement.lang.javaClass.name,
                 databaseId = configuration.databaseId,
             ),
@@ -1034,7 +1038,7 @@ class ZMyBatisStarterDriverE2ETest {
 
     private fun writeDirectJavaRawMapper(projectDir: Path) {
         // The Starter sample is intentionally build-tool-free. Minimal source stubs give Java PSI
-        // resolvable MyBatis annotation FQNs; real MyBatis 3.5.19 annotation resolution is already
+        // resolvable MyBatis annotation FQNs; real MyBatis 3.6.0 annotation resolution is already
         // covered by JavaAnnotationSourceCaptureAdapterProjectFixtureTest.
         val annotationDir = Files.createDirectories(
             projectDir.resolve("org/apache/ibatis/annotations"),

@@ -30,7 +30,7 @@ class XmlMapperMethodCaptureAdapterProjectFixtureTest : LightJavaCodeInsightFixt
 
         val myBatisJar = File(PathUtil.getJarPathForClass(Param::class.java))
         VfsRootAccess.allowRootAccess(testRootDisposable, myBatisJar.absolutePath)
-        PsiTestUtil.addLibrary(module, "mybatis-3.5.19", myBatisJar.parent, myBatisJar.name)
+        PsiTestUtil.addLibrary(module, "mybatis-3.6.0", myBatisJar.parent, myBatisJar.name)
     }
 
     override fun getTempDirFixture(): TempDirTestFixture =

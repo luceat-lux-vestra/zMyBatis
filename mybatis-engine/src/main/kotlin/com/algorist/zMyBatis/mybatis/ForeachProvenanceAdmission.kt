@@ -13,14 +13,14 @@ import java.util.ArrayDeque
 import org.apache.ibatis.builder.xml.XMLMapperEntityResolver
 import org.apache.ibatis.parsing.XNode
 import org.apache.ibatis.parsing.XPathParser
-import org.apache.ibatis.scripting.xmltags.ForEachSqlNode
 
 /**
  * Proves the source/contract authority needed before stock MyBatis is allowed to evaluate foreach.
  *
- * Generated `__frch_*` names are deliberately not authority here. This admission step reasons only
- * about authoritative source declarations and the supplied ParameterContract. The isolated MyBatis
- * runtime may later identify a generated mapping as belonging to one of these already-proven locals.
+ * MyBatis 3.6 captures foreach item/index values directly in each ParameterMapping instead of
+ * rewriting them into generated `__frch_*` names. This admission step therefore reasons only about
+ * authoritative source declarations and the supplied ParameterContract; runtime capture may claim
+ * only a direct property whose source local was already proven here.
  */
 internal object ForeachProvenanceAdmission {
     private const val MAX_SCRIPT_LENGTH = 2 * 1024 * 1024
@@ -33,7 +33,6 @@ internal object ForeachProvenanceAdmission {
     private const val LOCAL_PROVENANCE_MISSING = "mybatis-foreach-local-provenance-missing"
     private const val LOCAL_PROVENANCE_AMBIGUOUS = "mybatis-foreach-local-provenance-ambiguous"
     private const val LOCAL_SHADOWING = "mybatis-foreach-local-shadowing-unsupported"
-    private const val GENERATED_NAMESPACE_COLLISION = "mybatis-foreach-generated-namespace-collision"
     private const val NESTING_UNSUPPORTED = "mybatis-foreach-nesting-unsupported"
     private const val NULLABLE_UNSUPPORTED = "mybatis-foreach-nullable-unsupported"
     private const val LOCAL_IDENTIFIER_UNSUPPORTED = "mybatis-foreach-local-identifier-unsupported"
@@ -85,7 +84,6 @@ internal object ForeachProvenanceAdmission {
         val pending = ArrayDeque<PendingNode>()
         pending.addLast(PendingNode(root, depth = 0, insideForeach = false))
         var visitedNodes = 0
-        var foreachCount = 0
 
         while (pending.isNotEmpty()) {
             if (++visitedNodes > MAX_DYNAMIC_NODES) {
@@ -101,7 +99,6 @@ internal object ForeachProvenanceAdmission {
                 return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, NESTING_UNSUPPORTED)
             }
             if (isForeach) {
-                foreachCount++
                 val admitted = inspectForeach(
                     node = current.node,
                     contract = contract,
@@ -176,17 +173,6 @@ internal object ForeachProvenanceAdmission {
                 )
         }
 
-        if (foreachCount > 0) {
-            val generatedPrefix = ForEachSqlNode.ITEM_PREFIX
-            val namespaceCollision =
-                script.contains(generatedPrefix) ||
-                    callerAliases.keys.any { it.startsWith(generatedPrefix) } ||
-                    bindNames.any { it.startsWith(generatedPrefix) } ||
-                    sourceLocals.keys.any { it.startsWith(generatedPrefix) }
-            if (namespaceCollision) {
-                return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, GENERATED_NAMESPACE_COLLISION)
-            }
-        }
 
         return Result.Admitted(
             locals = sourceLocals.toMap(),

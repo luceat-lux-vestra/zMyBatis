@@ -4,7 +4,7 @@ import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import java.lang.reflect.Array as ReflectArray
-import java.lang.reflect.Method
+import java.lang.reflect.Type
 import java.net.URLClassLoader
 import java.util.concurrent.CancellationException
 import org.apache.ibatis.session.Configuration
@@ -12,7 +12,7 @@ import org.apache.ibatis.session.Configuration
 /**
  * Executes stock MyBatis DynamicSqlSource preparation in a fresh classloader.
  *
- * MyBatis 3.5.19 initializes DynamicContext by registering a ContextMap accessor in the shaded
+ * MyBatis 3.6.0 initializes DynamicContext by registering a ContextMap accessor in the shaded
  * process-global OGNL runtime. Loading/evaluating either a `<script>` or static `${...}` through
  * DynamicSqlSource in the application/plugin classloader would therefore violate the preparation
  * isolation contract. A fresh loader scopes that stock-MyBatis mutation to one preparation while
@@ -25,8 +25,9 @@ internal object IsolatedDynamicMyBatisPreparation {
     private const val BOUND_SQL = "org.apache.ibatis.mapping.BoundSql"
     private const val PARAMETER_MAPPING = "org.apache.ibatis.mapping.ParameterMapping"
     private const val PARAM_MAP = $$"org.apache.ibatis.binding.MapperMethod$ParamMap"
+    private const val JDBC_TYPE = "org.apache.ibatis.type.JdbcType"
+    private const val OBJECT_TYPE_HANDLER = "org.apache.ibatis.type.ObjectTypeHandler"
     private const val OGNL_RUNTIME = "org.apache.ibatis.ognl.OgnlRuntime"
-    private const val FOREACH_SQL_NODE = "org.apache.ibatis.scripting.xmltags.ForEachSqlNode"
 
     private const val PARSE_FAILURE = "mybatis-sql-source-parse-failure"
     private const val OGNL_FAILURE = "mybatis-ognl-evaluation-failure"
@@ -156,11 +157,6 @@ internal object IsolatedDynamicMyBatisPreparation {
         val configurationClass = Class.forName(CONFIGURATION, true, loader)
         val boundSqlClass = Class.forName(BOUND_SQL, true, loader)
         val parameterMappingClass = Class.forName(PARAMETER_MAPPING, true, loader)
-        val foreachRuntimeIdentity = if (admittedForeachLocals.isNotEmpty()) {
-            checkNotNull(resolveForeachRuntimeIdentity(loader)) { "mybatis-foreach-runtime-identity-unavailable" }
-        } else {
-            null
-        }
         return mappings.map { mapping ->
             checkNotNull(mapping) { "mybatis-null-parameter-mapping" }
             snapshotMapping(
@@ -172,24 +168,9 @@ internal object IsolatedDynamicMyBatisPreparation {
                 parameterMappingClass = parameterMappingClass,
                 mapping = mapping,
                 parameterObject = parameterObject,
-                foreachRuntimeIdentity = foreachRuntimeIdentity,
                 admittedForeachLocals = admittedForeachLocals,
             )
         }
-    }
-
-    private fun resolveForeachRuntimeIdentity(loader: URLClassLoader): ForeachRuntimeIdentity? {
-        val foreachSqlNodeClass = Class.forName(FOREACH_SQL_NODE, true, loader)
-        if (foreachSqlNodeClass.classLoader !== loader) return null
-        val itemPrefix = foreachSqlNodeClass.getField("ITEM_PREFIX").get(null) as? String ?: return null
-        if (itemPrefix.isBlank()) return null
-        val itemizeMethod = foreachSqlNodeClass.getDeclaredMethod(
-            "itemizeItem",
-            String::class.java,
-            Int::class.javaPrimitiveType,
-        )
-        if (!itemizeMethod.trySetAccessible()) return null
-        return ForeachRuntimeIdentity(itemPrefix, itemizeMethod)
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -214,28 +195,18 @@ internal object IsolatedDynamicMyBatisPreparation {
         parameterMappingClass: Class<*>,
         mapping: Any,
         parameterObject: Any?,
-        foreachRuntimeIdentity: ForeachRuntimeIdentity?,
         admittedForeachLocals: Map<String, InternalBindingKind>,
     ): MyBatisParameterMappingSnapshot {
         val property = parameterMappingClass.getMethod("getProperty").invoke(mapping) as? String
-        val mode = enumName(parameterMappingClass.getMethod("getMode").invoke(mapping))
-        val javaType = (parameterMappingClass.getMethod("getJavaType").invoke(mapping) as? Class<*>)?.name
-        val jdbcType = enumName(parameterMappingClass.getMethod("getJdbcType").invoke(mapping))
-        val typeHandler = parameterMappingClass.getMethod("getTypeHandler").invoke(mapping)
-        val typeHandlerIdentity = typeHandler?.javaClass?.name
-        val numericScale = parameterMappingClass.getMethod("getNumericScale").invoke(mapping) as? Int
 
         val additional = property?.let {
             boundSqlClass
                 .getMethod("hasAdditionalParameter", String::class.java)
                 .invoke(boundSql, it) as Boolean
         } ?: false
-        val generatedLocal = if (additional && property != null && foreachRuntimeIdentity != null) {
-            generatedLocalSnapshot(
-                property = property,
-                runtimeIdentity = foreachRuntimeIdentity,
-                admittedForeachLocals = admittedForeachLocals,
-            )
+        val capturedValue = parameterMappingClass.getMethod("hasValue").invoke(mapping) as Boolean
+        val foreachLocal = if (capturedValue && property != null) {
+            foreachLocalSnapshot(property, admittedForeachLocals)
         } else {
             null
         }
@@ -249,48 +220,99 @@ internal object IsolatedDynamicMyBatisPreparation {
                 configuration = configuration,
                 boundSqlClass = boundSqlClass,
                 boundSql = boundSql,
+                parameterMappingClass = parameterMappingClass,
+                mapping = mapping,
                 property = property,
+                capturedValue = capturedValue,
                 additional = additional,
                 parameterObject = parameterObject,
             )
         }
 
+        val metadata = when (runtimeValue) {
+            is MyBatisRuntimeValueSnapshot.Ready ->
+                effectiveMappingMetadata(loader, configuration, mapping, runtimeValue.value)
+            is MyBatisRuntimeValueSnapshot.Failed ->
+                rawMappingMetadata(mapping)
+        }
+
         return MyBatisParameterMappingSnapshot(
             property = property,
             additionalParameter = additional,
-            generatedLocal = generatedLocal,
+            foreachLocal = foreachLocal,
             runtimeValue = runtimeValue,
-            mappingJavaTypeIdentity = javaType,
-            jdbcTypeIdentity = jdbcType,
-            typeHandlerIdentity = typeHandlerIdentity,
-            parameterMode = mode,
-            numericScale = numericScale,
+            mappingJavaTypeIdentity = metadata.javaTypeIdentity,
+            jdbcTypeIdentity = metadata.jdbcTypeIdentity,
+            typeHandlerIdentity = metadata.typeHandlerIdentity,
+            parameterMode = metadata.parameterMode,
+            numericScale = metadata.numericScale,
         )
     }
 
-    private fun generatedLocalSnapshot(
+    internal fun effectiveMappingMetadata(
+        loader: ClassLoader,
+        configuration: Any,
+        mapping: Any,
+        runtimeValue: Any?,
+    ): MyBatisEffectiveMappingMetadata {
+        val mappingClass = mapping.javaClass
+        val mappingJavaType = mappingClass.getMethod("getJavaType").invoke(mapping) as? Class<*>
+        val jdbcType = mappingClass.getMethod("getJdbcType").invoke(mapping)
+        val mappingHandler = mappingClass.getMethod("getTypeHandler").invoke(mapping)
+        val effectiveHandler = when {
+            mappingHandler != null -> mappingHandler
+            runtimeValue == null -> Class.forName(OBJECT_TYPE_HANDLER, true, loader)
+                .getField("INSTANCE")
+                .get(null)
+            else -> {
+                val registry = configuration.javaClass
+                    .getMethod("getTypeHandlerRegistry")
+                    .invoke(configuration)
+                val jdbcTypeClass = Class.forName(JDBC_TYPE, true, loader)
+                registry.javaClass
+                    .getMethod("getTypeHandler", Type::class.java, jdbcTypeClass)
+                    .invoke(registry, runtimeValue.javaClass, jdbcType)
+                    ?: jdbcType?.let {
+                        registry.javaClass
+                            .getMethod("getTypeHandler", jdbcTypeClass)
+                            .invoke(registry, it)
+                    }
+            }
+        }
+        val effectiveJavaType = when {
+            mappingHandler != null -> mappingJavaType?.name
+            runtimeValue != null -> runtimeValue.javaClass.name
+            mappingJavaType != null -> mappingJavaType.name
+            else -> Object::class.java.name
+        }
+        return MyBatisEffectiveMappingMetadata(
+            javaTypeIdentity = effectiveJavaType,
+            jdbcTypeIdentity = enumName(jdbcType),
+            typeHandlerIdentity = effectiveHandler?.javaClass?.name,
+            parameterMode = enumName(mappingClass.getMethod("getMode").invoke(mapping)),
+            numericScale = mappingClass.getMethod("getNumericScale").invoke(mapping) as? Int,
+        )
+    }
+
+    private fun rawMappingMetadata(mapping: Any): MyBatisEffectiveMappingMetadata {
+        val mappingClass = mapping.javaClass
+        return MyBatisEffectiveMappingMetadata(
+            javaTypeIdentity = (mappingClass.getMethod("getJavaType").invoke(mapping) as? Class<*>)?.name,
+            jdbcTypeIdentity = enumName(mappingClass.getMethod("getJdbcType").invoke(mapping)),
+            typeHandlerIdentity = mappingClass.getMethod("getTypeHandler").invoke(mapping)?.javaClass?.name,
+            parameterMode = enumName(mappingClass.getMethod("getMode").invoke(mapping)),
+            numericScale = mappingClass.getMethod("getNumericScale").invoke(mapping) as? Int,
+        )
+    }
+
+    private fun foreachLocalSnapshot(
         property: String,
-        runtimeIdentity: ForeachRuntimeIdentity,
         admittedForeachLocals: Map<String, InternalBindingKind>,
-    ): MyBatisGeneratedLocalSnapshot? {
+    ): MyBatisForeachLocalSnapshot? {
         if (admittedForeachLocals.isEmpty()) return null
         val root = property.substringBefore('.')
-        if (!root.startsWith(runtimeIdentity.itemPrefix)) return null
-        val uniqueNumber = root.substringAfterLast('_', missingDelimiterValue = "")
-            .toIntOrNull()
-            ?.takeIf { it >= 0 }
-            ?: return null
-
-        val matches = admittedForeachLocals.mapNotNull { (sourceLocal, kind) ->
-            val runtimeGeneratedRoot = runtimeIdentity.itemizeMethod.invoke(null, sourceLocal, uniqueNumber) as? String
-                ?: throw IllegalStateException("MyBatis foreach itemizer returned a non-string identity")
-            if (root != runtimeGeneratedRoot) return@mapNotNull null
-            MyBatisGeneratedLocalSnapshot(sourceLocal, kind, uniqueNumber)
-        }
-        if (matches.size > 1) {
-            throw IllegalStateException("ambiguous MyBatis foreach generated local identity")
-        }
-        return matches.singleOrNull()
+        val kind = admittedForeachLocals[root] ?: return null
+        return MyBatisForeachLocalSnapshot(root, kind)
     }
 
     private fun snapshotRuntimeValue(
@@ -299,11 +321,15 @@ internal object IsolatedDynamicMyBatisPreparation {
         configuration: Any,
         boundSqlClass: Class<*>,
         boundSql: Any,
+        parameterMappingClass: Class<*>,
+        mapping: Any,
         property: String,
+        capturedValue: Boolean,
         additional: Boolean,
         parameterObject: Any?,
     ): MyBatisRuntimeValueSnapshot = try {
         val value = when {
+            capturedValue -> parameterMappingClass.getMethod("getValue").invoke(mapping)
             additional -> boundSqlClass
                 .getMethod("getAdditionalParameter", String::class.java)
                 .invoke(boundSql, property)
@@ -313,7 +339,7 @@ internal object IsolatedDynamicMyBatisPreparation {
                     .getMethod("getTypeHandlerRegistry")
                     .invoke(configuration)
                 val hasTypeHandler = typeHandlerRegistry.javaClass
-                    .getMethod("hasTypeHandler", Class::class.java)
+                    .getMethod("hasTypeHandler", Type::class.java)
                     .invoke(typeHandlerRegistry, parameterObject.javaClass) as Boolean
                 if (hasTypeHandler) {
                     parameterObject
@@ -468,10 +494,6 @@ internal object IsolatedDynamicMyBatisPreparation {
         if (fatal != null) throw fatal
     }
 
-    private data class ForeachRuntimeIdentity(
-        val itemPrefix: String,
-        val itemizeMethod: Method,
-    )
 
     sealed interface Result {
         data class Ready(

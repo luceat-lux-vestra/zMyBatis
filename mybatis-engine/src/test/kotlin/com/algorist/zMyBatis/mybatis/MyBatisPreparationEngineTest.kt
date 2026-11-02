@@ -8,6 +8,7 @@ import com.algorist.zMyBatis.core.input.JavaAnnotationParameterContractFactory
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
+import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationResult
 import com.algorist.zMyBatis.core.preparation.PreparationSource
@@ -61,7 +62,7 @@ class MyBatisPreparationEngineTest {
         assertEquals(listOf(0, 1), execution.orderedBindings.map { it.index })
         assertTrue(execution.orderedBindings.all { !it.additionalParameter })
         assertEquals("org.mybatis:mybatis", execution.preparationMetadata.engineIdentity)
-        assertEquals("3.5.19", execution.preparationMetadata.engineVersion)
+        assertEquals("3.6.0", execution.preparationMetadata.engineVersion)
     }
 
     @Test
@@ -164,7 +165,6 @@ class MyBatisPreparationEngineTest {
 
     @Test
     fun scalarAndTemporalBindingValuesRetainCoreTypeFidelity() {
-        val uuid = UUID.fromString("123e4567-e89b-12d3-a456-426614174000")
         val date = LocalDate.of(2026, 9, 15)
         val time = LocalTime.of(7, 42, 3)
         val dateTime = LocalDateTime.of(2026, 9, 15, 7, 42, 3)
@@ -174,7 +174,6 @@ class MyBatisPreparationEngineTest {
             Parameter("java.math.BigInteger", "integer", InputValue.IntegerValue(BigInteger("9223372036854775808123"))),
             Parameter("java.math.BigDecimal", "decimal", InputValue.DecimalValue(BigDecimal("1234567890.12345678901234567890"))),
             Parameter("java.lang.Boolean", "flag", InputValue.BooleanValue(true)),
-            Parameter("java.util.UUID", "uuid", InputValue.UuidValue(uuid)),
             Parameter("java.time.LocalDate", "date", InputValue.DateValue(date)),
             Parameter("java.time.LocalTime", "time", InputValue.TimeValue(time)),
             Parameter("java.time.LocalDateTime", "dateTime", InputValue.DateTimeValue(dateTime)),
@@ -188,6 +187,20 @@ class MyBatisPreparationEngineTest {
         val execution = (result as PreparationResult.Success).execution
         assertEquals(values.map { it.value }, execution.orderedBindings.map { it.value })
         assertEquals(values.map { it.alias }, execution.orderedBindings.map { it.property })
+    }
+
+    @Test
+    fun uuidWithoutRegisteredHandlerFailsClosedUnderMyBatis360() {
+        val uuid = UUID.fromString("123e4567-e89b-12d3-a456-426614174000")
+        val result = MyBatisPreparationEngine.prepare(
+            request("select #{uuid}", listOf(Parameter("java.util.UUID", "uuid", InputValue.UuidValue(uuid)))),
+        )
+
+        assertTrue(result is PreparationResult.Failed)
+        val failure = (result as PreparationResult.Failed).failure
+        assertEquals(PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER, failure.kind)
+        assertEquals("mybatis-custom-type-handler-unsupported", failure.code)
+        assertEquals("uuid", failure.bindingProperty)
     }
 
     @Test
@@ -348,7 +361,7 @@ class MyBatisPreparationEngineTest {
     }
 
     @Test
-    fun structuredMapListAndArrayValuesAreNotStringified() {
+    fun structuredBindingsWithoutRegisteredHandlersFailClosedUnderMyBatis360() {
         val map = InputValue.MapValue(
             linkedMapOf(
                 "id" to InputValue.IntegerValue(BigInteger.ONE),
@@ -362,13 +375,19 @@ class MyBatisPreparationEngineTest {
             Parameter("java.util.List<java.lang.String>", "listValue", list),
             Parameter("java.lang.String[]", "arrayValue", array),
         )
-        val sql = "select #{mapValue}, #{listValue}, #{arrayValue}"
 
-        val result = MyBatisPreparationEngine.prepare(request(sql, parameters))
-
-        assertTrue(result is PreparationResult.Success)
-        val execution = (result as PreparationResult.Success).execution
-        assertEquals(listOf(map, list, array), execution.orderedBindings.map { it.value })
+        // MyBatis 3.6.0 no longer supplies the old unknown-type fallback for
+        // these values without a registered Java/JDBC handler. No SQL may be admitted.
+        for (parameter in parameters) {
+            val result = MyBatisPreparationEngine.prepare(
+                request("select #{${parameter.alias}}", listOf(parameter)),
+            )
+            assertTrue("Missing fail-closed result for " + parameter.alias, result is PreparationResult.Failed)
+            val failure = (result as PreparationResult.Failed).failure
+            assertEquals(PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER, failure.kind)
+            assertEquals("mybatis-custom-type-handler-unsupported", failure.code)
+            assertEquals(parameter.alias, failure.bindingProperty)
+        }
     }
 
     @Test

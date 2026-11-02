@@ -7,7 +7,7 @@ import com.algorist.zMyBatis.core.preparation.PreparedBinding
 import com.algorist.zMyBatis.core.preparation.PreparedBindingMetadata
 import com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin
 
-/** Captures only direct generated locals proved by both the XML admission and stock MyBatis. */
+/** Captures only direct foreach locals proved by XML admission and a stock-MyBatis captured mapping value. */
 internal object XmlForeachAdditionalBindingCapture {
     fun capture(
         index: Int,
@@ -17,16 +17,16 @@ internal object XmlForeachAdditionalBindingCapture {
     ): Result {
         val property = mapping.property?.takeIf { it.isNotBlank() }
             ?: return failed(PreparationFailureKind.PARAMETER_MAPPING_MISMATCH, "xml-foreach-mapping-property-missing")
-        val generated = mapping.generatedLocal
+        val foreachLocal = mapping.foreachLocal
         if (
-            !mapping.additionalParameter || generated == null ||
+            foreachLocal == null ||
             '.' in property || '[' in property || ']' in property ||
-            admission.locals[generated.sourceLocalName] != generated.kind
+            admission.locals[foreachLocal.sourceLocalName] != foreachLocal.kind
         ) {
             return failed(PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-additional-authority-unproven", property)
         }
         val binding = request.parameterContract.internalBindings.singleOrNull {
-            it.name == generated.sourceLocalName && it.kind == generated.kind
+            it.name == foreachLocal.sourceLocalName && it.kind == foreachLocal.kind
         } ?: return failed(PreparationFailureKind.BINDING_RESOLUTION, "xml-foreach-additional-authority-unproven", property)
         if (mapping.parameterMode != "IN") {
             return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, "xml-preparation-parameter-mode-unsupported", property)
