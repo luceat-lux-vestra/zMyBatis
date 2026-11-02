@@ -63,8 +63,8 @@ zMyBatis must not replace, wrap, unregister, reorder, or intercept DataGrip buil
 The plugin uses `com.intellij.database.*`, including APIs that can move between IDE releases.
 
 - `pluginSinceBuild`, platform type/version, bundled database plugin declarations, and Plugin Verifier configuration form one compatibility contract.
-- The required `Verify plugin` context is authoritative for its configured target. The deterministic automated verifier baseline is IntelliJ IDEA Ultimate 2026.2.3; an additional 2026.2 target protects the declared minimum build 262.
-- DataGrip remains a product target, but a green verifier against IDEA Ultimate alone is not evidence of every DataGrip runtime path. Database Tools behavior that cannot be credibly covered by unit tests requires explicit platform/manual evidence.
+- The required `Verify plugin` context is authoritative for its configured matrix: IntelliJ IDEA Ultimate 2026.2.3 plus 2026.2, and DataGrip 2026.2.3 plus 2026.2 as a separately maintained host claim.
+- Host evidence remains asymmetric by design. IDEA Ultimate carries the maintained PostgreSQL execution suite; DataGrip separately proves packaged-plugin/service loading and the registered XML action's typed no-datasource refusal. A green verifier or runtime suite on one host must not be generalized into Java-source, native PostgreSQL, or broader Database Tools parity on the other host.
 - Raising the minimum IDE build or widening compatibility claims is a product/API decision, not a routine dependency bump.
 
 ## 5. Datasource / schema / session identity — hardened baseline

@@ -79,7 +79,7 @@ The first local run can download IDE/Starter artifacts. Semantic correctness of 
 - each test receives a fresh JUnit temporary directory;
 - the checked-in `src/integrationTest/testProject` sample is copied into that directory before IDE startup, so IDE metadata cannot mutate the repository fixture or a later scenario;
 - each scenario starts and closes its own IDE process through `runIdeWithDriver().useDriverAndCloseIde`;
-- before opening the project, each host uses a separate no-project activation seed: IDEA Ultimate persists `idea.key`, while DataGrip persists `datagrip.key`; supplied-license or native `StartTrial` activation completes before project-tree reads begin;
+- IDEA Ultimate uses the isolated no-project activation seed and persists `idea.key` before project-tree reads begin; DataGrip uses Starter-managed licensing/bootstrap directly and explicitly verifies that the IDEA-specific `StartTrial` action is not a valid bootstrap assumption;
 - the database scenarios create PostgreSQL datasource state only inside each temporary Starter project through maintained Database Tools UI; pinned pgJDBC is copied only into the isolated Starter IDE config and registered as a local Database Tools driver library, while the exact normal plugin ZIP remains unchanged;
 - datasource choice, parameter input, preview confirmation, and result-table observation use maintained Driver component APIs rather than screen coordinates or correctness sleeps;
 - readiness uses Driver `waitForIndicators` / bounded component waits, not correctness sleeps;
@@ -100,9 +100,9 @@ Each host manifest records:
 
 The DataGrip job is permanently cache-read-only and never becomes a second protected-main cache writer.
 
-On failure it archives the Gradle/JUnit result plus bounded per-test IDE diagnostics (`log/idea.log` and screenshots when present); it deliberately does not archive the entire Starter test tree. E2E remains separate from the required `Merge Gate`; the gate aggregates the ordinary Build, Test, Qodana, Plugin Verifier, workflow-policy, and Dependency Review component jobs.
+On failure it archives the Gradle/JUnit result plus bounded per-test IDE diagnostics (`log/idea.log` and screenshots when present); it deliberately does not archive the entire Starter test tree. For pull requests, the canonical Build DAG feeds the applicable reusable Starter/Driver E2E result into `Merge Gate` alongside Build, Test, Qodana, Plugin Verifier, workflow-policy, dependency-submission validation, and Dependency Review.
 
-Issue #130 completed the harness and its initial repeatability rollout. The current `.github/merge-gate-policy.yml` does **not** make E2E an unconditional required status check for every PR; the workflow remains separately visible process-level evidence. Applicability is decided per change: when installed-plugin or user-path behavior is part of the changed invariant, the relevant Starter/Driver scenario must pass on the exact final PR HEAD before merge. A lower-level-only change may record E2E as not applicable with a layer-based reason.
+Issue #130 completed the harness and its initial repeatability rollout. The ruleset still requires only the aggregate `Merge Gate` context rather than an unconditional standalone E2E status. E2E applicability is decided inside the Build DAG: ready non-doc PRs require the reusable Starter/Driver job, while non-applicable scope is represented explicitly rather than inferred from a missing check.
 
 ## E2E applicability for future work
 

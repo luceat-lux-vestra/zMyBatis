@@ -67,15 +67,15 @@ object XmlMapperPreparationEngine {
     private const val NAMED_MAP_PROPERTY_MISSING =
         "xml-preparation-named-map-property-missing"
     private const val PARAMETER_OBJECT_FALLBACK_RULE =
-        "mybatis-3.5.19-default-parameter-handler-type-handler-fallback"
+        "mybatis-default-parameter-handler-type-handler-fallback"
     private const val RAW_PARAMETER_OBJECT_FALLBACK_RULE =
-        "mybatis-3.5.19-dynamic-context-fallback-parameter-object"
+        "mybatis-dynamic-context-fallback-parameter-object"
     private const val PARAMETER_OBJECT_PROPERTY_RULE =
-        "mybatis-3.5.19-default-parameter-handler-meta-object-property"
+        "mybatis-default-parameter-handler-meta-object-property"
     private const val NAMED_MAP_PROPERTY_RULE =
-        "mybatis-3.5.19-default-parameter-handler-named-map-property"
+        "mybatis-default-parameter-handler-named-map-property"
     private const val GENERIC_ALIAS_RULE =
-        "mybatis-3.5.19-param-name-resolver-generic"
+        "mybatis-param-name-resolver-generic"
     private const val MAPPING_PROPERTY_MISSING = "xml-preparation-mapping-property-missing"
     private const val MAPPING_PROPERTY_NESTED = "xml-preparation-nested-mapping-unsupported"
     private const val MAPPING_ALIAS_UNRESOLVED = "xml-preparation-mapping-alias-unresolved"
@@ -497,7 +497,7 @@ object XmlMapperPreparationEngine {
     }
 
     /**
-     * MyBatis 3.5.19 Resources.classForName() falls back through default, TCCL, its own loader,
+     * MyBatis Resources.classForName() falls back through default, TCCL, its own loader,
      * and the system classloader, and initializes a class once found. This dedicated Resources copy
      * is hardened once during isolated-runtime initialization and is never mutated per preparation.
      * prepareWithContextLoader() pins the TCCL leg to the same isolated loader for each call.

@@ -39,7 +39,7 @@ class XmlNamedMapPropertyContractTest {
         assertEquals("payload.id", evidence.mappingProperty)
         assertEquals("id", evidence.key)
         assertEquals(
-            "mybatis-3.5.19-default-parameter-handler-named-map-property",
+            "mybatis-default-parameter-handler-named-map-property",
             evidence.ruleId,
         )
         assertTrue(
