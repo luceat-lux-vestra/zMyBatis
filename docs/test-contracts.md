@@ -496,7 +496,10 @@ cost and reachable-graph cost remain distinguishable. It exercises the maintaine
 dependency/source capture and emitting elapsed time plus exact graph/source dimensions under the same
 `ZMYBATIS_XML_SCALE` prefix.
 
-The root `test` task promotes only the dedicated `ZMYBATIS_XML_SCALE` / `ZMYBATIS_INPUT_SCALE` measurement records into the Gradle lifecycle log, so successful CI retains measured values without enabling all test standard streams. These are reproducible CI evidence dimensions, not product-wide performance limits. Test timeouts
+The root `test` task promotes only the dedicated `ZMYBATIS_XML_SCALE`, `ZMYBATIS_INPUT_SCALE`,
+`ZMYBATIS_PREPARATION_SCALE`, and `ZMYBATIS_RESOURCE_LIFECYCLE` measurement records into the
+Gradle lifecycle log, so successful CI retains measured values without enabling all test standard
+streams. These are reproducible CI evidence dimensions, not product-wide performance limits. Test timeouts
 remain hang guards only, and elapsed values are observations for before/after comparison. The slice
 adds no mapper cache/index and no new XML count/byte limit. Retained-resource behavior is measured by #476, and DataGrip host compatibility/runtime evidence is maintained separately by #478.
 
@@ -634,3 +637,30 @@ isolated MyBatis preparation.
 large-collection preparation through the registered candidate path, preserve off-EDT/cancellation
 authority, and prove the resulting unsupported multi-binding artifact still fails closed. Timings are
 comparison observations, not product SLAs; any concrete defect must be split into its own bounded fix.
+
+
+`LeapExecutionPreparationScaleProjectFixtureTest` makes that obligation executable without adding
+production instrumentation. It uses one source-authorized Java-annotation `<foreach>` contract and
+the current stock-MyBatis boundary at increasing collection cardinalities **128 / 1,024 / 4,096**.
+Each case records the collection item count, structured input-node count, emitted ordered-binding and
+placeholder cardinality, SQL character count, preparation elapsed observation and full candidate
+elapsed observation under the `ZMYBATIS_PREPARATION_SCALE` prefix. The fixture requires exact
+linear mapping growth and then sends the same source/contract/input through
+`LeapExecutionCandidateCoordinator`; because every measured case has more than one ordered binding,
+the maintained PostgreSQL BIGINT materializer must fail with
+`BINDING_COUNT_UNSUPPORTED` rather than invent an executable artifact.
+
+A second 4,096-item case goes through the shipping `LeapExecutionCandidateAdapter` under a real
+`Task.Backgroundable`. A deterministic fixture gate holds that worker while an independent EDT
+sentinel advances, proving the large candidate path is not executed on the EDT. Invocation authority
+is then invalidated at the coordinator's first probe **after MyBatis preparation returns**; the only
+observable completion must be `InvocationInvalidated`, so stale large-preparation completion cannot
+continue into materialization, approval or native Database Tools delivery. The existing
+`LeapExecutionCandidateAdapterProjectFixtureTest` continues to own real ProgressIndicator
+cancellation at the same shipping background boundary; #494 adds the large-workload post-preparation
+invalidation case rather than duplicating that generic cancellation contract.
+
+The cardinalities are reproducible evidence points, not product limits. The fixture deliberately
+records deterministic resource cardinalities (input nodes, mappings/placeholders and SQL size) rather
+than forced-GC heap guesses. Its timeouts are hang guards and its elapsed values remain comparative
+observations, not latency SLAs.
