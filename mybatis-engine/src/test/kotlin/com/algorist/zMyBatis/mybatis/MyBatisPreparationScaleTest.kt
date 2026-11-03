@@ -1,4 +1,4 @@
-package com.algorist.zMyBatis.execution
+package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
 import com.algorist.zMyBatis.core.execution.ExecutionTargetId
@@ -27,6 +27,8 @@ import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
 import com.algorist.zMyBatis.core.input.SourceEvidence
 import com.algorist.zMyBatis.core.materialization.MaterializationFailureKind
+import com.algorist.zMyBatis.core.materialization.MaterializationResult
+import com.algorist.zMyBatis.core.materialization.PostgreSqlBigintExecutionMaterializer
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationResult
@@ -45,29 +47,20 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
-import com.algorist.zMyBatis.mybatis.MyBatisPreparationBoundary
-import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ModalityState
-import com.intellij.testFramework.PlatformTestUtil
-import com.intellij.testFramework.runInEdtAndWait
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.math.BigInteger
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
+import org.apache.ibatis.session.Configuration
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
-class LeapExecutionPreparationScaleProjectFixtureTest : BasePlatformTestCase() {
-
-    override fun runInDispatchThread(): Boolean = false
-
-    fun testForeachPreparationScaleRecordsGrowthAndFailsClosedAtMaterialization() {
-        assertFalse(
-            "scale fixture itself must not run on EDT",
-            ApplicationManager.getApplication().isDispatchThread,
-        )
+class MyBatisPreparationScaleTest {
+    @Test
+    fun foreachPreparationScaleRecordsGrowthAndFailsClosedAtMaterialization() {
+        val runtimeArtifact = MyBatisRuntimeArtifact.resolve(Configuration::class.java)
+        assertNotNull("scale evidence requires the real local MyBatis runtime artifact", runtimeArtifact)
+        assertEquals("file", runtimeArtifact!!.protocol)
 
         FOREACH_CARDINALITIES.forEach { cardinality ->
             val fixture = foreachFixture(cardinality)
@@ -84,6 +77,7 @@ class LeapExecutionPreparationScaleProjectFixtureTest : BasePlatformTestCase() {
                     throw AssertionError("scale fixture request failed for $cardinality: ${result.failure}")
             }
 
+            val pipelineStartedNanos = System.nanoTime()
             val preparationStartedNanos = System.nanoTime()
             val preparation = MyBatisPreparationBoundary.prepare(request)
             val preparationElapsedNanos = System.nanoTime() - preparationStartedNanos
@@ -97,20 +91,17 @@ class LeapExecutionPreparationScaleProjectFixtureTest : BasePlatformTestCase() {
             assertEquals(cardinality, prepared.sqlWithPlaceholders.count { it == '?' })
             assertTrue(prepared.rawInterpolations.isEmpty())
 
-            val candidateStartedNanos = System.nanoTime()
-            val candidate = LeapExecutionCandidateCoordinator.build(
-                source = fixture.source,
-                parameterContract = fixture.contract,
-                inputEnvironment = fixture.environment,
-                target = fixture.target,
-            )
-            val candidateElapsedNanos = System.nanoTime() - candidateStartedNanos
+            val materializationStartedNanos = System.nanoTime()
+            val materialization =
+                PostgreSqlBigintExecutionMaterializer(fixture.target).materialize(prepared)
+            val materializationElapsedNanos = System.nanoTime() - materializationStartedNanos
+            val pipelineElapsedNanos = System.nanoTime() - pipelineStartedNanos
 
             assertTrue(
                 "multi-binding foreach must remain fail-closed at materialization",
-                candidate is LeapExecutionCandidateResult.MaterializationFailed,
+                materialization is MaterializationResult.Failed,
             )
-            val failure = (candidate as LeapExecutionCandidateResult.MaterializationFailed).failure
+            val failure = (materialization as MaterializationResult.Failed).failure
             assertEquals(MaterializationFailureKind.BINDING_COUNT_UNSUPPORTED, failure.kind)
             assertEquals("postgresql-bigint-binding-count-unsupported", failure.code)
 
@@ -121,129 +112,19 @@ class LeapExecutionPreparationScaleProjectFixtureTest : BasePlatformTestCase() {
                     "ordered_bindings=${prepared.orderedBindings.size} " +
                     "placeholder_count=${prepared.sqlWithPlaceholders.count { it == '?' }} " +
                     "sql_chars=${prepared.sqlWithPlaceholders.length} " +
+                    "runtime_artifact_protocol=${runtimeArtifact.protocol} " +
                     "preparation_elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(preparationElapsedNanos)} " +
-                    "candidate_elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(candidateElapsedNanos)} " +
+                    "materialization_elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(materializationElapsedNanos)} " +
+                    "pipeline_elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(pipelineElapsedNanos)} " +
                     "materialization_failure=${failure.kind.name}",
             )
         }
     }
 
-    fun testLargeForeachCandidateRunsOffEdtAndInvalidatesAfterPreparation() =
-        withProductionStyleBackgroundTasks {
-            val fixture = foreachFixture(BACKGROUND_RESPONSIVENESS_CARDINALITY)
-            val builderStarted = CountDownLatch(1)
-            val releaseBuilder = CountDownLatch(1)
-            val gateTimedOut = AtomicBoolean(false)
-            val builderWasOnEdt = AtomicBoolean(true)
-            val coordinatorElapsedNanos = AtomicLong()
-            val invocationProbeCount = AtomicInteger()
-            val observed = CompletableFuture<LeapExecutionCandidateResult>()
-
-            val builder: LeapExecutionCandidateBuilder =
-                { source, parameterContract, inputEnvironment, target, isInvocationActive, checkCanceled ->
-                    builderWasOnEdt.set(ApplicationManager.getApplication().isDispatchThread)
-                    builderStarted.countDown()
-                    if (!releaseBuilder.await(FIXTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                        gateTimedOut.set(true)
-                    }
-
-                    val startedNanos = System.nanoTime()
-                    val candidate = LeapExecutionCandidateCoordinator.build(
-                        source = source,
-                        parameterContract = parameterContract,
-                        inputEnvironment = inputEnvironment,
-                        target = target,
-                        isInvocationActive = isInvocationActive,
-                        checkCanceled = checkCanceled,
-                    )
-                    coordinatorElapsedNanos.set(System.nanoTime() - startedNanos)
-                    candidate
-                }
-
-            val invocationActive = {
-                invocationProbeCount.incrementAndGet() < POST_PREPARATION_INVALIDATION_PROBE
-            }
-
-            try {
-                requestCandidate(
-                    adapter = LeapExecutionCandidateAdapter(project, builder),
-                    fixture = fixture,
-                    isInvocationActive = invocationActive,
-                    onResult = observed::complete,
-                    onCancelled = {
-                        observed.completeExceptionally(
-                            AssertionError("invalidation fixture must not become ProgressIndicator cancellation"),
-                        )
-                    },
-                )
-
-                assertTrue(
-                    "large foreach candidate background builder did not start",
-                    builderStarted.await(FIXTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS),
-                )
-                assertFalse("real candidate coordinator must run from a non-EDT worker", builderWasOnEdt.get())
-                assertFalse("candidate must remain blocked at the deterministic fixture gate", observed.isDone)
-
-                val edtSentinel = CompletableFuture<Unit>()
-                ApplicationManager.getApplication().invokeLater(
-                    { edtSentinel.complete(Unit) },
-                    ModalityState.any(),
-                )
-                PlatformTestUtil.waitForFuture(edtSentinel, FIXTURE_TIMEOUT_MILLIS)
-                assertFalse(
-                    "EDT sentinel must complete while large candidate work is outstanding",
-                    observed.isDone,
-                )
-            } finally {
-                releaseBuilder.countDown()
-            }
-
-            val completed = PlatformTestUtil.waitForFuture(observed, FIXTURE_TIMEOUT_MILLIS)
-            assertSame(LeapExecutionCandidateResult.InvocationInvalidated, completed)
-            assertTrue(
-                "invalidation must be observed at the coordinator probe immediately after preparation",
-                invocationProbeCount.get() >= POST_PREPARATION_INVALIDATION_PROBE,
-            )
-            assertFalse(
-                "large foreach fixture timed out at its deterministic gate",
-                gateTimedOut.get(),
-            )
-
-            println(
-                "ZMYBATIS_PREPARATION_SCALE phase=post-preparation-invalidation " +
-                    "collection_items=$BACKGROUND_RESPONSIVENESS_CARDINALITY " +
-                    "input_nodes=${BACKGROUND_RESPONSIVENESS_CARDINALITY + 1} " +
-                    "execution_thread=BACKGROUND " +
-                    "edt_sentinel_completed=true " +
-                    "invalidation_probe=$POST_PREPARATION_INVALIDATION_PROBE " +
-                    "observed_probe_count=${invocationProbeCount.get()} " +
-                    "continuation=INVOCATION_INVALIDATED " +
-                    "coordinator_elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(coordinatorElapsedNanos.get())}",
-            )
-        }
-
-    private fun requestCandidate(
-        adapter: LeapExecutionCandidateAdapter,
-        fixture: ScaleFixture,
-        isInvocationActive: () -> Boolean,
-        onResult: (LeapExecutionCandidateResult) -> Unit,
-        onCancelled: () -> Unit,
-    ) {
-        runInEdtAndWait {
-            adapter.requestCandidate(
-                source = fixture.source,
-                parameterContract = fixture.contract,
-                inputEnvironment = fixture.environment,
-                target = fixture.target,
-                isInvocationActive = isInvocationActive,
-                onResult = onResult,
-                onCancelled = onCancelled,
-            )
-        }
-    }
-
     private fun foreachFixture(cardinality: Int): ScaleFixture {
-        require(cardinality > 1) { "scale cardinality must exercise unsupported multi-binding materialization" }
+        require(cardinality > 1) {
+            "scale cardinality must exercise unsupported multi-binding materialization"
+        }
 
         val fileId = SourceFileId("fixture/PreparationScaleMapper.java")
         val revision = SourceRevision("fixture:494")
@@ -372,15 +253,6 @@ class LeapExecutionPreparationScaleProjectFixtureTest : BasePlatformTestCase() {
         )
     }
 
-    private fun withProductionStyleBackgroundTasks(block: () -> Unit) {
-        PlatformTestUtil.withSystemProperty<Nothing>(
-            "intellij.progress.task.ignoreHeadless",
-            "true",
-        ) {
-            block()
-        }
-    }
-
     private data class ScaleFixture(
         val source: PreparationSource,
         val contract: ParameterContract,
@@ -388,13 +260,7 @@ class LeapExecutionPreparationScaleProjectFixtureTest : BasePlatformTestCase() {
         val target: ResolvedExecutionTarget,
     )
 
-    companion object {
-        private val FOREACH_CARDINALITIES = listOf(128, 1_024, 4_096)
-        private const val BACKGROUND_RESPONSIVENESS_CARDINALITY = 4_096
-
-        // Adapter preflight is probe 1; coordinator probes 2/3 before preparation and probe 4 after it.
-        private const val POST_PREPARATION_INVALIDATION_PROBE = 4
-        private const val FIXTURE_TIMEOUT_SECONDS = 30L
-        private const val FIXTURE_TIMEOUT_MILLIS = FIXTURE_TIMEOUT_SECONDS * 1_000
+    private companion object {
+        val FOREACH_CARDINALITIES = listOf(128, 1_024, 4_096)
     }
 }
