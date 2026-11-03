@@ -496,7 +496,11 @@ cost and reachable-graph cost remain distinguishable. It exercises the maintaine
 dependency/source capture and emitting elapsed time plus exact graph/source dimensions under the same
 `ZMYBATIS_XML_SCALE` prefix.
 
-The root `test` task promotes only the dedicated `ZMYBATIS_XML_SCALE` / `ZMYBATIS_INPUT_SCALE` measurement records into the Gradle lifecycle log, so successful CI retains measured values without enabling all test standard streams. These are reproducible CI evidence dimensions, not product-wide performance limits. Test timeouts
+The Test job promotes only the dedicated measurement prefixes needed for CI readback without
+enabling arbitrary test standard streams: the root test task owns `ZMYBATIS_XML_SCALE`,
+`ZMYBATIS_INPUT_SCALE`, and `ZMYBATIS_RESOURCE_LIFECYCLE`, while `:mybatis-engine:test`
+promotes `ZMYBATIS_PREPARATION_SCALE`. These are reproducible CI evidence dimensions, not
+product-wide performance limits. Test timeouts
 remain hang guards only, and elapsed values are observations for before/after comparison. The slice
 adds no mapper cache/index and no new XML count/byte limit. Retained-resource behavior is measured by #476, and DataGrip host compatibility/runtime evidence is maintained separately by #478.
 
@@ -634,3 +638,38 @@ isolated MyBatis preparation.
 large-collection preparation through the registered candidate path, preserve off-EDT/cancellation
 authority, and prove the resulting unsupported multi-binding artifact still fails closed. Timings are
 comparison observations, not product SLAs; any concrete defect must be split into its own bounded fix.
+
+
+`MyBatisPreparationScaleTest` makes the remaining scale obligation executable in
+`:mybatis-engine:test`, where the real MyBatis 3.6.0 dependency has a local file-backed runtime
+artifact. The fixture asserts that precondition through `MyBatisRuntimeArtifact` before measuring;
+it does not bypass or weaken the production fail-closed artifact resolver.
+
+The fixture uses one source-authorized Java-annotation `<foreach>` contract and the same
+`MyBatisPreparationBoundary` used by the registered candidate path at increasing collection
+cardinalities **128 / 1,024 / 4,096**. Each case records collection items, structured input-node
+count, emitted ordered-binding/placeholder cardinality, SQL character count, preparation elapsed,
+materialization elapsed and combined pipeline elapsed under the `ZMYBATIS_PREPARATION_SCALE`
+prefix. Exact linear mapping growth is required.
+
+The prepared artifact is then passed to the shipping `PostgreSqlBigintExecutionMaterializer`.
+Because every measured case has more than one ordered binding, materialization must fail with
+`BINDING_COUNT_UNSUPPORTED`; no executable artifact or support expansion is admitted.
+
+The root IntelliJ unit harness is deliberately not used as authority for the dynamic-MyBatis scale
+measurement. Its flattened IntelliJ test classloader can load MyBatis without a recoverable local
+code-source artifact, and the production isolation boundary correctly rejects that condition as
+`mybatis-code-source-unavailable`. Relocating the measurement to `:mybatis-engine:test` preserves
+that fail-closed rule instead of introducing a test-only artifact override.
+
+Shipping scheduling and stale-work ownership remain independently authoritative in
+`LeapExecutionCandidateAdapterProjectFixtureTest`: the real `Task.Backgroundable` candidate
+boundary runs off the EDT, keeps an independent EDT sentinel responsive, propagates
+ProgressIndicator cancellation, and suppresses delayed completion after invocation invalidation.
+Those scheduler/lifecycle invariants compose with this scale measurement; #494 does not duplicate
+them with a harness that cannot satisfy the dynamic-runtime artifact precondition.
+
+The cardinalities are reproducible evidence points, not product limits. The fixture deliberately
+records deterministic resource cardinalities (input nodes, mappings/placeholders and SQL size)
+rather than forced-GC heap guesses. Timeouts elsewhere remain hang guards and these elapsed values
+remain comparative observations, not latency SLAs.

@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     alias(libs.plugins.kotlin)
 }
@@ -16,4 +18,14 @@ dependencies {
     implementation(kotlin("stdlib"))
 
     testImplementation(libs.junit)
+}
+
+
+tasks.withType<Test>().configureEach {
+    addTestOutputListener { _, event ->
+        event.message
+            .lineSequence()
+            .filter { it.startsWith("ZMYBATIS_PREPARATION_SCALE ") }
+            .forEach { logger.lifecycle(it) }
+    }
 }
