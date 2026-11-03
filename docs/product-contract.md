@@ -90,7 +90,7 @@ Canonical identity includes:
 
 Overloads cannot share statement/history identity.
 
-Canonical statement/method identity is owned by #62. #63 consumes it for remembered-input isolation; #67 only verifies the final compatibility/evidence contract.
+Canonical statement/method identity is owned by #62. #63 consumes it for remembered-input isolation; #67 supplied the final compatibility/readiness verification rather than owning either design.
 
 ## 5. XML composition policy
 
@@ -249,7 +249,7 @@ A small safety patch may remove current INFO leakage before the full Leap cutove
 - DataGrip 2026.2.3 plus the 2026.2 minimum line are separate Plugin Verifier targets. Its process proof is separately visible and currently bounded to packaged-plugin/service loading plus the registered XML action's typed no-datasource refusal and clean shutdown.
 - DataGrip host evidence does not imply Java-annotation parity or native PostgreSQL result/history parity; those claims require explicit host-specific proof before they can be added.
 - Database Tools APIs are isolated behind adapters so platform drift has a bounded replacement surface.
-- Public Marketplace/README compatibility claims must match exact-head #67 evidence before Leap release.
+- Public Marketplace/README compatibility claims must match the maintained exact-head verifier/runtime evidence established by #67 and be refreshed whenever the compatibility claim changes.
 
 ## 16. Product workflow
 
@@ -285,7 +285,7 @@ Removed evaluator/dialog compatibility fields are intentionally absent from curr
 - #64 — stock-MyBatis preparation and a verified limited-fidelity SQL-text materialization contract, preserving structured ordered bindings until the proven executable artifact boundary.
 - #65 — target/session descriptor and Database Tools execution resources.
 - #66 — thin IDE action, threading/cancellation/confirmation/user workflow.
-- #67 — diagnostics/privacy, host compatibility, performance/resources, migration cleanup, public-claim reconciliation.
+- #67 — completed quality/readiness evidence track covering diagnostics/privacy, host compatibility, performance/resources, migration cleanup and public-claim reconciliation.
 
 #61 does **not** stay open until every legacy quirk is characterized or every downstream implementation is finished. Additional characterization is required only when it can falsify a concrete target decision.
 

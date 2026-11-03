@@ -1,14 +1,14 @@
 # Leap target architecture
 
-**2026-10-13 rebaseline / 2026-10-25 cutover note:** [Leap execution rebaseline](leap-execution-rebaseline.md) records the #391 reset. The contract-driven action, packaged MyBatis engine, bounded materializers and v3 target path are now shipping; this document describes their current ownership plus remaining #67 readiness obligations.
+**2026-10-13 rebaseline / 2026-10-25 cutover note:** [Leap execution rebaseline](leap-execution-rebaseline.md) records the #391 reset. The contract-driven action, packaged MyBatis engine, bounded materializers and v3 target path are now shipping; this document describes their current ownership plus the quality/readiness evidence completed by #67.
 
 Status: target architecture for Epic #60 / architecture task #101.
 
 Audit baseline: `main` `249d3a5058fee71b858cb7926dbb30864ee15858`.
 
-Current-state note: the physical `:core` / `:mybatis-engine` split and single registered execution authority have landed. #60/#67 remain open for final diagnostics, host, performance/resource and release-readiness evidence rather than a second runtime cutover.
+Current-state note: the physical `:core` / `:mybatis-engine` split and single registered execution authority have landed. #67's diagnostics, host, performance/resource, documentation and legacy-deletion evidence has landed; #60 alone owns the remaining Epic-level Leap closure decision.
 
-This document defines the current Leap architecture and the remaining target-quality obligations. Implementation classes are not preservation constraints; the contract and evidence boundaries are.
+This document defines the current Leap architecture and its maintained target-quality contracts. Implementation classes are not preservation constraints; the contract and evidence boundaries are.
 
 The product policy is defined by [product-contract.md](product-contract.md). Repository/review discipline remains defined by `AGENTS.md` and `.github/merge-gate-policy.yml`.
 
@@ -478,7 +478,7 @@ Only genuine internal invariants use fatal/error-level diagnostic reporting. Use
 - unknown XML/OGNL is parsed as untrusted project source and must not gain additional host capabilities through custom global accessors;
 - confirmation is a UX safety boundary, not authorization.
 
-PR #117 removed the known normal-level SQL/input leakage before cutover. Current logging evidence remains intentionally bounded rather than a semantic taint proof, and #67 still owns final privacy/diagnostic review; there is no retained legacy execution architecture to preserve.
+PR #117 removed the known normal-level SQL/input leakage before cutover. Current logging evidence remains intentionally bounded rather than a semantic taint proof; #67 completed the final privacy/diagnostic review, and there is no retained legacy execution architecture to preserve.
 
 ## 14. Migration and deletion sequence (updated 2026-10-25)
 
@@ -496,7 +496,7 @@ No binding-count, mapper-kind, setting, or failure-path routing may reintroduce 
 
 ### Phase R4 — release/compatibility evidence
 
-#67 still owns final host compatibility, responsiveness/resource evidence, diagnostics/privacy review, documentation reconciliation, and release-readiness proof. IDEA Ultimate evidence does not automatically prove DataGrip or wider hosts.
+#67 completed the host-compatibility, responsiveness/resource, diagnostics/privacy, documentation-reconciliation and legacy-deletion readiness evidence. These remain maintained contracts: IDEA Ultimate evidence does not automatically prove DataGrip or wider hosts.
 
 See [the dated architecture reset](leap-execution-rebaseline.md) for the historical fidelity rebaseline and GO/NO-GO rationale.
 
@@ -558,9 +558,9 @@ Every PR remains exact-HEAD proof-obligation gated. Any HEAD move invalidates ap
 - #64 — stock MyBatis preparation, typed `PreparedExecution`, strict supported dialect/type SQL-text materializer and single execution-artifact handoff.
 - #65 — stable target/session descriptors and Database Tools execution resources.
 - #66 — thin action, threading, cancellation, confirmation, UX orchestration.
-- #67 — diagnostics/privacy, compatibility, performance/resource evidence, documentation and legacy deletion closure.
+- #67 — completed quality/readiness evidence track for diagnostics/privacy, compatibility, performance/resources, documentation and legacy deletion.
 
-Canonical Java overload identity is #62 work. Remembered-input isolation is #63 work. #67 validates these contracts; it does not own their design.
+Canonical Java overload identity is #62 work. Remembered-input isolation is #63 work. #67 supplied final readiness validation for these contracts; it does not own their design.
 
 ## 17. First code-bearing task after #391
 
