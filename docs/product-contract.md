@@ -279,7 +279,7 @@ Removed evaluator/dialog compatibility fields are intentionally absent from curr
 
 ## 18. Track ownership and closure
 
-- #61 — original closed product-capability contract checkpoint; #391 updates the execution target while #60 owns the overall Leap completion.
+- #61 — original closed product-capability contract checkpoint; #391 updated the execution target within the completed Leap baseline tracked by #60.
 - #62 — source snapshots, dependency graph, canonical XML/Java statement identity.
 - #63 — input provenance/codecs/UI/retention.
 - #64 — stock-MyBatis preparation and a verified limited-fidelity SQL-text materialization contract, preserving structured ordered bindings until the proven executable artifact boundary.
