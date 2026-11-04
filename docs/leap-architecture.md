@@ -6,7 +6,7 @@ Status: target architecture for Epic #60 / architecture task #101.
 
 Audit baseline: `main` `249d3a5058fee71b858cb7926dbb30864ee15858`.
 
-Current-state note: the physical `:core` / `:mybatis-engine` split and single registered execution authority have landed. #67's diagnostics, host, performance/resource, documentation and legacy-deletion evidence has landed; #60 alone owns the remaining Epic-level Leap closure decision.
+Current-state note: the physical `:core` / `:mybatis-engine` split and single registered execution authority have landed. #67's diagnostics, host, performance/resource, documentation and legacy-deletion evidence has landed; together these form the completed Leap architecture/readiness baseline under Epic #60.
 
 This document defines the current Leap architecture and its maintained target-quality contracts. Implementation classes are not preservation constraints; the contract and evidence boundaries are.
 

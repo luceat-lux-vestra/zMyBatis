@@ -185,7 +185,7 @@ JetBrains Marketplace `Source Code` and `License` are Marketplace-admin metadata
 
 ## 10. Current product gaps versus Leap target
 
-Epic #60 still owns final Leap completion, but the production architecture is now single-path: registered action → authoritative source/input contracts → isolated MyBatis preparation → proven materialization → exact target → Database Tools delivery. The former execution/evaluator/input compatibility architecture and undistributed v2 persistence have been removed.
+Epic #60 is the provenance Epic for the completed Leap baseline. The production architecture is single-path: registered action → authoritative source/input contracts → isolated MyBatis preparation → proven materialization → exact target → Database Tools delivery. The former execution/evaluator/input compatibility architecture and undistributed v2 persistence have been removed.
 
 The physical dependency graph remains enforced: root IntelliJ plugin → `:core` and `:mybatis-engine`; `:mybatis-engine` → `:core` and MyBatis; `:core` remains free of IntelliJ/Database Tools/MyBatis dependencies. Presence of the modules is not correctness evidence; exact registered-action behavior must remain proven.
 
