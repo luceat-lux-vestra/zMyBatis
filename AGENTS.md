@@ -39,14 +39,14 @@ The registered action has no retained legacy execution fallback. Removed proxy/e
 - Materialized SQL text is a bounded zMyBatis compatibility representation; do not describe it as JDBC/TypeHandler-equivalent without dedicated evidence.
 - Only source/input/dialect/type shapes admitted by the registered Leap path may execute; unsupported legacy-characterized scalar/object behavior is not a production fallback.
 - Internal MyBatis variables such as `<bind>` names and `foreach` item/index must not be invented as caller inputs.
-- Unsupported or ambiguous source/input/evaluation behavior must not silently become plausible executable SQL. The stronger typed-failure architecture is owned by Leap #60/#64/#67.
+- Unsupported or ambiguous source/input/evaluation behavior must not silently become plausible executable SQL. The stronger typed-failure architecture is defined by Leap #60/#64; #67 supplied its final quality/readiness evidence.
 - Preview and execution must not silently diverge. Full Database Tools click-through fidelity remains a platform/integration evidence gap documented in `docs/test-contracts.md`.
 
 ### Privacy/logging hardened baseline
 
 PR #117 removed the known INFO-level leakage of raw parameter values, extracted/dialog values, and rendered SQL from the shipping action. #458 extends the same boundary to source/target identities and platform exception detail. Current normal logging retains only non-sensitive metadata such as stage/type, parameter counts, and SQL length. `SensitiveLoggingContractTest` guards the maintained direct-interpolation regression patterns across production Kotlin logging call sites.
 
-This is a bounded source-level regression guard, not semantic taint analysis or proof that every possible future alias/sink is safe. New code must not log raw parameter/input values, remembered values, raw `${}` content, rendered/materialized SQL, credentials, mapper/source identities, datasource/schema display names, console titles, persisted selection IDs, platform exception messages, or equivalent sensitive source-derived content. Genuine fatal/platform throwables may still be attached to fatal diagnostics and rethrown; ordinary expected failures remain typed without retaining raw detail payload solely for logging. This hardening does **not** validate or preserve the legacy action/evaluator architecture; #67 continues to own the final privacy/diagnostic evidence.
+This is a bounded source-level regression guard, not semantic taint analysis or proof that every possible future alias/sink is safe. New code must not log raw parameter/input values, remembered values, raw `${}` content, rendered/materialized SQL, credentials, mapper/source identities, datasource/schema display names, console titles, persisted selection IDs, platform exception messages, or equivalent sensitive source-derived content. Genuine fatal/platform throwables may still be attached to fatal diagnostics and rethrown; ordinary expected failures remain typed without retaining raw detail payload solely for logging. This hardening does **not** validate or preserve the legacy action/evaluator architecture; #67 completed the bounded privacy/diagnostic closure evidence, and future changes must keep this guard current.
 
 ## 3. DataGrip action and IDE boundary
 
@@ -99,7 +99,7 @@ Source capture, input collection, preparation, preview, formatting, settings, di
 - Project shutdown must win deterministically over startup pruning/selection/resource-acquisition/execution work.
 - Consoles, listeners, callbacks, dialogs, editors, PSI objects, and scheduled work must not retain disposed project state.
 - Re-check project/editor/source/target/lifecycle authority after asynchronous and modal boundaries. The source graph is revalidated before delivery; the exact target is re-resolved; the Database Tools adapter rejects disposed console/editor resources after delayed boundaries and immediately before native query invocation. Structural tests do not substitute for real IU/DataGrip disposal evidence.
-- Expected unsupported/degraded/user failures are typed outcomes and must not become SQL or IntelliJ fatal errors. Cancellation before native invocation means no query invocation. The action edge may present a redacted stage-level refusal and has no alternate execution authority to retry through. The deleted legacy evaluator/action and its removed characterization tests are not current product evidence. Project-scoped live-console cleanup still preserves cancellation/fatal precedence, and #67 owns the remaining diagnostic/privacy and lifecycle evidence.
+- Expected unsupported/degraded/user failures are typed outcomes and must not become SQL or IntelliJ fatal errors. Cancellation before native invocation means no query invocation. The action edge may present a redacted stage-level refusal and has no alternate execution authority to retry through. The deleted legacy evaluator/action and its removed characterization tests are not current product evidence. Project-scoped live-console cleanup still preserves cancellation/fatal precedence; #67's completed quality track contains the maintained diagnostic/privacy and lifecycle closure evidence.
 
 ## 7. Tests and evidence
 
@@ -189,13 +189,13 @@ Epic #60 still owns final Leap completion, but the production architecture is no
 
 The physical dependency graph remains enforced: root IntelliJ plugin → `:core` and `:mybatis-engine`; `:mybatis-engine` → `:core` and MyBatis; `:core` remains free of IntelliJ/Database Tools/MyBatis dependencies. Presence of the modules is not correctness evidence; exact registered-action behavior must remain proven.
 
-Remaining #67 obligations are quality/readiness work, not permission to reopen architecture forks:
+The completed #67 readiness baseline is a maintenance contract, not permission to reopen architecture forks:
 
-- complete typed diagnostic/privacy review without sensitive SQL/input leakage;
-- maintain real IDEA Ultimate and separate DataGrip host evidence;
-- close responsiveness, cancellation-latency and retained-resource evidence for large/slow cases;
-- keep current docs/Marketplace wording aligned with the proven capability/materializer envelope;
-- remove any additional temporary bridge only when its current owner is identified and replacement evidence exists.
+- typed diagnostic/privacy behavior must remain free of sensitive SQL/input leakage;
+- real IDEA Ultimate and separate DataGrip host evidence must remain independently maintained;
+- responsiveness, cancellation-latency and retained-resource evidence for large/slow cases must remain reproducible;
+- current docs/Marketplace wording must stay aligned with the proven capability/materializer envelope;
+- any future temporary bridge requires an explicit current owner and deletion point.
 
 Never introduce binding-count, mapper-kind, setting, source flavor, or failure-path fallback routing. Any DBMS/type shape not explicitly proven executable remains fail-closed.
 

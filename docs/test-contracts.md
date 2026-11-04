@@ -365,8 +365,9 @@ It proves that disposal invalidates the resource flag/cache and yields typed `Co
 without execution; it also invalidates a parent before child disposal and proves eviction still
 cleans the owned children. The existing structural tests retain checks at asynchronous/native query
 boundaries, and the resource-disposal policy tests retain cancellation/fatal failure ordering.
-These fixtures do not prove every disposed editor, delayed UI callback or DataGrip runtime path;
-those broader lifecycle obligations remain #67.
+These fixtures do not prove every disposed editor, delayed UI callback or DataGrip runtime path.
+Those broader lifecycle obligations are covered independently by the completed #460/#462/#464/#466/
+#468/#476 lifecycle evidence and the #478/#480/#481 DataGrip evidence; this fixture remains narrow.
 
 E2E applicability: the maintained packaged-plugin happy path, mandatory-preview cancellation paths
 and no-datasource refusal apply on the exact final HEAD because the platform and production console
@@ -563,8 +564,9 @@ The maintained 256-input / approximately 1 MiB submission/decode/validation meas
 unchanged because #472 did not identify that path as the dominant cost. Chunk size is an
 implementation responsiveness batch, not a product parameter limit or latency SLA. The fix adds no
 pagination, virtualization, field omission, input-size rejection limit, or background Swing mutation.
-Retained-resource/lifecycle campaigning beyond this dialog callback ownership and separate DataGrip
-host evidence remain independent #67 work.
+Retained-resource/lifecycle evidence beyond this dialog callback ownership is covered independently
+by #476, while separate DataGrip host evidence is covered by #478/#480/#481; this dialog fixture
+does not subsume either boundary.
 
 ## Repeated console resource lifecycle and retention evidence
 
@@ -634,13 +636,14 @@ structured conversion at 65,536 input nodes, while #470 measures source-graph sc
 measure many UI requirements/drafts rather than one large runtime collection flowing through
 isolated MyBatis preparation.
 
-#494 owns this remaining production responsiveness envelope. It must measure representative
-large-collection preparation through the registered candidate path, preserve off-EDT/cancellation
-authority, and prove the resulting unsupported multi-binding artifact still fails closed. Timings are
-comparison observations, not product SLAs; any concrete defect must be split into its own bounded fix.
+#494 closed this production responsiveness envelope by measuring representative large-collection
+preparation through the stock-MyBatis boundary used by the registered candidate path, composing that
+measurement with the separately maintained off-EDT/cancellation authority, and proving the resulting
+unsupported multi-binding artifact still fails closed. Timings remain comparison observations, not
+product SLAs; any future concrete defect must be split into its own bounded fix.
 
 
-`MyBatisPreparationScaleTest` makes the remaining scale obligation executable in
+`MyBatisPreparationScaleTest` makes that scale obligation executable in
 `:mybatis-engine:test`, where the real MyBatis 3.6.0 dependency has a local file-backed runtime
 artifact. The fixture asserts that precondition through `MyBatisRuntimeArtifact` before measuring;
 it does not bypass or weaken the production fail-closed artifact resolver.
