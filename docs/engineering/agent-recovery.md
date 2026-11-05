@@ -140,6 +140,29 @@ Any HEAD movement invalidates prior HEAD-specific CI/review/runtime evidence unl
 
 Green CI is necessary where required but is not by itself a correctness proof.
 
+## Base advancement with unchanged HEAD
+
+This section clarifies recovery and merge judgment only. It does not weaken the repository's merge policy. `.github/merge-gate-policy.yml` remains the checked-in authority and currently declares `requireBranchUpToDate: true`; the live `main protection` ruleset also requires the strict GitHub Actions `Merge Gate`. Fresh-read those authorities again at merge time because live policy may change.
+
+Classify branch movement before deciding what prior evidence still proves:
+
+1. **PR HEAD moved** — invalidate prior HEAD-specific CI/review/runtime evidence and validate the new exact final HEAD as required.
+2. **PR HEAD unchanged; base unchanged** — apply the ordinary exact-HEAD gates.
+3. **PR HEAD unchanged; base advanced** — old evidence may still describe the unchanged HEAD itself, but it does not authorize merge against the new base. Inspect the evidence provenance, current mergeability, the base delta, the PR delta, and any semantic interaction before relying on it for a narrower diagnostic claim.
+4. **Material state is unavailable or `UNKNOWN`** — fail closed and refresh/revalidate; do not infer independence.
+
+For zMyBatis specifically, an unchanged HEAD plus an advanced base does **not** create an exception to the up-to-date-branch requirement. Before merge, satisfy the current `requireBranchUpToDate: true` / strict `Merge Gate` contract. If bringing the branch up to date, rebasing, regenerating, conflict resolution, or any other operation changes the PR HEAD, the resulting SHA is a new exact-HEAD proof unit and prior HEAD-specific PASS evidence is invalid.
+
+Evidence reuse is therefore claim-scoped, not merge authorization:
+
+- exact-HEAD evidence may still support facts that depend only on the unchanged HEAD when its producer/provenance is still applicable;
+- a successful check tied to an old synthetic merge result or old base+HEAD composition is not proof that the newly composed tree passed;
+- different filenames alone do not establish semantic independence;
+- dependency/lockfile, build configuration, compiler/toolchain, generated artifacts, test fixtures, API/schema/protocol, feature graph, workflow, and runtime-contract interactions require revalidation when they can affect the proof;
+- actual conflicts, policy drift, changed required checks, or unresolved material interaction require fresh validation rather than reuse.
+
+Do not change CI workflows, the checked-in merge-gate policy, or the live ruleset merely to make prior evidence reusable. The repository's stricter merge gate wins.
+
 ## Failure handling
 
 - Read-only interruption: fresh-read and continue.
