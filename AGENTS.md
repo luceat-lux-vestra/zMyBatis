@@ -156,6 +156,7 @@ Workflow trust-boundary rules:
 - PR-authored code cannot execute with write-scoped authority unless an exact audited event condition excludes PR execution;
 - read-only checkout jobs use `persist-credentials: false`;
 - trusted dependency-submission changes are pre-merge validated through a read-only PR adapter that runs the same pinned Gradle action in `generate-and-upload` mode; PR graphs remain `refs/pull/...` evidence and can never replace the protected-main `generate-and-submit` publisher;
+- CodeQL `init` / `analyze` pin changes are pre-merge exercised only in the read-only `Lint workflows` lane using the representative Actions language, `build-mode: none`, local SARIF, and `upload: never`; PR runtime output cannot satisfy protected-main CodeQL or release evidence authority, and routine full PR CodeQL remains disabled;
 - `Inspect code` is the authoritative Qodana gate;
 - the internal `Lint workflows` job in `build.yml` runs repository pin/trust/required-context/live-settings/release-provenance checks plus actionlint and zizmor;
 - the checked-in negative controls must continue to fail for deliberately bad fixtures;
