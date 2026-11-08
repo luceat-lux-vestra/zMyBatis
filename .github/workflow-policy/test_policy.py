@@ -436,6 +436,28 @@ jobs:
     actionlint_compat_source = (POLICY_DIR / "actionlint_compat.py").read_text(
         encoding="utf-8"
     )
+    codeql_runtime_source = (
+        POLICY_DIR / "trusted_codeql_runtime_validation.py"
+    ).read_text(encoding="utf-8")
+    expect(
+        "read-only CodeQL PR runtime adapter remains fail-closed and production-pinned",
+        all(fragment in build_source for fragment in (
+            "Verify CodeQL PR runtime adapter policy",
+            "Classify CodeQL runtime validation scope",
+            "Initialize PR-only CodeQL runtime",
+            "Analyze PR-only CodeQL runtime without upload",
+            "Verify local PR-only CodeQL runtime SARIF and reject promotion",
+            "upload: never",
+        ))
+        and all(fragment in codeql_runtime_source for fragment in (
+            "production CodeQL init/analyze pins must match",
+            "PR CodeQL runtime job gained write authority",
+            "PR CodeQL runtime must never upload security evidence",
+            "PR CodeQL runtime was admitted as trusted production evidence",
+            '"production_evidence": False',
+        )),
+        failures,
+    )
     expect(
         "actionlint self-repository shim is version-scoped and retirement-documented",
         all(fragment in actionlint_compat_source for fragment in (

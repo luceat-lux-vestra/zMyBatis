@@ -582,10 +582,15 @@ jobs:
     name: Lint workflows
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Fetch Sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
       - name: Require immutable action pins
@@ -613,6 +618,59 @@ jobs:
           python3 .github/workflow-policy/check_codeql_sarif.py --self-test
           python3 .github/workflow-policy/check_release_codeql.py --self-test
           python3 .github/workflow-policy/check_release_qodana.py --self-test
+
+      - name: Verify CodeQL PR runtime adapter policy
+        run: |
+          python3 .github/workflow-policy/trusted_codeql_runtime_validation.py self-test
+          python3 .github/workflow-policy/trusted_codeql_runtime_validation.py check-contract \
+            --codeql .github/workflows/codeql.yml \
+            --pr-workflow .github/workflows/build.yml
+
+      - name: Classify CodeQL runtime validation scope
+        id: codeql-runtime-scope
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pull="$RUNNER_TEMP/codeql-pr.json"
+          files="$RUNNER_TEMP/codeql-pr-files.json"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > "$pull"
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" > "$files"
+          python3 .github/workflow-policy/trusted_codeql_runtime_validation.py classify \
+            --pull "$pull" \
+            --pages "$files" \
+            --head "$EXPECTED_HEAD" >> "$GITHUB_OUTPUT"
+
+      - name: Initialize PR-only CodeQL runtime
+        if: ${{ steps.codeql-runtime-scope.outputs.required == 'true' }}
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: actions
+          build-mode: none
+
+      - name: Analyze PR-only CodeQL runtime without upload
+        id: codeql-runtime-analyze
+        if: ${{ steps.codeql-runtime-scope.outputs.required == 'true' }}
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          category: "/language:actions"
+          upload: never
+          output: ${{ runner.temp }}/pr-codeql-runtime
+
+      - name: Verify local PR-only CodeQL runtime SARIF and reject promotion
+        if: ${{ steps.codeql-runtime-scope.outputs.required == 'true' }}
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          SARIF_DIR: ${{ steps.codeql-runtime-analyze.outputs.sarif-output }}
+        run: |
+          python3 .github/workflow-policy/trusted_codeql_runtime_validation.py verify \
+            --dir "$SARIF_DIR" \
+            --head "$EXPECTED_HEAD"
 
       - name: Require release provenance contract
         run: python3 .github/workflow-policy/check_release_provenance.py static .
