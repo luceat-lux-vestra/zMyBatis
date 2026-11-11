@@ -32,8 +32,9 @@ for attempt in 1 2 3; do
     use_fallback_mirror
   fi
 
-  if sudo apt-get -o Acquire::Retries=1 update -qq && \
-     sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=1 install -y --no-install-recommends libegl1; then
+  resolver_options="attempts:1 timeout:2"
+  if sudo env RES_OPTIONS="$resolver_options" apt-get -o Acquire::Retries=0 update -qq && \
+     sudo env RES_OPTIONS="$resolver_options" DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=0 install -y --no-install-recommends libegl1; then
     ldconfig -p | grep -F 'libEGL.so.1'
     exit 0
   fi
