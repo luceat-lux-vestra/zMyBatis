@@ -859,7 +859,9 @@ def check_main_e2e_cache_seed(failures: list[str]) -> None:
            failures)
     expect("ARM64 EGL bootstrap has bounded retry and mirror fallback",
            "for attempt in 1 2 3; do" in egl_installer
-           and "Acquire::Retries=1" in egl_installer
+           and "Acquire::Retries=0" in egl_installer
+           and 'RES_OPTIONS="$resolver_options"' in egl_installer
+           and 'resolver_options="attempts:1 timeout:2"' in egl_installer
            and "security.ports.ubuntu.com/ubuntu-ports" in egl_installer
            and 'sleep "$((attempt * 10))"' in egl_installer
            and "Unable to install libegl1 after bounded Ubuntu mirror retries." in egl_installer,
