@@ -805,6 +805,7 @@ def check_zizmor(failures: list[str]) -> None:
 def check_main_e2e_cache_seed(failures: list[str]) -> None:
     """Guard dependency-only cache production without a second writer/job key."""
     workflow = (WORKFLOWS_DIR / "e2e.yml").read_text(encoding="utf-8")
+    egl_installer = (REPO_ROOT / ".github" / "scripts" / "install-arm64-egl.sh").read_text(encoding="utf-8")
     trigger = re.search(
         r"(?m)^  push:\n    branches: \[main\]\n    paths:\n(?P<items>(?:      - '[^']+'\n)+)",
         workflow,
@@ -852,6 +853,19 @@ def check_main_e2e_cache_seed(failures: list[str]) -> None:
            toolchain_envs == {"JAVA_HOME"}, failures)
     expect("ARM64 E2E never references an x64 Java-home variable",
            "JAVA_HOME_25_X64" not in workflow, failures)
+    expect("ARM64 EGL bootstrap is shared by both real IDE E2E jobs",
+           workflow.count("bash .github/scripts/install-arm64-egl.sh") == 2
+           and "apt-get" not in workflow,
+           failures)
+    expect("ARM64 EGL bootstrap has bounded retry and mirror fallback",
+           "for attempt in 1 2 3; do" in egl_installer
+           and "Acquire::Retries=0" in egl_installer
+           and 'RES_OPTIONS="$resolver_options"' in egl_installer
+           and 'resolver_options="attempts:1 timeout:2"' in egl_installer
+           and "security.ports.ubuntu.com/ubuntu-ports" in egl_installer
+           and 'sleep "$((attempt * 10))"' in egl_installer
+           and "Unable to install libegl1 after bounded Ubuntu mirror retries." in egl_installer,
+           failures)
     expect("postmerge seed skips real product IDE E2E",
            all(
                f"      - name: {step}\n        if: ${{{{ github.event_name != 'push' }}}}" in workflow

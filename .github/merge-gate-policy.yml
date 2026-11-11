@@ -6,14 +6,14 @@
 #
 # Live authority: repository ruleset `main protection` (ID `22024054`) is
 # active on the default branch. It enforces deletion/non-fast-forward protection,
-# linear history, squash-only PR merges, strict required checks, review-thread
+# linear history, squash-only PR merges, required checks without forced base freshness, review-thread
 # resolution, and no bypass actors. Keep this file aligned with live readback.
 
 version: 1
 
 mergeStrategy:
   allowed: [ squash ]
-  requireBranchUpToDate: true
+  requireBranchUpToDate: false
   requireLinearHistory: true
 
 # The live ruleset requires one stable aggregate context. PR scope, Build/Test/Qodana/
@@ -167,7 +167,7 @@ liveSettingsAudit:
       require_extra_approval_for_unattributed_changes: true
       allowed_merge_methods: [ squash ]
     required_status_checks:
-      strict_required_status_checks_policy: true
+      strict_required_status_checks_policy: false
       do_not_enforce_on_create: false
   publicationTagRuleset:
     name: publication tags

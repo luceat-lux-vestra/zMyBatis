@@ -94,11 +94,7 @@ jobs:
         if: ${{ github.event_name != 'push' }}
         shell: bash
         run: |
-          set -euo pipefail
-          test "$(uname -m)" = "aarch64"
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libegl1
-          ldconfig -p | grep -F 'libEGL.so.1'
+          bash .github/scripts/install-arm64-egl.sh
 
       - name: Start pinned PostgreSQL E2E service
         if: ${{ github.event_name != 'push' }}
@@ -228,11 +224,7 @@ jobs:
       - name: Install ARM64 EGL runtime for DataGrip Skiko
         shell: bash
         run: |
-          set -euo pipefail
-          test "$(uname -m)" = "aarch64"
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libegl1
-          ldconfig -p | grep -F 'libEGL.so.1'
+          bash .github/scripts/install-arm64-egl.sh
 
       - name: Run DataGrip Starter / Driver E2E
         shell: bash
