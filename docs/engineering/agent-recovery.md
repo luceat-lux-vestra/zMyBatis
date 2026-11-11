@@ -142,7 +142,7 @@ Green CI is necessary where required but is not by itself a correctness proof.
 
 ## Base advancement with unchanged HEAD
 
-This section clarifies recovery and merge judgment only. It does not weaken the repository's merge policy. `.github/merge-gate-policy.yml` remains the checked-in authority and currently declares `requireBranchUpToDate: true`; the live `main protection` ruleset also requires the strict GitHub Actions `Merge Gate`. Fresh-read those authorities again at merge time because live policy may change.
+This section clarifies recovery and merge judgment only. It does not weaken the repository's merge policy. `.github/merge-gate-policy.yml` remains the checked-in authority and now declares `requireBranchUpToDate: false`; the live `main protection` ruleset still requires the GitHub Actions `Merge Gate`, but does not force a rerun solely because `main` advanced. Fresh-read those authorities again at merge time because live policy may change.
 
 Classify branch movement before deciding what prior evidence still proves:
 
@@ -151,7 +151,7 @@ Classify branch movement before deciding what prior evidence still proves:
 3. **PR HEAD unchanged; base advanced** — old evidence may still describe the unchanged HEAD itself, but it does not authorize merge against the new base. Inspect the evidence provenance, current mergeability, the base delta, the PR delta, and any semantic interaction before relying on it for a narrower diagnostic claim.
 4. **Material state is unavailable or `UNKNOWN`** — fail closed and refresh/revalidate; do not infer independence.
 
-For zMyBatis specifically, an unchanged HEAD plus an advanced base does **not** create an exception to the up-to-date-branch requirement. Before merge, satisfy the current `requireBranchUpToDate: true` / strict `Merge Gate` contract. If bringing the branch up to date, rebasing, regenerating, conflict resolution, or any other operation changes the PR HEAD, the resulting SHA is a new exact-HEAD proof unit and prior HEAD-specific PASS evidence is invalid.
+For zMyBatis specifically, an unchanged HEAD plus an advanced base is allowed by the repository ruleset. Before merge, satisfy the current `requireBranchUpToDate: false` contract and the required `Merge Gate`; independently reconcile whether base changes invalidate existing CI evidence. If bringing the branch up to date, rebasing, regenerating, conflict resolution, or any other operation changes the PR HEAD, the resulting SHA is a new exact-HEAD proof unit and prior HEAD-specific PASS evidence is invalid.
 
 Evidence reuse is therefore claim-scoped, not merge authorization:
 
