@@ -34,6 +34,8 @@ import org.xml.sax.InputSource
 internal object XmlMapperPreparationProjection {
     private const val PARSE_FAILURE = "mybatis-xml-mapper-parse-failure"
     private const val ROOT_STATEMENT_MISSING = "xml-preparation-root-statement-missing"
+    private const val ROOT_RESOURCE_MISMATCH = "xml-preparation-root-resource-mismatch"
+    private const val STATEMENT_KIND_MISMATCH = "xml-preparation-statement-kind-mismatch"
     private const val CLASS_LOADING_UNSUPPORTED = "xml-preparation-runtime-class-loading-unsupported"
     private const val EXTERNAL_ENTITY_UNSUPPORTED = "xml-preparation-external-entity-unsupported"
     private const val PROJECTION_INVARIANT = "xml-preparation-projection-invariant-failure"
@@ -42,6 +44,7 @@ internal object XmlMapperPreparationProjection {
     private const val MAPPER_DOCTYPE =
         "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">"
 
+    private val statementElementNames = setOf("select", "insert", "update", "delete")
     private val safeMapperDoctype = Regex(
         """(?is)<!DOCTYPE\s+mapper\s+PUBLIC\s+["']-//mybatis\.org//DTD Mapper 3\.0//EN["']\s+["']https?://mybatis\.org/dtd/mybatis-3-mapper\.dtd["']\s*>""",
     )
@@ -108,14 +111,35 @@ internal object XmlMapperPreparationProjection {
         val rootMapper = parsed.singleOrNull { it.sourceFileId == statementId.sourceFileId }
             ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, PROJECTION_INVARIANT)
         if (rootMapper.namespace != statementId.namespace) {
-            return failed(PreparationFailureKind.MYBATIS_PARSE, ROOT_STATEMENT_MISSING)
+            return failed(PreparationFailureKind.PREPARATION_INVARIANT, ROOT_RESOURCE_MISMATCH)
         }
 
-        val rootCandidates = directChildren(rootMapper.document.documentElement)
+        val rootStatements = directChildren(rootMapper.document.documentElement)
             .filter {
-                it.tagName == elementName(source.sourceGraph.rootStatement.kind) &&
+                it.tagName in statementElementNames &&
                     it.getAttribute("id").trim() == statementId.statementId
             }
+        if (rootStatements.isEmpty()) {
+            val statementExistsElsewhere = parsed
+                .asSequence()
+                .filter { it.sourceFileId != rootMapper.sourceFileId && it.namespace == statementId.namespace }
+                .flatMap { directChildren(it.document.documentElement).asSequence() }
+                .any {
+                    it.tagName in statementElementNames &&
+                        it.getAttribute("id").trim() == statementId.statementId
+                }
+            return if (statementExistsElsewhere) {
+                failed(PreparationFailureKind.PREPARATION_INVARIANT, ROOT_RESOURCE_MISMATCH)
+            } else {
+                failed(PreparationFailureKind.MYBATIS_PARSE, ROOT_STATEMENT_MISSING)
+            }
+        }
+
+        val expectedElement = elementName(source.sourceGraph.rootStatement.kind)
+        val rootCandidates = rootStatements.filter { it.tagName == expectedElement }
+        if (rootCandidates.isEmpty()) {
+            return failed(PreparationFailureKind.PREPARATION_INVARIANT, STATEMENT_KIND_MISMATCH)
+        }
         val selectedRoot = selectVariant(rootCandidates, effectiveDatabaseId?.value)
             ?: return failed(PreparationFailureKind.MYBATIS_PARSE, ROOT_STATEMENT_MISSING)
 
