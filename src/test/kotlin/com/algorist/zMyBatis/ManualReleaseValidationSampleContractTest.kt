@@ -37,7 +37,7 @@ class ManualReleaseValidationSampleContractTest {
             addAll((1..14).map { "M%02d".format(it) })
             addAll((1..7).map { "J%02d".format(it) })
             addAll((1..8).map { "U%02d".format(it) })
-            addAll((1..6).map { "T%02d".format(it) })
+            addAll((1..7).map { "T%02d".format(it) })
             addAll(listOf("R01", "R02", "R03", "R04", "R05"))
         }
 
@@ -48,14 +48,18 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(readme.contains("#510 disposition:  RESOLVED / BLOCKED"))
         assertTrue(readme.contains("Release decision:  GO / NO-GO"))
         assertTrue(readme.contains("Wrong-datasource or wrong-schema execution is a **release blocker**"))
+        assertTrue(readme.contains("stable UUID keeps the same target valid"))
     }
 
     @Test
     fun `manual XML fixtures reuse canonical shipping and refusal shapes`() {
         val xml = source("src/main/resources/mappers/XmlReleaseValidationMapper.xml")
         val product = source("src/main/resources/mappers/ProductMapper.xml")
-        val pending = source("src/main/resources/mappers/PendingDynamicContractMapper.xml")
-        val commonPending = source("src/main/resources/mappers/PendingCommonMapperDeclarations.xml")
+        val pendingChoose = source("src/main/resources/mappers/PendingChooseMapper.xml")
+        val pendingBind = source("src/main/resources/mappers/PendingBindMapper.xml")
+        val pendingResultMap = source("src/main/resources/mappers/PendingResultMapMapper.xml")
+        val pendingResultType = source("src/main/resources/mappers/PendingResultTypeMapper.xml")
+        val pendingParameterType = source("src/main/resources/mappers/PendingParameterTypeMapper.xml")
 
         assertTrue(xml.contains("SELECT 7 AS result_value"))
         assertTrue(xml.contains("#{value,jdbcType=BIGINT}::BIGINT AS result_value"))
@@ -80,20 +84,25 @@ class ManualReleaseValidationSampleContractTest {
                 product.contains("resultType=") ||
                 product.contains("parameterType="),
         )
-        assertFalse(
-            "dynamic-tag reproduction must not be masked by class-loading refusal",
-            pending.contains("resultType=") ||
-                pending.contains("resultMap=") ||
-                pending.contains("parameterType="),
-        )
-        assertTrue(pending.contains("<choose>"))
-        assertTrue(pending.contains("<bind name=\"pattern\""))
-        assertTrue(pending.contains("NOT release PASS cases while #509 is open"))
-        assertTrue(commonPending.contains("<resultMap"))
-        assertTrue(commonPending.contains("resultMap=\"ProductResultMap\""))
-        assertTrue(commonPending.contains("resultType=\"fixture.Product\""))
-        assertTrue(commonPending.contains("parameterType=\"long\""))
-        assertTrue(commonPending.contains("NOT release PASS cases while #510 is open"))
+        listOf(pendingChoose, pendingBind).forEach { pending ->
+            assertFalse(
+                "dynamic-tag reproduction must not be masked by class-loading refusal",
+                pending.contains("resultType=") ||
+                    pending.contains("resultMap=") ||
+                    pending.contains("parameterType="),
+            )
+        }
+        assertTrue(pendingChoose.contains("<choose>"))
+        assertTrue(pendingChoose.contains("R01: NOT a release PASS case while #509 is open"))
+        assertTrue(pendingBind.contains("<bind name=\"pattern\""))
+        assertTrue(pendingBind.contains("R02: NOT a release PASS case while #509 is open"))
+        assertTrue(pendingResultMap.contains("<resultMap"))
+        assertTrue(pendingResultMap.contains("resultMap=\"ProductResultMap\""))
+        assertTrue(pendingResultMap.contains("R03: NOT a release PASS case while #510 is open"))
+        assertTrue(pendingResultType.contains("resultType=\"fixture.Product\""))
+        assertTrue(pendingResultType.contains("R04: NOT a release PASS case while #510 is open"))
+        assertTrue(pendingParameterType.contains("parameterType=\"long\""))
+        assertTrue(pendingParameterType.contains("R05: NOT a release PASS case while #510 is open"))
     }
 
     @Test
