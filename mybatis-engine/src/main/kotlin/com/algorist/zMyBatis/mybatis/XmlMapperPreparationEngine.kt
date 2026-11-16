@@ -32,7 +32,10 @@ import org.apache.ibatis.session.Configuration
 /**
  * Bounded XML mapper preparation island for #149 / #161.
  *
- * The complete captured mapper documents are parsed by an isolated stock MyBatis 3.6.0 runtime.
+ * A statement-scoped structural projection of the captured mapper graph is parsed by an isolated
+ * stock MyBatis 3.6.0 runtime. Source snapshots remain the revision authority; unrelated mapper
+ * declarations do not become preparation authority.
+ *
  * Static zero-input statements and the deliberately narrow proven scalar/temporal bound-input
  * island and source-proven foreach/Boolean-if contracts are admitted. Dynamic preparation owns
  * a fresh runtime; flat Boolean-if siblings directly or inside bounded where/set/trim wrappers require
@@ -84,8 +87,6 @@ object XmlMapperPreparationEngine {
     private const val TYPE_HANDLER_UNSUPPORTED = "xml-preparation-type-handler-unsupported"
     private const val BINDING_VALUE_UNSUPPORTED = "xml-preparation-binding-value-unsupported"
     private const val DYNAMIC_UNSUPPORTED = "xml-preparation-dynamic-sql-unsupported"
-    private const val CLASS_LOADING_UNSUPPORTED = "xml-preparation-runtime-class-loading-unsupported"
-    private const val EXTERNAL_ENTITY_UNSUPPORTED = "xml-preparation-external-entity-unsupported"
     private const val ROOT_STATEMENT_MISSING = "xml-preparation-root-statement-missing"
     private const val ROOT_RESOURCE_MISMATCH = "xml-preparation-root-resource-mismatch"
     private const val STATEMENT_KIND_MISMATCH = "xml-preparation-statement-kind-mismatch"
@@ -94,15 +95,6 @@ object XmlMapperPreparationEngine {
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
     private const val CLASSLOADER_INVARIANT = "mybatis-xml-classloader-isolation-failure"
 
-    private val dangerousAttribute = Regex(
-        """(?i)\b(?:lang|parameterType|parameterMap|resultType|resultMap|typeHandler|javaType)\s*=""",
-    )
-    private val dangerousElement = Regex(
-        """(?i)<\s*(?:resultMap|parameterMap|cache|cache-ref|selectKey)\b""",
-    )
-    private val safeMapperDoctype = Regex(
-        """(?is)<!DOCTYPE\s+mapper\s+PUBLIC\s+["']-//mybatis\.org//DTD Mapper 3\.0//EN["']\s+["']https?://mybatis\.org/dtd/mybatis-3-mapper\.dtd["']\s*>""",
-    )
     private val rawInterpolation = Regex("""\$\{([^}]*)}""")
     private val rawStructuralAttribute = Regex("""(?s)<(?![!?])[^>]*\$\{""")
     private val simpleIdentifier = Regex("[A-Za-z_][A-Za-z0-9_]*")
