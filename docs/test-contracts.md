@@ -1,8 +1,17 @@
 # zMyBatis test contracts
 
-The required `Test` CI context is product evidence, not a line-coverage target. `./gradlew check` must fail when one of the automated contracts below regresses. Template fixtures, empty files, debug-only reproductions, and `println` output are not considered evidence. The old IntelliJ template rename test and evaluator debug/reproduction files were removed because they do not own current product behavior.
+The required `Test` CI context is product evidence, not a line-coverage target. `./gradlew check`
+must fail when a maintained automated contract regresses.
 
-## Automated contract map
+This document distinguishes **current shipping evidence** from the
+[1.0 MyBatis-compatibility target](mybatis-compatibility-architecture.md). A green current refusal
+test proves that the current Leap path fails closed; it does not by itself prove that the same
+refusal is desired 1.0 behavior.
+
+Template fixtures, empty files, debug-only reproductions, and `println` output are not considered
+evidence. The old IntelliJ template rename test and evaluator debug/reproduction files were removed because they do not own current product behavior.
+
+## Current shipping automated contract map
 
 | Correctness boundary | Authoritative evidence | What it proves |
 | --- | --- | --- |
@@ -18,6 +27,33 @@ The required `Test` CI context is product evidence, not a line-coverage target. 
 | Sensitive production logging | `SensitiveLoggingContractTest`, action/adapter diagnostic contract tests | production logs reject direct interpolation of known sensitive SQL/input/source/target identities and platform exception messages; typed expected failures expose metadata rather than raw payload |
 | Real packaged execution | `ZMyBatisStarterDriverE2ETest` via `E2E / Starter / Driver E2E` | exact packaged plugin executes maintained zero-binding, PostgreSQL BIGINT, XML raw, direct-Java raw, cancellation/history and fail-closed scenarios through the registered action on IDEA Ultimate 2026.2.3 |
 
+## Pre-1.0 parity-recovery evidence
+
+The next test-bearing work unit after architecture documentation is D1: a **stock MyBatis parity
+oracle corpus**. D1 makes no production runtime change.
+
+The oracle must derive expected behavior directly from stock MyBatis 3.6.x for realistic mapper
+fixtures and freeze at least:
+
+- final `BoundSql.sql`;
+- ordered `ParameterMapping` properties;
+- additional-parameter values;
+- target-selected databaseId behavior;
+- relevant standard TypeHandler/JDBC metadata.
+
+Its fixture corpus must cover ordinary `resultMap/resultType/parameterType` mappers, parameterized
+include graphs, every standard dynamic-tag family, realistic tag combinations, scalar/multi/object/
+map/list/collection/array inputs, nested properties, foreach additional parameters, typed null,
+direct Java dynamic annotations, raw interpolation, and sanitized historical `mybatisTest`
+Product/Customer-style mappers.
+
+Do **not** encode current Leap refusal as oracle truth. Each P1/P2/P3 replacement phase must add
+zMyBatis-vs-oracle parity for the slice it changes.
+
+Current Boolean-if/foreach/trim admission and PostgreSQL BIGINT materialization tests remain useful
+current-state safety evidence until replacement. They are not preservation constraints for the
+1.0 target.
+
 ## Manual release acceptance boundary
 
 The repository-owned [manual release validation sample](../samples/manual-release-validation/README.md)
@@ -26,14 +62,11 @@ the maintained zero-binding, PostgreSQL BIGINT + Boolean-if, XML raw and direct-
 adding safe manual probes for mutation confirmation, qualified includes, databaseId selection,
 unsupported materialization, settings, target persistence, console policy and DataGrip smoke.
 
-Manual acceptance does **not** replace the automated contract map above and does not expand product
-support merely because a fixture can be written. Detailed semantic matrices remain owned by their
-lowest reliable automated layer. Any mismatch between an authoritative product claim and the actual
-registered-path evidence must fail closed and be tracked independently. #509 owns the broad
-dynamic-tag claim discrepancy found while adding the sample; #510 owns the separate common
-`resultMap` / `resultType` / `parameterType` XML-declaration versus runtime-class-loading
-preflight discrepancy. The sample keeps those reproductions outside the PASS fixture set so one
-known limitation cannot mask another contract boundary.
+Manual acceptance does **not** replace automated evidence and does not define target semantics merely
+because a fixture can be written. #509 and #510 are parity-regression evidence under #512. Their
+pending reproductions intentionally remain outside the current PASS set until the new preparation/
+invocation/backend architecture makes them real supported cases. The goal is to promote those
+fixtures to PASS before 1.0, not to document them permanently as product exclusions.
 
 ## Sensitive logging evidence boundary
 
@@ -61,6 +94,11 @@ The source-capture boundary by itself does not prove MyBatis preparation or Data
 
 ## MyBatis preparation evidence boundary
 
+**Current-state evidence note:** the bounded Boolean-if/foreach/wrapper admission suites below
+describe the present Leap implementation. Under the 1.0 target, stock MyBatis owns standard
+dynamic-SQL semantics and these syntax islands are deletion/replacement candidates after oracle
+parity exists. Their current fail-closed assertions must not be used to veto target parity cases.
+
 Supported dynamic SQL meaning is delegated to isolated stock MyBatis after source and parameter authority are proven. The Boolean-if, foreach, wrapper/trim, source-graph and mapper-preparation suites compare maintained SQL/mapping behavior with stock MyBatis while preserving strict typed refusals for unsupported composition, stale/forged provenance, unsafe raw structural interpolation, and runtime isolation failures.
 
 There is no compatibility evaluator, unknown-tag stripping mode, OGNL source rewrite, error-as-SQL path, or evaluator-owned generic literalization in the registered execution architecture. Unsupported preparation/materialization returns typed failure before approval or Database Tools delivery.
@@ -73,9 +111,18 @@ Statement kind remains confirmation evidence, not SQL authorization. The immutab
 
 ## Preview and execution boundary
 
-Preview/approval receives the immutable materialized execution artifact. Formatting may derive presentation text but cannot mutate `executionSql`; the Database Tools adapter receives the exact frozen artifact after source/target/lifecycle revalidation.
+Current shipping preview/approval receives the immutable materialized SQL-text artifact. Formatting
+may derive presentation text but cannot mutate `executionSql`; the Database Tools adapter receives
+the exact frozen artifact after source/target/lifecycle revalidation.
 
-The maintained Starter/Driver E2E supplies representative full click-throughs for DB-neutral zero-binding, PostgreSQL BIGINT input/materialization/native history, XML raw cancellation, and direct-Java raw cancel/reinvoke/execute. These do not imply broader DBMS/type/DataGrip parity.
+The 1.0 target generalizes that identity to an immutable `PreparedExecutionPlan`: SQL with
+placeholders plus ordered typed bindings, raw interpolation provenance/result, source revisions,
+target and statement kind. P3/P4 must add backend/plan evidence before this target becomes current
+product evidence.
+
+The maintained Starter/Driver E2E currently supplies representative full click-throughs for
+DB-neutral zero-binding, PostgreSQL BIGINT input/materialization/native history, XML raw cancellation,
+and direct-Java raw cancel/reinvoke/execute. These do not imply broader 1.0 parity.
 
 ## Session and datasource platform gaps
 

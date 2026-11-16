@@ -7,6 +7,13 @@
 
 > **Distribution status:** zMyBatis is published on [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30447-zmybatis--mybatis-dynamic-sql-runner-with-parameters-mybatis). This GitHub repository is the canonical public source repository. No public GitHub Release artifact is currently published.
 
+> **Pre-1.0 development baseline:** the current registered Leap path remains intentionally bounded
+> (including zero-binding and the proven PostgreSQL BIGINT SQL-text slice), but that bounded
+> materializer/admission model is **not** the 1.0 target. The target design is
+> [zMyBatis 1.0 MyBatis-compatibility architecture](docs/mybatis-compatibility-architecture.md):
+> ordinary mapper parity is recovered against stock MyBatis before 1.0, with bound execution moving
+> toward a true prepared backend if the maintained Database Tools API proof succeeds.
+
 <!-- Plugin description -->
 <p><b>zMyBatis</b> is a JetBrains IDE plugin for executing supported MyBatis mapper statements directly from XML mapper files and direct Java statement annotations.</p>
 
