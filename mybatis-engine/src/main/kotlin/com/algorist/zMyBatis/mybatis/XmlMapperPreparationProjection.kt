@@ -346,11 +346,7 @@ internal object XmlMapperPreparationProjection {
         val body = StringWriter().also { writer ->
             transformer.transform(DOMSource(document.documentElement), StreamResult(writer))
         }.toString()
-        return """
-            <?xml version="1.0" encoding="UTF-8" ?>
-            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-            $body
-        """.trimIndent()
+        return XML_DECLARATION + "\n" + MAPPER_DOCTYPE + "\n" + body
     }
 
     private fun directChildren(parent: Element): List<Element> =
