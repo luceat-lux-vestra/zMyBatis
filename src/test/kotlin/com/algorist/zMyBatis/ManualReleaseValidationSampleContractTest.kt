@@ -2,7 +2,7 @@ package com.algorist.zMyBatis
 
 import java.nio.file.Files
 import java.nio.file.Path
-import java.net.JarURLConnection
+import java.net.URI
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -203,7 +203,12 @@ class ManualReleaseValidationSampleContractTest {
             "MyBatis class resource is unavailable"
         }
         return when (resource.protocol) {
-            "jar" -> Path.of((resource.openConnection() as JarURLConnection).jarFileURL.toURI())
+            "jar" -> {
+                val external = resource.toExternalForm()
+                val separator = external.indexOf("!/")
+                require(separator > "jar:".length) { "invalid MyBatis jar resource: $resource" }
+                Path.of(URI.create(external.substring("jar:".length, separator)))
+            }
             "file" -> {
                 var root = Path.of(resource.toURI())
                 repeat(resourcePath.split('/').size) {
