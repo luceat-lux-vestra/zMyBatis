@@ -36,7 +36,7 @@
         VALUES (#{name}, #{email}, #{countryId}, #{paymentGatewayCustomerId})
     </insert>
 
-    <update id="update" parameterType="com.algorist.zMyBatis.mybatis.parity.HistoricalCustomer">
+    <update id="update" parameterType="Customer">
         UPDATE customers
         SET name = #{name}, email = #{email}, country_id = #{countryId}, payment_gateway_customer_id = #{paymentGatewayCustomerId}
         WHERE id = #{id}
