@@ -35,12 +35,14 @@ class ManualReleaseValidationSampleContractTest {
             addAll((1..7).map { "J%02d".format(it) })
             addAll((1..8).map { "U%02d".format(it) })
             addAll((1..6).map { "T%02d".format(it) })
-            addAll(listOf("R01", "R02"))
+            addAll(listOf("R01", "R02", "R03", "R04"))
         }
 
         requiredIds.forEach { id ->
             assertTrue("manual release checklist must retain case $id", readme.contains(id))
         }
+        assertTrue(readme.contains("#509 disposition:  RESOLVED / BLOCKED"))
+        assertTrue(readme.contains("#510 disposition:  RESOLVED / BLOCKED"))
         assertTrue(readme.contains("Release decision:  GO / NO-GO"))
         assertTrue(readme.contains("Wrong-datasource or wrong-schema execution is a **release blocker**"))
     }
@@ -50,6 +52,7 @@ class ManualReleaseValidationSampleContractTest {
         val xml = source("src/main/resources/mappers/XmlReleaseValidationMapper.xml")
         val product = source("src/main/resources/mappers/ProductMapper.xml")
         val pending = source("src/main/resources/mappers/PendingDynamicContractMapper.xml")
+        val commonPending = source("src/main/resources/mappers/PendingCommonMapperDeclarations.xml")
 
         assertTrue(xml.contains("SELECT 7 AS result_value"))
         assertTrue(xml.contains("#{value,jdbcType=BIGINT}::BIGINT AS result_value"))
@@ -61,9 +64,16 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(xml.contains("#{left,jdbcType=BIGINT}"))
         assertTrue(xml.contains("#{right,jdbcType=BIGINT}"))
         assertTrue(product.contains("<include refid=\"fixture.SharedFragments.productColumns\"/>"))
+        assertFalse("passing XML fixture must stay inside current class-loading preflight", xml.contains("resultType=") || xml.contains("resultMap=") || xml.contains("parameterType="))
+        assertFalse("passing Product fixture must stay inside current class-loading preflight", product.contains("<resultMap") || product.contains("resultMap=") || product.contains("resultType=") || product.contains("parameterType="))
+        assertFalse("dynamic-tag reproduction must not be masked by class-loading refusal", pending.contains("resultType=") || pending.contains("resultMap=") || pending.contains("parameterType="))
         assertTrue(pending.contains("<choose>"))
         assertTrue(pending.contains("<bind name=\"pattern\""))
         assertTrue(pending.contains("NOT release PASS cases while #509 is open"))
+        assertTrue(commonPending.contains("<resultMap"))
+        assertTrue(commonPending.contains("resultMap=\"ProductResultMap\""))
+        assertTrue(commonPending.contains("parameterType=\"long\""))
+        assertTrue(commonPending.contains("NOT release PASS cases while #510 is open"))
     }
 
     @Test
@@ -78,6 +88,7 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(direct.contains("@Update("))
         assertTrue(direct.contains("@Delete("))
         assertTrue(provider.contains("@SelectProvider"))
+        assertTrue(source("README.md").contains("foreach item bindings are MyBatis additional parameters"))
     }
 
     private fun source(relativePath: String): String =
