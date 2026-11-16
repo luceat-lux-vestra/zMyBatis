@@ -81,10 +81,10 @@ internal object XmlMapperPreparationProjection {
         effectiveDatabaseId: MyBatisDatabaseId?,
     ): Result {
         val parsed = mutableListOf<ParsedMapper>()
-        for (snapshot in source.sourceGraph.sourceSnapshots) {
-            securityFailure(snapshot.content)?.let { return Result.Failed(it) }
+        for ((fileId, revision, content) in source.sourceGraph.sourceSnapshots) {
+            securityFailure(content)?.let { return Result.Failed(it) }
             val document = try {
-                parse(snapshot.content)
+                parse(content)
             } catch (_: Exception) {
                 return failed(PreparationFailureKind.MYBATIS_PARSE, PARSE_FAILURE)
             }
@@ -98,8 +98,8 @@ internal object XmlMapperPreparationProjection {
                 return failed(PreparationFailureKind.MYBATIS_PARSE, PARSE_FAILURE)
             }
             parsed += ParsedMapper(
-                sourceFileId = snapshot.fileId,
-                sourceRevision = snapshot.revision,
+                sourceFileId = fileId,
+                sourceRevision = revision,
                 namespace = namespace,
                 document = document,
             )
@@ -144,7 +144,7 @@ internal object XmlMapperPreparationProjection {
             val owner = queue.removeFirst()
             for (include in descendantIncludes(owner.element)) {
                 val refid = include.getAttribute("refid").trim()
-                if (refid.isEmpty() || "${'$'}{" in refid) {
+                if (refid.isEmpty() || "\${" in refid) {
                     return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_REFERENCE)
                 }
                 val canonical = if ('.' in refid) {
@@ -212,8 +212,8 @@ internal object XmlMapperPreparationProjection {
     private fun runtimeMappingFailure(
         documents: List<ProjectedDocument>,
     ): PreparationFailure? {
-        for (document in documents) {
-            for (match in runtimeMappingOption.findAll(document.content)) {
+        for ((_, _, content) in documents) {
+            for (match in runtimeMappingOption.findAll(content)) {
                 val option = match.groupValues[1].lowercase()
                 val value = match.groupValues[2]
                 val safe = when (option) {
@@ -312,7 +312,7 @@ internal object XmlMapperPreparationProjection {
             isNamespaceAware = false
             isValidating = false
             isXIncludeAware = false
-            setExpandEntityReferences(false)
+            isExpandEntityReferences = false
             setFeature("http://xml.org/sax/features/external-general-entities", false)
             setFeature("http://xml.org/sax/features/external-parameter-entities", false)
             setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
