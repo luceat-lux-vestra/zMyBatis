@@ -36,14 +36,14 @@ freezes:
 
 - final `BoundSql.sql`;
 - ordered `ParameterMapping` properties;
-- additional-parameter values;
+- dynamic/internal binding values, including MyBatis 3.6 mapping-captured values and `BoundSql` additional parameters;
 - target-selected databaseId behavior;
 - relevant standard TypeHandler/JDBC metadata;
 - stock `ParamNameResolver` caller-object construction for mapper-method inputs.
 
 The corpus covers ordinary `resultMap/resultType/parameterType` mappers, parameterized include
 graphs, every standard dynamic-tag family, representative combinations, scalar/multi/object/map/
-list/collection/array inputs, nested properties, foreach/bind additional parameters, typed null,
+list/collection/array inputs, nested properties, foreach/bind dynamic internal values, typed null,
 direct Java dynamic annotations, raw interpolation, and sanitized source-derived historical
 `mybatisTest` Product/Customer mapper shapes.
 
