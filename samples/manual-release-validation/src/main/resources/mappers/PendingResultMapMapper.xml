@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="fixture.PendingResultMapMapper">
+    <!-- R03: NOT a release PASS case while #510 is open. -->
+    <resultMap id="ProductResultMap" type="fixture.Product">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="active" column="active"/>
+    </resultMap>
+
+    <select id="findAllWithResultMap" resultMap="ProductResultMap">
+        SELECT id, name, active
+        FROM products
+        ORDER BY id
+    </select>
+</mapper>
