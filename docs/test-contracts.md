@@ -9,7 +9,7 @@ test proves that the current Leap path fails closed; it does not by itself prove
 refusal is desired 1.0 behavior.
 
 Template fixtures, empty files, debug-only reproductions, and `println` output are not considered
-evidence.
+evidence. The old IntelliJ template rename test and evaluator debug/reproduction files were removed because they do not own current product behavior.
 
 ## Current shipping automated contract map
 
