@@ -38,6 +38,9 @@ internal object XmlMapperPreparationProjection {
     private const val EXTERNAL_ENTITY_UNSUPPORTED = "xml-preparation-external-entity-unsupported"
     private const val PROJECTION_INVARIANT = "xml-preparation-projection-invariant-failure"
     private const val UNSUPPORTED_REFERENCE = "xml-preparation-projection-include-unsupported"
+    private const val XML_DECLARATION = "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>"
+    private const val MAPPER_DOCTYPE =
+        "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">"
 
     private val safeMapperDoctype = Regex(
         """(?is)<!DOCTYPE\s+mapper\s+PUBLIC\s+["']-//mybatis\.org//DTD Mapper 3\.0//EN["']\s+["']https?://mybatis\.org/dtd/mybatis-3-mapper\.dtd["']\s*>""",
