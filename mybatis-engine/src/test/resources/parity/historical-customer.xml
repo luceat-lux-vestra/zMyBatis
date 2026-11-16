@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="parity.HistoricalCustomerMapper">
-    <resultMap id="CustomerResultMap" type="com.algorist.zMyBatis.mybatis.parity.HistoricalCustomer">
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.san.sprinboot.mybatis.h2.spring_boot_myBatis_h2.mapper.CustomerMapper">
+    <resultMap id="CustomerResultMap" type="Customer">
         <id property="id" column="id"/>
         <result property="name" column="name"/>
         <result property="email" column="email"/>
@@ -11,7 +11,7 @@
         <result property="updatedAt" column="updated_at"/>
     </resultMap>
 
-    <select id="findById" parameterType="map" resultMap="CustomerResultMap">
+    <select id="findById" parameterType="long" resultMap="CustomerResultMap">
         SELECT
         <if test="t1 == 1">id</if>
         <if test="t2 == 2">,name</if>
@@ -19,7 +19,7 @@
         WHERE id = #{test}
     </select>
 
-    <select id="findByIdJSON" parameterType="map" resultMap="CustomerResultMap">
+    <select id="findByIdJSON" resultMap="CustomerResultMap">
         SELECT
         <if test="user.id == 1">id</if>
         <if test="cust.name == 'test'">,name</if>
@@ -31,7 +31,7 @@
         SELECT * FROM customers
     </select>
 
-    <insert id="save" parameterType="com.algorist.zMyBatis.mybatis.parity.HistoricalCustomer" useGeneratedKeys="true" keyProperty="id">
+    <insert id="save" parameterType="Customer" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO customers (name, email, country_id, payment_gateway_customer_id)
         VALUES (#{name}, #{email}, #{countryId}, #{paymentGatewayCustomerId})
     </insert>
