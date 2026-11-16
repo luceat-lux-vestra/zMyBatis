@@ -29,8 +29,11 @@ unsupported materialization, settings, target persistence, console policy and Da
 Manual acceptance does **not** replace the automated contract map above and does not expand product
 support merely because a fixture can be written. Detailed semantic matrices remain owned by their
 lowest reliable automated layer. Any mismatch between an authoritative product claim and the actual
-registered-path evidence must fail closed and be tracked independently; #509 owns the dynamic-tag
-claim discrepancy found while adding the sample.
+registered-path evidence must fail closed and be tracked independently. #509 owns the broad
+dynamic-tag claim discrepancy found while adding the sample; #510 owns the separate common
+`resultMap` / `resultType` / `parameterType` XML-declaration versus runtime-class-loading
+preflight discrepancy. The sample keeps those reproductions outside the PASS fixture set so one
+known limitation cannot mask another contract boundary.
 
 ## Sensitive logging evidence boundary
 
