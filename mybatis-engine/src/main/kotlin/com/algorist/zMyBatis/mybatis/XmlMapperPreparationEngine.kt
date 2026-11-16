@@ -199,8 +199,8 @@ object XmlMapperPreparationEngine {
             is XmlMapperPreparationProjection.Result.Ready -> result
             is XmlMapperPreparationProjection.Result.Failed -> return PreparationResult.Failed(result.failure)
         }
-        for (document in projection.documents) {
-            rawSourceFailure(document, request)?.let { return PreparationResult.Failed(it) }
+        rawSourceFailure(projection.documents, request)?.let {
+            return PreparationResult.Failed(it)
         }
 
         val hasRawInterpolation = request.parameterContract.requirements.any {
@@ -545,39 +545,43 @@ object XmlMapperPreparationEngine {
     }
 
     private fun rawSourceFailure(
-        document: XmlMapperPreparationProjection.ProjectedDocument,
+        documents: List<XmlMapperPreparationProjection.ProjectedDocument>,
         request: MyBatisPreparationRequest,
     ): PreparationFailure? {
-        val content = document.content
-        val rawOpen = "$" + "{"
-        if (!content.contains(rawOpen)) return null
-        if (rawStructuralAttribute.containsMatchIn(content)) return rawInputUnsupported()
+        for ((sourceFileId, sourceDocuments) in documents.groupBy { it.sourceFileId }) {
+            val contents = sourceDocuments.map { it.content }
+            val rawOpen = "$" + "{"
+            if (contents.none { rawOpen in it }) continue
+            if (contents.any(rawStructuralAttribute::containsMatchIn)) return rawInputUnsupported()
 
-        val sourceExpressions = rawInterpolation.findAll(content)
-            .map { match -> match.groupValues[1].trim() }
-            .toList()
-        if (sourceExpressions.isEmpty()) return rawInputUnsupported()
+            val sourceExpressions = contents
+                .flatMap { content ->
+                    rawInterpolation.findAll(content)
+                        .map { match -> match.groupValues[1].trim() }
+                        .toList()
+                }
+            if (sourceExpressions.isEmpty()) return rawInputUnsupported()
 
-        val provenExpressions = request.parameterContract.requirements
-            .asSequence()
-            .filter { requirement -> requirement.kind == InputKind.RAW_INTERPOLATION }
-            .flatMap { requirement -> requirement.provenance.evidence.asSequence() }
-            .filterIsInstance<InputEvidence.Placeholder>()
-            .filter { evidence ->
-                evidence.kind == InputKind.RAW_INTERPOLATION &&
-                    evidence.source.sourceFileId == document.sourceFileId
+            val provenExpressions = request.parameterContract.requirements
+                .asSequence()
+                .filter { requirement -> requirement.kind == InputKind.RAW_INTERPOLATION }
+                .flatMap { requirement -> requirement.provenance.evidence.asSequence() }
+                .filterIsInstance<InputEvidence.Placeholder>()
+                .filter { evidence ->
+                    evidence.kind == InputKind.RAW_INTERPOLATION &&
+                        evidence.source.sourceFileId == sourceFileId
+                }
+                .map { evidence -> evidence.expression.trim() }
+                .toList()
+
+            if (
+                sourceExpressions.groupingBy(String::toString).eachCount() !=
+                provenExpressions.groupingBy(String::toString).eachCount()
+            ) {
+                return rawInputUnsupported()
             }
-            .map { evidence -> evidence.expression.trim() }
-            .toList()
-
-        return if (
-            sourceExpressions.groupingBy(String::toString).eachCount() ==
-            provenExpressions.groupingBy(String::toString).eachCount()
-        ) {
-            null
-        } else {
-            rawInputUnsupported()
         }
+        return null
     }
 
     private fun rawInputUnsupported(): PreparationFailure = PreparationFailure(
