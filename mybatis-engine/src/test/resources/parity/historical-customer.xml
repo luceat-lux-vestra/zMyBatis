@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="parity.HistoricalCustomerMapper">
+    <resultMap id="CustomerResultMap" type="com.algorist.zMyBatis.mybatis.parity.HistoricalCustomer">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="email" column="email"/>
+        <result property="countryId" column="country_id"/>
+        <result property="paymentGatewayCustomerId" column="payment_gateway_customer_id"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="findById" parameterType="map" resultMap="CustomerResultMap">
+        SELECT
+        <if test="t1 == 1">id</if>
+        <if test="t2 == 2">,name</if>
+        FROM customers c
+        WHERE id = #{test}
+    </select>
+
+    <select id="findByIdJSON" parameterType="map" resultMap="CustomerResultMap">
+        SELECT
+        <if test="user.id == 1">id</if>
+        <if test="cust.name == 'test'">,name</if>
+        FROM customers c
+        WHERE id = #{test}
+    </select>
+
+    <select id="findAll" resultMap="CustomerResultMap">
+        SELECT * FROM customers
+    </select>
+
+    <insert id="save" parameterType="com.algorist.zMyBatis.mybatis.parity.HistoricalCustomer" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO customers (name, email, country_id, payment_gateway_customer_id)
+        VALUES (#{name}, #{email}, #{countryId}, #{paymentGatewayCustomerId})
+    </insert>
+
+    <update id="update" parameterType="com.algorist.zMyBatis.mybatis.parity.HistoricalCustomer">
+        UPDATE customers
+        SET name = #{name}, email = #{email}, country_id = #{countryId}, payment_gateway_customer_id = #{paymentGatewayCustomerId}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="delete" parameterType="long">
+        DELETE FROM customers WHERE id = #{id}
+    </delete>
+</mapper>
