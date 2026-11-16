@@ -197,14 +197,54 @@ class XmlMapperPreparationEngineTest {
     }
 
     @Test
-    fun runtimeClassLoadingSurfacesFailBeforeMyBatisParser() {
+    fun statementProjectionIgnoresResultAndCacheMetadataButKeepsRuntimeSensitiveRefusals() {
+        val resultTypeFixture = fixture(
+            file = "vfs:/result-type.xml",
+            content = mapperDocument(
+                "example.Mapper",
+                "<select id=\"find\" resultType=\"example.Payload\">SELECT 1</select>",
+            ),
+        )
+        assertEquals("SELECT 1", normalize(success(prepare(resultTypeFixture)).sqlWithPlaceholders))
+
+        val resultMapFixture = fixture(
+            file = "vfs:/result-map.xml",
+            content = mapperDocument(
+                "example.Mapper",
+                """
+                    <resultMap id="PayloadMap" type="example.Payload">
+                        <id property="id" column="id"/>
+                    </resultMap>
+                    <select id="find" resultMap="PayloadMap">SELECT 1</select>
+                """.trimIndent(),
+            ),
+        )
+        assertEquals("SELECT 1", normalize(success(prepare(resultMapFixture)).sqlWithPlaceholders))
+
+        val cacheFixture = fixture(
+            file = "vfs:/cache.xml",
+            content = mapperDocument(
+                "example.Mapper",
+                "<cache type=\"example.CustomCache\"/><select id=\"find\">SELECT 1</select>",
+            ),
+        )
+        assertEquals("SELECT 1", normalize(success(prepare(cacheFixture)).sqlWithPlaceholders))
+
+        val builtInParameterType = fixture(
+            file = "vfs:/parameter-type-long.xml",
+            content = mapperDocument(
+                "example.Mapper",
+                "<select id=\"find\" parameterType=\"long\">SELECT 1</select>",
+            ),
+        )
+        assertEquals("SELECT 1", normalize(success(prepare(builtInParameterType)).sqlWithPlaceholders))
+
         listOf(
-            "resultType=\"example.Payload\"",
             "parameterType=\"example.Payload\"",
             "lang=\"example.Driver\"",
         ).forEachIndexed { index, attribute ->
             val fixture = fixture(
-                file = "vfs:/danger-$index.xml",
+                file = "vfs:/runtime-sensitive-$index.xml",
                 content = mapperDocument(
                     "example.Mapper",
                     "<select id=\"find\" $attribute>SELECT 1</select>",
@@ -216,18 +256,6 @@ class XmlMapperPreparationEngineTest {
                 "xml-preparation-runtime-class-loading-unsupported",
             )
         }
-
-        val cacheFixture = fixture(
-            content = mapperDocument(
-                "example.Mapper",
-                "<cache/><select id=\"find\">SELECT 1</select>",
-            ),
-        )
-        assertFailure(
-            prepare(cacheFixture),
-            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "xml-preparation-runtime-class-loading-unsupported",
-        )
     }
 
     @Test
