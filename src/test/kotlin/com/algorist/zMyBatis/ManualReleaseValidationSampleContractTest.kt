@@ -2,6 +2,9 @@ package com.algorist.zMyBatis
 
 import java.nio.file.Files
 import java.nio.file.Path
+import javax.tools.ToolProvider
+import javax.xml.parsers.DocumentBuilderFactory
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,6 +31,62 @@ class ManualReleaseValidationSampleContractTest {
         )
         assertTrue(readme.contains("This is **not** a replacement for automated tests."))
         assertTrue(readme.contains("#509"))
+    }
+
+    @Test
+    fun `manual Java fixtures compile against the maintained MyBatis runtime`() {
+        val compiler = requireNotNull(ToolProvider.getSystemJavaCompiler()) {
+            "manual release sample validation requires a full JDK"
+        }
+        val myBatisLocation = Class.forName("org.apache.ibatis.annotations.Select")
+            .protectionDomain
+            .codeSource
+            .location
+            .toURI()
+        val javaFiles = Files.walk(sample.resolve("src/main/java")).use { paths ->
+            paths.filter { path -> Files.isRegularFile(path) && path.toString().endsWith(".java") }
+                .map(Path::toString)
+                .sorted()
+                .toList()
+        }
+        val output = Files.createTempDirectory("zmybatis-manual-sample-javac")
+        try {
+            val args = buildList {
+                add("-classpath")
+                add(Path.of(myBatisLocation).toString())
+                add("-d")
+                add(output.toString())
+                addAll(javaFiles)
+            }
+            assertEquals(
+                "manual release Java fixtures must compile against the maintained MyBatis runtime",
+                0,
+                compiler.run(null, null, null, *args.toTypedArray()),
+            )
+        } finally {
+            output.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `manual mapper fixtures are well formed XML without resolving external DTDs`() {
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            setFeature("http://xml.org/sax/features/external-general-entities", false)
+            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            isXIncludeAware = false
+            isExpandEntityReferences = false
+        }
+
+        Files.walk(sample.resolve("src/main/resources/mappers")).use { paths ->
+            paths.filter { path -> Files.isRegularFile(path) && path.toString().endsWith(".xml") }
+                .sorted()
+                .forEach { path ->
+                    Files.newInputStream(path).use { input ->
+                        factory.newDocumentBuilder().parse(input)
+                    }
+                }
+        }
     }
 
     @Test
