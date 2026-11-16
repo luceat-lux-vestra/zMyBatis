@@ -244,7 +244,9 @@ The active publication contract established by #56 is:
 
 JetBrains Marketplace `Source Code` and `License` are Marketplace-admin metadata rather than repository-controlled state. The maintainer has confirmed the canonical source URL and Apache-2.0 metadata; repository automation must not pretend it can mutate those fields.
 
-## 10. Current implementation versus 1.0 target
+## 10. Current product gaps versus Leap target
+
+> Governance-stable heading: this section now distinguishes the current Leap implementation from the superseding zMyBatis 1.0 target under #512.
 
 Epic #60 remains provenance for the current single-path Leap baseline: registered action →
 authoritative source/input contracts → isolated MyBatis preparation → bounded materialization →
