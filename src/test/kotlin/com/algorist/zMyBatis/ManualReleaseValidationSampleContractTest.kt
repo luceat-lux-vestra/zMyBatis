@@ -22,7 +22,10 @@ class ManualReleaseValidationSampleContractTest {
         assertFalse("manual sample must not become an unrelated Spring Boot app", pom.contains("spring-boot"))
         assertTrue(compose.contains("postgres:17-alpine"))
         assertTrue(compose.contains("POSTGRES_DB: zmybatis"))
-        assertFalse("historical MySQL/H2 fixture must not define the release target", compose.contains("mysql") || compose.contains("h2"))
+        assertFalse(
+            "historical MySQL/H2 fixture must not define the release target",
+            compose.contains("mysql") || compose.contains("h2"),
+        )
         assertTrue(readme.contains("This is **not** a replacement for automated tests."))
         assertTrue(readme.contains("#509"))
     }
@@ -64,9 +67,25 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(xml.contains("#{left,jdbcType=BIGINT}"))
         assertTrue(xml.contains("#{right,jdbcType=BIGINT}"))
         assertTrue(product.contains("<include refid=\"fixture.SharedFragments.productColumns\"/>"))
-        assertFalse("passing XML fixture must stay inside current class-loading preflight", xml.contains("resultType=") || xml.contains("resultMap=") || xml.contains("parameterType="))
-        assertFalse("passing Product fixture must stay inside current class-loading preflight", product.contains("<resultMap") || product.contains("resultMap=") || product.contains("resultType=") || product.contains("parameterType="))
-        assertFalse("dynamic-tag reproduction must not be masked by class-loading refusal", pending.contains("resultType=") || pending.contains("resultMap=") || pending.contains("parameterType="))
+        assertFalse(
+            "passing XML fixture must stay inside current class-loading preflight",
+            xml.contains("resultType=") ||
+                xml.contains("resultMap=") ||
+                xml.contains("parameterType="),
+        )
+        assertFalse(
+            "passing Product fixture must stay inside current class-loading preflight",
+            product.contains("<resultMap") ||
+                product.contains("resultMap=") ||
+                product.contains("resultType=") ||
+                product.contains("parameterType="),
+        )
+        assertFalse(
+            "dynamic-tag reproduction must not be masked by class-loading refusal",
+            pending.contains("resultType=") ||
+                pending.contains("resultMap=") ||
+                pending.contains("parameterType="),
+        )
         assertTrue(pending.contains("<choose>"))
         assertTrue(pending.contains("<bind name=\"pattern\""))
         assertTrue(pending.contains("NOT release PASS cases while #509 is open"))
@@ -83,13 +102,17 @@ class ManualReleaseValidationSampleContractTest {
         val provider = source("src/main/java/fixture/ProviderReleaseValidationMapper.java")
 
         assertTrue(direct.contains("@Select(\"SELECT 7 AS result_value\")"))
-        assertTrue(direct.contains("@Select(\"SELECT #{value,jdbcType=BIGINT}::BIGINT AS result_value\")"))
+        assertTrue(
+            direct.contains("@Select(\"SELECT #{value,jdbcType=BIGINT}::BIGINT AS result_value\")"),
+        )
         assertTrue(direct.contains("@Select(\"SELECT \${value} AS result_value\")"))
         assertTrue(direct.contains("@Insert("))
         assertTrue(direct.contains("@Update("))
         assertTrue(direct.contains("@Delete("))
         assertTrue(provider.contains("@SelectProvider"))
-        assertTrue(source("README.md").contains("foreach item bindings are MyBatis additional parameters"))
+        assertTrue(
+            source("README.md").contains("foreach item bindings are MyBatis additional parameters"),
+        )
     }
 
     private fun source(relativePath: String): String =
