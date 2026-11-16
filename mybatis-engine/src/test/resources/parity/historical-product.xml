@@ -30,7 +30,7 @@
         VALUES (#{name}, #{price}, #{currency}, #{billingInterval}, #{paymentGatewayProductId}, #{active})
     </insert>
 
-    <update id="update" parameterType="com.algorist.zMyBatis.mybatis.parity.HistoricalProduct">
+    <update id="update" parameterType="Product">
         UPDATE products
         SET name = #{name}, price = #{price}, currency = #{currency}, billing_interval = #{billingInterval},
             payment_gateway_product_id = #{paymentGatewayProductId}, active = #{active}
