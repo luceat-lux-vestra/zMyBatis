@@ -414,11 +414,12 @@ class XmlMapperPreparationEngineTest {
         )
     }
 
-    private fun mapperDocument(namespace: String, body: String): String = """
-        <?xml version="1.0" encoding="UTF-8" ?>
-        <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-        <mapper namespace="$namespace">$body</mapper>
-    """.trimIndent()
+    private fun mapperDocument(namespace: String, body: String): String =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n" +
+            "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n" +
+            "<mapper namespace=\"$namespace\">" +
+            body +
+            "</mapper>"
 
     private fun success(result: PreparationResult) = when (result) {
         is PreparationResult.Success -> result.execution
