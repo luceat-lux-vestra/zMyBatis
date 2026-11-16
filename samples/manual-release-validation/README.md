@@ -21,7 +21,7 @@ Do not sign off a release while a case marked **BLOCKER** is failing or while a 
 At the baseline that introduced this fixture, two contract/product reconciliations remain explicit release holds:
 
 - [#509](https://github.com/luceat-lux-vestra/zMyBatis/issues/509) — broad `<choose>/<when>/<otherwise>` / `<bind>` support wording versus bounded runtime admission. `PendingDynamicContractMapper.xml` owns R01/R02.
-- [#510](https://github.com/luceat-lux-vestra/zMyBatis/issues/510) — common `resultMap` / `resultType` / `parameterType` mapper declarations versus XML runtime-class-loading preflight. `PendingCommonMapperDeclarations.xml` owns R03/R04.
+- [#510](https://github.com/luceat-lux-vestra/zMyBatis/issues/510) — common `resultMap` / `resultType` / `parameterType` mapper declarations versus XML runtime-class-loading preflight. `PendingCommonMapperDeclarations.xml` owns R03-R05.
 
 These pending cases are deliberately separated from the PASS fixtures so one discrepancy cannot mask another.
 
@@ -210,13 +210,14 @@ At the fixture introduction baseline, authoritative documentation broadly calls 
 `src/main/resources/mappers/PendingCommonMapperDeclarations.xml` contains realistic forms taken from the historical manual project:
 
 - **R03** — `<resultMap>` plus `resultMap="..."` on a select;
-- **R04** — `parameterType="long"` on a bound select.
+- **R04** — `resultType="fixture.Product"` on a select;
+- **R05** — `parameterType="long"` on a bound select.
 
 The current XML preparation preflight deliberately rejects runtime class-loading surfaces, including these common declarations, with `xml-preparation-runtime-class-loading-unsupported`. This is tracked by #510. Passing fixtures intentionally avoid those declarations so the underlying source/preparation/materialization path remains observable.
 
 Until #509/#510 are resolved:
 
-- do not count R01-R04 as PASS criteria;
+- do not count R01-R05 as PASS criteria;
 - do not widen the manual acceptance claim beyond the actually admitted bounded shapes;
 - do not “fix” the reproduction files by stripping the disputed declarations/tags;
 - a 1.0.0 release claim must reconcile both issues rather than hiding the discrepancies.
