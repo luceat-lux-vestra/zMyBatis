@@ -150,7 +150,8 @@ class StockMyBatisParityOracleTest {
         )
         assertEquals("SELECTidFROMproductsWHEREidIN(?,?)", compact(foreach.sql))
         assertEquals(listOf(7L, 9L), foreach.bindings.map { it.runtimeValue })
-        assertTrue(foreach.bindings.all { it.additionalParameter })
+        assertTrue(foreach.bindings.all { it.mappingValue })
+        assertTrue(foreach.bindings.none { it.additionalParameter })
 
         val where = snapshot(
             configuration,
@@ -196,7 +197,7 @@ class StockMyBatisParityOracleTest {
         )
         assertEquals(listOf("pattern"), bind.bindings.map { it.property })
         assertEquals(listOf("%pro%"), bind.bindings.map { it.runtimeValue })
-        assertTrue(bind.bindings.single().additionalParameter)
+        assertTrue(bind.bindings.single().mappingValue || bind.bindings.single().additionalParameter)
     }
 
     @Test
@@ -213,7 +214,8 @@ class StockMyBatisParityOracleTest {
             compact(chooseForeach.sql),
         )
         assertEquals(listOf(2L, 4L), chooseForeach.bindings.map { it.runtimeValue })
-        assertTrue(chooseForeach.bindings.all { it.additionalParameter })
+        assertTrue(chooseForeach.bindings.all { it.mappingValue })
+        assertTrue(chooseForeach.bindings.none { it.additionalParameter })
 
         val chooseFallback = snapshot(
             configuration,
@@ -233,7 +235,7 @@ class StockMyBatisParityOracleTest {
             compact(bindIf.sql),
         )
         assertEquals(listOf("%customer%"), bindIf.bindings.map { it.runtimeValue })
-        assertTrue(bindIf.bindings.single().additionalParameter)
+        assertTrue(bindIf.bindings.single().mappingValue || bindIf.bindings.single().additionalParameter)
 
         val foreachWhere = snapshot(
             configuration,
@@ -408,7 +410,7 @@ class StockMyBatisParityOracleTest {
             compact(dynamic.sql),
         )
         assertEquals(listOf(7L, 9L, "%pro%"), dynamic.bindings.map { it.runtimeValue })
-        assertTrue(dynamic.bindings.all { it.additionalParameter })
+        assertTrue(dynamic.bindings.all { it.mappingValue || it.additionalParameter })
 
         val rawMethod = method(OracleAnnotatedMapper::class.java, "raw")
         val rawParameter = namedParameters(configuration, rawMethod, "42")
@@ -554,6 +556,7 @@ class StockMyBatisParityOracleTest {
                 OracleBinding(
                     property = mapping.property,
                     runtimeValue = metadata.runtimeValue,
+                    mappingValue = mapping.hasValue(),
                     additionalParameter = boundSql.hasAdditionalParameter(mapping.property),
                     javaTypeIdentity = metadata.javaTypeIdentity,
                     jdbcTypeIdentity = metadata.jdbcTypeIdentity,
@@ -583,6 +586,7 @@ class StockMyBatisParityOracleTest {
     private data class OracleBinding(
         val property: String,
         val runtimeValue: Any?,
+        val mappingValue: Boolean,
         val additionalParameter: Boolean,
         val javaTypeIdentity: String?,
         val jdbcTypeIdentity: String?,
