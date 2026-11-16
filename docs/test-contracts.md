@@ -18,6 +18,20 @@ The required `Test` CI context is product evidence, not a line-coverage target. 
 | Sensitive production logging | `SensitiveLoggingContractTest`, action/adapter diagnostic contract tests | production logs reject direct interpolation of known sensitive SQL/input/source/target identities and platform exception messages; typed expected failures expose metadata rather than raw payload |
 | Real packaged execution | `ZMyBatisStarterDriverE2ETest` via `E2E / Starter / Driver E2E` | exact packaged plugin executes maintained zero-binding, PostgreSQL BIGINT, XML raw, direct-Java raw, cancellation/history and fail-closed scenarios through the registered action on IDEA Ultimate 2026.2.3 |
 
+## Manual release acceptance boundary
+
+The repository-owned [manual release validation sample](../samples/manual-release-validation/README.md)
+is supplemental maintainer evidence for an exact packaged release candidate. It intentionally reuses
+the maintained zero-binding, PostgreSQL BIGINT + Boolean-if, XML raw and direct-Java raw shapes while
+adding safe manual probes for mutation confirmation, qualified includes, databaseId selection,
+unsupported materialization, settings, target persistence, console policy and DataGrip smoke.
+
+Manual acceptance does **not** replace the automated contract map above and does not expand product
+support merely because a fixture can be written. Detailed semantic matrices remain owned by their
+lowest reliable automated layer. Any mismatch between an authoritative product claim and the actual
+registered-path evidence must fail closed and be tracked independently; #509 owns the dynamic-tag
+claim discrepancy found while adding the sample.
+
 ## Sensitive logging evidence boundary
 
 PR #117 removed the shipping action's known INFO-level interpolation of resolved parameter values, extracted/dialog values, and rendered SQL. #458 extends that boundary to mapper/source identities, datasource/schema display names, console titles, persisted target-selection identifiers, and platform exception-message detail. `SensitiveLoggingContractTest` follows the production source boundary rather than one class: it scans logging-call windows across `src/main/kotlin` for direct interpolation of the maintained sensitive aliases/object properties and exception-message forms, while explicitly allowing metadata-only `size`/`length`, stage, and failure-type evidence. Expected Database Tools failures retain typed class identity without unused raw detail payloads; genuine fatal throwables remain attached only to fatal diagnostics and are rethrown.
