@@ -208,9 +208,9 @@ object XmlMapperPreparationEngine {
         }
 
         if (booleanIf != null || foreach != null) {
-            for (document in projection.documents) {
+            for ((_, _, content) in projection.documents) {
                 DynamicBoundTokenTopologyAdmission.failureOrNull(
-                    document.content,
+                    content,
                     rootPath = "/mapper",
                     unsupportedCode = if (booleanIf != null) {
                         "xml-boolean-if-bound-token-topology-unsupported"
