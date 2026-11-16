@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="fixture.PendingDynamicContractMapper">
+
+    <!-- R01/R02 are NOT release PASS cases while #509 is open.
+         They exist so the maintainer can reproduce the current contract/runtime discrepancy. -->
+    <select id="choosePending" resultType="long">
+        SELECT
+        <choose>
+            <when test="enabled">1</when>
+            <otherwise>0</otherwise>
+        </choose>
+        AS result_value
+    </select>
+
+    <select id="bindPending" resultType="string">
+        <bind name="pattern" value="'%' + value + '%'"/>
+        SELECT ${pattern} AS result_value
+    </select>
+
+</mapper>
