@@ -154,6 +154,80 @@ class XmlMapperPreparationProjectionParityTest {
     }
 
     @Test
+    fun updateSetAndWhereNodesPreserveStockBoundSql() {
+        val setCase = resourceFixture(
+            rootResource = "parity/dynamic.xml",
+            namespace = "parity.DynamicMapper",
+            statementId = "setCase",
+            kind = StatementKind.UPDATE,
+        )
+        assertProjectionParity(
+            setCase,
+            mapOf("name" to "pro", "active" to true, "id" to 9L),
+        )
+
+        val setWhere = resourceFixture(
+            rootResource = "parity/dynamic.xml",
+            namespace = "parity.DynamicMapper",
+            statementId = "setWhere",
+            kind = StatementKind.UPDATE,
+        )
+        assertProjectionParity(
+            setWhere,
+            mapOf("name" to "updated", "active" to null, "id" to 5L, "tenantId" to 8L),
+        )
+    }
+
+    @Test
+    fun stockJavaTypeAndTypeHandlerMetadataRemainInProjection() {
+        val fixture = inlineFixture(
+            mapperDocument(
+                "example.Mapper",
+                """
+                    <select id="find" parameterType="map">
+                        SELECT #{value,javaType=java.lang.Long,jdbcType=BIGINT,typeHandler=org.apache.ibatis.type.LongTypeHandler}
+                    </select>
+                """.trimIndent(),
+            ),
+        )
+        assertProjectionParity(fixture, mapOf("value" to 42L))
+
+        val projected = ready(fixture).documents.single().content
+        assertTrue(projected.contains("javaType=\"java.lang.Long\""))
+        assertTrue(projected.contains("jdbcType=\"BIGINT\""))
+        assertTrue(projected.contains("typeHandler=\"org.apache.ibatis.type.LongTypeHandler\""))
+    }
+
+    @Test
+    fun selectedSelectKeyRemainsTypedRefusalInP1() {
+        val fixture = inlineFixture(
+            content = mapperDocument(
+                "example.Mapper",
+                """
+                    <insert id="find" parameterType="map">
+                        <selectKey keyProperty="id" resultType="long" order="BEFORE">
+                            SELECT 1
+                        </selectKey>
+                        INSERT INTO products(id) VALUES(#{id,jdbcType=BIGINT})
+                    </insert>
+                """.trimIndent(),
+            ),
+            kind = StatementKind.INSERT,
+        )
+        val result = XmlMapperPreparationProjection.project(
+            fixture.source,
+            fixture.statementId,
+            null,
+        )
+        assertTrue(result is XmlMapperPreparationProjection.Result.Failed)
+        result as XmlMapperPreparationProjection.Result.Failed
+        assertEquals(
+            "xml-preparation-runtime-class-loading-unsupported",
+            result.failure.code,
+        )
+    }
+
+    @Test
     fun unrelatedRuntimeDeclarationsDoNotEnterSelectedStatementProjection() {
         val xml = mapperDocument(
             "example.Mapper",
