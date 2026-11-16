@@ -298,7 +298,7 @@ The UI receives a `ParameterContract`; it does not discover parameters itself.
 
 Input codecs are pure code. JSON decoding preserves integer/arbitrary-precision decimal fidelity where possible; convenience conversion to `Double` is not the semantic default.
 
-Remembered inputs are opt-in and keyed by canonical `StatementId`. Until the retention/sensitive-data contract is implemented, the target default is OFF. Example/scaffold text from #69 is presentation-only and never counted as an entered value without explicit user action.
+Remembered inputs are opt-in and keyed by canonical `StatementId`; raw interpolation remains non-retainable under the current policy. Example/scaffold text from #69 is presentation-only and never counted as entered execution input without explicit user action.
 
 ## 7. Isolated MyBatis preparation
 
