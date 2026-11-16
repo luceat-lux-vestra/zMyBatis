@@ -244,21 +244,38 @@ The active publication contract established by #56 is:
 
 JetBrains Marketplace `Source Code` and `License` are Marketplace-admin metadata rather than repository-controlled state. The maintainer has confirmed the canonical source URL and Apache-2.0 metadata; repository automation must not pretend it can mutate those fields.
 
-## 10. Current product gaps versus Leap target
+## 10. Current implementation versus 1.0 target
 
-Epic #60 is the provenance Epic for the completed Leap baseline. The production architecture is single-path: registered action → authoritative source/input contracts → isolated MyBatis preparation → proven materialization → exact target → Database Tools delivery. The former execution/evaluator/input compatibility architecture and undistributed v2 persistence have been removed.
+Epic #60 remains provenance for the current single-path Leap baseline: registered action →
+authoritative source/input contracts → isolated MyBatis preparation → bounded materialization →
+exact target → Database Tools native delivery. The former legacy execution/evaluator/input
+architecture and undistributed v2 persistence remain deleted.
 
-The physical dependency graph remains enforced: root IntelliJ plugin → `:core` and `:mybatis-engine`; `:mybatis-engine` → `:core` and MyBatis; `:core` remains free of IntelliJ/Database Tools/MyBatis dependencies. Presence of the modules is not correctness evidence; exact registered-action behavior must remain proven.
+The physical dependency graph remains enforced: root IntelliJ plugin → `:core` and
+`:mybatis-engine`; `:mybatis-engine` → `:core` and MyBatis; `:core` remains free of IntelliJ,
+Database Tools and MyBatis dependencies.
 
-The completed #67 readiness baseline is a maintenance contract, not permission to reopen architecture forks:
+The completed #67 readiness baseline remains a maintenance contract for:
 
-- typed diagnostic/privacy behavior must remain free of sensitive SQL/input leakage;
-- real IDEA Ultimate and separate DataGrip host evidence must remain independently maintained;
-- responsiveness, cancellation-latency and retained-resource evidence for large/slow cases must remain reproducible;
-- current docs/Marketplace wording must stay aligned with the proven capability/materializer envelope;
-- any future temporary bridge requires an explicit current owner and deletion point.
+- typed diagnostics/privacy without sensitive SQL/input leakage;
+- independent IDEA Ultimate and DataGrip host evidence;
+- responsiveness, cancellation and retained-resource safety;
+- source/target/lifecycle correctness;
+- exact-head validation discipline.
 
-Never introduce binding-count, mapper-kind, setting, source flavor, or failure-path fallback routing. Any DBMS/type shape not explicitly proven executable remains fail-closed.
+It does **not** freeze the current dynamic-admission or PostgreSQL BIGINT materializer restrictions as
+the 1.0 product target.
+
+Until P4 cutover, every current unsupported DBMS/type/input shape remains fail-closed in the shipping
+path. During P1-P4, replacement support becomes authoritative only after its phase oracle/backend
+evidence is green; no old-path fallback is allowed.
+
+Public wording must distinguish current shipping evidence from the pre-1.0 target. Do not advertise
+planned parity as already shipped, and do not advertise temporary current restrictions as permanent
+1.0 product decisions.
+
+Never introduce hidden binding-count, mapper-kind, setting, source-flavor or failure-path fallback
+routing. Any temporary bridge requires an explicit owner and deletion point.
 
 ## 11. Review discipline
 
