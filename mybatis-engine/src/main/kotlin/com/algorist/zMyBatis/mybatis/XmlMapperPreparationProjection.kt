@@ -43,6 +43,7 @@ internal object XmlMapperPreparationProjection {
     private const val XML_DECLARATION = "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>"
     private const val MAPPER_DOCTYPE =
         "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">"
+    private const val PROPERTY_PLACEHOLDER_OPEN = "$" + "{"
 
     private val statementElementNames = setOf("select", "insert", "update", "delete")
     private val safeMapperDoctype = Regex(
@@ -168,7 +169,7 @@ internal object XmlMapperPreparationProjection {
             val owner = queue.removeFirst()
             for (include in descendantIncludes(owner.element)) {
                 val refid = include.getAttribute("refid").trim()
-                if (refid.isEmpty() || "\${" in refid) {
+                if (refid.isEmpty() || PROPERTY_PLACEHOLDER_OPEN in refid) {
                     return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_REFERENCE)
                 }
                 val canonical = if ('.' in refid) {
