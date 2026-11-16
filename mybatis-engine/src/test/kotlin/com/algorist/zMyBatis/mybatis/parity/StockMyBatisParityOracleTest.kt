@@ -4,13 +4,10 @@ import com.algorist.zMyBatis.mybatis.stockEffectiveParameterMappingMetadata
 import java.io.InputStream
 import java.lang.reflect.Method
 import java.math.BigDecimal
-import java.util.LinkedHashMap
 import org.apache.ibatis.builder.xml.XMLMapperBuilder
-import org.apache.ibatis.mapping.BoundSql
 import org.apache.ibatis.reflection.ParamNameResolver
 import org.apache.ibatis.session.Configuration
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -194,7 +191,7 @@ class StockMyBatisParityOracleTest {
             mapOf("name" to "pro"),
         )
         assertEquals(
-            "SELECTidFROMproductsWHEREnamELIKE?".replace("namE", "name"),
+            "SELECTidFROMproductsWHEREnameLIKE?",
             compact(bind.sql),
         )
         assertEquals(listOf("pattern"), bind.bindings.map { it.property })
@@ -314,31 +311,34 @@ class StockMyBatisParityOracleTest {
         val listMethod = method(OracleParameterMapper::class.java, "list")
         val listParameter = namedParameters(configuration, listMethod, listOf(1L, 2L))
         assertTrue(listParameter is Map<*, *>)
-        assertEquals(listOf(1L, 2L), (listParameter as Map<*, *>)["list"])
-        assertEquals(listOf(1L, 2L), listParameter["collection"])
+        val listMap = listParameter as Map<*, *>
+        assertEquals(listOf(1L, 2L), listMap["list"])
+        assertEquals(listOf(1L, 2L), listMap["collection"])
         assertEquals(
             listOf(1L, 2L),
-            snapshot(configuration, "parity.ParameterShapes.list", listParameter).bindings.map { it.runtimeValue },
+            snapshot(configuration, "parity.ParameterShapes.list", listMap).bindings.map { it.runtimeValue },
         )
 
         val collectionMethod = method(OracleParameterMapper::class.java, "collection")
         val collectionValue: Collection<Long> = linkedSetOf(3L, 4L)
         val collectionParameter = namedParameters(configuration, collectionMethod, collectionValue)
         assertTrue(collectionParameter is Map<*, *>)
-        assertEquals(collectionValue, (collectionParameter as Map<*, *>)["collection"])
+        val collectionMap = collectionParameter as Map<*, *>
+        assertEquals(collectionValue, collectionMap["collection"])
         assertEquals(
             listOf(3L, 4L),
-            snapshot(configuration, "parity.ParameterShapes.collection", collectionParameter).bindings.map { it.runtimeValue },
+            snapshot(configuration, "parity.ParameterShapes.collection", collectionMap).bindings.map { it.runtimeValue },
         )
 
         val arrayMethod = method(OracleParameterMapper::class.java, "array")
         val arrayValue = arrayOf(5L, 6L)
         val arrayParameter = namedParameters(configuration, arrayMethod, arrayValue)
         assertTrue(arrayParameter is Map<*, *>)
-        assertTrue((arrayParameter as Map<*, *>)["array"] === arrayValue)
+        val arrayMap = arrayParameter as Map<*, *>
+        assertTrue(arrayMap["array"] === arrayValue)
         assertEquals(
             listOf(5L, 6L),
-            snapshot(configuration, "parity.ParameterShapes.array", arrayParameter).bindings.map { it.runtimeValue },
+            snapshot(configuration, "parity.ParameterShapes.array", arrayMap).bindings.map { it.runtimeValue },
         )
 
         val typedNull = snapshot(
