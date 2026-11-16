@@ -3,17 +3,17 @@
 <mapper namespace="fixture.XmlReleaseValidationMapper">
 
     <!-- M01: DB-neutral zero-binding golden path. -->
-    <select id="zeroBinding" resultType="long">
+    <select id="zeroBinding">
         SELECT 7 AS result_value
     </select>
 
     <!-- M03: maintained nonzero production slice: exactly one PostgreSQL BIGINT binding. -->
-    <select id="bigintEcho" resultType="long">
+    <select id="bigintEcho">
         SELECT #{value,jdbcType=BIGINT}::BIGINT AS result_value
     </select>
 
     <!-- M04: canonical E2E BIGINT + stock-MyBatis Boolean-if path. -->
-    <select id="bigintWithIf" resultType="long">
+    <select id="bigintWithIf">
         SELECT #{value,jdbcType=BIGINT}::BIGINT AS result_value
         <if test="value > 0">
             , 1::BIGINT AS positive_marker
@@ -21,7 +21,7 @@
     </select>
 
     <!-- M05: bounded WHERE + Boolean-if wrapper. -->
-    <select id="whereIf" resultType="long">
+    <select id="whereIf">
         SELECT id
         FROM products
         <where>
@@ -32,9 +32,10 @@
         ORDER BY id
     </select>
 
-    <!-- M06: source-proven foreach. [1] can stay inside the one-BIGINT materializer envelope;
-         [1,2] must fail closed because two nonzero bindings are outside that envelope. -->
-    <select id="foreachIds" resultType="long">
+    <!-- M06: source-proven foreach preparation. Shipping materialization remains fail-closed:
+         generated foreach item bindings are MyBatis additional parameters, which the current
+         PostgreSQL BIGINT materializer deliberately refuses; multiple items also exceed cardinality. -->
+    <select id="foreachIds">
         SELECT id
         FROM products
         WHERE id IN
@@ -45,25 +46,25 @@
     </select>
 
     <!-- M07: raw interpolation must require explicit raw acknowledgement and final preview. -->
-    <select id="rawEcho" resultType="long">
+    <select id="rawEcho">
         SELECT ${value} AS result_value
     </select>
 
     <!-- M08: target-derived standard MyBatis databaseId selection. -->
-    <select id="databaseIdEcho" resultType="long">
+    <select id="databaseIdEcho">
         SELECT 2600 AS result_value
     </select>
-    <select id="databaseIdEcho" databaseId="PostgreSQL" resultType="long">
+    <select id="databaseIdEcho" databaseId="PostgreSQL">
         SELECT 2620 AS result_value
     </select>
 
     <!-- M09: VARCHAR binding is deliberately outside the maintained PostgreSQL BIGINT slice. -->
-    <select id="unsupportedVarchar" resultType="string">
+    <select id="unsupportedVarchar">
         SELECT #{value,jdbcType=VARCHAR} AS result_value
     </select>
 
     <!-- M10: two BIGINT bindings are deliberately outside the one-binding materializer slice. -->
-    <select id="unsupportedTwoBigints" resultType="long">
+    <select id="unsupportedTwoBigints">
         SELECT #{left,jdbcType=BIGINT}::BIGINT + #{right,jdbcType=BIGINT}::BIGINT AS result_value
     </select>
 
