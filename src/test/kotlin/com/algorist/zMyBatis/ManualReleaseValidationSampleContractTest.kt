@@ -38,11 +38,10 @@ class ManualReleaseValidationSampleContractTest {
         val compiler = requireNotNull(ToolProvider.getSystemJavaCompiler()) {
             "manual release sample validation requires a full JDK"
         }
-        val myBatisLocation = Class.forName("org.apache.ibatis.annotations.Select")
-            .protectionDomain
-            .codeSource
-            .location
-            .toURI()
+        Class.forName("org.apache.ibatis.annotations.Select")
+        val testRuntimeClasspath = System.getProperty("java.class.path")
+            .takeIf { it.isNotBlank() }
+            ?: error("test runtime classpath is unavailable")
         val javaFiles = Files.walk(sample.resolve("src/main/java")).use { paths ->
             paths.filter { path -> Files.isRegularFile(path) && path.toString().endsWith(".java") }
                 .map(Path::toString)
@@ -53,7 +52,7 @@ class ManualReleaseValidationSampleContractTest {
         try {
             val args = buildList {
                 add("-classpath")
-                add(Path.of(myBatisLocation).toString())
+                add(testRuntimeClasspath)
                 add("-d")
                 add(output.toString())
                 addAll(javaFiles)
