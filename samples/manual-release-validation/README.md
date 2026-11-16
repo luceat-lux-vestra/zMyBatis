@@ -20,8 +20,8 @@ Do not sign off a release while a case marked **BLOCKER** is failing or while a 
 
 At the baseline that introduced this fixture, two contract/product reconciliations remain explicit release holds:
 
-- [#509](https://github.com/luceat-lux-vestra/zMyBatis/issues/509) — broad `<choose>/<when>/<otherwise>` / `<bind>` support wording versus bounded runtime admission. `PendingDynamicContractMapper.xml` owns R01/R02.
-- [#510](https://github.com/luceat-lux-vestra/zMyBatis/issues/510) — common `resultMap` / `resultType` / `parameterType` mapper declarations versus XML runtime-class-loading preflight. `PendingCommonMapperDeclarations.xml` owns R03-R05.
+- [#509](https://github.com/luceat-lux-vestra/zMyBatis/issues/509) — broad `<choose>/<when>/<otherwise>` / `<bind>` support wording versus bounded runtime admission. `PendingChooseMapper.xml` and `PendingBindMapper.xml` own R01/R02 independently.
+- [#510](https://github.com/luceat-lux-vestra/zMyBatis/issues/510) — common `resultMap` / `resultType` / `parameterType` mapper declarations versus XML runtime-class-loading preflight. `PendingResultMapMapper.xml`, `PendingResultTypeMapper.xml`, and `PendingParameterTypeMapper.xml` own R03-R05 independently.
 
 These pending cases are deliberately separated from the PASS fixtures so one discrepancy cannot mask another.
 
@@ -174,9 +174,10 @@ Open **Settings/Preferences → Tools → zMyBatis**.
 | T01 | explicit schema | first invocation | chooser requires a concrete datasource + named `public` schema |
 | T02 | persisted target | run M01 again from the same source file | exact persisted target is reused while still valid |
 | T03 | restart restore | close/reopen IDE/project and run M01 | same stable datasource UUID + `public` target is restored; no silent redirection |
-| T04 | stale target | remove/rename the configured datasource, then invoke | stale target is rejected and explicit re-selection is required |
-| T05 | no datasource | open a fresh project state with no eligible datasource and invoke M01 | **zMyBatis: Execution Target Unavailable**; no preparation/execution | exact packaged fail-closed E2E |
-| T06 | cancel target chooser | cancel first target selection | invocation ends; no parameter/preview/native execution |
+| T04 | datasource display rename | rename the configured datasource without recreating it, then invoke M01 | stable UUID keeps the same target valid; display-name change must not invalidate or redirect execution |
+| T05 | stale datasource identity | delete the configured datasource and create a replacement with a new UUID, then invoke M01 | old target must not silently redirect; explicit target re-selection is required |
+| T06 | no datasource | open a fresh project state with no eligible datasource and invoke M01 | **zMyBatis: Execution Target Unavailable**; no preparation/execution | exact packaged fail-closed E2E |
+| T07 | cancel target chooser | cancel first target selection | invocation ends; no parameter/preview/native execution |
 
 Wrong-datasource or wrong-schema execution is a **release blocker**, even if the SQL itself succeeds.
 
@@ -200,14 +201,14 @@ Do **not** infer Java-annotation support or PostgreSQL native result/history par
 
 ## 10. Pending contract reconciliation cases
 
-`src/main/resources/mappers/PendingDynamicContractMapper.xml` contains:
+`src/main/resources/mappers/PendingChooseMapper.xml` and `PendingBindMapper.xml` isolate the #509 cases so one refusal cannot mask the other:
 
 - **R01** — generic `<choose>/<when>/<otherwise>`;
 - **R02** — generic `<bind>`.
 
 At the fixture introduction baseline, authoritative documentation broadly calls these standard dynamic tags supported, while the shipping bounded XML admission path does not expose matching generic registered-path authority. This is tracked by #509.
 
-`src/main/resources/mappers/PendingCommonMapperDeclarations.xml` contains realistic forms taken from the historical manual project:
+`PendingResultMapMapper.xml`, `PendingResultTypeMapper.xml`, and `PendingParameterTypeMapper.xml` isolate realistic declarations taken from the historical manual project:
 
 - **R03** — `<resultMap>` plus `resultMap="..."` on a select;
 - **R04** — `resultType="fixture.Product"` on a select;
@@ -232,7 +233,7 @@ ZIP SHA-256:       ____________________
 Core XML M01-M14:  PASS / FAIL / BLOCKED
 Java J01-J07:      PASS / FAIL / BLOCKED
 UX U01-U08:        PASS / FAIL / BLOCKED
-Target T01-T06:    PASS / FAIL / BLOCKED
+Target T01-T07:    PASS / FAIL / BLOCKED
 IDEA host:         PASS / FAIL / BLOCKED
 DataGrip smoke:    PASS / FAIL / BLOCKED
 #509 disposition:  RESOLVED / BLOCKED
