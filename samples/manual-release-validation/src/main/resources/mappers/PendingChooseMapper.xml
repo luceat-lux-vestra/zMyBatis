@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="fixture.PendingChooseMapper">
+    <!-- R01: NOT a release PASS case while #509 is open. -->
+    <select id="choosePending">
+        SELECT
+        <choose>
+            <when test="enabled">1</when>
+            <otherwise>0</otherwise>
+        </choose>
+        AS result_value
+    </select>
+</mapper>
