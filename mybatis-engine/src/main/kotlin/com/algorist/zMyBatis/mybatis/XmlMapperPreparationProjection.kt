@@ -42,7 +42,7 @@ internal object XmlMapperPreparationProjection {
     private val safeMapperDoctype = Regex(
         """(?is)<!DOCTYPE\s+mapper\s+PUBLIC\s+["']-//mybatis\.org//DTD Mapper 3\.0//EN["']\s+["']https?://mybatis\.org/dtd/mybatis-3-mapper\.dtd["']\s*>""",
     )
-    private val runtimeMappingOption = Regex("""(?i)\b(?:typeHandler|javaType)\s*=""")
+    private val runtimeMappingOption = Regex("""(?i)\b(javaType|typeHandler)\s*=\s*([A-Za-z0-9_.$]+)""")
     private val safeParameterTypeAliases = setOf(
         "_byte", "_char", "_character", "_long", "_short", "_int", "_integer",
         "_double", "_float", "_boolean",
@@ -202,10 +202,31 @@ internal object XmlMapperPreparationProjection {
         )
 
         val documents = fragmentDocuments + projectedRootDocument
-        if (documents.any { runtimeMappingOption.containsMatchIn(it.content) }) {
-            return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, CLASS_LOADING_UNSUPPORTED)
-        }
+        runtimeMappingFailure(documents)?.let { return Result.Failed(it) }
         return Result.Ready(documents)
+    }
+
+    private fun runtimeMappingFailure(
+        documents: List<ProjectedDocument>,
+    ): PreparationFailure? {
+        for (document in documents) {
+            for (match in runtimeMappingOption.findAll(document.content)) {
+                val option = match.groupValues[1].lowercase()
+                val value = match.groupValues[2]
+                val safe = when (option) {
+                    "javatype" -> safeParameterType(value)
+                    "typehandler" -> value.startsWith("org.apache.ibatis.type.")
+                    else -> false
+                }
+                if (!safe) {
+                    return PreparationFailure(
+                        PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                        CLASS_LOADING_UNSUPPORTED,
+                    )
+                }
+            }
+        }
+        return null
     }
 
     private fun statementRuntimeFailure(statement: Element): PreparationFailure? {
