@@ -291,7 +291,7 @@ Normal logs must not contain:
 
 Expected user/source/unsupported/database failures are normal typed outcomes, not IntelliJ fatal errors. `Logger.error` is reserved for genuine internal invariants/platform faults that require operator attention.
 
-A small safety patch may remove current INFO leakage before the full Leap cutover without preserving the legacy action architecture.
+Existing privacy hardening remains protected during parity recovery; regaining mapper parity never authorizes sensitive logging or restoration of the deleted legacy action architecture.
 
 ## 15. IDE compatibility policy
 
@@ -302,20 +302,23 @@ A small safety patch may remove current INFO leakage before the full Leap cutove
 - Database Tools APIs are isolated behind adapters so platform drift has a bounded replacement surface.
 - Public Marketplace/README compatibility claims must match the maintained exact-head verifier/runtime evidence established by #67 and be refreshed whenever the compatibility claim changes.
 
-## 16. Product workflow
+## 16. Target product workflow
 
-1. capture immutable authoritative current-editor source;
-2. resolve one exact configured Database Tools target (datasource + schema/search path); DBMS family does not gate target validity;
-3. derive target database-id context when mapper semantics require MyBatis `databaseId` / `_databaseId`;
-4. resolve the canonical statement variant and complete supported source dependencies for that target context;
-5. derive a provenanced input contract;
-6. collect and validate explicit user input;
-7. prepare through isolated MyBatis semantics, including the proven target database id when required;
-8. use a proven materializer to create one immutable authoritative SQL-text artifact: target-bound zero-binding for the DB-neutral case, or an explicitly supported nonzero dialect/type slice such as the proven PostgreSQL BIGINT path; refuse every other nonzero case without fallback;
-9. revalidate source and target revisions;
-10. require mutation/raw confirmation where applicable;
-11. execute exactly the approved SQL text through the configured native Database Tools console for a dialect/type slice proven executable; no DBMS allowlist for target selection;
-12. present typed result/failure with redacted diagnostics.
+1. capture immutable authoritative current-editor source and canonical statement identity;
+2. resolve reachable source dependencies and target-derived databaseId authority;
+3. construct caller input authority from the real mapper method when available, otherwise one explicit
+   XML-only parameter-object/environment;
+4. build a statement-scoped MyBatis preparation projection without unrelated result/cache blocking;
+5. collect and validate explicit user input;
+6. let stock MyBatis produce BoundSql, ordered mappings, additional values and relevant binding metadata;
+7. freeze one immutable PreparedExecutionPlan bound to source revisions and exact target identity;
+8. require raw/mutation approval and revalidate source, target, cancellation and lifecycle authority;
+9. route bound statements to the prepared backend when the P3 maintained-API gate is proven;
+10. route zero-binding/exact-text statements to the native-console backend;
+11. present structured result/failure with redacted diagnostics.
+
+Until P4 cutover, the current registered action continues its bounded SQL-text materialization behavior
+and fails closed outside that current envelope.
 
 ## 17. Current settings disposition
 
@@ -328,25 +331,33 @@ Current settings are product behavior only where an active Leap owner consumes t
 
 Removed evaluator/dialog compatibility fields are intentionally absent from current runtime state and UI.
 
-## 18. Track ownership and closure
+## 18. Ownership during pre-1.0 parity recovery
 
-- #61 — original closed product-capability contract checkpoint; #391 updated the execution target within the completed Leap baseline tracked by #60.
-- #62 — source snapshots, dependency graph, canonical XML/Java statement identity.
-- #63 — input provenance/codecs/UI/retention.
-- #64 — stock-MyBatis preparation and a verified limited-fidelity SQL-text materialization contract, preserving structured ordered bindings until the proven executable artifact boundary.
-- #65 — target/session descriptor and Database Tools execution resources.
-- #66 — thin IDE action, threading/cancellation/confirmation/user workflow.
-- #67 — completed quality/readiness evidence track covering diagnostics/privacy, host compatibility, performance/resources, migration cleanup and public-claim reconciliation.
+Historical Leap tracks #61-#67 remain evidence for source, input, preparation, target, orchestration
+and readiness work already completed. They do not override the new 1.0 target.
 
-#61 does **not** stay open until every legacy quirk is characterized or every downstream implementation is finished. Additional characterization is required only when it can falsify a concrete target decision.
+Active parity ownership:
 
-## 19. Non-goals for Leap v1
+- #512 — canonical architecture/product rebaseline;
+- #509 — standard dynamic-tag parity regression evidence;
+- #510 — ordinary XML mapper-declaration parity regression evidence;
+- #508/#511 — repository-owned manual release-validation harness;
+- #513 — D0 documentation recording of the target architecture.
 
-- Kotlin mapper annotation execution;
+After D0, the next work unit is D1 stock-MyBatis parity oracle. Do not reopen #61-#67 semantics by
+incrementally extending their old bounded admission islands.
+
+## 19. Non-goals for zMyBatis 1.0
+
+- Kotlin direct mapper annotation execution;
 - Provider runtime execution;
-- arbitrary custom language drivers or runtime-only mapper extensions;
-- arbitrary application TypeHandler/runtime configuration emulation;
-- generic SQL authorization/classification engine;
-- custom JDBC result-grid implementation;
-- mandatory true JDBC binding as a prerequisite for the Leap architecture replacement (future optional research, not the selected SQL-text compatibility target);
-- preserving legacy class/package/settings structure merely for compatibility with our own code.
+- arbitrary custom LanguageDriver behavior;
+- arbitrary application custom TypeHandler/runtime-plugin emulation;
+- generic SQL authorization/classification;
+- ORM/application result mapping in the prepared-backend result adapter;
+- native Database Tools result/history parity for the prepared backend;
+- preserving current Leap admission/materializer class structure merely because it already exists;
+- restoring a deleted legacy execution fallback.
+
+A true prepared backend **is** part of the target architecture for ordinary bound statements, subject
+to the explicit P3 maintained-API stop gate.
