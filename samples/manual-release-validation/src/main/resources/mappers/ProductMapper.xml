@@ -2,22 +2,17 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="fixture.ProductMapper">
 
-    <resultMap id="ProductResultMap" type="fixture.Product">
-        <id property="id" column="id"/>
-        <result property="name" column="name"/>
-        <result property="active" column="active"/>
-    </resultMap>
-
-    <!-- M02: realistic mapper shape retained from the historical mybatisTest project.
-         The qualified include proves a captured cross-namespace fragment dependency. -->
-    <select id="findAllProducts" resultMap="ProductResultMap">
+    <!-- M02: realistic Product query retained from the historical mybatisTest project.
+         The qualified include proves a captured cross-namespace fragment dependency.
+         Result-mapping declarations are deliberately absent while #510 is unresolved. -->
+    <select id="findAllProducts">
         SELECT <include refid="fixture.SharedFragments.productColumns"/>
         FROM products
         ORDER BY id
     </select>
 
-    <!-- M14: realistic single-BIGINT lookup. -->
-    <select id="findProductById" resultMap="ProductResultMap">
+    <!-- M14: realistic single-BIGINT lookup. Result mapping remains a #510 pending case. -->
+    <select id="findProductById">
         SELECT <include refid="fixture.SharedFragments.productColumns"/>
         FROM products
         WHERE id = #{id,jdbcType=BIGINT}
