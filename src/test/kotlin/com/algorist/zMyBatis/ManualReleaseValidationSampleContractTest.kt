@@ -35,7 +35,7 @@ class ManualReleaseValidationSampleContractTest {
             addAll((1..7).map { "J%02d".format(it) })
             addAll((1..8).map { "U%02d".format(it) })
             addAll((1..6).map { "T%02d".format(it) })
-            addAll(listOf("R01", "R02", "R03", "R04"))
+            addAll(listOf("R01", "R02", "R03", "R04", "R05"))
         }
 
         requiredIds.forEach { id ->
@@ -72,6 +72,7 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(pending.contains("NOT release PASS cases while #509 is open"))
         assertTrue(commonPending.contains("<resultMap"))
         assertTrue(commonPending.contains("resultMap=\"ProductResultMap\""))
+        assertTrue(commonPending.contains("resultType=\"fixture.Product\""))
         assertTrue(commonPending.contains("parameterType=\"long\""))
         assertTrue(commonPending.contains("NOT release PASS cases while #510 is open"))
     }
