@@ -2,7 +2,7 @@ package com.algorist.zMyBatis
 
 import java.nio.file.Files
 import java.nio.file.Path
-import javax.tools.ToolProvider
+import java.net.JarURLConnection
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,13 +35,6 @@ class ManualReleaseValidationSampleContractTest {
 
     @Test
     fun `manual Java fixtures compile against the maintained MyBatis runtime`() {
-        val compiler = requireNotNull(ToolProvider.getSystemJavaCompiler()) {
-            "manual release sample validation requires a full JDK"
-        }
-        Class.forName("org.apache.ibatis.annotations.Select")
-        val testRuntimeClasspath = System.getProperty("java.class.path")
-            .takeIf { it.isNotBlank() }
-            ?: error("test runtime classpath is unavailable")
         val javaFiles = Files.walk(sample.resolve("src/main/java")).use { paths ->
             paths.filter { path -> Files.isRegularFile(path) && path.toString().endsWith(".java") }
                 .map(Path::toString)
@@ -50,17 +43,22 @@ class ManualReleaseValidationSampleContractTest {
         }
         val output = Files.createTempDirectory("zmybatis-manual-sample-javac")
         try {
-            val args = buildList {
+            val command = buildList {
+                add(javacExecutable())
                 add("-classpath")
-                add(testRuntimeClasspath)
+                add(myBatisClasspathEntry().toString())
                 add("-d")
                 add(output.toString())
                 addAll(javaFiles)
             }
+            val process = ProcessBuilder(command)
+                .redirectErrorStream(true)
+                .start()
+            val diagnostics = process.inputStream.bufferedReader().use { it.readText() }
             assertEquals(
-                "manual release Java fixtures must compile against the maintained MyBatis runtime",
+                "manual release Java fixtures must compile against the maintained MyBatis runtime: $diagnostics",
                 0,
-                compiler.run(null, null, null, *args.toTypedArray()),
+                process.waitFor(),
             )
         } finally {
             output.toFile().deleteRecursively()
@@ -180,6 +178,41 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(
             source("README.md").contains("foreach item bindings are MyBatis additional parameters"),
         )
+    }
+
+    private fun javacExecutable(): String {
+        val executable = if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+            "javac.exe"
+        } else {
+            "javac"
+        }
+        val javaHome = System.getenv("JAVA_HOME")
+            ?.takeIf { it.isNotBlank() }
+            ?.let(Path::of)
+        val javaHomeJavac = javaHome?.resolve("bin")?.resolve(executable)
+        return javaHomeJavac
+            ?.takeIf(Files::isRegularFile)
+            ?.toString()
+            ?: executable
+    }
+
+    private fun myBatisClasspathEntry(): Path {
+        val type = Class.forName("org.apache.ibatis.annotations.Select")
+        val resourcePath = type.name.replace('.', '/') + ".class"
+        val resource = requireNotNull(type.getResource("/$resourcePath")) {
+            "MyBatis class resource is unavailable"
+        }
+        return when (resource.protocol) {
+            "jar" -> Path.of((resource.openConnection() as JarURLConnection).jarFileURL.toURI())
+            "file" -> {
+                var root = Path.of(resource.toURI())
+                repeat(resourcePath.split('/').size) {
+                    root = requireNotNull(root.parent) { "invalid MyBatis class resource root: $resource" }
+                }
+                root
+            }
+            else -> error("unsupported MyBatis class resource protocol: ${resource.protocol}")
+        }
     }
 
     private fun source(relativePath: String): String =
