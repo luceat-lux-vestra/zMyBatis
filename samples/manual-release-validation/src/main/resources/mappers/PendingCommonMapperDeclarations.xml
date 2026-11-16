@@ -16,6 +16,12 @@
         ORDER BY id
     </select>
 
+    <select id="findAllWithResultType" resultType="fixture.Product">
+        SELECT id, name, active
+        FROM products
+        ORDER BY id
+    </select>
+
     <select id="findByIdWithParameterType" parameterType="long">
         SELECT id, name, active
         FROM products
