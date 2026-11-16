@@ -12,7 +12,7 @@
     </sql>
 
     <sql id="nestedOuter">
-        <include refid="nestedInner"/>
+        <include refid="parity.SharedFragments.nestedInner"/>
     </sql>
 
     <sql id="vendorPredicate">
