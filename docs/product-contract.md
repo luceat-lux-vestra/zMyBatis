@@ -141,7 +141,7 @@ Input parsing is independent of Swing. Numeric/decimal/type fidelity is delibera
 
 Remembered inputs are convenience, not a correctness requirement.
 
-Leap target rules:
+zMyBatis 1.0 retention rules:
 
 - default **OFF** until #63 provides canonical identity, project scope, explicit retention/clearing, and sensitive-data policy;
 - values never bleed across distinct canonical statements or projects;
