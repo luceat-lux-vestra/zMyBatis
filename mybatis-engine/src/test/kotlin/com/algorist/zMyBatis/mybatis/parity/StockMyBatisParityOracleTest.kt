@@ -421,7 +421,7 @@ class StockMyBatisParityOracleTest {
     fun historicalProductMapperShapeFromMybatisTestRemainsValidStockMyBatis() {
         val configuration = configuration("parity/historical-product.xml")
 
-        val find = snapshot(configuration, "parity.HistoricalProductMapper.findById", 7L)
+        val find = snapshot(configuration, "com.san.sprinboot.mybatis.h2.spring_boot_myBatis_h2.mapper.ProductMapper.findById", 7L)
         assertEquals("SELECT*FROMproductsWHEREid=?", compact(find.sql))
         assertEquals(listOf("id"), find.bindings.map { it.property })
         assertEquals(listOf(7L), find.bindings.map { it.runtimeValue })
@@ -436,7 +436,7 @@ class StockMyBatisParityOracleTest {
             active = true
         }
 
-        val save = snapshot(configuration, "parity.HistoricalProductMapper.save", product)
+        val save = snapshot(configuration, "com.san.sprinboot.mybatis.h2.spring_boot_myBatis_h2.mapper.ProductMapper.save", product)
         assertEquals(
             "INSERTINTOproducts(name,price,currency,billing_interval,payment_gateway_product_id,active)VALUES(?,?,?,?,?,?)",
             compact(save.sql),
@@ -450,16 +450,16 @@ class StockMyBatisParityOracleTest {
             save.bindings.map { it.runtimeValue },
         )
 
-        val update = snapshot(configuration, "parity.HistoricalProductMapper.update", product)
+        val update = snapshot(configuration, "com.san.sprinboot.mybatis.h2.spring_boot_myBatis_h2.mapper.ProductMapper.update", product)
         assertEquals(
             listOf("name", "price", "currency", "billingInterval", "paymentGatewayProductId", "active", "id"),
             update.bindings.map { it.property },
         )
 
-        val delete = snapshot(configuration, "parity.HistoricalProductMapper.delete", 7L)
+        val delete = snapshot(configuration, "com.san.sprinboot.mybatis.h2.spring_boot_myBatis_h2.mapper.ProductMapper.delete", 7L)
         assertEquals(listOf(7L), delete.bindings.map { it.runtimeValue })
 
-        val all = snapshot(configuration, "parity.HistoricalProductMapper.findAll", null)
+        val all = snapshot(configuration, "com.san.sprinboot.mybatis.h2.spring_boot_myBatis_h2.mapper.ProductMapper.findAll", null)
         assertEquals("SELECT*FROMproducts", compact(all.sql))
         assertTrue(all.bindings.isEmpty())
     }
@@ -470,7 +470,7 @@ class StockMyBatisParityOracleTest {
 
         val simple = snapshot(
             configuration,
-            "parity.HistoricalCustomerMapper.findById",
+            "com.san.sprinboot.mybatis.h2.spring_boot_myBatis_h2.mapper.CustomerMapper.findById",
             mapOf("t1" to 1, "t2" to 2, "test" to 11L),
         )
         assertEquals(
@@ -482,7 +482,7 @@ class StockMyBatisParityOracleTest {
 
         val nested = snapshot(
             configuration,
-            "parity.HistoricalCustomerMapper.findByIdJSON",
+            "com.san.sprinboot.mybatis.h2.spring_boot_myBatis_h2.mapper.CustomerMapper.findByIdJSON",
             mapOf(
                 "user" to mapOf("id" to 1),
                 "cust" to mapOf("name" to "test"),
@@ -515,6 +515,8 @@ class StockMyBatisParityOracleTest {
     ): Configuration {
         val configuration = Configuration().apply {
             this.databaseId = databaseId
+            typeAliasRegistry.registerAlias("Product", HistoricalProduct::class.java)
+            typeAliasRegistry.registerAlias("Customer", HistoricalCustomer::class.java)
         }
         resources.forEach { resource ->
             resource(resource).use { input ->
