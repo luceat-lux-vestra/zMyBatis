@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="parity.IncludeMapper">
+    <sql id="localColumns">id, name</sql>
+
+    <select id="sameNamespace">
+        SELECT <include refid="localColumns"/>
+        FROM products
+    </select>
+
+    <select id="crossNamespace" parameterType="map">
+        SELECT <include refid="parity.SharedFragments.columns"/>
+        FROM products
+        WHERE 1 = 1
+        <include refid="parity.SharedFragments.activePredicate"/>
+    </select>
+
+    <select id="nested" parameterType="map">
+        SELECT id
+        FROM products
+        WHERE 1 = 1
+        <include refid="parity.SharedFragments.nestedOuter"/>
+    </select>
+
+    <select id="databaseId">
+        SELECT id
+        FROM products
+        WHERE 1 = 1
+        <include refid="parity.SharedFragments.vendorPredicate"/>
+    </select>
+</mapper>

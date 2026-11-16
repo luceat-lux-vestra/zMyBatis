@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="parity.SharedFragments">
+    <sql id="columns">id, name, active</sql>
+
+    <sql id="activePredicate">
+        AND active = #{active,jdbcType=BOOLEAN}
+    </sql>
+
+    <sql id="nestedInner">
+        AND tenant_id = #{tenantId,jdbcType=BIGINT}
+    </sql>
+
+    <sql id="nestedOuter">
+        <include refid="parity.SharedFragments.nestedInner"/>
+    </sql>
+
+    <sql id="vendorPredicate">
+        AND vendor = 'default'
+    </sql>
+
+    <sql id="vendorPredicate" databaseId="PostgreSQL">
+        AND vendor = 'postgres'
+    </sql>
+</mapper>

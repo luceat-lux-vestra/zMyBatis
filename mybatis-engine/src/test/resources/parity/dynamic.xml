@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="parity.DynamicMapper">
+    <select id="ifCase" parameterType="map">
+        SELECT id FROM products
+        <if test="enabled">WHERE id = #{id,jdbcType=BIGINT}</if>
+    </select>
+
+    <select id="chooseCase" parameterType="map">
+        SELECT id FROM products WHERE
+        <choose>
+            <when test="mode == 'name'">name = #{name,jdbcType=VARCHAR}</when>
+            <when test="mode == 'id'">id = #{id,jdbcType=BIGINT}</when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+
+    <select id="foreachCase" parameterType="map">
+        SELECT id FROM products WHERE id IN
+        <foreach collection="ids" item="item" index="idx" open="(" separator="," close=")">
+            #{item,jdbcType=BIGINT}
+        </foreach>
+    </select>
+
+    <select id="whereCase" parameterType="map">
+        SELECT id FROM products
+        <where>
+            <if test="name != null">AND name = #{name,jdbcType=VARCHAR}</if>
+            <if test="active != null">AND active = #{active,jdbcType=BOOLEAN}</if>
+        </where>
+    </select>
+
+    <update id="setCase" parameterType="map">
+        UPDATE products
+        <set>
+            <if test="name != null">name = #{name,jdbcType=VARCHAR},</if>
+            <if test="active != null">active = #{active,jdbcType=BOOLEAN},</if>
+        </set>
+        WHERE id = #{id,jdbcType=BIGINT}
+    </update>
+
+    <select id="trimCase" parameterType="map">
+        SELECT id FROM products
+        <trim prefix="WHERE" prefixOverrides="AND |OR ">
+            <if test="name != null">AND name = #{name,jdbcType=VARCHAR}</if>
+            <if test="active != null">OR active = #{active,jdbcType=BOOLEAN}</if>
+        </trim>
+    </select>
+
+    <select id="bindCase" parameterType="map">
+        <bind name="pattern" value="'%' + name + '%'"/>
+        SELECT id FROM products WHERE name LIKE #{pattern,jdbcType=VARCHAR}
+    </select>
+
+    <select id="chooseForeach" parameterType="map">
+        SELECT id FROM products
+        <where>
+            <choose>
+                <when test="ids != null and ids.size > 0">
+                    id IN
+                    <foreach collection="ids" item="item" index="idx" open="(" separator="," close=")">
+                        #{item,jdbcType=BIGINT}
+                    </foreach>
+                </when>
+                <otherwise>1 = 0</otherwise>
+            </choose>
+        </where>
+    </select>
+
+    <select id="bindIf" parameterType="map">
+        <bind name="pattern" value="'%' + name + '%'"/>
+        SELECT id FROM products
+        <where>
+            <if test="name != null">AND name LIKE #{pattern,jdbcType=VARCHAR}</if>
+        </where>
+    </select>
+
+    <select id="foreachWhere" parameterType="map">
+        SELECT id FROM products
+        <where>
+            <foreach collection="ids" item="item" open="id IN (" separator="," close=")">
+                #{item,jdbcType=BIGINT}
+            </foreach>
+        </where>
+    </select>
+
+    <update id="setWhere" parameterType="map">
+        UPDATE products
+        <set>
+            <if test="name != null">name = #{name,jdbcType=VARCHAR},</if>
+            <if test="active != null">active = #{active,jdbcType=BOOLEAN},</if>
+        </set>
+        <where>
+            <if test="id != null">AND id = #{id,jdbcType=BIGINT}</if>
+            <if test="tenantId != null">AND tenant_id = #{tenantId,jdbcType=BIGINT}</if>
+        </where>
+    </update>
+</mapper>

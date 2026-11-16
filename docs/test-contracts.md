@@ -19,6 +19,7 @@ evidence. The old IntelliJ template rename test and evaluator debug/reproduction
 | Java direct-annotation source authority | `JavaAnnotationSourceCaptureAdapterProjectFixtureTest`, `JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest`, `LeapActionContextAdmissionCoordinatorTest` | immutable Java method identity, ordered signature, explicit `@Param`, constants/dependencies, databaseId variants, source revision authority, and typed unsupported cases feed the registered action |
 | XML source/dependency authority | `XmlMapperSourceDiscoveryTest`, `XmlStatementSourceGraphResolverTest`, adversarial source-graph tests, `LeapActionContextAdmissionCoordinatorTest` | canonical XML statement identity and reachable `<sql>/<include>` dependencies are complete, source-backed, target-selected where applicable, and fail typed on missing/ambiguous/cyclic/stale authority |
 | Isolated MyBatis preparation | `MyBatisPreparationEngineTest`, `XmlMapperPreparationEngineTest`, Boolean-if/foreach preparation suites | admitted source/input contracts run through isolated stock MyBatis semantics, preserving SQL/mapping/additional-parameter evidence without global evaluator state |
+| Stock MyBatis 1.0 parity oracle | `StockMyBatisParityOracleTest` + `mybatis-engine/src/test/resources/parity/**` | stock MyBatis 3.6.0 semantics for ordinary mapper metadata, include/databaseId graphs, all standard dynamic-tag families, realistic compositions, mapper-method input shapes, additional parameters, direct Java annotations/raw interpolation, and sanitized historical `mybatisTest` Product/Customer mapper shapes; this is target-semantic evidence, not current registered-path support |
 | Raw-interpolation confirmation | `LeapExecutionApprovalPolicyTest`, `LeapExecutionApprovalAdapterTest`, `LeapExecutionDeliveryCoordinatorTest`, `ZMyBatisStarterDriverE2ETest` | raw provenance forces final-artifact approval even when ordinary preview is off; cancellation is fail-closed; packaged XML and direct-Java raw composition is exercised |
 | Direct Java annotation raw composition | `JavaAnnotationParameterContractFactoryTest`, `MyBatisPreparationEngineTest`, `ContractInputSwingRendererProjectFixtureTest`, `StarterDatabaseE2EIsolationContractTest`, `ZMyBatisStarterDriverE2ETest` | direct Java `@Select` + explicit `@Param` raw input reaches the registered packaged action, remains non-retained, previews exact SQL, cancels without native history, and executes approved SQL through Database Tools |
 | Mutation-declaration confirmation | `LeapExecutionApprovalPolicyTest`, `LeapExecutionApprovalAdapterTest`, `LeapExecutionDeliveryCoordinatorTest` | mutation declaration forces approval but is not SQL authorization |
@@ -29,26 +30,27 @@ evidence. The old IntelliJ template rename test and evaluator debug/reproduction
 
 ## Pre-1.0 parity-recovery evidence
 
-The next test-bearing work unit after architecture documentation is D1: a **stock MyBatis parity
-oracle corpus**. D1 makes no production runtime change.
-
-The oracle must derive expected behavior directly from stock MyBatis 3.6.x for realistic mapper
-fixtures and freeze at least:
+D1 establishes a **stock MyBatis parity oracle corpus** with no production runtime change.
+`StockMyBatisParityOracleTest` derives expected behavior directly from stock MyBatis 3.6.0 and
+freezes:
 
 - final `BoundSql.sql`;
 - ordered `ParameterMapping` properties;
-- additional-parameter values;
+- dynamic/internal binding values, including MyBatis 3.6 mapping-captured values and `BoundSql` additional parameters;
 - target-selected databaseId behavior;
-- relevant standard TypeHandler/JDBC metadata.
+- relevant standard TypeHandler/JDBC metadata;
+- stock `ParamNameResolver` caller-object construction for mapper-method inputs.
 
-Its fixture corpus must cover ordinary `resultMap/resultType/parameterType` mappers, parameterized
-include graphs, every standard dynamic-tag family, realistic tag combinations, scalar/multi/object/
-map/list/collection/array inputs, nested properties, foreach additional parameters, typed null,
-direct Java dynamic annotations, raw interpolation, and sanitized historical `mybatisTest`
-Product/Customer-style mappers.
+The corpus covers ordinary `resultMap/resultType/parameterType` mappers, parameterized include
+graphs, every standard dynamic-tag family, representative combinations, scalar/multi/object/map/
+list/collection/array inputs, nested properties, foreach/bind dynamic internal values, typed null,
+direct Java dynamic annotations, raw interpolation, and sanitized source-derived historical
+`mybatisTest` Product/Customer mapper shapes.
 
-Do **not** encode current Leap refusal as oracle truth. Each P1/P2/P3 replacement phase must add
-zMyBatis-vs-oracle parity for the slice it changes.
+The oracle deliberately does **not** encode current Leap refusal as target truth and does not call
+the production zMyBatis admission/materialization path. P1 is the next work unit and must add
+zMyBatis-vs-oracle preparation parity for the statement-scoped projection slice before replacing
+current behavior. P2/P3 extend the same frozen oracle into invocation and prepared-backend evidence.
 
 Current Boolean-if/foreach/trim admission and PostgreSQL BIGINT materialization tests remain useful
 current-state safety evidence until replacement. They are not preservation constraints for the

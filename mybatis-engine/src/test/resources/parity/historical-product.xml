@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.san.sprinboot.mybatis.h2.spring_boot_myBatis_h2.mapper.ProductMapper">
+    <resultMap id="ProductResultMap" type="Product">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="price" column="price"/>
+        <result property="currency" column="currency"/>
+        <result property="billingInterval" column="billing_interval"/>
+        <result property="paymentGatewayProductId" column="payment_gateway_product_id"/>
+        <result property="active" column="active"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="findById" parameterType="long" resultMap="ProductResultMap">
+        SELECT * FROM products WHERE id = #{id}
+    </select>
+
+    <select id="findAll" resultMap="ProductResultMap">
+        SELECT * FROM products
+    </select>
+
+    <select id="findActiveProducts" resultMap="ProductResultMap">
+        SELECT * FROM products WHERE active = TRUE
+    </select>
+
+    <insert id="save" parameterType="Product" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO products (name, price, currency, billing_interval, payment_gateway_product_id, active)
+        VALUES (#{name}, #{price}, #{currency}, #{billingInterval}, #{paymentGatewayProductId}, #{active})
+    </insert>
+
+    <update id="update" parameterType="Product">
+        UPDATE products
+        SET name = #{name}, price = #{price}, currency = #{currency}, billing_interval = #{billingInterval},
+            payment_gateway_product_id = #{paymentGatewayProductId}, active = #{active}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="delete" parameterType="long">
+        DELETE FROM products WHERE id = #{id}
+    </delete>
+</mapper>
