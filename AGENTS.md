@@ -1,10 +1,30 @@
 # zMyBatis Engineering Contract
 
-This is the authoritative engineering and review contract for zMyBatis. It describes the **current enforced baseline** separately from **known product gaps** and from the Leap target architecture tracked by Epic #60. Do not turn a target rule into a claim about current behavior without evidence.
+This is the authoritative engineering and review contract for zMyBatis. It distinguishes the
+**current enforced implementation** from the **zMyBatis 1.0 target**. Do not turn either one into a
+claim about the other without evidence.
 
-For Leap implementation, [docs/product-contract.md](docs/product-contract.md) is the target product-policy authority and [docs/leap-architecture.md](docs/leap-architecture.md) is the target architecture authority. **Read [the 2026-10-13 Leap execution rebaseline](docs/leap-execution-rebaseline.md) first**: #391 replaces #258's strict JDBC-binding-as-cutover-gate *target policy*, not #251's API evidence. The registered action now uses the single Leap authority after the verified zero-binding and PostgreSQL BIGINT SQL-text/native-Database-Tools verticals; every nonzero dialect/type shape outside an explicitly proven materializer remains typed fail-closed. The former action/evaluator/extractor/dialog/history architecture has been deleted. It must not be reintroduced as fallback, compatibility routing, or test-only semantic authority.
+For pre-1.0 work:
 
-CI green is necessary evidence, never sufficient approval. Every PASS belongs to one exact final PR HEAD SHA. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution mechanics, [docs/test-contracts.md](docs/test-contracts.md) for executable product evidence, and [SECURITY.md](SECURITY.md) for vulnerability reporting.
+- [docs/product-contract.md](docs/product-contract.md) is the 1.0 product-policy authority;
+- [docs/mybatis-compatibility-architecture.md](docs/mybatis-compatibility-architecture.md) is the
+  target architecture authority under #512;
+- [docs/leap-architecture.md](docs/leap-architecture.md) records the current Leap implementation and
+  retained safety boundaries;
+- [docs/test-contracts.md](docs/test-contracts.md) separates current evidence from the next parity
+  obligations.
+
+#251 and #391 remain historical evidence, but #391's bounded SQL-text/materializer target is
+superseded for pre-1.0 parity recovery where it conflicts with the new architecture. The current
+registered action still uses the single Leap authority with zero-binding and PostgreSQL BIGINT
+materialization; unsupported current shapes remain fail-closed until replacement evidence exists.
+
+The deleted legacy action/evaluator/extractor/dialog/history architecture must not be reintroduced as
+fallback, compatibility routing, or test-only semantic authority.
+
+CI green is necessary evidence, never sufficient approval. Every PASS belongs to one exact final PR
+HEAD SHA. See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/test-contracts.md](docs/test-contracts.md),
+and [SECURITY.md](SECURITY.md).
 
 ## 1. Current product boundary
 
@@ -33,11 +53,46 @@ Key current ownership areas:
 
 The registered action has no retained legacy execution fallback. Removed proxy/evaluator/extractor/dialog/history implementations are not valid owners or characterization authorities for new work.
 
+## 1.1 Pre-1.0 parity recovery — mandatory order
+
+The current bounded Leap input/preparation/materialization behavior is **migration implementation**,
+not the 1.0 target.
+
+Mandatory work-unit order:
+
+```text
+D0  record the target architecture in authoritative docs
+  -> D1  stock MyBatis parity oracle
+  -> P1  statement-scoped preparation projection
+  -> P2  mapper-method/XML-only invocation contract replacement
+  -> P3  Database Tools session prepared-backend spike + hard stop gate
+  -> P4  unified PreparedExecutionPlan cutover
+  -> P5  packaged + manual parity
+  -> P6  delete superseded admission/preflight/materializer islands
+```
+
+Rules:
+
+- do not patch #509/#510 independently before D1;
+- do not encode current Leap refusal as desired oracle behavior;
+- stock MyBatis owns standard dynamic SQL semantics for the 1.0 target;
+- the target must not preserve `DynamicOgnlAdmission`, `ForeachProvenanceAdmission`, Boolean/
+  foreach/trim syntax islands, whole-document result/parameter metadata refusal, or PostgreSQL BIGINT
+  single-binding materialization merely because current tests cover them;
+- source/target/lifecycle/privacy/approval protections remain non-negotiable during parity recovery;
+- P3 is a real stop gate. If maintained Database Tools APIs cannot support reliable prepared
+  execution/cancellation/target correctness, stop and revisit the execution target before more
+  syntax expansion;
+- one bounded child work unit at a time; do not pre-create all phase PRs.
+
+The D1 oracle is green stock-MyBatis evidence with no production runtime change. Subsequent phases
+must add zMyBatis-vs-oracle parity for the slice they replace.
+
 ## 2. Mapper, parameter, and SQL fidelity
 
 - `#{...}` and `${...}` are distinct semantics. Never silently convert a bound placeholder into raw interpolation or vice versa.
 - Materialized SQL text is a bounded zMyBatis compatibility representation; do not describe it as JDBC/TypeHandler-equivalent without dedicated evidence.
-- Only source/input/dialect/type shapes admitted by the registered Leap path may execute; unsupported legacy-characterized scalar/object behavior is not a production fallback.
+- **Current shipping:** only source/input/dialect/type shapes admitted by the registered Leap path may execute. **1.0 target:** this bounded admission is not a preservation constraint; replacement support is governed by the stock-MyBatis parity architecture and its phase gates.
 - Internal MyBatis variables such as `<bind>` names and `foreach` item/index must not be invented as caller inputs.
 - Unsupported or ambiguous source/input/evaluation behavior must not silently become plausible executable SQL. The stronger typed-failure architecture is defined by Leap #60/#64; #67 supplied its final quality/readiness evidence.
 - Preview and execution must not silently diverge. Full Database Tools click-through fidelity remains a platform/integration evidence gap documented in `docs/test-contracts.md`.
@@ -103,7 +158,12 @@ Source capture, input collection, preparation, preview, formatting, settings, di
 
 ## 7. Tests and evidence
 
-The required `Test` context is product evidence, not a coverage percentage. The authoritative current contract map is [docs/test-contracts.md](docs/test-contracts.md).
+The required `Test` context is product evidence, not a coverage percentage. The authoritative
+evidence map is [docs/test-contracts.md](docs/test-contracts.md).
+
+During parity recovery, current fail-closed tests prove current behavior only. D1 must establish a
+stock-MyBatis oracle before P1/P2 implementation; later phases may merge only when their zMyBatis
+results match the already-frozen oracle for the claimed slice.
 
 Hardening #58/#79 removed the old IntelliJ template rename test and debug/reproduction-only evaluator evidence. Do not cite removed template fixtures, empty tests, `println`, or Kotlin/JVM `assert(...)` as product proof.
 
