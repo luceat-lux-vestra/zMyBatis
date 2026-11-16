@@ -183,7 +183,7 @@ class XmlMapperPreparationProjectionParityTest {
         val fixture = inlineFixture(
             mapperDocument(
                 "example.Mapper",
-                """<select id="find" parameterType="example.Payload">SELECT #{'$'}{value}</select>""",
+                """<select id="find" parameterType="example.Payload">SELECT #{value}</select>""",
             ),
         )
         val result = XmlMapperPreparationProjection.project(
