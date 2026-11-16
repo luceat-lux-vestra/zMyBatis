@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="parity.ParameterShapes">
+    <select id="scalar" parameterType="long">
+        SELECT #{value,jdbcType=BIGINT}
+    </select>
+
+    <select id="multiple" parameterType="map">
+        SELECT #{id,jdbcType=BIGINT}, #{name,jdbcType=VARCHAR}
+    </select>
+
+    <select id="object" parameterType="com.algorist.zMyBatis.mybatis.parity.HistoricalProduct">
+        SELECT #{id,jdbcType=BIGINT}, #{name,jdbcType=VARCHAR}, #{price,jdbcType=DECIMAL}
+    </select>
+
+    <select id="map" parameterType="map">
+        SELECT #{id,jdbcType=BIGINT}, #{nested.name,jdbcType=VARCHAR}
+    </select>
+
+    <select id="list" parameterType="map">
+        SELECT
+        <foreach collection="list" item="item" separator=",">
+            #{item,jdbcType=BIGINT}
+        </foreach>
+    </select>
+
+    <select id="collection" parameterType="map">
+        SELECT
+        <foreach collection="collection" item="item" separator=",">
+            #{item,jdbcType=BIGINT}
+        </foreach>
+    </select>
+
+    <select id="array" parameterType="map">
+        SELECT
+        <foreach collection="array" item="item" separator=",">
+            #{item,jdbcType=BIGINT}
+        </foreach>
+    </select>
+
+    <select id="typedNull" parameterType="map">
+        SELECT #{value,javaType=java.lang.String,jdbcType=VARCHAR}
+    </select>
+</mapper>
