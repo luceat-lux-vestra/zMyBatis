@@ -433,7 +433,7 @@ class StockMyBatisParityOracleTest {
             currency = "USD"
             billingInterval = "MONTH"
             paymentGatewayProductId = "pg-pro"
-            active = true
+            setActive(true)
         }
 
         val save = snapshot(configuration, "com.san.sprinboot.mybatis.h2.spring_boot_myBatis_h2.mapper.ProductMapper.save", product)
@@ -498,7 +498,7 @@ class StockMyBatisParityOracleTest {
 
         val inactive = snapshot(
             configuration,
-            "parity.HistoricalCustomerMapper.findByIdJSON",
+            "com.san.sprinboot.mybatis.h2.spring_boot_myBatis_h2.mapper.CustomerMapper.findByIdJSON",
             mapOf(
                 "user" to mapOf("id" to 0),
                 "cust" to mapOf("name" to "other"),
@@ -570,7 +570,7 @@ class StockMyBatisParityOracleTest {
         configuration: Configuration,
         method: Method,
         vararg values: Any?,
-    ): Any? = ParamNameResolver(configuration, method).getNamedParams(values)
+    ): Any? = ParamNameResolver(configuration, method, method.declaringClass).getNamedParams(values)
 
     private fun compact(sql: String): String =
         sql.replace(Regex("\\s+"), "")
