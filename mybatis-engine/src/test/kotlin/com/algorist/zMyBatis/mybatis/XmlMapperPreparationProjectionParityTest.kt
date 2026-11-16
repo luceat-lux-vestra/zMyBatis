@@ -193,9 +193,9 @@ class XmlMapperPreparationProjectionParityTest {
         assertProjectionParity(fixture, mapOf("value" to 42L))
 
         val projected = ready(fixture).documents.single().content
-        assertTrue(projected.contains("javaType=\"java.lang.Long\""))
-        assertTrue(projected.contains("jdbcType=\"BIGINT\""))
-        assertTrue(projected.contains("typeHandler=\"org.apache.ibatis.type.LongTypeHandler\""))
+        assertTrue(projected.contains("javaType=java.lang.Long"))
+        assertTrue(projected.contains("jdbcType=BIGINT"))
+        assertTrue(projected.contains("typeHandler=org.apache.ibatis.type.LongTypeHandler"))
     }
 
     @Test
