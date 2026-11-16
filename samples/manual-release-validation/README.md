@@ -18,7 +18,12 @@ This is **not** a replacement for automated tests. Detailed MyBatis semantic mat
 
 Do not sign off a release while a case marked **BLOCKER** is failing or while a known contract-reconciliation item is unresolved for the release claim being made.
 
-At the baseline that introduced this fixture, generic `<choose>/<when>/<otherwise>` and `<bind>` support wording is under reconciliation in [#509](https://github.com/luceat-lux-vestra/zMyBatis/issues/509). `PendingDynamicContractMapper.xml` reproduces those shapes, but **R01/R02 are not PASS criteria until #509 decides the maintained contract**.
+At the baseline that introduced this fixture, two contract/product reconciliations remain explicit release holds:
+
+- [#509](https://github.com/luceat-lux-vestra/zMyBatis/issues/509) — broad `<choose>/<when>/<otherwise>` / `<bind>` support wording versus bounded runtime admission. `PendingDynamicContractMapper.xml` owns R01/R02.
+- [#510](https://github.com/luceat-lux-vestra/zMyBatis/issues/510) — common `resultMap` / `resultType` / `parameterType` mapper declarations versus XML runtime-class-loading preflight. `PendingCommonMapperDeclarations.xml` owns R03/R04.
+
+These pending cases are deliberately separated from the PASS fixtures so one discrepancy cannot mask another.
 
 ## 1. Record the exact candidate
 
@@ -101,11 +106,11 @@ Use `src/main/resources/mappers/XmlReleaseValidationMapper.xml` unless a case na
 | ID | Manual case | Input / action | Expected result | Automated owner |
 | --- | --- | --- | --- | --- |
 | M01 | XML zero binding | `zeroBinding` | preview/execution SQL is `SELECT 7 AS result_value`; native result contains `7` | exact packaged E2E |
-| M02 | qualified `<sql>/<include>` | `ProductMapper.findAllProducts` | rows `1..3` render from `products`; no missing-fragment/refid failure | XML source-graph + preparation tests; manual registered-action observation |
+| M02 | qualified `<sql>/<include>` | `ProductMapper.findAllProducts` | native result contains products `1..3`; no missing-fragment/refid failure | XML source-graph + preparation tests; manual registered-action observation |
 | M03 | PostgreSQL BIGINT | `bigintEcho`, value `42` | preview materializes one BIGINT value and native result is `42` | materializer tests + exact packaged E2E shape |
 | M04 | BIGINT + `<if>` | `bigintWithIf`, run `7` then `-7` | `7` path includes `positive_marker=1`; `-7` path omits it | exact packaged E2E |
 | M05 | bounded `<where><if>` | `whereIf`; `enabled=true`, `id=1`, then `enabled=false`, `id=1` | true path returns only `1`; false path omits WHERE and returns `1,2,3` | Boolean-if/wrapper preparation tests |
-| M06 | source-proven `<foreach>` | `foreachIds`; first `[1]`, then `[1,2]` | `[1]` may execute inside one-BIGINT envelope and returns `1`; `[1,2]` must fail closed before native execution because two bindings are unsupported | foreach preparation + BIGINT binding-count tests |
+| M06 | source-proven `<foreach>` | `foreachIds`; first `[1]`, then `[1,2]` | both must **Execution Refused** before native execution: foreach item bindings are MyBatis additional parameters, and multiple items also exceed the one-binding envelope | foreach preparation + BIGINT materializer refusal tests |
 | M07 | XML raw `${}` | `rawEcho`, value `45001`; SQL Preview setting OFF | raw acknowledgement is required; final SQL preview is forced; Cancel creates no result/history. Re-run with `45002`: prior raw value is absent; approve and native result is `45002` | exact packaged XML-raw E2E |
 | M08 | target-derived `databaseId` | `databaseIdEcho` on PostgreSQL | PostgreSQL variant wins; native result is `2620`, not default `2600` | databaseId/source-graph/preparation tests |
 | M09 | unsupported VARCHAR binding | `unsupportedVarchar`, value `abc` | **Execution Refused**; no SQL reaches native Database Tools | input/preparation/materializer refusal tests |
@@ -113,7 +118,7 @@ Use `src/main/resources/mappers/XmlReleaseValidationMapper.xml` unless a case na
 | M11 | XML INSERT confirmation | `insertNoop`, SQL Preview OFF | final-artifact confirmation is mandatory; Cancel must not execute; approved run changes zero rows | mutation approval policy/adapter/delivery tests |
 | M12 | XML UPDATE confirmation | `updateNoop`, SQL Preview OFF | final-artifact confirmation is mandatory; approved run changes zero rows | mutation approval policy/adapter/delivery tests |
 | M13 | XML DELETE confirmation | `deleteNoop`, SQL Preview OFF | final-artifact confirmation is mandatory; approved run changes zero rows | mutation approval policy/adapter/delivery tests |
-| M14 | realistic BIGINT mapper | `ProductMapper.findProductById`, value `2` | native result is product `2 / pro / true` | XML mapper-method/source + BIGINT materializer tests |
+| M14 | realistic BIGINT mapper | `ProductMapper.findProductById`, value `2` | native result row is `2 / pro / true`; passing fixture intentionally omits XML result mapping while #510 is unresolved | XML mapper-method/source + BIGINT materializer tests |
 
 ### M06 note
 
@@ -129,7 +134,7 @@ and then:
 [1,2]
 ```
 
-The second case is intentionally outside the current one-binding PostgreSQL BIGINT materializer envelope. A typed refusal is the correct result; fallback execution is a release blocker.
+Both cases are intentionally expected to fail at final materialization. Even a one-item foreach produces a MyBatis additional-parameter binding, which the current PostgreSQL BIGINT materializer explicitly refuses. The two-item case also exceeds the one-binding cardinality envelope. This manual probe checks that the admitted foreach preparation path never falls back into native execution; detailed foreach semantics remain lower-layer automated evidence. Any native execution here is a release blocker.
 
 ## 6. Direct Java annotation checklist
 
@@ -200,14 +205,21 @@ Do **not** infer Java-annotation support or PostgreSQL native result/history par
 - **R01** — generic `<choose>/<when>/<otherwise>`;
 - **R02** — generic `<bind>`.
 
-At the fixture's introduction baseline, authoritative documentation broadly calls these standard dynamic tags supported, while the shipping bounded XML admission path does not expose matching generic registered-path authority. This is tracked by #509.
+At the fixture introduction baseline, authoritative documentation broadly calls these standard dynamic tags supported, while the shipping bounded XML admission path does not expose matching generic registered-path authority. This is tracked by #509.
 
-Until #509 is resolved:
+`src/main/resources/mappers/PendingCommonMapperDeclarations.xml` contains realistic forms taken from the historical manual project:
 
-- do not count R01/R02 as PASS criteria;
-- do not widen the manual acceptance claim to “all standard dynamic tags execute”;
-- do not change runtime behavior in this sample;
-- a 1.0.0 release claim must reconcile #509 rather than hiding the discrepancy.
+- **R03** — `<resultMap>` plus `resultMap="..."` on a select;
+- **R04** — `parameterType="long"` on a bound select.
+
+The current XML preparation preflight deliberately rejects runtime class-loading surfaces, including these common declarations, with `xml-preparation-runtime-class-loading-unsupported`. This is tracked by #510. Passing fixtures intentionally avoid those declarations so the underlying source/preparation/materialization path remains observable.
+
+Until #509/#510 are resolved:
+
+- do not count R01-R04 as PASS criteria;
+- do not widen the manual acceptance claim beyond the actually admitted bounded shapes;
+- do not “fix” the reproduction files by stripping the disputed declarations/tags;
+- a 1.0.0 release claim must reconcile both issues rather than hiding the discrepancies.
 
 ## 11. GO / NO-GO record
 
@@ -223,6 +235,7 @@ Target T01-T06:    PASS / FAIL / BLOCKED
 IDEA host:         PASS / FAIL / BLOCKED
 DataGrip smoke:    PASS / FAIL / BLOCKED
 #509 disposition:  RESOLVED / BLOCKED
+#510 disposition:  RESOLVED / BLOCKED
 
 Release decision:  GO / NO-GO
 Notes:
