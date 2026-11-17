@@ -17,6 +17,7 @@ import org.apache.ibatis.parsing.XPathParser
 internal object DynamicOgnlSafetyAdmission {
     private const val UNSUPPORTED = "mybatis-ognl-runtime-capability-unsupported"
     private const val MALFORMED = "mybatis-ognl-expression-malformed"
+    private const val SCRIPT_MALFORMED = "mybatis-dynamic-script-malformed"
     private const val INVARIANT = "mybatis-ognl-safety-invariant"
     private const val DATABASE_ID_AUTHORITY_UNAVAILABLE = "mybatis-database-id-authority-unavailable"
     private const val MAX_XML_LENGTH = 2 * 1024 * 1024
@@ -61,12 +62,12 @@ internal object DynamicOgnlSafetyAdmission {
             } catch (failure: RuntimeException) {
                 return PreparationFailure(
                     PreparationFailureKind.MYBATIS_PARSE,
-                    MALFORMED,
+                    SCRIPT_MALFORMED,
                     diagnosticType = failure.javaClass.name,
                 )
             } ?: return PreparationFailure(
                 PreparationFailureKind.MYBATIS_PARSE,
-                MALFORMED,
+                SCRIPT_MALFORMED,
             )
 
             val pending = ArrayDeque<Pair<XNode, Int>>()
