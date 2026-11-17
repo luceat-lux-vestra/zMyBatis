@@ -3,6 +3,7 @@ package com.algorist.zMyBatis.mybatis
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
+import com.algorist.zMyBatis.core.input.InputNullability
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.input.ParameterContract
@@ -52,9 +53,15 @@ class MyBatisDynamicPreparationEngineTest {
         assertEquals("select * from users WHERE id = ?", normalizeSql(present.execution.sqlWithPlaceholders))
         assertEquals(integer(7), present.execution.orderedBindings.single().value)
 
-        val absent = prepare(
-            fixture(script, listOf(Parameter("java.lang.Long", "id", InputValue.NullValue))),
+        val absentFixture = fixture(
+            script,
+            listOf(Parameter("java.lang.Long", "id", InputValue.NullValue)),
         )
+        assertEquals(
+            InputNullability.NULLABLE,
+            absentFixture.contract.requirements.single().expectedType.nullability,
+        )
+        val absent = prepare(absentFixture)
         assertTrue(absent is PreparationResult.Success)
         absent as PreparationResult.Success
         assertEquals("select * from users", normalizeSql(absent.execution.sqlWithPlaceholders))

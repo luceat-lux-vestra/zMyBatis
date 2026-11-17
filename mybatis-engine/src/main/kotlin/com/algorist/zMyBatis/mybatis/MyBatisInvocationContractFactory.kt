@@ -7,6 +7,7 @@ import com.algorist.zMyBatis.core.input.InputContractProblem
 import com.algorist.zMyBatis.core.input.InputContractProblemKind
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputKind
+import com.algorist.zMyBatis.core.input.InputNullability
 import com.algorist.zMyBatis.core.input.InputProvenance
 import com.algorist.zMyBatis.core.input.InputRequiredness
 import com.algorist.zMyBatis.core.input.InputRequirement
@@ -48,6 +49,16 @@ object MyBatisInvocationContractFactory {
     private const val SPECIAL_RESULT_HANDLER = "org.apache.ibatis.session.ResultHandler"
     private const val GENERIC_ALIAS_RULE = "mybatis-param-name-resolver-generic"
     private const val COLLECTION_ALIAS_RULE = "mybatis-param-name-resolver-wrap-to-map-if-collection"
+    private val JAVA_PRIMITIVE_TYPES = setOf(
+        "boolean",
+        "byte",
+        "short",
+        "int",
+        "long",
+        "float",
+        "double",
+        "char",
+    )
     private val rawInterpolation = Regex("""\$\{([^}]*)}""")
     private val simpleRoot = Regex("[A-Za-z_][A-Za-z0-9_]*")
 
@@ -185,7 +196,7 @@ object MyBatisInvocationContractFactory {
             InputRequirement(
                 id = id,
                 kind = InputKind.BOUND,
-                expectedType = JavaParameterTypeContract.expectedType(parameter.typeIdentity, InputKind.BOUND),
+                expectedType = mapperMethodExpectedType(parameter),
                 requiredness = InputRequiredness.REQUIRED,
                 provenance = InputProvenance(
                     buildList {
@@ -219,6 +230,18 @@ object MyBatisInvocationContractFactory {
             blockingProblems = emptyList(),
             sourceRevisions = sourceRevisions,
         )
+    }
+
+    private fun mapperMethodExpectedType(
+        parameter: JavaMethodParameterMetadata,
+    ): ExpectedInputType {
+        val expected = JavaParameterTypeContract.expectedType(parameter.typeIdentity, InputKind.BOUND)
+        val rawType = parameter.typeIdentity.value.substringBefore('<').trim()
+        return if (rawType in JAVA_PRIMITIVE_TYPES) {
+            expected
+        } else {
+            expected.copy(nullability = InputNullability.NULLABLE)
+        }
     }
 
     private fun methodAliases(
