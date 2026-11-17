@@ -441,6 +441,7 @@ object MyBatisInvocationContractFactory {
                 variables = emptyMap(),
                 fragments = fragments,
                 fragmentStack = linkedSetOf(),
+                source = rootDocument.sourceEvidence(),
                 scan = scan,
             )
             return Result(scan.requiresCallerObject, scan.rawUses.toList())
@@ -451,6 +452,7 @@ object MyBatisInvocationContractFactory {
             variables: Map<String, String>,
             fragments: Map<String, FragmentRef>,
             fragmentStack: MutableSet<String>,
+            source: SourceEvidence,
             scan: ScanState,
         ) {
             when (node) {
@@ -470,8 +472,16 @@ object MyBatisInvocationContractFactory {
                                 val value = substitute(property.getAttribute("value"), variables)
                                 if (name.isNotEmpty()) childVariables[name] = value
                             }
+                        val fragmentSource = fragment.document.sourceEvidence()
                         fragment.element.childNodes.forEachNode { child ->
-                            inspectNode(child, childVariables, fragments, fragmentStack, scan)
+                            inspectNode(
+                                child,
+                                childVariables,
+                                fragments,
+                                fragmentStack,
+                                fragmentSource,
+                                scan,
+                            )
                         }
                         fragmentStack.remove(refid)
                         return
@@ -486,13 +496,13 @@ object MyBatisInvocationContractFactory {
                     val attributes = node.attributes
                     for (index in 0 until attributes.length) {
                         val attribute = attributes.item(index)
-                        inspectText(attribute.nodeValue.orEmpty(), variables, scan, null)
+                        inspectText(attribute.nodeValue.orEmpty(), variables, scan, source)
                     }
                     node.childNodes.forEachNode { child ->
-                        inspectNode(child, variables, fragments, fragmentStack, scan)
+                        inspectNode(child, variables, fragments, fragmentStack, source, scan)
                     }
                 }
-                else -> inspectText(node.nodeValue.orEmpty(), variables, scan, null)
+                else -> inspectText(node.nodeValue.orEmpty(), variables, scan, source)
             }
         }
 
@@ -500,18 +510,14 @@ object MyBatisInvocationContractFactory {
             text: String,
             variables: Map<String, String>,
             scan: ScanState,
-            source: SourceEvidence?,
+            source: SourceEvidence,
         ) {
             if ("#{" in text) scan.requiresCallerObject = true
             rawInterpolation.findAll(text).forEach { match ->
                 val expression = match.groupValues[1].trim()
                 if (expression.isEmpty() || expression in variables) return@forEach
                 scan.requiresCallerObject = true
-                if (source != null) {
-                    scan.rawUses += RawUse(expression, source)
-                } else {
-                    scan.unscopedRawExpressions += expression
-                }
+                scan.rawUses += RawUse(expression, source)
             }
         }
 
@@ -576,7 +582,13 @@ object MyBatisInvocationContractFactory {
             val projected: XmlMapperPreparationProjection.ProjectedDocument,
             val namespace: String,
             val document: Document,
-        )
+        ) {
+            fun sourceEvidence(): SourceEvidence = SourceEvidence(
+                projected.sourceFileId,
+                projected.sourceRevision,
+                null,
+            )
+        }
 
         private data class FragmentRef(
             val document: ParsedDocument,
@@ -586,7 +598,6 @@ object MyBatisInvocationContractFactory {
         private class ScanState {
             var requiresCallerObject: Boolean = false
             val rawUses = mutableListOf<RawUse>()
-            val unscopedRawExpressions = mutableListOf<String>()
         }
     }
 }
