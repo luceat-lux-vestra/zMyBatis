@@ -10,7 +10,6 @@ import com.algorist.zMyBatis.core.input.InternalBinding
 import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
 import com.algorist.zMyBatis.core.materialization.MaintainedExecutionMaterializer
 import com.algorist.zMyBatis.core.materialization.MaterializationFailureKind
 import com.algorist.zMyBatis.core.materialization.MaterializationResult
@@ -1443,7 +1442,10 @@ class XmlMapperForeachPreparationTest {
         ) as PreparationRequestResult.Ready).request
     }
 
-    private fun contract(fixture: Fixture) = XmlMapperMethodParameterContractFactory.build(fixture.graph, fixture.mapper)
+    private fun contract(fixture: Fixture): ParameterContract {
+        val source = XmlMapperPreparationSource(fixture.graph, mapperMethod = fixture.mapper)
+        return MyBatisInvocationContractFactory.build(source)
+    }
 
     private fun fixture(body: String, parameters: List<JavaMethodParameterMetadata>, kind: StatementKind = StatementKind.SELECT): Fixture {
         val file = SourceFileId("vfs:/foreach.xml")
