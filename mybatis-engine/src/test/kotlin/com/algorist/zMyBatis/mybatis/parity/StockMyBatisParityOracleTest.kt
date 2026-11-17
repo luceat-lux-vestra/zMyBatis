@@ -100,6 +100,40 @@ class StockMyBatisParityOracleTest {
     }
 
     @Test
+    fun parameterizedIncludesAreLoadTimeSubstitutionNotRuntimeRawInput() {
+        val configuration = configuration(
+            "parity/include-shared.xml",
+            "parity/include-root.xml",
+        )
+        val runtimeCollision = mapOf(
+            "alias" to "runtime_alias",
+            "nestedAlias" to "runtime_nested_alias",
+        )
+
+        val direct = snapshot(
+            configuration,
+            "parity.IncludeMapper.parameterizedInclude",
+            runtimeCollision,
+        )
+        assertEquals(
+            "SELECTp.id,p.nameFROMproductsp",
+            compact(direct.sql),
+        )
+        assertTrue(direct.bindings.isEmpty())
+
+        val nested = snapshot(
+            configuration,
+            "parity.IncludeMapper.nestedParameterizedInclude",
+            runtimeCollision,
+        )
+        assertEquals(
+            "SELECTp.id,p.nameFROMproductsp",
+            compact(nested.sql),
+        )
+        assertTrue(nested.bindings.isEmpty())
+    }
+
+    @Test
     fun everyStandardDynamicTagFamilyHasAnIndependentStockOracleCase() {
         val configuration = configuration("parity/dynamic.xml")
 

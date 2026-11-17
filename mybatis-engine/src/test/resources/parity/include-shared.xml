@@ -15,6 +15,16 @@
         <include refid="parity.SharedFragments.nestedInner"/>
     </sql>
 
+    <sql id="parameterizedProjection">
+        ${alias}.id, ${alias}.name
+    </sql>
+
+    <sql id="nestedParameterizedProjection">
+        <include refid="parity.SharedFragments.parameterizedProjection">
+            <property name="alias" value="${nestedAlias}"/>
+        </include>
+    </sql>
+
     <sql id="vendorPredicate">
         AND vendor = 'default'
     </sql>

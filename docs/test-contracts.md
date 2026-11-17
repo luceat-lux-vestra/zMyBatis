@@ -41,11 +41,17 @@ freezes:
 - relevant standard TypeHandler/JDBC metadata;
 - stock `ParamNameResolver` caller-object construction for mapper-method inputs.
 
-The corpus covers ordinary `resultMap/resultType/parameterType` mappers, parameterized include
-graphs, every standard dynamic-tag family, representative combinations, scalar/multi/object/map/
-list/collection/array inputs, nested properties, foreach/bind dynamic internal values, typed null,
-direct Java dynamic annotations, raw interpolation, and sanitized source-derived historical
-`mybatisTest` Product/Customer mapper shapes.
+The corpus covers ordinary `resultMap/resultType/parameterType` mappers, same/cross/nested
+include graphs, explicit load-time parameterized `<include><property .../></include>` substitution,
+databaseId fragment selection, every standard dynamic-tag family, representative combinations,
+scalar/multi/object/map/list/collection/array inputs, nested properties, foreach/bind dynamic
+internal values, typed null, direct Java dynamic annotations, runtime raw interpolation, and
+sanitized source-derived historical `mybatisTest` Product/Customer mapper shapes.
+
+The parameterized-include oracle deliberately passes colliding runtime parameter names and proves
+that stock MyBatis has already substituted the include property into `BoundSql.sql` with no normal
+`ParameterMapping`. That load-time mapper feature is distinct from caller-controlled runtime
+`${}` raw interpolation.
 
 The oracle deliberately does **not** encode current Leap refusal as target truth and does not call
 the production zMyBatis admission/materialization path. P1 adds

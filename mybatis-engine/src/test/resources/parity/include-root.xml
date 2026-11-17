@@ -22,6 +22,22 @@
         <include refid="parity.SharedFragments.nestedOuter"/>
     </select>
 
+    <select id="parameterizedInclude" parameterType="map">
+        SELECT
+        <include refid="parity.SharedFragments.parameterizedProjection">
+            <property name="alias" value="p"/>
+        </include>
+        FROM products p
+    </select>
+
+    <select id="nestedParameterizedInclude" parameterType="map">
+        SELECT
+        <include refid="parity.SharedFragments.nestedParameterizedProjection">
+            <property name="nestedAlias" value="p"/>
+        </include>
+        FROM products p
+    </select>
+
     <select id="databaseId">
         SELECT id
         FROM products
