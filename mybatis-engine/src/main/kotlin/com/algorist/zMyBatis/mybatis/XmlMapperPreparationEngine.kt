@@ -348,14 +348,15 @@ object XmlMapperPreparationEngine {
             emptyMap(),
         )
         val bindings = when (
-            val captured = captureP2Bindings(
+            val captured = MyBatisInvocationBindingCapture.capture(
                 snapshots = snapshots,
                 request = request,
                 payload = payload,
             )
         ) {
-            is XmlBindingCapture.Ready -> captured.bindings
-            is XmlBindingCapture.Failed -> return PreparationResult.Failed(captured.failure)
+            is MyBatisInvocationBindingCapture.Result.Ready -> captured.bindings
+            is MyBatisInvocationBindingCapture.Result.Failed ->
+                return PreparationResult.Failed(captured.failure)
         }
 
         val rawInterpolations = mutableListOf<PreparedRawInterpolation>()
