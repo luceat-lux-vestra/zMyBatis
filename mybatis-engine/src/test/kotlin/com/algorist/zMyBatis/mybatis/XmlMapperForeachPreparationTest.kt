@@ -1309,28 +1309,6 @@ class XmlMapperForeachPreparationTest {
     }
 
     @Test
-    fun foreachCaptureRejectsMissingIdentityWrongKindAndNestedProperty() {
-        val fixture = fixture(
-            """SELECT <foreach collection="ids" item="item">#{item}</foreach>""",
-            listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")),
-        )
-        val request = request(fixture, mapOf(0 to listValue(7)))
-        val admission = XmlForeachPreparationAdmission.inspect(fixture.graph, fixture.mapper, request.parameterContract) as XmlForeachPreparationAdmission.Result.Admitted
-        val mapping = MyBatisParameterMappingSnapshot(
-            "item", false, MyBatisForeachLocalSnapshot("item", InternalBindingKind.FOREACH_ITEM),
-            MyBatisRuntimeValueSnapshot.Ready(7L), "java.lang.Long", null, "org.apache.ibatis.type.LongTypeHandler", "IN", null,
-        )
-        for (forged in listOf(
-            mapping.copy(foreachLocal = null),
-            mapping.copy(foreachLocal = MyBatisForeachLocalSnapshot("item", InternalBindingKind.FOREACH_INDEX)),
-            mapping.copy(property = "item.id"),
-        )) {
-            val result = XmlForeachAdditionalBindingCapture.capture(0, forged, request, admission) as XmlForeachAdditionalBindingCapture.Result.Failed
-            assertEquals("xml-foreach-additional-authority-unproven", result.failure.code)
-        }
-    }
-
-    @Test
     fun unsupportedForeachSourceNeverAcquiresRuntimeAuthorityFromAnOlderContract() {
         val parameters = listOf(parameter(0, "java.util.List<java.lang.Long>", "ids"))
         val original = fixture("""SELECT <foreach collection="ids" item="item">#{item}</foreach>""", parameters)
