@@ -73,7 +73,7 @@ class P2CallerAuthorityParityTest {
         assertEquals(
             normalizeRuntime(
                 ParamNameResolver(Configuration(), multipleMethod, multipleMethod.declaringClass)
-                    .getNamedParams(arrayOf(7L, "seven")),
+                    .getNamedParams(arrayOf<Any?>(7L, "seven")),
             ),
             normalizeRuntime(multiplePayload.parameterObject),
         )
@@ -148,7 +148,2693 @@ class P2CallerAuthorityParityTest {
             body = """
                 <select id="find">
                     <bind name="pattern" value="'%' + name + '%'"/>
-                    SELECT ${column} FROM products
+                    SELECT ${'
+                    <where>
+                        <if test="enabled">AND active = TRUE</if>
+                        <choose>
+                            <when test="ids != null and ids.size > 0">
+                                AND id IN
+                                <foreach collection="ids" item="item" index="idx" open="(" separator="," close=")">
+                                    #{item,jdbcType=BIGINT}
+                                </foreach>
+                            </when>
+                            <otherwise>AND 1 = 0</otherwise>
+                        </choose>
+                        <if test="name != null">AND name LIKE #{pattern,jdbcType=VARCHAR}</if>
+                    </where>
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals("xml-parameter-object", requirement.id.value)
+        assertEquals(InputShape.OBJECT, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(
+                requirement.id to InputValue.ObjectValue(
+                    linkedMapOf(
+                        "column" to InputValue.Text("name"),
+                        "enabled" to InputValue.BooleanValue(true),
+                        "ids" to InputValue.ListValue(listOf(integer(7), integer(9))),
+                        "name" to InputValue.Text("pro"),
+                    ),
+                ),
+            ),
+        )
+        val execution = xmlSuccess(request(source, contract, environment))
+
+        assertEquals(
+            "SELECT name FROM products WHERE active = TRUE AND id IN ( ? , ? ) AND name LIKE ?",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(integer(7), integer(9), InputValue.Text("%pro%")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun javaDynamicScriptKeepsOneTypedCallerForBoundAndRawUse() {
+        val fixture = javaFixture(
+            sql = """
+                <script>
+                    SELECT ${'
+                    <if test="value != null">, 1 AS enabled</if>
+                </script>
+            """.trimIndent(),
+            parameters = listOf(parameter(0, "value", "java.lang.String", "value")),
+        )
+        val contract = MyBatisInvocationContractFactory.build(fixture.source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputShape.SCALAR, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(requirement.id to InputValue.Text("42")),
+        )
+        val prepared = MyBatisPreparationEngine.prepare(request(fixture.source, contract, environment))
+        val execution = (prepared as PreparationResult.Success).execution
+
+        assertEquals(
+            "SELECT 42 AS raw_value, ? AS bound_value , 1 AS enabled",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(InputValue.Text("42")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun parameterizedIncludePropertyDoesNotBecomeRuntimeRawCallerInput() {
+        val source = xmlSource(
+            body = """
+                <sql id="columns">${'
+                <select id="find">
+                    SELECT
+                    <include refid="columns">
+                        <property name="alias" value="p"/>
+                    </include>
+                    FROM products p
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        val environment = environment(contract, emptyList())
+        val execution = xmlSuccess(request(source, contract, environment))
+        assertEquals("SELECT p.id, p.name FROM products p", normalizeSql(execution.sqlWithPlaceholders))
+        assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    private fun collectionCase(
+        methodName: String,
+        declaredType: String,
+        value: InputValue,
+        runtimeValue: Any,
+        requiredAliases: Set<String>,
+    ) {
+        val fixture = javaFixture(
+            sql = "SELECT 1",
+            parameters = listOf(parameter(0, "ids", declaredType, null)),
+        )
+        val actual = normalizeRuntime(payload(fixture.source, mapOf(0 to value)).parameterObject) as Map<*, *>
+        val method = method(methodName)
+        val expected = normalizeRuntime(
+            ParamNameResolver(Configuration(), method, method.declaringClass)
+                .getNamedParams(arrayOf(runtimeValue)),
+        ) as Map<*, *>
+
+        for (alias in requiredAliases) {
+            assertTrue("stock ParamNameResolver missing $alias", expected.containsKey(alias))
+            assertTrue("P2 payload missing $alias", actual.containsKey(alias))
+            assertEquals(expected[alias], actual[alias])
+        }
+    }
+
+    private fun payload(
+        source: PreparationSource,
+        valuesByParameterIndex: Map<Int, InputValue>,
+    ): MyBatisInvocationParameterObjectFactory.Ready {
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse("fixture contract blocked: ${contract.blockingProblems.map { it.code }}", contract.isPreparationBlocked)
+        val provided = contract.requirements.map { requirement ->
+            val parameter = requirement.provenance.evidence
+                .filterIsInstance<com.algorist.zMyBatis.core.input.InputEvidence.MapperMethodParameter>()
+                .single()
+            ProvidedInput(
+                requirement.id,
+                requireNotNull(valuesByParameterIndex[parameter.index]),
+                ExecutionInputOrigin.USER_ENTERED,
+            )
+        }
+        val environment = (InputEnvironment.validate(contract, provided) as InputEnvironmentResult.Success).environment
+        val request = request(source, contract, environment)
+        return when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
+            is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
+            is MyBatisInvocationParameterObjectFactory.Result.Failed ->
+                throw AssertionError("expected payload success: ${result.failure}")
+        }
+    }
+
+    private fun request(
+        source: PreparationSource,
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        environment: InputEnvironment,
+    ): MyBatisPreparationRequest =
+        (MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready).request
+
+    private fun environment(
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        values: List<Pair<com.algorist.zMyBatis.core.input.InputRequirementId, InputValue>>,
+    ): InputEnvironment {
+        val result = InputEnvironment.validate(
+            contract,
+            values.map { (id, value) -> ProvidedInput(id, value, ExecutionInputOrigin.USER_ENTERED) },
+        )
+        assertTrue("input environment must validate: $result", result is InputEnvironmentResult.Success)
+        return (result as InputEnvironmentResult.Success).environment
+    }
+
+    private fun xmlSuccess(request: MyBatisPreparationRequest) =
+        when (val result = XmlMapperPreparationEngine.prepare(request)) {
+            is PreparationResult.Success -> result.execution
+            is PreparationResult.Failed -> throw AssertionError(
+                "expected XML preparation success, got kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+
+    private fun javaFixture(
+        sql: String,
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaFixture {
+        val fileId = SourceFileId("fixture/OracleMapper.java")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.OracleMapper",
+            MethodSignature("query", parameters.map { it.typeIdentity }),
+        )
+        val snapshot = SourceSnapshot(fileId, SourceRevision("java-r1"), "authoritative-java-source")
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, snapshot.content.length)),
+            listOf(snapshot),
+            emptyList(),
+        )
+        return JavaFixture(
+            PreparationSource.JavaAnnotation(
+                JavaAnnotationStatementCapture(graph, listOf(sql), parameters),
+            ),
+        )
+    }
+
+    private fun xmlSource(
+        body: String,
+        mapperParameters: List<JavaMethodParameterMetadata>? = null,
+    ): XmlMapperPreparationSource {
+        val xmlFile = SourceFileId("vfs:/mapper.xml")
+        val xmlRevision = SourceRevision("xml-r1")
+        val statementId = XmlStatementId(xmlFile, "fixture.Mapper", "find")
+        val content =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n" +
+                "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n" +
+                "<mapper namespace=\"fixture.Mapper\">\n" +
+                body +
+                "\n</mapper>"
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, content.length)),
+            listOf(SourceSnapshot(xmlFile, xmlRevision, content)),
+            emptyList(),
+        )
+        val mapperMethod = mapperParameters?.let { parameters ->
+            val javaSource = SourceSnapshot(
+                SourceFileId("vfs:/Mapper.java"),
+                SourceRevision("java-r1"),
+                "x".repeat(256),
+            )
+            XmlMapperMethodCapture(
+                statementId,
+                javaSource,
+                SourceRange(20, 120),
+                parameters,
+            )
+        }
+        return XmlMapperPreparationSource(graph, mapperMethod = mapperMethod)
+    }
+
+    private fun parameter(
+        index: Int,
+        sourceName: String,
+        type: String,
+        alias: String?,
+    ) = JavaMethodParameterMetadata(index, sourceName, JavaTypeIdentity(type), alias)
+
+    private fun method(name: String): Method =
+        OracleParameterMapper::class.java.methods.single { it.name == name }
+
+    private fun integer(value: Long): InputValue.IntegerValue =
+        InputValue.IntegerValue(BigInteger.valueOf(value))
+
+    private fun normalizeSql(sql: String): String =
+        sql.trim().replace(Regex("\\s+"), " ")
+
+    private fun normalizeRuntime(value: Any?): Any? = when {
+        value == null -> null
+        value is Map<*, *> -> value.entries
+            .sortedBy { it.key.toString() }
+            .associate { it.key to normalizeRuntime(it.value) }
+        value is Iterable<*> -> value.map(::normalizeRuntime)
+        value.javaClass.isArray -> (0 until ReflectArray.getLength(value))
+            .map { index -> normalizeRuntime(ReflectArray.get(value, index)) }
+        else -> value
+    }
+
+    private data class JavaFixture(val source: PreparationSource.JavaAnnotation)
+}
+}{column} FROM products
+                    <where>
+                        <if test="enabled">AND active = TRUE</if>
+                        <choose>
+                            <when test="ids != null and ids.size > 0">
+                                AND id IN
+                                <foreach collection="ids" item="item" index="idx" open="(" separator="," close=")">
+                                    #{item,jdbcType=BIGINT}
+                                </foreach>
+                            </when>
+                            <otherwise>AND 1 = 0</otherwise>
+                        </choose>
+                        <if test="name != null">AND name LIKE #{pattern,jdbcType=VARCHAR}</if>
+                    </where>
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals("xml-parameter-object", requirement.id.value)
+        assertEquals(InputShape.OBJECT, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(
+                requirement.id to InputValue.ObjectValue(
+                    linkedMapOf(
+                        "column" to InputValue.Text("name"),
+                        "enabled" to InputValue.BooleanValue(true),
+                        "ids" to InputValue.ListValue(listOf(integer(7), integer(9))),
+                        "name" to InputValue.Text("pro"),
+                    ),
+                ),
+            ),
+        )
+        val execution = xmlSuccess(request(source, contract, environment))
+
+        assertEquals(
+            "SELECT name FROM products WHERE active = TRUE AND id IN ( ? , ? ) AND name LIKE ?",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(integer(7), integer(9), InputValue.Text("%pro%")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun javaDynamicScriptKeepsOneTypedCallerForBoundAndRawUse() {
+        val fixture = javaFixture(
+            sql = """
+                <script>
+                    SELECT ${value} AS raw_value, #{value,jdbcType=VARCHAR} AS bound_value
+                    <if test="value != null">, 1 AS enabled</if>
+                </script>
+            """.trimIndent(),
+            parameters = listOf(parameter(0, "value", "java.lang.String", "value")),
+        )
+        val contract = MyBatisInvocationContractFactory.build(fixture.source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputShape.SCALAR, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(requirement.id to InputValue.Text("42")),
+        )
+        val prepared = MyBatisPreparationEngine.prepare(request(fixture.source, contract, environment))
+        val execution = (prepared as PreparationResult.Success).execution
+
+        assertEquals(
+            "SELECT 42 AS raw_value, ? AS bound_value , 1 AS enabled",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(InputValue.Text("42")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun parameterizedIncludePropertyDoesNotBecomeRuntimeRawCallerInput() {
+        val source = xmlSource(
+            body = """
+                <sql id="columns">${alias}.id, ${alias}.name</sql>
+                <select id="find">
+                    SELECT
+                    <include refid="columns">
+                        <property name="alias" value="p"/>
+                    </include>
+                    FROM products p
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        val environment = environment(contract, emptyList())
+        val execution = xmlSuccess(request(source, contract, environment))
+        assertEquals("SELECT p.id, p.name FROM products p", normalizeSql(execution.sqlWithPlaceholders))
+        assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    private fun collectionCase(
+        methodName: String,
+        declaredType: String,
+        value: InputValue,
+        runtimeValue: Any,
+        requiredAliases: Set<String>,
+    ) {
+        val fixture = javaFixture(
+            sql = "SELECT 1",
+            parameters = listOf(parameter(0, "ids", declaredType, null)),
+        )
+        val actual = normalizeRuntime(payload(fixture.source, mapOf(0 to value)).parameterObject) as Map<*, *>
+        val method = method(methodName)
+        val expected = normalizeRuntime(
+            ParamNameResolver(Configuration(), method, method.declaringClass)
+                .getNamedParams(arrayOf(runtimeValue)),
+        ) as Map<*, *>
+
+        for (alias in requiredAliases) {
+            assertTrue("stock ParamNameResolver missing $alias", expected.containsKey(alias))
+            assertTrue("P2 payload missing $alias", actual.containsKey(alias))
+            assertEquals(expected[alias], actual[alias])
+        }
+    }
+
+    private fun payload(
+        source: PreparationSource,
+        valuesByParameterIndex: Map<Int, InputValue>,
+    ): MyBatisInvocationParameterObjectFactory.Ready {
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse("fixture contract blocked: ${contract.blockingProblems.map { it.code }}", contract.isPreparationBlocked)
+        val provided = contract.requirements.map { requirement ->
+            val parameter = requirement.provenance.evidence
+                .filterIsInstance<com.algorist.zMyBatis.core.input.InputEvidence.MapperMethodParameter>()
+                .single()
+            ProvidedInput(
+                requirement.id,
+                requireNotNull(valuesByParameterIndex[parameter.index]),
+                ExecutionInputOrigin.USER_ENTERED,
+            )
+        }
+        val environment = (InputEnvironment.validate(contract, provided) as InputEnvironmentResult.Success).environment
+        val request = request(source, contract, environment)
+        return when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
+            is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
+            is MyBatisInvocationParameterObjectFactory.Result.Failed ->
+                throw AssertionError("expected payload success: ${result.failure}")
+        }
+    }
+
+    private fun request(
+        source: PreparationSource,
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        environment: InputEnvironment,
+    ): MyBatisPreparationRequest =
+        (MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready).request
+
+    private fun environment(
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        values: List<Pair<com.algorist.zMyBatis.core.input.InputRequirementId, InputValue>>,
+    ): InputEnvironment {
+        val result = InputEnvironment.validate(
+            contract,
+            values.map { (id, value) -> ProvidedInput(id, value, ExecutionInputOrigin.USER_ENTERED) },
+        )
+        assertTrue("input environment must validate: $result", result is InputEnvironmentResult.Success)
+        return (result as InputEnvironmentResult.Success).environment
+    }
+
+    private fun xmlSuccess(request: MyBatisPreparationRequest) =
+        when (val result = XmlMapperPreparationEngine.prepare(request)) {
+            is PreparationResult.Success -> result.execution
+            is PreparationResult.Failed -> throw AssertionError(
+                "expected XML preparation success, got kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+
+    private fun javaFixture(
+        sql: String,
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaFixture {
+        val fileId = SourceFileId("fixture/OracleMapper.java")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.OracleMapper",
+            MethodSignature("query", parameters.map { it.typeIdentity }),
+        )
+        val snapshot = SourceSnapshot(fileId, SourceRevision("java-r1"), "authoritative-java-source")
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, snapshot.content.length)),
+            listOf(snapshot),
+            emptyList(),
+        )
+        return JavaFixture(
+            PreparationSource.JavaAnnotation(
+                JavaAnnotationStatementCapture(graph, listOf(sql), parameters),
+            ),
+        )
+    }
+
+    private fun xmlSource(
+        body: String,
+        mapperParameters: List<JavaMethodParameterMetadata>? = null,
+    ): XmlMapperPreparationSource {
+        val xmlFile = SourceFileId("vfs:/mapper.xml")
+        val xmlRevision = SourceRevision("xml-r1")
+        val statementId = XmlStatementId(xmlFile, "fixture.Mapper", "find")
+        val content =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n" +
+                "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n" +
+                "<mapper namespace=\"fixture.Mapper\">\n" +
+                body +
+                "\n</mapper>"
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, content.length)),
+            listOf(SourceSnapshot(xmlFile, xmlRevision, content)),
+            emptyList(),
+        )
+        val mapperMethod = mapperParameters?.let { parameters ->
+            val javaSource = SourceSnapshot(
+                SourceFileId("vfs:/Mapper.java"),
+                SourceRevision("java-r1"),
+                "x".repeat(256),
+            )
+            XmlMapperMethodCapture(
+                statementId,
+                javaSource,
+                SourceRange(20, 120),
+                parameters,
+            )
+        }
+        return XmlMapperPreparationSource(graph, mapperMethod = mapperMethod)
+    }
+
+    private fun parameter(
+        index: Int,
+        sourceName: String,
+        type: String,
+        alias: String?,
+    ) = JavaMethodParameterMetadata(index, sourceName, JavaTypeIdentity(type), alias)
+
+    private fun method(name: String): Method =
+        OracleParameterMapper::class.java.methods.single { it.name == name }
+
+    private fun integer(value: Long): InputValue.IntegerValue =
+        InputValue.IntegerValue(BigInteger.valueOf(value))
+
+    private fun normalizeSql(sql: String): String =
+        sql.trim().replace(Regex("\\s+"), " ")
+
+    private fun normalizeRuntime(value: Any?): Any? = when {
+        value == null -> null
+        value is Map<*, *> -> value.entries
+            .sortedBy { it.key.toString() }
+            .associate { it.key to normalizeRuntime(it.value) }
+        value is Iterable<*> -> value.map(::normalizeRuntime)
+        value.javaClass.isArray -> (0 until ReflectArray.getLength(value))
+            .map { index -> normalizeRuntime(ReflectArray.get(value, index)) }
+        else -> value
+    }
+
+    private data class JavaFixture(val source: PreparationSource.JavaAnnotation)
+}
+}{value} AS raw_value, #{value,jdbcType=VARCHAR} AS bound_value
+                    <if test="value != null">, 1 AS enabled</if>
+                </script>
+            """.trimIndent(),
+            parameters = listOf(parameter(0, "value", "java.lang.String", "value")),
+        )
+        val contract = MyBatisInvocationContractFactory.build(fixture.source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputShape.SCALAR, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(requirement.id to InputValue.Text("42")),
+        )
+        val prepared = MyBatisPreparationEngine.prepare(request(fixture.source, contract, environment))
+        val execution = (prepared as PreparationResult.Success).execution
+
+        assertEquals(
+            "SELECT 42 AS raw_value, ? AS bound_value , 1 AS enabled",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(InputValue.Text("42")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun parameterizedIncludePropertyDoesNotBecomeRuntimeRawCallerInput() {
+        val source = xmlSource(
+            body = """
+                <sql id="columns">${alias}.id, ${alias}.name</sql>
+                <select id="find">
+                    SELECT
+                    <include refid="columns">
+                        <property name="alias" value="p"/>
+                    </include>
+                    FROM products p
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        val environment = environment(contract, emptyList())
+        val execution = xmlSuccess(request(source, contract, environment))
+        assertEquals("SELECT p.id, p.name FROM products p", normalizeSql(execution.sqlWithPlaceholders))
+        assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    private fun collectionCase(
+        methodName: String,
+        declaredType: String,
+        value: InputValue,
+        runtimeValue: Any,
+        requiredAliases: Set<String>,
+    ) {
+        val fixture = javaFixture(
+            sql = "SELECT 1",
+            parameters = listOf(parameter(0, "ids", declaredType, null)),
+        )
+        val actual = normalizeRuntime(payload(fixture.source, mapOf(0 to value)).parameterObject) as Map<*, *>
+        val method = method(methodName)
+        val expected = normalizeRuntime(
+            ParamNameResolver(Configuration(), method, method.declaringClass)
+                .getNamedParams(arrayOf(runtimeValue)),
+        ) as Map<*, *>
+
+        for (alias in requiredAliases) {
+            assertTrue("stock ParamNameResolver missing $alias", expected.containsKey(alias))
+            assertTrue("P2 payload missing $alias", actual.containsKey(alias))
+            assertEquals(expected[alias], actual[alias])
+        }
+    }
+
+    private fun payload(
+        source: PreparationSource,
+        valuesByParameterIndex: Map<Int, InputValue>,
+    ): MyBatisInvocationParameterObjectFactory.Ready {
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse("fixture contract blocked: ${contract.blockingProblems.map { it.code }}", contract.isPreparationBlocked)
+        val provided = contract.requirements.map { requirement ->
+            val parameter = requirement.provenance.evidence
+                .filterIsInstance<com.algorist.zMyBatis.core.input.InputEvidence.MapperMethodParameter>()
+                .single()
+            ProvidedInput(
+                requirement.id,
+                requireNotNull(valuesByParameterIndex[parameter.index]),
+                ExecutionInputOrigin.USER_ENTERED,
+            )
+        }
+        val environment = (InputEnvironment.validate(contract, provided) as InputEnvironmentResult.Success).environment
+        val request = request(source, contract, environment)
+        return when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
+            is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
+            is MyBatisInvocationParameterObjectFactory.Result.Failed ->
+                throw AssertionError("expected payload success: ${result.failure}")
+        }
+    }
+
+    private fun request(
+        source: PreparationSource,
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        environment: InputEnvironment,
+    ): MyBatisPreparationRequest =
+        (MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready).request
+
+    private fun environment(
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        values: List<Pair<com.algorist.zMyBatis.core.input.InputRequirementId, InputValue>>,
+    ): InputEnvironment {
+        val result = InputEnvironment.validate(
+            contract,
+            values.map { (id, value) -> ProvidedInput(id, value, ExecutionInputOrigin.USER_ENTERED) },
+        )
+        assertTrue("input environment must validate: $result", result is InputEnvironmentResult.Success)
+        return (result as InputEnvironmentResult.Success).environment
+    }
+
+    private fun xmlSuccess(request: MyBatisPreparationRequest) =
+        when (val result = XmlMapperPreparationEngine.prepare(request)) {
+            is PreparationResult.Success -> result.execution
+            is PreparationResult.Failed -> throw AssertionError(
+                "expected XML preparation success, got kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+
+    private fun javaFixture(
+        sql: String,
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaFixture {
+        val fileId = SourceFileId("fixture/OracleMapper.java")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.OracleMapper",
+            MethodSignature("query", parameters.map { it.typeIdentity }),
+        )
+        val snapshot = SourceSnapshot(fileId, SourceRevision("java-r1"), "authoritative-java-source")
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, snapshot.content.length)),
+            listOf(snapshot),
+            emptyList(),
+        )
+        return JavaFixture(
+            PreparationSource.JavaAnnotation(
+                JavaAnnotationStatementCapture(graph, listOf(sql), parameters),
+            ),
+        )
+    }
+
+    private fun xmlSource(
+        body: String,
+        mapperParameters: List<JavaMethodParameterMetadata>? = null,
+    ): XmlMapperPreparationSource {
+        val xmlFile = SourceFileId("vfs:/mapper.xml")
+        val xmlRevision = SourceRevision("xml-r1")
+        val statementId = XmlStatementId(xmlFile, "fixture.Mapper", "find")
+        val content =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n" +
+                "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n" +
+                "<mapper namespace=\"fixture.Mapper\">\n" +
+                body +
+                "\n</mapper>"
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, content.length)),
+            listOf(SourceSnapshot(xmlFile, xmlRevision, content)),
+            emptyList(),
+        )
+        val mapperMethod = mapperParameters?.let { parameters ->
+            val javaSource = SourceSnapshot(
+                SourceFileId("vfs:/Mapper.java"),
+                SourceRevision("java-r1"),
+                "x".repeat(256),
+            )
+            XmlMapperMethodCapture(
+                statementId,
+                javaSource,
+                SourceRange(20, 120),
+                parameters,
+            )
+        }
+        return XmlMapperPreparationSource(graph, mapperMethod = mapperMethod)
+    }
+
+    private fun parameter(
+        index: Int,
+        sourceName: String,
+        type: String,
+        alias: String?,
+    ) = JavaMethodParameterMetadata(index, sourceName, JavaTypeIdentity(type), alias)
+
+    private fun method(name: String): Method =
+        OracleParameterMapper::class.java.methods.single { it.name == name }
+
+    private fun integer(value: Long): InputValue.IntegerValue =
+        InputValue.IntegerValue(BigInteger.valueOf(value))
+
+    private fun normalizeSql(sql: String): String =
+        sql.trim().replace(Regex("\\s+"), " ")
+
+    private fun normalizeRuntime(value: Any?): Any? = when {
+        value == null -> null
+        value is Map<*, *> -> value.entries
+            .sortedBy { it.key.toString() }
+            .associate { it.key to normalizeRuntime(it.value) }
+        value is Iterable<*> -> value.map(::normalizeRuntime)
+        value.javaClass.isArray -> (0 until ReflectArray.getLength(value))
+            .map { index -> normalizeRuntime(ReflectArray.get(value, index)) }
+        else -> value
+    }
+
+    private data class JavaFixture(val source: PreparationSource.JavaAnnotation)
+}
+}{column} FROM products
+                    <where>
+                        <if test="enabled">AND active = TRUE</if>
+                        <choose>
+                            <when test="ids != null and ids.size > 0">
+                                AND id IN
+                                <foreach collection="ids" item="item" index="idx" open="(" separator="," close=")">
+                                    #{item,jdbcType=BIGINT}
+                                </foreach>
+                            </when>
+                            <otherwise>AND 1 = 0</otherwise>
+                        </choose>
+                        <if test="name != null">AND name LIKE #{pattern,jdbcType=VARCHAR}</if>
+                    </where>
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals("xml-parameter-object", requirement.id.value)
+        assertEquals(InputShape.OBJECT, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(
+                requirement.id to InputValue.ObjectValue(
+                    linkedMapOf(
+                        "column" to InputValue.Text("name"),
+                        "enabled" to InputValue.BooleanValue(true),
+                        "ids" to InputValue.ListValue(listOf(integer(7), integer(9))),
+                        "name" to InputValue.Text("pro"),
+                    ),
+                ),
+            ),
+        )
+        val execution = xmlSuccess(request(source, contract, environment))
+
+        assertEquals(
+            "SELECT name FROM products WHERE active = TRUE AND id IN ( ? , ? ) AND name LIKE ?",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(integer(7), integer(9), InputValue.Text("%pro%")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun javaDynamicScriptKeepsOneTypedCallerForBoundAndRawUse() {
+        val fixture = javaFixture(
+            sql = """
+                <script>
+                    SELECT ${value} AS raw_value, #{value,jdbcType=VARCHAR} AS bound_value
+                    <if test="value != null">, 1 AS enabled</if>
+                </script>
+            """.trimIndent(),
+            parameters = listOf(parameter(0, "value", "java.lang.String", "value")),
+        )
+        val contract = MyBatisInvocationContractFactory.build(fixture.source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputShape.SCALAR, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(requirement.id to InputValue.Text("42")),
+        )
+        val prepared = MyBatisPreparationEngine.prepare(request(fixture.source, contract, environment))
+        val execution = (prepared as PreparationResult.Success).execution
+
+        assertEquals(
+            "SELECT 42 AS raw_value, ? AS bound_value , 1 AS enabled",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(InputValue.Text("42")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun parameterizedIncludePropertyDoesNotBecomeRuntimeRawCallerInput() {
+        val source = xmlSource(
+            body = """
+                <sql id="columns">${alias}.id, ${alias}.name</sql>
+                <select id="find">
+                    SELECT
+                    <include refid="columns">
+                        <property name="alias" value="p"/>
+                    </include>
+                    FROM products p
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        val environment = environment(contract, emptyList())
+        val execution = xmlSuccess(request(source, contract, environment))
+        assertEquals("SELECT p.id, p.name FROM products p", normalizeSql(execution.sqlWithPlaceholders))
+        assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    private fun collectionCase(
+        methodName: String,
+        declaredType: String,
+        value: InputValue,
+        runtimeValue: Any,
+        requiredAliases: Set<String>,
+    ) {
+        val fixture = javaFixture(
+            sql = "SELECT 1",
+            parameters = listOf(parameter(0, "ids", declaredType, null)),
+        )
+        val actual = normalizeRuntime(payload(fixture.source, mapOf(0 to value)).parameterObject) as Map<*, *>
+        val method = method(methodName)
+        val expected = normalizeRuntime(
+            ParamNameResolver(Configuration(), method, method.declaringClass)
+                .getNamedParams(arrayOf(runtimeValue)),
+        ) as Map<*, *>
+
+        for (alias in requiredAliases) {
+            assertTrue("stock ParamNameResolver missing $alias", expected.containsKey(alias))
+            assertTrue("P2 payload missing $alias", actual.containsKey(alias))
+            assertEquals(expected[alias], actual[alias])
+        }
+    }
+
+    private fun payload(
+        source: PreparationSource,
+        valuesByParameterIndex: Map<Int, InputValue>,
+    ): MyBatisInvocationParameterObjectFactory.Ready {
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse("fixture contract blocked: ${contract.blockingProblems.map { it.code }}", contract.isPreparationBlocked)
+        val provided = contract.requirements.map { requirement ->
+            val parameter = requirement.provenance.evidence
+                .filterIsInstance<com.algorist.zMyBatis.core.input.InputEvidence.MapperMethodParameter>()
+                .single()
+            ProvidedInput(
+                requirement.id,
+                requireNotNull(valuesByParameterIndex[parameter.index]),
+                ExecutionInputOrigin.USER_ENTERED,
+            )
+        }
+        val environment = (InputEnvironment.validate(contract, provided) as InputEnvironmentResult.Success).environment
+        val request = request(source, contract, environment)
+        return when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
+            is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
+            is MyBatisInvocationParameterObjectFactory.Result.Failed ->
+                throw AssertionError("expected payload success: ${result.failure}")
+        }
+    }
+
+    private fun request(
+        source: PreparationSource,
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        environment: InputEnvironment,
+    ): MyBatisPreparationRequest =
+        (MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready).request
+
+    private fun environment(
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        values: List<Pair<com.algorist.zMyBatis.core.input.InputRequirementId, InputValue>>,
+    ): InputEnvironment {
+        val result = InputEnvironment.validate(
+            contract,
+            values.map { (id, value) -> ProvidedInput(id, value, ExecutionInputOrigin.USER_ENTERED) },
+        )
+        assertTrue("input environment must validate: $result", result is InputEnvironmentResult.Success)
+        return (result as InputEnvironmentResult.Success).environment
+    }
+
+    private fun xmlSuccess(request: MyBatisPreparationRequest) =
+        when (val result = XmlMapperPreparationEngine.prepare(request)) {
+            is PreparationResult.Success -> result.execution
+            is PreparationResult.Failed -> throw AssertionError(
+                "expected XML preparation success, got kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+
+    private fun javaFixture(
+        sql: String,
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaFixture {
+        val fileId = SourceFileId("fixture/OracleMapper.java")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.OracleMapper",
+            MethodSignature("query", parameters.map { it.typeIdentity }),
+        )
+        val snapshot = SourceSnapshot(fileId, SourceRevision("java-r1"), "authoritative-java-source")
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, snapshot.content.length)),
+            listOf(snapshot),
+            emptyList(),
+        )
+        return JavaFixture(
+            PreparationSource.JavaAnnotation(
+                JavaAnnotationStatementCapture(graph, listOf(sql), parameters),
+            ),
+        )
+    }
+
+    private fun xmlSource(
+        body: String,
+        mapperParameters: List<JavaMethodParameterMetadata>? = null,
+    ): XmlMapperPreparationSource {
+        val xmlFile = SourceFileId("vfs:/mapper.xml")
+        val xmlRevision = SourceRevision("xml-r1")
+        val statementId = XmlStatementId(xmlFile, "fixture.Mapper", "find")
+        val content =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n" +
+                "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n" +
+                "<mapper namespace=\"fixture.Mapper\">\n" +
+                body +
+                "\n</mapper>"
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, content.length)),
+            listOf(SourceSnapshot(xmlFile, xmlRevision, content)),
+            emptyList(),
+        )
+        val mapperMethod = mapperParameters?.let { parameters ->
+            val javaSource = SourceSnapshot(
+                SourceFileId("vfs:/Mapper.java"),
+                SourceRevision("java-r1"),
+                "x".repeat(256),
+            )
+            XmlMapperMethodCapture(
+                statementId,
+                javaSource,
+                SourceRange(20, 120),
+                parameters,
+            )
+        }
+        return XmlMapperPreparationSource(graph, mapperMethod = mapperMethod)
+    }
+
+    private fun parameter(
+        index: Int,
+        sourceName: String,
+        type: String,
+        alias: String?,
+    ) = JavaMethodParameterMetadata(index, sourceName, JavaTypeIdentity(type), alias)
+
+    private fun method(name: String): Method =
+        OracleParameterMapper::class.java.methods.single { it.name == name }
+
+    private fun integer(value: Long): InputValue.IntegerValue =
+        InputValue.IntegerValue(BigInteger.valueOf(value))
+
+    private fun normalizeSql(sql: String): String =
+        sql.trim().replace(Regex("\\s+"), " ")
+
+    private fun normalizeRuntime(value: Any?): Any? = when {
+        value == null -> null
+        value is Map<*, *> -> value.entries
+            .sortedBy { it.key.toString() }
+            .associate { it.key to normalizeRuntime(it.value) }
+        value is Iterable<*> -> value.map(::normalizeRuntime)
+        value.javaClass.isArray -> (0 until ReflectArray.getLength(value))
+            .map { index -> normalizeRuntime(ReflectArray.get(value, index)) }
+        else -> value
+    }
+
+    private data class JavaFixture(val source: PreparationSource.JavaAnnotation)
+}
+}{alias}.id, ${'
+                <select id="find">
+                    SELECT
+                    <include refid="columns">
+                        <property name="alias" value="p"/>
+                    </include>
+                    FROM products p
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        val environment = environment(contract, emptyList())
+        val execution = xmlSuccess(request(source, contract, environment))
+        assertEquals("SELECT p.id, p.name FROM products p", normalizeSql(execution.sqlWithPlaceholders))
+        assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    private fun collectionCase(
+        methodName: String,
+        declaredType: String,
+        value: InputValue,
+        runtimeValue: Any,
+        requiredAliases: Set<String>,
+    ) {
+        val fixture = javaFixture(
+            sql = "SELECT 1",
+            parameters = listOf(parameter(0, "ids", declaredType, null)),
+        )
+        val actual = normalizeRuntime(payload(fixture.source, mapOf(0 to value)).parameterObject) as Map<*, *>
+        val method = method(methodName)
+        val expected = normalizeRuntime(
+            ParamNameResolver(Configuration(), method, method.declaringClass)
+                .getNamedParams(arrayOf(runtimeValue)),
+        ) as Map<*, *>
+
+        for (alias in requiredAliases) {
+            assertTrue("stock ParamNameResolver missing $alias", expected.containsKey(alias))
+            assertTrue("P2 payload missing $alias", actual.containsKey(alias))
+            assertEquals(expected[alias], actual[alias])
+        }
+    }
+
+    private fun payload(
+        source: PreparationSource,
+        valuesByParameterIndex: Map<Int, InputValue>,
+    ): MyBatisInvocationParameterObjectFactory.Ready {
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse("fixture contract blocked: ${contract.blockingProblems.map { it.code }}", contract.isPreparationBlocked)
+        val provided = contract.requirements.map { requirement ->
+            val parameter = requirement.provenance.evidence
+                .filterIsInstance<com.algorist.zMyBatis.core.input.InputEvidence.MapperMethodParameter>()
+                .single()
+            ProvidedInput(
+                requirement.id,
+                requireNotNull(valuesByParameterIndex[parameter.index]),
+                ExecutionInputOrigin.USER_ENTERED,
+            )
+        }
+        val environment = (InputEnvironment.validate(contract, provided) as InputEnvironmentResult.Success).environment
+        val request = request(source, contract, environment)
+        return when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
+            is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
+            is MyBatisInvocationParameterObjectFactory.Result.Failed ->
+                throw AssertionError("expected payload success: ${result.failure}")
+        }
+    }
+
+    private fun request(
+        source: PreparationSource,
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        environment: InputEnvironment,
+    ): MyBatisPreparationRequest =
+        (MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready).request
+
+    private fun environment(
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        values: List<Pair<com.algorist.zMyBatis.core.input.InputRequirementId, InputValue>>,
+    ): InputEnvironment {
+        val result = InputEnvironment.validate(
+            contract,
+            values.map { (id, value) -> ProvidedInput(id, value, ExecutionInputOrigin.USER_ENTERED) },
+        )
+        assertTrue("input environment must validate: $result", result is InputEnvironmentResult.Success)
+        return (result as InputEnvironmentResult.Success).environment
+    }
+
+    private fun xmlSuccess(request: MyBatisPreparationRequest) =
+        when (val result = XmlMapperPreparationEngine.prepare(request)) {
+            is PreparationResult.Success -> result.execution
+            is PreparationResult.Failed -> throw AssertionError(
+                "expected XML preparation success, got kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+
+    private fun javaFixture(
+        sql: String,
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaFixture {
+        val fileId = SourceFileId("fixture/OracleMapper.java")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.OracleMapper",
+            MethodSignature("query", parameters.map { it.typeIdentity }),
+        )
+        val snapshot = SourceSnapshot(fileId, SourceRevision("java-r1"), "authoritative-java-source")
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, snapshot.content.length)),
+            listOf(snapshot),
+            emptyList(),
+        )
+        return JavaFixture(
+            PreparationSource.JavaAnnotation(
+                JavaAnnotationStatementCapture(graph, listOf(sql), parameters),
+            ),
+        )
+    }
+
+    private fun xmlSource(
+        body: String,
+        mapperParameters: List<JavaMethodParameterMetadata>? = null,
+    ): XmlMapperPreparationSource {
+        val xmlFile = SourceFileId("vfs:/mapper.xml")
+        val xmlRevision = SourceRevision("xml-r1")
+        val statementId = XmlStatementId(xmlFile, "fixture.Mapper", "find")
+        val content =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n" +
+                "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n" +
+                "<mapper namespace=\"fixture.Mapper\">\n" +
+                body +
+                "\n</mapper>"
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, content.length)),
+            listOf(SourceSnapshot(xmlFile, xmlRevision, content)),
+            emptyList(),
+        )
+        val mapperMethod = mapperParameters?.let { parameters ->
+            val javaSource = SourceSnapshot(
+                SourceFileId("vfs:/Mapper.java"),
+                SourceRevision("java-r1"),
+                "x".repeat(256),
+            )
+            XmlMapperMethodCapture(
+                statementId,
+                javaSource,
+                SourceRange(20, 120),
+                parameters,
+            )
+        }
+        return XmlMapperPreparationSource(graph, mapperMethod = mapperMethod)
+    }
+
+    private fun parameter(
+        index: Int,
+        sourceName: String,
+        type: String,
+        alias: String?,
+    ) = JavaMethodParameterMetadata(index, sourceName, JavaTypeIdentity(type), alias)
+
+    private fun method(name: String): Method =
+        OracleParameterMapper::class.java.methods.single { it.name == name }
+
+    private fun integer(value: Long): InputValue.IntegerValue =
+        InputValue.IntegerValue(BigInteger.valueOf(value))
+
+    private fun normalizeSql(sql: String): String =
+        sql.trim().replace(Regex("\\s+"), " ")
+
+    private fun normalizeRuntime(value: Any?): Any? = when {
+        value == null -> null
+        value is Map<*, *> -> value.entries
+            .sortedBy { it.key.toString() }
+            .associate { it.key to normalizeRuntime(it.value) }
+        value is Iterable<*> -> value.map(::normalizeRuntime)
+        value.javaClass.isArray -> (0 until ReflectArray.getLength(value))
+            .map { index -> normalizeRuntime(ReflectArray.get(value, index)) }
+        else -> value
+    }
+
+    private data class JavaFixture(val source: PreparationSource.JavaAnnotation)
+}
+}{column} FROM products
+                    <where>
+                        <if test="enabled">AND active = TRUE</if>
+                        <choose>
+                            <when test="ids != null and ids.size > 0">
+                                AND id IN
+                                <foreach collection="ids" item="item" index="idx" open="(" separator="," close=")">
+                                    #{item,jdbcType=BIGINT}
+                                </foreach>
+                            </when>
+                            <otherwise>AND 1 = 0</otherwise>
+                        </choose>
+                        <if test="name != null">AND name LIKE #{pattern,jdbcType=VARCHAR}</if>
+                    </where>
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals("xml-parameter-object", requirement.id.value)
+        assertEquals(InputShape.OBJECT, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(
+                requirement.id to InputValue.ObjectValue(
+                    linkedMapOf(
+                        "column" to InputValue.Text("name"),
+                        "enabled" to InputValue.BooleanValue(true),
+                        "ids" to InputValue.ListValue(listOf(integer(7), integer(9))),
+                        "name" to InputValue.Text("pro"),
+                    ),
+                ),
+            ),
+        )
+        val execution = xmlSuccess(request(source, contract, environment))
+
+        assertEquals(
+            "SELECT name FROM products WHERE active = TRUE AND id IN ( ? , ? ) AND name LIKE ?",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(integer(7), integer(9), InputValue.Text("%pro%")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun javaDynamicScriptKeepsOneTypedCallerForBoundAndRawUse() {
+        val fixture = javaFixture(
+            sql = """
+                <script>
+                    SELECT ${value} AS raw_value, #{value,jdbcType=VARCHAR} AS bound_value
+                    <if test="value != null">, 1 AS enabled</if>
+                </script>
+            """.trimIndent(),
+            parameters = listOf(parameter(0, "value", "java.lang.String", "value")),
+        )
+        val contract = MyBatisInvocationContractFactory.build(fixture.source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputShape.SCALAR, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(requirement.id to InputValue.Text("42")),
+        )
+        val prepared = MyBatisPreparationEngine.prepare(request(fixture.source, contract, environment))
+        val execution = (prepared as PreparationResult.Success).execution
+
+        assertEquals(
+            "SELECT 42 AS raw_value, ? AS bound_value , 1 AS enabled",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(InputValue.Text("42")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun parameterizedIncludePropertyDoesNotBecomeRuntimeRawCallerInput() {
+        val source = xmlSource(
+            body = """
+                <sql id="columns">${alias}.id, ${alias}.name</sql>
+                <select id="find">
+                    SELECT
+                    <include refid="columns">
+                        <property name="alias" value="p"/>
+                    </include>
+                    FROM products p
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        val environment = environment(contract, emptyList())
+        val execution = xmlSuccess(request(source, contract, environment))
+        assertEquals("SELECT p.id, p.name FROM products p", normalizeSql(execution.sqlWithPlaceholders))
+        assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    private fun collectionCase(
+        methodName: String,
+        declaredType: String,
+        value: InputValue,
+        runtimeValue: Any,
+        requiredAliases: Set<String>,
+    ) {
+        val fixture = javaFixture(
+            sql = "SELECT 1",
+            parameters = listOf(parameter(0, "ids", declaredType, null)),
+        )
+        val actual = normalizeRuntime(payload(fixture.source, mapOf(0 to value)).parameterObject) as Map<*, *>
+        val method = method(methodName)
+        val expected = normalizeRuntime(
+            ParamNameResolver(Configuration(), method, method.declaringClass)
+                .getNamedParams(arrayOf(runtimeValue)),
+        ) as Map<*, *>
+
+        for (alias in requiredAliases) {
+            assertTrue("stock ParamNameResolver missing $alias", expected.containsKey(alias))
+            assertTrue("P2 payload missing $alias", actual.containsKey(alias))
+            assertEquals(expected[alias], actual[alias])
+        }
+    }
+
+    private fun payload(
+        source: PreparationSource,
+        valuesByParameterIndex: Map<Int, InputValue>,
+    ): MyBatisInvocationParameterObjectFactory.Ready {
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse("fixture contract blocked: ${contract.blockingProblems.map { it.code }}", contract.isPreparationBlocked)
+        val provided = contract.requirements.map { requirement ->
+            val parameter = requirement.provenance.evidence
+                .filterIsInstance<com.algorist.zMyBatis.core.input.InputEvidence.MapperMethodParameter>()
+                .single()
+            ProvidedInput(
+                requirement.id,
+                requireNotNull(valuesByParameterIndex[parameter.index]),
+                ExecutionInputOrigin.USER_ENTERED,
+            )
+        }
+        val environment = (InputEnvironment.validate(contract, provided) as InputEnvironmentResult.Success).environment
+        val request = request(source, contract, environment)
+        return when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
+            is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
+            is MyBatisInvocationParameterObjectFactory.Result.Failed ->
+                throw AssertionError("expected payload success: ${result.failure}")
+        }
+    }
+
+    private fun request(
+        source: PreparationSource,
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        environment: InputEnvironment,
+    ): MyBatisPreparationRequest =
+        (MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready).request
+
+    private fun environment(
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        values: List<Pair<com.algorist.zMyBatis.core.input.InputRequirementId, InputValue>>,
+    ): InputEnvironment {
+        val result = InputEnvironment.validate(
+            contract,
+            values.map { (id, value) -> ProvidedInput(id, value, ExecutionInputOrigin.USER_ENTERED) },
+        )
+        assertTrue("input environment must validate: $result", result is InputEnvironmentResult.Success)
+        return (result as InputEnvironmentResult.Success).environment
+    }
+
+    private fun xmlSuccess(request: MyBatisPreparationRequest) =
+        when (val result = XmlMapperPreparationEngine.prepare(request)) {
+            is PreparationResult.Success -> result.execution
+            is PreparationResult.Failed -> throw AssertionError(
+                "expected XML preparation success, got kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+
+    private fun javaFixture(
+        sql: String,
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaFixture {
+        val fileId = SourceFileId("fixture/OracleMapper.java")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.OracleMapper",
+            MethodSignature("query", parameters.map { it.typeIdentity }),
+        )
+        val snapshot = SourceSnapshot(fileId, SourceRevision("java-r1"), "authoritative-java-source")
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, snapshot.content.length)),
+            listOf(snapshot),
+            emptyList(),
+        )
+        return JavaFixture(
+            PreparationSource.JavaAnnotation(
+                JavaAnnotationStatementCapture(graph, listOf(sql), parameters),
+            ),
+        )
+    }
+
+    private fun xmlSource(
+        body: String,
+        mapperParameters: List<JavaMethodParameterMetadata>? = null,
+    ): XmlMapperPreparationSource {
+        val xmlFile = SourceFileId("vfs:/mapper.xml")
+        val xmlRevision = SourceRevision("xml-r1")
+        val statementId = XmlStatementId(xmlFile, "fixture.Mapper", "find")
+        val content =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n" +
+                "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n" +
+                "<mapper namespace=\"fixture.Mapper\">\n" +
+                body +
+                "\n</mapper>"
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, content.length)),
+            listOf(SourceSnapshot(xmlFile, xmlRevision, content)),
+            emptyList(),
+        )
+        val mapperMethod = mapperParameters?.let { parameters ->
+            val javaSource = SourceSnapshot(
+                SourceFileId("vfs:/Mapper.java"),
+                SourceRevision("java-r1"),
+                "x".repeat(256),
+            )
+            XmlMapperMethodCapture(
+                statementId,
+                javaSource,
+                SourceRange(20, 120),
+                parameters,
+            )
+        }
+        return XmlMapperPreparationSource(graph, mapperMethod = mapperMethod)
+    }
+
+    private fun parameter(
+        index: Int,
+        sourceName: String,
+        type: String,
+        alias: String?,
+    ) = JavaMethodParameterMetadata(index, sourceName, JavaTypeIdentity(type), alias)
+
+    private fun method(name: String): Method =
+        OracleParameterMapper::class.java.methods.single { it.name == name }
+
+    private fun integer(value: Long): InputValue.IntegerValue =
+        InputValue.IntegerValue(BigInteger.valueOf(value))
+
+    private fun normalizeSql(sql: String): String =
+        sql.trim().replace(Regex("\\s+"), " ")
+
+    private fun normalizeRuntime(value: Any?): Any? = when {
+        value == null -> null
+        value is Map<*, *> -> value.entries
+            .sortedBy { it.key.toString() }
+            .associate { it.key to normalizeRuntime(it.value) }
+        value is Iterable<*> -> value.map(::normalizeRuntime)
+        value.javaClass.isArray -> (0 until ReflectArray.getLength(value))
+            .map { index -> normalizeRuntime(ReflectArray.get(value, index)) }
+        else -> value
+    }
+
+    private data class JavaFixture(val source: PreparationSource.JavaAnnotation)
+}
+}{value} AS raw_value, #{value,jdbcType=VARCHAR} AS bound_value
+                    <if test="value != null">, 1 AS enabled</if>
+                </script>
+            """.trimIndent(),
+            parameters = listOf(parameter(0, "value", "java.lang.String", "value")),
+        )
+        val contract = MyBatisInvocationContractFactory.build(fixture.source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputShape.SCALAR, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(requirement.id to InputValue.Text("42")),
+        )
+        val prepared = MyBatisPreparationEngine.prepare(request(fixture.source, contract, environment))
+        val execution = (prepared as PreparationResult.Success).execution
+
+        assertEquals(
+            "SELECT 42 AS raw_value, ? AS bound_value , 1 AS enabled",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(InputValue.Text("42")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun parameterizedIncludePropertyDoesNotBecomeRuntimeRawCallerInput() {
+        val source = xmlSource(
+            body = """
+                <sql id="columns">${alias}.id, ${alias}.name</sql>
+                <select id="find">
+                    SELECT
+                    <include refid="columns">
+                        <property name="alias" value="p"/>
+                    </include>
+                    FROM products p
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        val environment = environment(contract, emptyList())
+        val execution = xmlSuccess(request(source, contract, environment))
+        assertEquals("SELECT p.id, p.name FROM products p", normalizeSql(execution.sqlWithPlaceholders))
+        assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    private fun collectionCase(
+        methodName: String,
+        declaredType: String,
+        value: InputValue,
+        runtimeValue: Any,
+        requiredAliases: Set<String>,
+    ) {
+        val fixture = javaFixture(
+            sql = "SELECT 1",
+            parameters = listOf(parameter(0, "ids", declaredType, null)),
+        )
+        val actual = normalizeRuntime(payload(fixture.source, mapOf(0 to value)).parameterObject) as Map<*, *>
+        val method = method(methodName)
+        val expected = normalizeRuntime(
+            ParamNameResolver(Configuration(), method, method.declaringClass)
+                .getNamedParams(arrayOf(runtimeValue)),
+        ) as Map<*, *>
+
+        for (alias in requiredAliases) {
+            assertTrue("stock ParamNameResolver missing $alias", expected.containsKey(alias))
+            assertTrue("P2 payload missing $alias", actual.containsKey(alias))
+            assertEquals(expected[alias], actual[alias])
+        }
+    }
+
+    private fun payload(
+        source: PreparationSource,
+        valuesByParameterIndex: Map<Int, InputValue>,
+    ): MyBatisInvocationParameterObjectFactory.Ready {
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse("fixture contract blocked: ${contract.blockingProblems.map { it.code }}", contract.isPreparationBlocked)
+        val provided = contract.requirements.map { requirement ->
+            val parameter = requirement.provenance.evidence
+                .filterIsInstance<com.algorist.zMyBatis.core.input.InputEvidence.MapperMethodParameter>()
+                .single()
+            ProvidedInput(
+                requirement.id,
+                requireNotNull(valuesByParameterIndex[parameter.index]),
+                ExecutionInputOrigin.USER_ENTERED,
+            )
+        }
+        val environment = (InputEnvironment.validate(contract, provided) as InputEnvironmentResult.Success).environment
+        val request = request(source, contract, environment)
+        return when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
+            is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
+            is MyBatisInvocationParameterObjectFactory.Result.Failed ->
+                throw AssertionError("expected payload success: ${result.failure}")
+        }
+    }
+
+    private fun request(
+        source: PreparationSource,
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        environment: InputEnvironment,
+    ): MyBatisPreparationRequest =
+        (MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready).request
+
+    private fun environment(
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        values: List<Pair<com.algorist.zMyBatis.core.input.InputRequirementId, InputValue>>,
+    ): InputEnvironment {
+        val result = InputEnvironment.validate(
+            contract,
+            values.map { (id, value) -> ProvidedInput(id, value, ExecutionInputOrigin.USER_ENTERED) },
+        )
+        assertTrue("input environment must validate: $result", result is InputEnvironmentResult.Success)
+        return (result as InputEnvironmentResult.Success).environment
+    }
+
+    private fun xmlSuccess(request: MyBatisPreparationRequest) =
+        when (val result = XmlMapperPreparationEngine.prepare(request)) {
+            is PreparationResult.Success -> result.execution
+            is PreparationResult.Failed -> throw AssertionError(
+                "expected XML preparation success, got kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+
+    private fun javaFixture(
+        sql: String,
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaFixture {
+        val fileId = SourceFileId("fixture/OracleMapper.java")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.OracleMapper",
+            MethodSignature("query", parameters.map { it.typeIdentity }),
+        )
+        val snapshot = SourceSnapshot(fileId, SourceRevision("java-r1"), "authoritative-java-source")
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, snapshot.content.length)),
+            listOf(snapshot),
+            emptyList(),
+        )
+        return JavaFixture(
+            PreparationSource.JavaAnnotation(
+                JavaAnnotationStatementCapture(graph, listOf(sql), parameters),
+            ),
+        )
+    }
+
+    private fun xmlSource(
+        body: String,
+        mapperParameters: List<JavaMethodParameterMetadata>? = null,
+    ): XmlMapperPreparationSource {
+        val xmlFile = SourceFileId("vfs:/mapper.xml")
+        val xmlRevision = SourceRevision("xml-r1")
+        val statementId = XmlStatementId(xmlFile, "fixture.Mapper", "find")
+        val content =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n" +
+                "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n" +
+                "<mapper namespace=\"fixture.Mapper\">\n" +
+                body +
+                "\n</mapper>"
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, content.length)),
+            listOf(SourceSnapshot(xmlFile, xmlRevision, content)),
+            emptyList(),
+        )
+        val mapperMethod = mapperParameters?.let { parameters ->
+            val javaSource = SourceSnapshot(
+                SourceFileId("vfs:/Mapper.java"),
+                SourceRevision("java-r1"),
+                "x".repeat(256),
+            )
+            XmlMapperMethodCapture(
+                statementId,
+                javaSource,
+                SourceRange(20, 120),
+                parameters,
+            )
+        }
+        return XmlMapperPreparationSource(graph, mapperMethod = mapperMethod)
+    }
+
+    private fun parameter(
+        index: Int,
+        sourceName: String,
+        type: String,
+        alias: String?,
+    ) = JavaMethodParameterMetadata(index, sourceName, JavaTypeIdentity(type), alias)
+
+    private fun method(name: String): Method =
+        OracleParameterMapper::class.java.methods.single { it.name == name }
+
+    private fun integer(value: Long): InputValue.IntegerValue =
+        InputValue.IntegerValue(BigInteger.valueOf(value))
+
+    private fun normalizeSql(sql: String): String =
+        sql.trim().replace(Regex("\\s+"), " ")
+
+    private fun normalizeRuntime(value: Any?): Any? = when {
+        value == null -> null
+        value is Map<*, *> -> value.entries
+            .sortedBy { it.key.toString() }
+            .associate { it.key to normalizeRuntime(it.value) }
+        value is Iterable<*> -> value.map(::normalizeRuntime)
+        value.javaClass.isArray -> (0 until ReflectArray.getLength(value))
+            .map { index -> normalizeRuntime(ReflectArray.get(value, index)) }
+        else -> value
+    }
+
+    private data class JavaFixture(val source: PreparationSource.JavaAnnotation)
+}
+}{column} FROM products
+                    <where>
+                        <if test="enabled">AND active = TRUE</if>
+                        <choose>
+                            <when test="ids != null and ids.size > 0">
+                                AND id IN
+                                <foreach collection="ids" item="item" index="idx" open="(" separator="," close=")">
+                                    #{item,jdbcType=BIGINT}
+                                </foreach>
+                            </when>
+                            <otherwise>AND 1 = 0</otherwise>
+                        </choose>
+                        <if test="name != null">AND name LIKE #{pattern,jdbcType=VARCHAR}</if>
+                    </where>
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals("xml-parameter-object", requirement.id.value)
+        assertEquals(InputShape.OBJECT, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(
+                requirement.id to InputValue.ObjectValue(
+                    linkedMapOf(
+                        "column" to InputValue.Text("name"),
+                        "enabled" to InputValue.BooleanValue(true),
+                        "ids" to InputValue.ListValue(listOf(integer(7), integer(9))),
+                        "name" to InputValue.Text("pro"),
+                    ),
+                ),
+            ),
+        )
+        val execution = xmlSuccess(request(source, contract, environment))
+
+        assertEquals(
+            "SELECT name FROM products WHERE active = TRUE AND id IN ( ? , ? ) AND name LIKE ?",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(integer(7), integer(9), InputValue.Text("%pro%")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun javaDynamicScriptKeepsOneTypedCallerForBoundAndRawUse() {
+        val fixture = javaFixture(
+            sql = """
+                <script>
+                    SELECT ${value} AS raw_value, #{value,jdbcType=VARCHAR} AS bound_value
+                    <if test="value != null">, 1 AS enabled</if>
+                </script>
+            """.trimIndent(),
+            parameters = listOf(parameter(0, "value", "java.lang.String", "value")),
+        )
+        val contract = MyBatisInvocationContractFactory.build(fixture.source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputShape.SCALAR, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(requirement.id to InputValue.Text("42")),
+        )
+        val prepared = MyBatisPreparationEngine.prepare(request(fixture.source, contract, environment))
+        val execution = (prepared as PreparationResult.Success).execution
+
+        assertEquals(
+            "SELECT 42 AS raw_value, ? AS bound_value , 1 AS enabled",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(InputValue.Text("42")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun parameterizedIncludePropertyDoesNotBecomeRuntimeRawCallerInput() {
+        val source = xmlSource(
+            body = """
+                <sql id="columns">${alias}.id, ${alias}.name</sql>
+                <select id="find">
+                    SELECT
+                    <include refid="columns">
+                        <property name="alias" value="p"/>
+                    </include>
+                    FROM products p
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        val environment = environment(contract, emptyList())
+        val execution = xmlSuccess(request(source, contract, environment))
+        assertEquals("SELECT p.id, p.name FROM products p", normalizeSql(execution.sqlWithPlaceholders))
+        assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    private fun collectionCase(
+        methodName: String,
+        declaredType: String,
+        value: InputValue,
+        runtimeValue: Any,
+        requiredAliases: Set<String>,
+    ) {
+        val fixture = javaFixture(
+            sql = "SELECT 1",
+            parameters = listOf(parameter(0, "ids", declaredType, null)),
+        )
+        val actual = normalizeRuntime(payload(fixture.source, mapOf(0 to value)).parameterObject) as Map<*, *>
+        val method = method(methodName)
+        val expected = normalizeRuntime(
+            ParamNameResolver(Configuration(), method, method.declaringClass)
+                .getNamedParams(arrayOf(runtimeValue)),
+        ) as Map<*, *>
+
+        for (alias in requiredAliases) {
+            assertTrue("stock ParamNameResolver missing $alias", expected.containsKey(alias))
+            assertTrue("P2 payload missing $alias", actual.containsKey(alias))
+            assertEquals(expected[alias], actual[alias])
+        }
+    }
+
+    private fun payload(
+        source: PreparationSource,
+        valuesByParameterIndex: Map<Int, InputValue>,
+    ): MyBatisInvocationParameterObjectFactory.Ready {
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse("fixture contract blocked: ${contract.blockingProblems.map { it.code }}", contract.isPreparationBlocked)
+        val provided = contract.requirements.map { requirement ->
+            val parameter = requirement.provenance.evidence
+                .filterIsInstance<com.algorist.zMyBatis.core.input.InputEvidence.MapperMethodParameter>()
+                .single()
+            ProvidedInput(
+                requirement.id,
+                requireNotNull(valuesByParameterIndex[parameter.index]),
+                ExecutionInputOrigin.USER_ENTERED,
+            )
+        }
+        val environment = (InputEnvironment.validate(contract, provided) as InputEnvironmentResult.Success).environment
+        val request = request(source, contract, environment)
+        return when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
+            is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
+            is MyBatisInvocationParameterObjectFactory.Result.Failed ->
+                throw AssertionError("expected payload success: ${result.failure}")
+        }
+    }
+
+    private fun request(
+        source: PreparationSource,
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        environment: InputEnvironment,
+    ): MyBatisPreparationRequest =
+        (MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready).request
+
+    private fun environment(
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        values: List<Pair<com.algorist.zMyBatis.core.input.InputRequirementId, InputValue>>,
+    ): InputEnvironment {
+        val result = InputEnvironment.validate(
+            contract,
+            values.map { (id, value) -> ProvidedInput(id, value, ExecutionInputOrigin.USER_ENTERED) },
+        )
+        assertTrue("input environment must validate: $result", result is InputEnvironmentResult.Success)
+        return (result as InputEnvironmentResult.Success).environment
+    }
+
+    private fun xmlSuccess(request: MyBatisPreparationRequest) =
+        when (val result = XmlMapperPreparationEngine.prepare(request)) {
+            is PreparationResult.Success -> result.execution
+            is PreparationResult.Failed -> throw AssertionError(
+                "expected XML preparation success, got kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+
+    private fun javaFixture(
+        sql: String,
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaFixture {
+        val fileId = SourceFileId("fixture/OracleMapper.java")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.OracleMapper",
+            MethodSignature("query", parameters.map { it.typeIdentity }),
+        )
+        val snapshot = SourceSnapshot(fileId, SourceRevision("java-r1"), "authoritative-java-source")
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, snapshot.content.length)),
+            listOf(snapshot),
+            emptyList(),
+        )
+        return JavaFixture(
+            PreparationSource.JavaAnnotation(
+                JavaAnnotationStatementCapture(graph, listOf(sql), parameters),
+            ),
+        )
+    }
+
+    private fun xmlSource(
+        body: String,
+        mapperParameters: List<JavaMethodParameterMetadata>? = null,
+    ): XmlMapperPreparationSource {
+        val xmlFile = SourceFileId("vfs:/mapper.xml")
+        val xmlRevision = SourceRevision("xml-r1")
+        val statementId = XmlStatementId(xmlFile, "fixture.Mapper", "find")
+        val content =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n" +
+                "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n" +
+                "<mapper namespace=\"fixture.Mapper\">\n" +
+                body +
+                "\n</mapper>"
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, content.length)),
+            listOf(SourceSnapshot(xmlFile, xmlRevision, content)),
+            emptyList(),
+        )
+        val mapperMethod = mapperParameters?.let { parameters ->
+            val javaSource = SourceSnapshot(
+                SourceFileId("vfs:/Mapper.java"),
+                SourceRevision("java-r1"),
+                "x".repeat(256),
+            )
+            XmlMapperMethodCapture(
+                statementId,
+                javaSource,
+                SourceRange(20, 120),
+                parameters,
+            )
+        }
+        return XmlMapperPreparationSource(graph, mapperMethod = mapperMethod)
+    }
+
+    private fun parameter(
+        index: Int,
+        sourceName: String,
+        type: String,
+        alias: String?,
+    ) = JavaMethodParameterMetadata(index, sourceName, JavaTypeIdentity(type), alias)
+
+    private fun method(name: String): Method =
+        OracleParameterMapper::class.java.methods.single { it.name == name }
+
+    private fun integer(value: Long): InputValue.IntegerValue =
+        InputValue.IntegerValue(BigInteger.valueOf(value))
+
+    private fun normalizeSql(sql: String): String =
+        sql.trim().replace(Regex("\\s+"), " ")
+
+    private fun normalizeRuntime(value: Any?): Any? = when {
+        value == null -> null
+        value is Map<*, *> -> value.entries
+            .sortedBy { it.key.toString() }
+            .associate { it.key to normalizeRuntime(it.value) }
+        value is Iterable<*> -> value.map(::normalizeRuntime)
+        value.javaClass.isArray -> (0 until ReflectArray.getLength(value))
+            .map { index -> normalizeRuntime(ReflectArray.get(value, index)) }
+        else -> value
+    }
+
+    private data class JavaFixture(val source: PreparationSource.JavaAnnotation)
+}
+}{alias}.name</sql>
+                <select id="find">
+                    SELECT
+                    <include refid="columns">
+                        <property name="alias" value="p"/>
+                    </include>
+                    FROM products p
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        val environment = environment(contract, emptyList())
+        val execution = xmlSuccess(request(source, contract, environment))
+        assertEquals("SELECT p.id, p.name FROM products p", normalizeSql(execution.sqlWithPlaceholders))
+        assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    private fun collectionCase(
+        methodName: String,
+        declaredType: String,
+        value: InputValue,
+        runtimeValue: Any,
+        requiredAliases: Set<String>,
+    ) {
+        val fixture = javaFixture(
+            sql = "SELECT 1",
+            parameters = listOf(parameter(0, "ids", declaredType, null)),
+        )
+        val actual = normalizeRuntime(payload(fixture.source, mapOf(0 to value)).parameterObject) as Map<*, *>
+        val method = method(methodName)
+        val expected = normalizeRuntime(
+            ParamNameResolver(Configuration(), method, method.declaringClass)
+                .getNamedParams(arrayOf(runtimeValue)),
+        ) as Map<*, *>
+
+        for (alias in requiredAliases) {
+            assertTrue("stock ParamNameResolver missing $alias", expected.containsKey(alias))
+            assertTrue("P2 payload missing $alias", actual.containsKey(alias))
+            assertEquals(expected[alias], actual[alias])
+        }
+    }
+
+    private fun payload(
+        source: PreparationSource,
+        valuesByParameterIndex: Map<Int, InputValue>,
+    ): MyBatisInvocationParameterObjectFactory.Ready {
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse("fixture contract blocked: ${contract.blockingProblems.map { it.code }}", contract.isPreparationBlocked)
+        val provided = contract.requirements.map { requirement ->
+            val parameter = requirement.provenance.evidence
+                .filterIsInstance<com.algorist.zMyBatis.core.input.InputEvidence.MapperMethodParameter>()
+                .single()
+            ProvidedInput(
+                requirement.id,
+                requireNotNull(valuesByParameterIndex[parameter.index]),
+                ExecutionInputOrigin.USER_ENTERED,
+            )
+        }
+        val environment = (InputEnvironment.validate(contract, provided) as InputEnvironmentResult.Success).environment
+        val request = request(source, contract, environment)
+        return when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
+            is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
+            is MyBatisInvocationParameterObjectFactory.Result.Failed ->
+                throw AssertionError("expected payload success: ${result.failure}")
+        }
+    }
+
+    private fun request(
+        source: PreparationSource,
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        environment: InputEnvironment,
+    ): MyBatisPreparationRequest =
+        (MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready).request
+
+    private fun environment(
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        values: List<Pair<com.algorist.zMyBatis.core.input.InputRequirementId, InputValue>>,
+    ): InputEnvironment {
+        val result = InputEnvironment.validate(
+            contract,
+            values.map { (id, value) -> ProvidedInput(id, value, ExecutionInputOrigin.USER_ENTERED) },
+        )
+        assertTrue("input environment must validate: $result", result is InputEnvironmentResult.Success)
+        return (result as InputEnvironmentResult.Success).environment
+    }
+
+    private fun xmlSuccess(request: MyBatisPreparationRequest) =
+        when (val result = XmlMapperPreparationEngine.prepare(request)) {
+            is PreparationResult.Success -> result.execution
+            is PreparationResult.Failed -> throw AssertionError(
+                "expected XML preparation success, got kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+
+    private fun javaFixture(
+        sql: String,
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaFixture {
+        val fileId = SourceFileId("fixture/OracleMapper.java")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.OracleMapper",
+            MethodSignature("query", parameters.map { it.typeIdentity }),
+        )
+        val snapshot = SourceSnapshot(fileId, SourceRevision("java-r1"), "authoritative-java-source")
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, snapshot.content.length)),
+            listOf(snapshot),
+            emptyList(),
+        )
+        return JavaFixture(
+            PreparationSource.JavaAnnotation(
+                JavaAnnotationStatementCapture(graph, listOf(sql), parameters),
+            ),
+        )
+    }
+
+    private fun xmlSource(
+        body: String,
+        mapperParameters: List<JavaMethodParameterMetadata>? = null,
+    ): XmlMapperPreparationSource {
+        val xmlFile = SourceFileId("vfs:/mapper.xml")
+        val xmlRevision = SourceRevision("xml-r1")
+        val statementId = XmlStatementId(xmlFile, "fixture.Mapper", "find")
+        val content =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n" +
+                "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n" +
+                "<mapper namespace=\"fixture.Mapper\">\n" +
+                body +
+                "\n</mapper>"
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, content.length)),
+            listOf(SourceSnapshot(xmlFile, xmlRevision, content)),
+            emptyList(),
+        )
+        val mapperMethod = mapperParameters?.let { parameters ->
+            val javaSource = SourceSnapshot(
+                SourceFileId("vfs:/Mapper.java"),
+                SourceRevision("java-r1"),
+                "x".repeat(256),
+            )
+            XmlMapperMethodCapture(
+                statementId,
+                javaSource,
+                SourceRange(20, 120),
+                parameters,
+            )
+        }
+        return XmlMapperPreparationSource(graph, mapperMethod = mapperMethod)
+    }
+
+    private fun parameter(
+        index: Int,
+        sourceName: String,
+        type: String,
+        alias: String?,
+    ) = JavaMethodParameterMetadata(index, sourceName, JavaTypeIdentity(type), alias)
+
+    private fun method(name: String): Method =
+        OracleParameterMapper::class.java.methods.single { it.name == name }
+
+    private fun integer(value: Long): InputValue.IntegerValue =
+        InputValue.IntegerValue(BigInteger.valueOf(value))
+
+    private fun normalizeSql(sql: String): String =
+        sql.trim().replace(Regex("\\s+"), " ")
+
+    private fun normalizeRuntime(value: Any?): Any? = when {
+        value == null -> null
+        value is Map<*, *> -> value.entries
+            .sortedBy { it.key.toString() }
+            .associate { it.key to normalizeRuntime(it.value) }
+        value is Iterable<*> -> value.map(::normalizeRuntime)
+        value.javaClass.isArray -> (0 until ReflectArray.getLength(value))
+            .map { index -> normalizeRuntime(ReflectArray.get(value, index)) }
+        else -> value
+    }
+
+    private data class JavaFixture(val source: PreparationSource.JavaAnnotation)
+}
+}{column} FROM products
+                    <where>
+                        <if test="enabled">AND active = TRUE</if>
+                        <choose>
+                            <when test="ids != null and ids.size > 0">
+                                AND id IN
+                                <foreach collection="ids" item="item" index="idx" open="(" separator="," close=")">
+                                    #{item,jdbcType=BIGINT}
+                                </foreach>
+                            </when>
+                            <otherwise>AND 1 = 0</otherwise>
+                        </choose>
+                        <if test="name != null">AND name LIKE #{pattern,jdbcType=VARCHAR}</if>
+                    </where>
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals("xml-parameter-object", requirement.id.value)
+        assertEquals(InputShape.OBJECT, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(
+                requirement.id to InputValue.ObjectValue(
+                    linkedMapOf(
+                        "column" to InputValue.Text("name"),
+                        "enabled" to InputValue.BooleanValue(true),
+                        "ids" to InputValue.ListValue(listOf(integer(7), integer(9))),
+                        "name" to InputValue.Text("pro"),
+                    ),
+                ),
+            ),
+        )
+        val execution = xmlSuccess(request(source, contract, environment))
+
+        assertEquals(
+            "SELECT name FROM products WHERE active = TRUE AND id IN ( ? , ? ) AND name LIKE ?",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(integer(7), integer(9), InputValue.Text("%pro%")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun javaDynamicScriptKeepsOneTypedCallerForBoundAndRawUse() {
+        val fixture = javaFixture(
+            sql = """
+                <script>
+                    SELECT ${value} AS raw_value, #{value,jdbcType=VARCHAR} AS bound_value
+                    <if test="value != null">, 1 AS enabled</if>
+                </script>
+            """.trimIndent(),
+            parameters = listOf(parameter(0, "value", "java.lang.String", "value")),
+        )
+        val contract = MyBatisInvocationContractFactory.build(fixture.source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputShape.SCALAR, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(requirement.id to InputValue.Text("42")),
+        )
+        val prepared = MyBatisPreparationEngine.prepare(request(fixture.source, contract, environment))
+        val execution = (prepared as PreparationResult.Success).execution
+
+        assertEquals(
+            "SELECT 42 AS raw_value, ? AS bound_value , 1 AS enabled",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(InputValue.Text("42")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun parameterizedIncludePropertyDoesNotBecomeRuntimeRawCallerInput() {
+        val source = xmlSource(
+            body = """
+                <sql id="columns">${alias}.id, ${alias}.name</sql>
+                <select id="find">
+                    SELECT
+                    <include refid="columns">
+                        <property name="alias" value="p"/>
+                    </include>
+                    FROM products p
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        val environment = environment(contract, emptyList())
+        val execution = xmlSuccess(request(source, contract, environment))
+        assertEquals("SELECT p.id, p.name FROM products p", normalizeSql(execution.sqlWithPlaceholders))
+        assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    private fun collectionCase(
+        methodName: String,
+        declaredType: String,
+        value: InputValue,
+        runtimeValue: Any,
+        requiredAliases: Set<String>,
+    ) {
+        val fixture = javaFixture(
+            sql = "SELECT 1",
+            parameters = listOf(parameter(0, "ids", declaredType, null)),
+        )
+        val actual = normalizeRuntime(payload(fixture.source, mapOf(0 to value)).parameterObject) as Map<*, *>
+        val method = method(methodName)
+        val expected = normalizeRuntime(
+            ParamNameResolver(Configuration(), method, method.declaringClass)
+                .getNamedParams(arrayOf(runtimeValue)),
+        ) as Map<*, *>
+
+        for (alias in requiredAliases) {
+            assertTrue("stock ParamNameResolver missing $alias", expected.containsKey(alias))
+            assertTrue("P2 payload missing $alias", actual.containsKey(alias))
+            assertEquals(expected[alias], actual[alias])
+        }
+    }
+
+    private fun payload(
+        source: PreparationSource,
+        valuesByParameterIndex: Map<Int, InputValue>,
+    ): MyBatisInvocationParameterObjectFactory.Ready {
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse("fixture contract blocked: ${contract.blockingProblems.map { it.code }}", contract.isPreparationBlocked)
+        val provided = contract.requirements.map { requirement ->
+            val parameter = requirement.provenance.evidence
+                .filterIsInstance<com.algorist.zMyBatis.core.input.InputEvidence.MapperMethodParameter>()
+                .single()
+            ProvidedInput(
+                requirement.id,
+                requireNotNull(valuesByParameterIndex[parameter.index]),
+                ExecutionInputOrigin.USER_ENTERED,
+            )
+        }
+        val environment = (InputEnvironment.validate(contract, provided) as InputEnvironmentResult.Success).environment
+        val request = request(source, contract, environment)
+        return when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
+            is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
+            is MyBatisInvocationParameterObjectFactory.Result.Failed ->
+                throw AssertionError("expected payload success: ${result.failure}")
+        }
+    }
+
+    private fun request(
+        source: PreparationSource,
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        environment: InputEnvironment,
+    ): MyBatisPreparationRequest =
+        (MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready).request
+
+    private fun environment(
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        values: List<Pair<com.algorist.zMyBatis.core.input.InputRequirementId, InputValue>>,
+    ): InputEnvironment {
+        val result = InputEnvironment.validate(
+            contract,
+            values.map { (id, value) -> ProvidedInput(id, value, ExecutionInputOrigin.USER_ENTERED) },
+        )
+        assertTrue("input environment must validate: $result", result is InputEnvironmentResult.Success)
+        return (result as InputEnvironmentResult.Success).environment
+    }
+
+    private fun xmlSuccess(request: MyBatisPreparationRequest) =
+        when (val result = XmlMapperPreparationEngine.prepare(request)) {
+            is PreparationResult.Success -> result.execution
+            is PreparationResult.Failed -> throw AssertionError(
+                "expected XML preparation success, got kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+
+    private fun javaFixture(
+        sql: String,
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaFixture {
+        val fileId = SourceFileId("fixture/OracleMapper.java")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.OracleMapper",
+            MethodSignature("query", parameters.map { it.typeIdentity }),
+        )
+        val snapshot = SourceSnapshot(fileId, SourceRevision("java-r1"), "authoritative-java-source")
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, snapshot.content.length)),
+            listOf(snapshot),
+            emptyList(),
+        )
+        return JavaFixture(
+            PreparationSource.JavaAnnotation(
+                JavaAnnotationStatementCapture(graph, listOf(sql), parameters),
+            ),
+        )
+    }
+
+    private fun xmlSource(
+        body: String,
+        mapperParameters: List<JavaMethodParameterMetadata>? = null,
+    ): XmlMapperPreparationSource {
+        val xmlFile = SourceFileId("vfs:/mapper.xml")
+        val xmlRevision = SourceRevision("xml-r1")
+        val statementId = XmlStatementId(xmlFile, "fixture.Mapper", "find")
+        val content =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n" +
+                "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n" +
+                "<mapper namespace=\"fixture.Mapper\">\n" +
+                body +
+                "\n</mapper>"
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, content.length)),
+            listOf(SourceSnapshot(xmlFile, xmlRevision, content)),
+            emptyList(),
+        )
+        val mapperMethod = mapperParameters?.let { parameters ->
+            val javaSource = SourceSnapshot(
+                SourceFileId("vfs:/Mapper.java"),
+                SourceRevision("java-r1"),
+                "x".repeat(256),
+            )
+            XmlMapperMethodCapture(
+                statementId,
+                javaSource,
+                SourceRange(20, 120),
+                parameters,
+            )
+        }
+        return XmlMapperPreparationSource(graph, mapperMethod = mapperMethod)
+    }
+
+    private fun parameter(
+        index: Int,
+        sourceName: String,
+        type: String,
+        alias: String?,
+    ) = JavaMethodParameterMetadata(index, sourceName, JavaTypeIdentity(type), alias)
+
+    private fun method(name: String): Method =
+        OracleParameterMapper::class.java.methods.single { it.name == name }
+
+    private fun integer(value: Long): InputValue.IntegerValue =
+        InputValue.IntegerValue(BigInteger.valueOf(value))
+
+    private fun normalizeSql(sql: String): String =
+        sql.trim().replace(Regex("\\s+"), " ")
+
+    private fun normalizeRuntime(value: Any?): Any? = when {
+        value == null -> null
+        value is Map<*, *> -> value.entries
+            .sortedBy { it.key.toString() }
+            .associate { it.key to normalizeRuntime(it.value) }
+        value is Iterable<*> -> value.map(::normalizeRuntime)
+        value.javaClass.isArray -> (0 until ReflectArray.getLength(value))
+            .map { index -> normalizeRuntime(ReflectArray.get(value, index)) }
+        else -> value
+    }
+
+    private data class JavaFixture(val source: PreparationSource.JavaAnnotation)
+}
+}{value} AS raw_value, #{value,jdbcType=VARCHAR} AS bound_value
+                    <if test="value != null">, 1 AS enabled</if>
+                </script>
+            """.trimIndent(),
+            parameters = listOf(parameter(0, "value", "java.lang.String", "value")),
+        )
+        val contract = MyBatisInvocationContractFactory.build(fixture.source)
+        assertFalse(contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        assertEquals(InputShape.SCALAR, requirement.expectedType.shape)
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            requirement.usageKinds,
+        )
+
+        val environment = environment(
+            contract,
+            listOf(requirement.id to InputValue.Text("42")),
+        )
+        val prepared = MyBatisPreparationEngine.prepare(request(fixture.source, contract, environment))
+        val execution = (prepared as PreparationResult.Success).execution
+
+        assertEquals(
+            "SELECT 42 AS raw_value, ? AS bound_value , 1 AS enabled",
+            normalizeSql(execution.sqlWithPlaceholders),
+        )
+        assertEquals(listOf(InputValue.Text("42")), execution.orderedBindings.map { it.value })
+        assertEquals(1, execution.rawInterpolations.size)
+        assertEquals(requirement.id, execution.rawInterpolations.single().requirementId)
+    }
+
+    @Test
+    fun parameterizedIncludePropertyDoesNotBecomeRuntimeRawCallerInput() {
+        val source = xmlSource(
+            body = """
+                <sql id="columns">${alias}.id, ${alias}.name</sql>
+                <select id="find">
+                    SELECT
+                    <include refid="columns">
+                        <property name="alias" value="p"/>
+                    </include>
+                    FROM products p
+                </select>
+            """.trimIndent(),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+        val environment = environment(contract, emptyList())
+        val execution = xmlSuccess(request(source, contract, environment))
+        assertEquals("SELECT p.id, p.name FROM products p", normalizeSql(execution.sqlWithPlaceholders))
+        assertTrue(execution.rawInterpolations.isEmpty())
+    }
+
+    private fun collectionCase(
+        methodName: String,
+        declaredType: String,
+        value: InputValue,
+        runtimeValue: Any,
+        requiredAliases: Set<String>,
+    ) {
+        val fixture = javaFixture(
+            sql = "SELECT 1",
+            parameters = listOf(parameter(0, "ids", declaredType, null)),
+        )
+        val actual = normalizeRuntime(payload(fixture.source, mapOf(0 to value)).parameterObject) as Map<*, *>
+        val method = method(methodName)
+        val expected = normalizeRuntime(
+            ParamNameResolver(Configuration(), method, method.declaringClass)
+                .getNamedParams(arrayOf(runtimeValue)),
+        ) as Map<*, *>
+
+        for (alias in requiredAliases) {
+            assertTrue("stock ParamNameResolver missing $alias", expected.containsKey(alias))
+            assertTrue("P2 payload missing $alias", actual.containsKey(alias))
+            assertEquals(expected[alias], actual[alias])
+        }
+    }
+
+    private fun payload(
+        source: PreparationSource,
+        valuesByParameterIndex: Map<Int, InputValue>,
+    ): MyBatisInvocationParameterObjectFactory.Ready {
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse("fixture contract blocked: ${contract.blockingProblems.map { it.code }}", contract.isPreparationBlocked)
+        val provided = contract.requirements.map { requirement ->
+            val parameter = requirement.provenance.evidence
+                .filterIsInstance<com.algorist.zMyBatis.core.input.InputEvidence.MapperMethodParameter>()
+                .single()
+            ProvidedInput(
+                requirement.id,
+                requireNotNull(valuesByParameterIndex[parameter.index]),
+                ExecutionInputOrigin.USER_ENTERED,
+            )
+        }
+        val environment = (InputEnvironment.validate(contract, provided) as InputEnvironmentResult.Success).environment
+        val request = request(source, contract, environment)
+        return when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
+            is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
+            is MyBatisInvocationParameterObjectFactory.Result.Failed ->
+                throw AssertionError("expected payload success: ${result.failure}")
+        }
+    }
+
+    private fun request(
+        source: PreparationSource,
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        environment: InputEnvironment,
+    ): MyBatisPreparationRequest =
+        (MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready).request
+
+    private fun environment(
+        contract: com.algorist.zMyBatis.core.input.ParameterContract,
+        values: List<Pair<com.algorist.zMyBatis.core.input.InputRequirementId, InputValue>>,
+    ): InputEnvironment {
+        val result = InputEnvironment.validate(
+            contract,
+            values.map { (id, value) -> ProvidedInput(id, value, ExecutionInputOrigin.USER_ENTERED) },
+        )
+        assertTrue("input environment must validate: $result", result is InputEnvironmentResult.Success)
+        return (result as InputEnvironmentResult.Success).environment
+    }
+
+    private fun xmlSuccess(request: MyBatisPreparationRequest) =
+        when (val result = XmlMapperPreparationEngine.prepare(request)) {
+            is PreparationResult.Success -> result.execution
+            is PreparationResult.Failed -> throw AssertionError(
+                "expected XML preparation success, got kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+
+    private fun javaFixture(
+        sql: String,
+        parameters: List<JavaMethodParameterMetadata>,
+    ): JavaFixture {
+        val fileId = SourceFileId("fixture/OracleMapper.java")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.OracleMapper",
+            MethodSignature("query", parameters.map { it.typeIdentity }),
+        )
+        val snapshot = SourceSnapshot(fileId, SourceRevision("java-r1"), "authoritative-java-source")
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, snapshot.content.length)),
+            listOf(snapshot),
+            emptyList(),
+        )
+        return JavaFixture(
+            PreparationSource.JavaAnnotation(
+                JavaAnnotationStatementCapture(graph, listOf(sql), parameters),
+            ),
+        )
+    }
+
+    private fun xmlSource(
+        body: String,
+        mapperParameters: List<JavaMethodParameterMetadata>? = null,
+    ): XmlMapperPreparationSource {
+        val xmlFile = SourceFileId("vfs:/mapper.xml")
+        val xmlRevision = SourceRevision("xml-r1")
+        val statementId = XmlStatementId(xmlFile, "fixture.Mapper", "find")
+        val content =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n" +
+                "<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n" +
+                "<mapper namespace=\"fixture.Mapper\">\n" +
+                body +
+                "\n</mapper>"
+        val graph = StatementSourceGraph(
+            CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, content.length)),
+            listOf(SourceSnapshot(xmlFile, xmlRevision, content)),
+            emptyList(),
+        )
+        val mapperMethod = mapperParameters?.let { parameters ->
+            val javaSource = SourceSnapshot(
+                SourceFileId("vfs:/Mapper.java"),
+                SourceRevision("java-r1"),
+                "x".repeat(256),
+            )
+            XmlMapperMethodCapture(
+                statementId,
+                javaSource,
+                SourceRange(20, 120),
+                parameters,
+            )
+        }
+        return XmlMapperPreparationSource(graph, mapperMethod = mapperMethod)
+    }
+
+    private fun parameter(
+        index: Int,
+        sourceName: String,
+        type: String,
+        alias: String?,
+    ) = JavaMethodParameterMetadata(index, sourceName, JavaTypeIdentity(type), alias)
+
+    private fun method(name: String): Method =
+        OracleParameterMapper::class.java.methods.single { it.name == name }
+
+    private fun integer(value: Long): InputValue.IntegerValue =
+        InputValue.IntegerValue(BigInteger.valueOf(value))
+
+    private fun normalizeSql(sql: String): String =
+        sql.trim().replace(Regex("\\s+"), " ")
+
+    private fun normalizeRuntime(value: Any?): Any? = when {
+        value == null -> null
+        value is Map<*, *> -> value.entries
+            .sortedBy { it.key.toString() }
+            .associate { it.key to normalizeRuntime(it.value) }
+        value is Iterable<*> -> value.map(::normalizeRuntime)
+        value.javaClass.isArray -> (0 until ReflectArray.getLength(value))
+            .map { index -> normalizeRuntime(ReflectArray.get(value, index)) }
+        else -> value
+    }
+
+    private data class JavaFixture(val source: PreparationSource.JavaAnnotation)
+}
+}{column} FROM products
                     <where>
                         <if test="enabled">AND active = TRUE</if>
                         <choose>
