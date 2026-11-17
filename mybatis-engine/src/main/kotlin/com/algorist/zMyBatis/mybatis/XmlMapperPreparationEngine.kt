@@ -147,6 +147,7 @@ object XmlMapperPreparationEngine {
 
         DynamicOgnlSafetyAdmission.failureForMapperDocuments(
             projection.documents.map { it.content },
+            databaseIdAvailable = request.effectiveDatabaseId != null,
         )?.let { return PreparationResult.Failed(it) }
 
         val usage = MyBatisInvocationContractFactory.XmlInvocationUsageScanner.scan(projection)
