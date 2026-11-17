@@ -45,6 +45,19 @@ internal object MyBatisValueConversion {
         }
     }
 
+    fun invocationRuntimeValue(
+        value: InputValue,
+        expectedType: com.algorist.zMyBatis.core.input.ExpectedInputType,
+    ): RuntimeValueResult =
+        if (
+            expectedType.shape in setOf(InputShape.LIST, InputShape.MAP, InputShape.ARRAY) &&
+            expectedType.javaTypeIdentity != null
+        ) {
+            toTypedStructuredRuntimeValue(value, expectedType.javaTypeIdentity)
+        } else {
+            toRuntimeValue(value, expectedType.javaTypeIdentity)
+        }
+
     fun parameterValues(
         request: MyBatisPreparationRequest,
         typedStructuredRequirementIds: Set<InputRequirementId> = emptySet(),
@@ -541,7 +554,7 @@ internal object MyBatisValueConversion {
         ) : DeclaredType
     }
 
-    private sealed interface RuntimeValueResult {
+    sealed interface RuntimeValueResult {
         data class Ready(
             val value: Any?,
         ) : RuntimeValueResult
