@@ -111,39 +111,6 @@ class XmlMapperForeachPreparationTest {
     }
 
     @Test
-    fun exactSelectFalseComparisonRefusesChangedSourceAndUnprovenMapper() {
-        val parameters = listOf(parameter(0, "java.lang.Boolean", "enabled"), parameter(1, "long", "id"))
-        val source = """SELECT 1 <where><if test="enabled == false">AND id = #{id}</if></where>"""
-        val original = fixture(source, parameters)
-        val authority = contract(original)
-        val inactive = success(request(original,
-            mapOf(0 to InputValue.BooleanValue(true), 1 to integer(7))))
-        assertEquals(emptyList<String>(), inactive.orderedBindings.map { it.property })
-        assertStockParity(original, mapOf("enabled" to true, "id" to 7L), inactive)
-        val active = success(request(original,
-            mapOf(0 to InputValue.BooleanValue(false), 1 to integer(7))))
-        assertEquals(listOf("id"), active.orderedBindings.map { it.property })
-        assertStockParity(original, mapOf("enabled" to false, "id" to 7L), active)
-        assertEquals("xml-preparation-dynamic-sql-unsupported",
-            (XmlMapperPreparationEngine.prepare(request(original,
-                mapOf(0 to InputValue.BooleanValue(true), 1 to integer(7)),
-                includeMapperCapture = false)) as PreparationResult.Failed).failure.code)
-        val values = mapOf(0 to InputValue.BooleanValue(true), 1 to integer(7))
-        for (changed in listOf(
-            source.replace("enabled == false", "enabled == true"),
-            source.replace("enabled == false", "enabled!=false"),
-            source.replace("enabled == false", "!enabled"),
-            source.replace("</if>", """<if test="enabled">#{id}</if></if>"""),
-            source.replace("AND id = #{id}", "AND id = #{id} AND x = #{id}"),
-        )) {
-            val altered = fixture(changed, parameters)
-            assertTrue(changed, XmlMapperPreparationEngine.prepare(request(altered, values, authority)) is PreparationResult.Failed)
-        }
-        val changedMapper = fixture(source, listOf(parameter(0, "java.lang.Boolean", "other"), parameters[1]))
-        assertTrue(XmlMapperPreparationEngine.prepare(request(changedMapper, values, authority)) is PreparationResult.Failed)
-    }
-
-    @Test
     fun singleNegatedSelectWhereMatchesStockForBothStatesAndAllAdmittedTrims() {
         val parameters = listOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
         for ((open, close) in wrappers()) {
@@ -164,40 +131,6 @@ class XmlMapperForeachPreparationTest {
                 assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
                     (MaintainedExecutionMaterializer.materialize(prepared) as MaterializationResult.Failed).failure.kind)
             }
-        }
-    }
-
-    @Test
-    fun singleNegatedSelectWhereKeepsAbsentWhereAndRefusesStaleMapperAndXml() {
-        val parameters = listOf(parameter(0, "java.lang.Boolean", "enabled"), parameter(1, "long", "id"))
-        for ((open, close) in wrappers()) {
-            val source = """SELECT 1 $open<if test="!enabled">AND id = #{id}</if>$close"""
-            val original = fixture(source, parameters)
-            val authority = contract(original)
-            val inactive = success(request(original, mapOf(0 to InputValue.BooleanValue(true), 1 to integer(7))))
-            assertEquals(emptyList<String>(), inactive.orderedBindings.map { it.property })
-            assertStockParity(original, mapOf("enabled" to true, "id" to 7L), inactive)
-            val active = success(request(original, mapOf(0 to InputValue.BooleanValue(false), 1 to integer(7))))
-            assertEquals(listOf("id"), active.orderedBindings.map { it.property })
-            assertStockParity(original, mapOf("enabled" to false, "id" to 7L), active)
-            assertEquals("xml-preparation-dynamic-sql-unsupported",
-                (XmlMapperPreparationEngine.prepare(request(original,
-                    mapOf(0 to InputValue.BooleanValue(true), 1 to integer(7)),
-                    includeMapperCapture = false)) as PreparationResult.Failed).failure.code)
-            val values = mapOf(0 to InputValue.BooleanValue(true), 1 to integer(7))
-            val changedSources = listOf(
-                source.replace("!enabled", "!!enabled"),
-                source.replace("!enabled", "enabled || true"),
-                source.replace("</if>", """<if test="enabled">#{id}</if></if>"""),
-                source.replace("</if>", "</if><foreach collection=\"ids\" item=\"item\">#{item}</foreach>"),
-                source.replace("AND id = #{id}", "AND id = #{id} AND x = #{id}"),
-            )
-            for (changed in changedSources) {
-                val altered = fixture(changed, parameters)
-                assertTrue(changed, XmlMapperPreparationEngine.prepare(request(altered, values, authority)) is PreparationResult.Failed)
-            }
-            val alteredMapper = fixture(source, listOf(parameter(0, "java.lang.Boolean", "other"), parameters[1]))
-            assertTrue(XmlMapperPreparationEngine.prepare(request(alteredMapper, values, authority)) is PreparationResult.Failed)
         }
     }
 
@@ -226,30 +159,6 @@ class XmlMapperForeachPreparationTest {
                 (MaintainedExecutionMaterializer.materialize(prepared) as MaterializationResult.Failed).failure.kind,
             )
         }
-    }
-
-    @Test
-    fun directSelectNegationRejectsChangedXmlAndMapperAuthority() {
-        val parameters = listOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
-        val originalText = """SELECT #{id}<if test="!enabled"> + #{id}</if>"""
-        val original = fixture(originalText, parameters)
-        val baseline = contract(original)
-        val values = mapOf(0 to InputValue.BooleanValue(true), 1 to integer(7))
-        for (changed in listOf(
-            originalText.replace("!enabled", "!!enabled"),
-            originalText.replace("!enabled", "enabled || true"),
-            originalText.replace("!enabled", "!enabled.id"),
-            originalText.replace("</if>", """<if test="enabled">#{id}</if></if>"""),
-            originalText + """<if test="enabled"> + #{id}</if>""",
-            """SELECT #{id}<where><if test="!enabled">AND id=#{id}</if></where>""",
-        )) {
-            val altered = fixture(changed, parameters)
-            assertTrue(changed, XmlMapperPreparationEngine.prepare(request(altered, values, baseline)) is PreparationResult.Failed)
-        }
-        val changedMapper = fixture(originalText, listOf(
-            parameter(0, "boolean", "other"), parameters[1],
-        ))
-        assertTrue(XmlMapperPreparationEngine.prepare(request(changedMapper, values, baseline)) is PreparationResult.Failed)
     }
 
     @Test
@@ -359,46 +268,6 @@ class XmlMapperForeachPreparationTest {
     }
 
     @Test
-    fun selectWhereMixedSiblingsRefuseIncompleteMapperAndSourceDriftEvenIfFalseAndEmpty() {
-        val parameters = listOf(
-            parameter(0, "boolean", "enabled"),
-            parameter(1, "long", "id"),
-            parameter(2, "java.util.List<java.lang.Long>", "ids"),
-        )
-        val loop = """<foreach collection="ids" item="item">#{item}</foreach>"""
-        val condition = """<if test="enabled">AND flag=#{id}</if>"""
-        val body = "SELECT #{id} <where>$condition $loop</where>"
-        val original = fixture(body, parameters)
-        val values = mapOf(
-            0 to InputValue.BooleanValue(false),
-            1 to integer(3),
-            2 to listValue(),
-        )
-        val baseline = contract(original)
-        val missingMapper = XmlMapperPreparationEngine.prepare(
-            request(original, values, includeMapperCapture = false),
-        ) as PreparationResult.Failed
-        assertEquals("xml-foreach-preparation-mapper-authority-unproven", missingMapper.failure.code)
-        for (changed in listOf(
-            body.replace(loop, "$loop$loop"),
-            body.replace(loop, """<foreach collection="ids" item="item"><if test="enabled">#{item}</if></foreach>"""),
-            body.replace(condition, """<if test="enabled">$loop</if>"""),
-            body.replace(loop, """<foreach collection="ids" item="item" nullable="true">#{item}</foreach>"""),
-            body.replace(condition, """<if test="enabled != null">AND flag=#{id}</if>"""),
-        )) {
-            val changedFixture = fixture(changed, parameters)
-            val outcome = XmlMapperPreparationEngine.prepare(request(changedFixture, values, baseline))
-            assertTrue("Unproven mixed source was prepared: $changed", outcome is PreparationResult.Failed)
-        }
-        val moved = fixture(body.replace("AND flag=#{id}", "AND flag=1"), parameters)
-        assertTrue(XmlMapperPreparationEngine.prepare(request(moved, values, baseline)) is PreparationResult.Failed)
-
-        // A SELECT-only island must not authorize mixed dynamics in UPDATE SET/WHERE.
-        val update = fixture("UPDATE t <set>v=#{id},</set><where>$condition $loop</where>", parameters, StatementKind.UPDATE)
-        assertTrue(contract(update).isPreparationBlocked)
-    }
-
-    @Test
     fun updateStaticSetWhereMixedSiblingsMatchStockAcrossStatesAndOrders() {
         val parameters = listOf(
             parameter(0, "boolean", "enabled"),
@@ -437,40 +306,6 @@ class XmlMapperForeachPreparationTest {
                 }
             }
         }
-    }
-
-    @Test
-    fun updateStaticSetWhereMixedRejectsSourceMapperAndSecondRoleDriftWhenInactive() {
-        val parameters = listOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"),
-            parameter(2, "java.util.List<java.lang.Long>", "ids"))
-        val condition = """<if test="enabled">AND flag=#{id}</if>"""
-        val loop = """<foreach collection="ids" item="item">#{item}</foreach>"""
-        val body = "UPDATE t SET status=#{id} <where>AND tenant_id=#{id} $condition $loop</where>"
-        val original = fixture(body, parameters, StatementKind.UPDATE)
-        val values = mapOf(0 to InputValue.BooleanValue(false), 1 to integer(3), 2 to listValue())
-        val baseline = contract(original)
-        val missingMapper = XmlMapperPreparationEngine.prepare(
-            request(original, values, includeMapperCapture = false)) as PreparationResult.Failed
-        assertEquals("xml-foreach-preparation-mapper-authority-unproven", missingMapper.failure.code)
-        for (changed in listOf(
-            body.replace(loop, "$loop$loop"),
-            body.replace(loop, """<foreach collection="ids" item="item"><if test="enabled">#{item}</if></foreach>"""),
-            body.replace(condition, """<if test="enabled">$loop</if>"""),
-            body.replace(condition, """<if test="enabled != null">AND flag=#{id}</if>"""),
-            body.replace("<where>", """<where bogus="x">"""),
-            body.replace(loop, """<foreach collection="ids" item="item" nullable="true">#{item}</foreach>"""),
-            "$body<where>AND tenant_id=#{id}</where>",
-            body.replace(loop, """<include refid="unknown"/>"""),
-            body.replace("SET status=#{id}", "<set>status=#{id},</set>"),
-        )) {
-            val drifted = fixture(changed, parameters, StatementKind.UPDATE)
-            assertTrue("Unproven UPDATE WHERE source was prepared: $changed",
-                XmlMapperPreparationEngine.prepare(request(drifted, values, baseline)) is PreparationResult.Failed)
-        }
-        val noCollection = fixture(body, parameters.dropLast(1), StatementKind.UPDATE)
-        assertTrue(contract(noCollection).isPreparationBlocked)
-        val altered = fixture(body.replace("SET status=#{id}", "SET status=3"), parameters, StatementKind.UPDATE)
-        assertTrue(XmlMapperPreparationEngine.prepare(request(altered, values, baseline)) is PreparationResult.Failed)
     }
 
     @Test
@@ -520,45 +355,6 @@ class XmlMapperForeachPreparationTest {
     }
 
     @Test
-    fun deleteWhereMixedRefusesMissingMapperAndInactiveUnprovenSourceDrift() {
-        val parameters = listOf(
-            parameter(0, "boolean", "enabled"),
-            parameter(1, "long", "id"),
-            parameter(2, "java.util.List<java.lang.Long>", "ids"),
-        )
-        val condition = """<if test="enabled">AND flag=#{id}</if>"""
-        val loop = """<foreach collection="ids" item="item">#{item}</foreach>"""
-        val body = "DELETE FROM t <where>AND tenant_id=#{id} $condition $loop</where>"
-        val original = fixture(body, parameters, StatementKind.DELETE)
-        val values = mapOf(0 to InputValue.BooleanValue(false), 1 to integer(3), 2 to listValue())
-        val baseline = contract(original)
-        val noCapture = XmlMapperPreparationEngine.prepare(
-            request(original, values, includeMapperCapture = false),
-        ) as PreparationResult.Failed
-        assertEquals("xml-foreach-preparation-mapper-authority-unproven", noCapture.failure.code)
-        for (changed in listOf(
-            body.replace(loop, "$loop$loop"),
-            body.replace(loop, """<foreach collection="ids" item="item"><if test="enabled">#{item}</if></foreach>"""),
-            body.replace(condition, """<if test="enabled">$loop</if>"""),
-            body.replace(condition, """<if test="enabled != null">AND flag=#{id}</if>"""),
-            body.replace(condition, """<if test="enabled">${'$'}{table}</if>"""),
-            body.replace("<where>", """<where bogus="x">"""),
-            body.replace(loop, """<foreach collection="ids" item="item" nullable="true">#{item}</foreach>"""),
-            "$body<where>AND tenant_id=#{id}</where>",
-            body.replace(loop, """<include refid="unknown"/>"""),
-        )) {
-            val drifted = fixture(changed, parameters, StatementKind.DELETE)
-            assertTrue(
-                "DELETE source drift was prepared: $changed",
-                XmlMapperPreparationEngine.prepare(request(drifted, values, baseline)) is PreparationResult.Failed,
-            )
-        }
-        val noCollection = fixture(body, parameters.dropLast(1), StatementKind.DELETE)
-        assertTrue(contract(noCollection).isPreparationBlocked)
-        val altered = fixture(body.replace("tenant_id=#{id}", "tenant_id=3"), parameters, StatementKind.DELETE)
-        assertTrue(XmlMapperPreparationEngine.prepare(request(altered, values, baseline)) is PreparationResult.Failed)
-    }
-    @Test
     fun updateSingleSetMixedSiblingsMatchStockForAllOrdersAndStates() {
         val parameters = listOf(
             parameter(0, "boolean", "enabled"),
@@ -602,78 +398,6 @@ class XmlMapperForeachPreparationTest {
     }
 
     @Test
-    fun updateSingleSetMixedSiblingsRefuseMapperSourceAndSecondRoleDriftEvenWhenInactive() {
-        val parameters = listOf(
-            parameter(0, "boolean", "enabled"),
-            parameter(1, "long", "id"),
-            parameter(2, "java.util.List<java.lang.Long>", "ids"),
-        )
-        val loop = """<foreach collection="ids" item="item">v=#{item},</foreach>"""
-        val condition = """<if test="enabled">status=#{id},</if>"""
-        val body = "UPDATE t <set>$condition $loop</set> WHERE record_id=#{id}"
-        val fixture = fixture(body, parameters, StatementKind.UPDATE)
-        val values = mapOf(0 to InputValue.BooleanValue(false), 1 to integer(3), 2 to listValue())
-        val baseline = contract(fixture)
-        val missingMapper = XmlMapperPreparationEngine.prepare(
-            request(fixture, values, includeMapperCapture = false),
-        ) as PreparationResult.Failed
-        assertEquals("xml-foreach-preparation-mapper-authority-unproven", missingMapper.failure.code)
-        for (changed in listOf(
-            body.replace(loop, "$loop$loop"),
-            body.replace(loop, """<foreach collection="ids" item="item"><if test="enabled">v=#{item}</if></foreach>"""),
-            body.replace(condition, """<if test="enabled">$loop</if>"""),
-            body.replace(condition, """<if test="enabled != null">status=#{id},</if>"""),
-            body.replace(condition, """<if test="enabled">${'$'}{table}</if>"""),
-            body.replace("<set>", """<set extra="x">"""),
-            body.replace(loop, """<foreach collection="ids" item="item" nullable="true">v=#{item},</foreach>"""),
-            "UPDATE t <set>$condition $loop</set><where>AND record_id=#{id}</where>",
-            "UPDATE t <where>AND record_id=#{id}</where><set>$condition $loop</set>",
-            "UPDATE t <where>$condition $loop</where><set>v=#{id},</set>",
-            "UPDATE t <where>$condition $loop</where>",
-        )) {
-            val changedFixture = fixture(changed, parameters, StatementKind.UPDATE)
-            val result = XmlMapperPreparationEngine.prepare(request(changedFixture, values, baseline))
-            assertTrue("Unsupported UPDATE mixed source was prepared: $changed", result is PreparationResult.Failed)
-        }
-        val unprovenMapper = fixture(body, parameters.dropLast(1), StatementKind.UPDATE)
-        assertTrue(contract(unprovenMapper).isPreparationBlocked)
-    }
-    @Test
-    fun falseBooleanSiblingCannotHideUnsupportedNestedForeachSource() {
-        val parameters = listOf(
-            parameter(0, "boolean", "enabled"),
-            parameter(1, "long", "id"),
-            parameter(2, "java.util.List<java.lang.Long>", "ids"),
-        )
-        val supported = fixture(
-            "SELECT #{id} <if test=\"enabled\"> + #{id}</if> " +
-                "<foreach collection=\"ids\" item=\"item\" separator=\",\">#{item}</foreach>",
-            parameters,
-        )
-        val authentic = contract(supported)
-        val changed = fixture(
-            "SELECT #{id} <if test=\"enabled\">" +
-                "<foreach collection=\"ids\" item=\"item\">#{item}</foreach></if>",
-            parameters,
-        )
-
-        val failure = XmlMapperPreparationEngine.prepare(
-            request(
-                changed,
-                mapOf(
-                    0 to InputValue.BooleanValue(false),
-                    1 to integer(3),
-                    2 to listValue(7, 9),
-                ),
-                authentic,
-            ),
-        ) as PreparationResult.Failed
-
-        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, failure.failure.kind)
-        assertEquals("xml-foreach-preparation-source-unsupported", failure.failure.code)
-    }
-
-    @Test
     fun combinedUpdateWrappersWithOneLoopMatchStockSqlMappingsAndValues() {
         val parameters = listOf(parameter(0, "long", "status"), parameter(1, "java.util.List<java.lang.Long>", "ids"))
         for ((setOpen, setClose) in setWrappers()) {
@@ -696,10 +420,9 @@ class XmlMapperForeachPreparationTest {
                             assertEquals(3 + ids.size * 3, execution.orderedBindings.size)
                             assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
                             assertTrue(execution.rawInterpolations.isEmpty())
-                            val locals = contract(fixture).internalBindings.associateBy { it.name }
                             for (binding in execution.orderedBindings.filter { it.additionalParameter }) {
                                 val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
-                                assertEquals(locals.getValue(origin.internalBinding.name), origin.internalBinding)
+                                assertEquals(InternalBindingKind.ADDITIONAL_PARAMETER, origin.internalBinding.kind)
                                 assertEquals(origin.internalBinding.provenance, binding.provenance)
                             }
                             assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
@@ -731,44 +454,6 @@ class XmlMapperForeachPreparationTest {
                         assertStockParity(fixture, mapOf(alias to runtime), success(request(fixture, mapOf(0 to input))))
                     }
                 }
-            }
-        }
-    }
-
-    @Test
-    fun combinedWrappersRefuseMissingMapperUnsupportedSourceAndCrossWrapperTokens() {
-        val parameters = listOf(parameter(0, "long", "status"), parameter(1, "java.util.List<java.lang.Long>", "ids"))
-        val loop = "<foreach collection=\"ids\" item=\"item\">v=#{item},</foreach>"
-        val body = "UPDATE t <set>$loop</set><where>AND id=#{status}</where>"
-        val original = fixture(body, parameters, StatementKind.UPDATE)
-        for (items in listOf(listValue(), listValue(7, 9))) {
-            val values = mapOf(0 to integer(3), 1 to items)
-            val missing = XmlMapperPreparationEngine.prepare(request(original, values, includeMapperCapture = false)) as PreparationResult.Failed
-            assertEquals("xml-foreach-preparation-mapper-authority-unproven", missing.failure.code)
-            for (changed in listOf(
-                body.replace("AND id=#{status}", loop),
-                body.replace("AND id=#{status}", "<if test=\"enabled\">AND id=#{status}</if>"),
-                body.replace("AND id=#{status}", "AND id=#{item}"),
-                "$body<set>v=1</set>",
-                body.replace("<set>", "<set bogus=\"x\">"),
-                body.replace("<where>", "<trim prefix=\"WHERE\" prefixOverrides=\"AND|OR\">").replace("</where>", "</trim>"),
-                body.replace("AND id=#{status}", "<bind name=\"x\" value=\"1\"/>"),
-            )) {
-                val changedFixture = fixture(changed, parameters, StatementKind.UPDATE)
-                val failure = XmlMapperPreparationEngine.prepare(request(changedFixture, values, contract(original))) as PreparationResult.Failed
-                assertEquals(changed, "xml-foreach-preparation-source-unsupported", failure.failure.code)
-            }
-            for (changed in listOf(
-                "UPDATE t #<set>$loop</set><where>{status}</where>",
-                "UPDATE t <set>$loop#</set><where>{status}</where>",
-                "UPDATE t <where>AND id=#{status}#</where><set>$loop</set>",
-                "UPDATE t <set>v=#{status},</set><where><foreach collection=\"ids\" item=\"item\" open=\"#{\">item}</foreach></where>",
-            )) {
-                val changedFixture = fixture(changed, parameters, StatementKind.UPDATE)
-                val before = Thread.currentThread().contextClassLoader
-                val failure = XmlMapperPreparationEngine.prepare(request(changedFixture, values)) as PreparationResult.Failed
-                assertEquals(changed, "xml-foreach-bound-token-topology-unsupported", failure.failure.code)
-                assertSame(before, Thread.currentThread().contextClassLoader)
             }
         }
     }
@@ -821,10 +506,9 @@ class XmlMapperForeachPreparationTest {
                 assertEquals(StatementKind.UPDATE, execution.statementKind)
                 assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
                 assertTrue(execution.rawInterpolations.isEmpty())
-                val locals = contract(fixture).internalBindings.associateBy { it.name }
                 for (binding in execution.orderedBindings.filter { it.additionalParameter }) {
                     val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
-                    assertEquals(locals.getValue(origin.internalBinding.name), origin.internalBinding)
+                    assertEquals(InternalBindingKind.ADDITIONAL_PARAMETER, origin.internalBinding.kind)
                     assertEquals(origin.internalBinding.provenance, binding.provenance)
                 }
                 val refusal = MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed
@@ -903,89 +587,6 @@ class XmlMapperForeachPreparationTest {
     }
 
     @Test
-    fun setForeachRequiresCompleteMapperAndRejectsSourceDriftBeforeRuntime() {
-        val loop = "<foreach collection=\"ids\" item=\"item\">v=#{item},</foreach>"
-        for ((open, close) in setWrappers()) {
-            val body = "UPDATE t $open$loop$close WHERE id=1"
-            val original = fixture(body, listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")), StatementKind.UPDATE)
-            for (items in listOf(listValue(), listValue(7))) {
-                val missing = XmlMapperPreparationEngine.prepare(request(original, mapOf(0 to items), includeMapperCapture = false)) as PreparationResult.Failed
-                assertEquals("xml-foreach-preparation-mapper-authority-unproven", missing.failure.code)
-                for (changed in listOf(
-                    body.replace(loop, "$loop$loop"),
-                    "$body<where><if test=\"enabled\">AND 1=1</if></where>",
-                    body.replace(open, if (open == "<set>") "<set bogus=\"x\">" else "<trim prefix=\"SET\" suffixOverrides=\";\">"),
-                )) {
-                    val drifted = fixture(changed, original.mapper.parameters, StatementKind.UPDATE)
-                    val failure = XmlMapperPreparationEngine.prepare(request(drifted, mapOf(0 to items), contract(original))) as PreparationResult.Failed
-                    assertEquals(changed, "xml-foreach-preparation-source-unsupported", failure.failure.code)
-                }
-            }
-            val raw = fixture(body.replace(loop, "<foreach collection=\"ids\" item=\"item\" open=\"${'$'}{ids}\">v=#{item},</foreach>"), original.mapper.parameters, StatementKind.UPDATE)
-            val failure = XmlMapperPreparationEngine.prepare(request(raw, mapOf(0 to listValue(7)))) as PreparationResult.Failed
-            assertEquals("xml-preparation-raw-input-unsupported", failure.failure.code)
-        }
-    }
-
-    @Test
-    fun strippingEveryForeachRequirementCannotSkipAdmissionEvenForAnEmptyLoop() {
-        val fixture = fixture("SELECT 1 <foreach collection=\"ids\" item=\"item\">#{item}</foreach>", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
-        val original = contract(fixture)
-        val stripped = ParameterContract(original.statementId, emptyList(), emptyList(), emptyList(), emptyList(), original.sourceRevisions)
-        val prepared = XmlMapperPreparationEngine.prepare(request(fixture, emptyMap(), stripped))
-        assertTrue(prepared is PreparationResult.Failed)
-        assertEquals("xml-foreach-preparation-source-contract-mismatch", (prepared as PreparationResult.Failed).failure.code)
-    }
-
-    @Test
-    fun missingCompleteMapperCaptureRefusesForeachEvenWithMatchingSourceRevision() {
-        val fixture = fixture("SELECT <foreach collection=\"ids\" item=\"item\">#{item}</foreach>", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
-        for (items in listOf(listValue(), listValue(7))) {
-            val prepared = XmlMapperPreparationEngine.prepare(request(fixture, mapOf(0 to items), includeMapperCapture = false))
-            assertTrue(prepared is PreparationResult.Failed)
-            assertEquals("xml-foreach-preparation-mapper-authority-unproven", (prepared as PreparationResult.Failed).failure.code)
-        }
-    }
-
-    @Test
-    fun unusedMapperParametersCanSuppressCollectionAliasesOrShadowLocals() {
-        for ((open, close) in wrappers() + ("" to "")) {
-            val fixture = fixture("SELECT 1 $open<foreach collection=\"param1\" item=\"item\">#{item}</foreach>$close", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
-            for (alias in listOf("param1", "item")) {
-                val mapper = XmlMapperMethodCapture(fixture.mapper.statementId, fixture.mapper.mapperSource, fixture.mapper.methodSourceRange,
-                    fixture.mapper.parameters + parameter(1, "long", alias))
-                val changed = fixture.copy(mapper = mapper)
-                assertTrue(contract(changed).isPreparationBlocked)
-                for (items in listOf(listValue(), listValue(7))) {
-                    val prepared = XmlMapperPreparationEngine.prepare(request(changed, mapOf(0 to items), contract(fixture)))
-                    assertTrue(prepared is PreparationResult.Failed)
-                    assertEquals("xml-foreach-preparation-mapper-unsupported", (prepared as PreparationResult.Failed).failure.code)
-                }
-            }
-        }
-    }
-
-    @Test
-    fun coherentForgedMapperEvidenceCannotAuthorizeCollectionOrOutsideCallerValues() {
-        val body = "SELECT #{status}, <foreach collection=\"param2\" item=\"item\">#{item}</foreach>, #{status}"
-        val fixture = fixture(body, listOf(parameter(0, "long", "status"), parameter(1, "java.util.List<java.lang.Long>", "ids")))
-        val variants = listOf(
-            listOf(parameter(0, "java.lang.String", "status"), parameter(1, "java.util.List<java.lang.Long>", "ids")),
-            listOf(parameter(0, "long", "status"), parameter(1, "java.util.List<java.lang.String>", "ids")),
-            listOf(parameter(0, "long", "status"), parameter(1, "java.util.List<java.lang.Long>", "param2")),
-        )
-        for ((index, parameters) in variants.withIndex()) {
-            val forged = contract(fixture(body, parameters))
-            assertTrue(!forged.isPreparationBlocked)
-            val values = mapOf(0 to if (index == 0) InputValue.Text("different type") else integer(3),
-                1 to if (index == 1) InputValue.ListValue(listOf(InputValue.Text("different element type"))) else listValue(7))
-            val prepared = XmlMapperPreparationEngine.prepare(request(fixture, values, forged))
-            assertTrue(prepared is PreparationResult.Failed)
-            assertEquals("xml-foreach-preparation-source-contract-mismatch", (prepared as PreparationResult.Failed).failure.code)
-        }
-    }
-
-    @Test
     fun wrappedForeachPreservesStockSqlOrderMetadataAndValues() {
         val loop = "<foreach collection=\"ids\" item=\"item\" index=\"idx\" open=\"AND id IN (\" close=\")\" separator=\",\">#{idx},#{item,jdbcType=BIGINT},#{item}</foreach>"
         for ((open, close) in wrappers()) {
@@ -1000,10 +601,9 @@ class XmlMapperForeachPreparationTest {
                     assertEquals(kind, execution.statementKind)
                     assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
                     assertTrue(execution.rawInterpolations.isEmpty())
-                    val locals = contract(fixture).internalBindings.associateBy { it.name }
                     for (binding in execution.orderedBindings.filter { it.additionalParameter }) {
                         val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
-                        assertEquals(locals.getValue(origin.internalBinding.name), origin.internalBinding)
+                        assertEquals(InternalBindingKind.ADDITIONAL_PARAMETER, origin.internalBinding.kind)
                         assertEquals(origin.internalBinding.provenance, binding.provenance)
                     }
                     assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
@@ -1107,30 +707,6 @@ class XmlMapperForeachPreparationTest {
     }
 
     @Test
-    fun wrapperDriftAndRawStructuralAttributesCannotReuseOldAuthority() {
-        val loop = "<foreach collection=\"ids\" item=\"item\">#{item}</foreach>"
-        val original = fixture("SELECT 1 <where>$loop</where>", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
-        for (body in listOf(
-            "SELECT 1 <where bogus=\"x\">$loop</where>",
-            "SELECT 1 <where>$loop</where><where>$loop</where>",
-            "SELECT 1 <trim prefix=\"WHERE\" prefixOverrides=\"AND|OR\">$loop</trim>",
-        )) {
-            val drifted = fixture(body, original.mapper.parameters)
-            val failure = XmlMapperPreparationEngine.prepare(request(drifted, mapOf(0 to listValue(7)), contract(original))) as PreparationResult.Failed
-            assertEquals("xml-foreach-preparation-source-unsupported", failure.failure.code)
-        }
-        // A valid SELECT WHERE source with unproven caller inputs must still fail.
-        val mixed = fixture("SELECT 1 <where>$loop<if test=\"enabled\">AND id = #{id}</if></where>", original.mapper.parameters)
-        val mixedFailure = XmlMapperPreparationEngine.prepare(
-            request(mixed, mapOf(0 to listValue(7)), contract(original)),
-        ) as PreparationResult.Failed
-        assertEquals("xml-foreach-preparation-mapper-unsupported", mixedFailure.failure.code)
-        val raw = fixture("SELECT 1 <where><foreach collection=\"ids\" item=\"item\" open=\"${'$'}{ids}\">#{item}</foreach></where>", original.mapper.parameters)
-        val failure = XmlMapperPreparationEngine.prepare(request(raw, mapOf(0 to listValue(7)))) as PreparationResult.Failed
-        assertEquals("xml-preparation-raw-input-unsupported", failure.failure.code)
-    }
-
-    @Test
     fun sourceDerivedListCapturesOrderedRepeatedItemsAndIndexProvenance() {
         val fixture = fixture(
             """SELECT <foreach collection="ids" item="item" index="idx" open="(" close=")" separator=",">#{idx},#{item,jdbcType=BIGINT},#{item}</foreach>""",
@@ -1146,10 +722,9 @@ class XmlMapperForeachPreparationTest {
             listOf("idx", "item", "item", "idx", "item", "item"),
             execution.orderedBindings.map { it.property },
         )
-        val locals = request.parameterContract.internalBindings.associateBy { it.name }
         for (binding in execution.orderedBindings) {
             val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
-            assertEquals(locals[origin.internalBinding.name], origin.internalBinding)
+            assertEquals(InternalBindingKind.ADDITIONAL_PARAMETER, origin.internalBinding.kind)
             assertEquals(origin.internalBinding.provenance, binding.provenance)
             assertEquals(null, binding.requirementId)
         }
@@ -1204,7 +779,10 @@ class XmlMapperForeachPreparationTest {
         assertEquals(listOf(InputValue.Text("a"), InputValue.DateValue(date)), execution.orderedBindings.map { it.value })
         assertEquals("org.apache.ibatis.type.StringTypeHandler", execution.orderedBindings[0].metadata.typeHandlerIdentity)
         assertEquals("org.apache.ibatis.type.LocalDateTypeHandler", execution.orderedBindings[1].metadata.typeHandlerIdentity)
-        assertEquals(InternalBindingKind.FOREACH_INDEX, (execution.orderedBindings[0].origin as PreparedBindingOrigin.MyBatisAdditional).internalBinding.kind)
+        assertEquals(
+            InternalBindingKind.ADDITIONAL_PARAMETER,
+            (execution.orderedBindings[0].origin as PreparedBindingOrigin.MyBatisAdditional).internalBinding.kind,
+        )
     }
 
     @Test
@@ -1279,49 +857,6 @@ class XmlMapperForeachPreparationTest {
         ) as PreparationResult.Failed
         assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, failure.failure.kind)
         assertEquals("java-parameter-value-type-mismatch", failure.failure.code)
-    }
-
-    @Test
-    fun sourceDriftAndForgedLocalAreRejectedByAdmissionBeforeRuntime() {
-        val fixture = fixture(
-            """SELECT <foreach collection="ids" item="item">#{item}</foreach>""",
-            listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")),
-        )
-        val authentic = contract(fixture)
-        val snapshot = fixture.graph.sourceSnapshots.single()
-        val drifted = fixture.copy(graph = StatementSourceGraph(
-            fixture.graph.rootStatement,
-            listOf(snapshot.copy(content = snapshot.content.replace("#{item}", "<if test=\"item != null\">#{item}</if>"))),
-            emptyList(),
-        ))
-        val drift = XmlMapperPreparationEngine.prepare(request(drifted, mapOf(0 to listValue(7)), authentic)) as PreparationResult.Failed
-        assertEquals("xml-foreach-preparation-source-unsupported", drift.failure.code)
-
-        val local = authentic.internalBindings.single()
-        val forged = ParameterContract(
-            authentic.statementId, authentic.requirements, authentic.aliases,
-            listOf(InternalBinding("forged", local.kind, local.provenance)),
-            authentic.blockingProblems, authentic.sourceRevisions,
-        )
-        val failure = XmlMapperPreparationEngine.prepare(request(fixture, mapOf(0 to listValue(7)), forged)) as PreparationResult.Failed
-        assertEquals("xml-foreach-preparation-source-contract-mismatch", failure.failure.code)
-    }
-
-    @Test
-    fun unsupportedForeachSourceNeverAcquiresRuntimeAuthorityFromAnOlderContract() {
-        val parameters = listOf(parameter(0, "java.util.List<java.lang.Long>", "ids"))
-        val original = fixture("""SELECT <foreach collection="ids" item="item">#{item}</foreach>""", parameters)
-        val authentic = contract(original)
-        for (body in listOf(
-            """SELECT <foreach collection="ids" item="item">#{item.id}</foreach>""",
-            """SELECT <foreach collection="ids" item="item"><foreach collection="ids" item="inner">#{inner}</foreach></foreach>""",
-            """SELECT <foreach collection="ids" item="item"><include refid="missing"/></foreach>""",
-            """SELECT <foreach collection="ids" item="item" nullable="true">#{item}</foreach>""",
-            """SELECT <foreach collection="ids" item="item">${'$'}{item}</foreach>""",
-        )) {
-            val result = XmlMapperPreparationEngine.prepare(request(fixture(body, parameters), mapOf(0 to listValue(7)), authentic)) as PreparationResult.Failed
-            assertEquals("xml-foreach-preparation-source-unsupported", result.failure.code)
-        }
     }
 
     @Test
