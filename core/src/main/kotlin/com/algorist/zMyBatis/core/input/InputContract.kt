@@ -186,6 +186,19 @@ sealed interface InputEvidence {
         }
     }
 
+    data class XmlParameterObject(
+        val source: SourceEvidence,
+    ) : InputEvidence
+
+    data class RuntimeGeneratedBinding(
+        val property: String,
+        val source: SourceEvidence,
+    ) : InputEvidence {
+        init {
+            require(property.isNotBlank()) { "runtime generated binding property must not be blank" }
+        }
+    }
+
     data class Placeholder(
         val kind: InputKind,
         val expression: String,
@@ -449,6 +462,8 @@ private fun sourceEvidenceOf(evidence: InputEvidence): SourceEvidence? = when (e
     is InputEvidence.ParameterObjectFallback -> null
     is InputEvidence.ParameterObjectProperty -> null
     is InputEvidence.NamedMapProperty -> null
+    is InputEvidence.XmlParameterObject -> evidence.source
+    is InputEvidence.RuntimeGeneratedBinding -> evidence.source
     is InputEvidence.Placeholder -> evidence.source
     is InputEvidence.OgnlExpression -> evidence.source
     is InputEvidence.ForeachCollection -> evidence.source
