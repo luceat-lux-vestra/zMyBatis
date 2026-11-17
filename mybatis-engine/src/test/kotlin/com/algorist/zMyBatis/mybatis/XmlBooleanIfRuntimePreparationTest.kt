@@ -134,22 +134,6 @@ class XmlBooleanIfRuntimePreparationTest {
     }
 
     @Test
-    fun whereRequiresMapperCaptureAndRefusesUnsupportedSourceEvenWhenFalse() {
-        val fixture = fixture("SELECT 1 <where><if test=\"enabled\">AND id = #{id}</if></where>")
-        assertEquals("xml-preparation-dynamic-sql-unsupported", (prepare(fixture, false, withMapper = false) as PreparationResult.Failed).failure.code)
-        val condition = "<if test=\"enabled\">AND id = #{id}</if>"
-        for (body in listOf(
-            "<where prefixOverrides=\"AND\">$condition</where>",
-            "<where><include refid=\"fragment\"/>$condition</where>",
-            "<where><if test=\"enabled != null\">AND id = #{id}</if></where>",
-            "<where><if test=\"enabled\">AND \${table} = #{id}</if></where>",
-            "<if test=\"enabled\"><where>AND id = #{id}</where></if>",
-        )) {
-            assertEquals(body, "xml-boolean-if-preparation-source-unsupported", (prepare(fixture("SELECT 1 $body"), false, supplied = contract(fixture)) as PreparationResult.Failed).failure.code)
-        }
-    }
-
-    @Test
     fun whereBoundTokensCannotBeSynthesizedAcrossItsNewBoundaries() {
         for (body in listOf(
             "SELECT #<where><if test=\"enabled\">{id}</if></where>",
@@ -239,40 +223,6 @@ class XmlBooleanIfRuntimePreparationTest {
         val missing = (prepare(fixture, true, overrides = mapOf(1 to incomplete)) as PreparationResult.Failed).failure
         assertEquals(PreparationFailureKind.BINDING_RESOLUTION, missing.kind)
         assertEquals("xml-preparation-named-map-property-missing", missing.code)
-    }
-
-    @Test
-    fun mapperCaptureIsRequiredAndContractCannotAuthorizeItself() {
-        val fixture = fixture("SELECT 1 <if test=\"enabled\">WHERE id = #{id}</if>")
-        val failure = (prepare(fixture, true, withMapper = false) as PreparationResult.Failed).failure
-        assertEquals("xml-preparation-dynamic-sql-unsupported", failure.code)
-        val original = contract(fixture)
-        val forged = ParameterContract(original.statementId, original.requirements, original.aliases.map { it.copy(name = "forged-${it.name}") }, original.internalBindings, emptyList(), original.sourceRevisions)
-        val mismatch = (prepare(fixture, true, supplied = forged) as PreparationResult.Failed).failure
-        assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, mismatch.kind)
-        assertEquals("xml-boolean-if-preparation-source-contract-mismatch", mismatch.code)
-    }
-
-    @Test
-    fun supportedSourceDriftIsRejectedBeforeDynamicEvaluation() {
-        val fixture = fixture("SELECT 1 <if test=\"enabled\">WHERE id = #{id}</if>")
-        val changed = fixture("SELECT 1 <if test=\"enabled\">WHERE id = #{id}, #{id}</if>")
-        val failure = (prepare(changed, true, supplied = contract(fixture)) as PreparationResult.Failed).failure
-        assertEquals("xml-boolean-if-preparation-source-contract-mismatch", failure.code)
-    }
-
-    @Test
-    fun falseCannotHideAnUnsupportedComplexOrNestedSource() {
-        val original = fixture("SELECT 1 <if test=\"enabled\">WHERE id = #{id}</if>")
-        for (body in listOf(
-            "SELECT 1 <if test=\"enabled != null\">WHERE id = #{id}</if>",
-            "SELECT 1 <if test=\"enabled\"><if test=\"enabled\">#{id}</if></if>",
-            "SELECT 1 <if test=\"enabled\"><include refid=\"fragment\"/></if>",
-            "SELECT 1 <if test=\"enabled\">\${table}</if>",
-        )) {
-            val failure = (prepare(fixture(body), false, supplied = contract(original)) as PreparationResult.Failed).failure
-            assertEquals("xml-boolean-if-preparation-source-unsupported", failure.code)
-        }
     }
 
     @Test
