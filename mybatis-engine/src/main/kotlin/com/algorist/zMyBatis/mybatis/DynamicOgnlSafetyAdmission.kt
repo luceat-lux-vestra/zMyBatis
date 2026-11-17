@@ -32,6 +32,10 @@ internal object DynamicOgnlSafetyAdmission {
             .mapNotNull { content -> inspectDocuments(listOf(content), "/mapper") }
             .firstOrNull()
 
+    fun failureForExpressions(expressions: List<String>): PreparationFailure? =
+        inspectExpressions(expressions)
+
+
     private fun inspectDocuments(
         contents: List<String>,
         rootPath: String,
@@ -89,7 +93,11 @@ internal object DynamicOgnlSafetyAdmission {
             }
         }
 
-        return when (val result = IsolatedOgnlAstAdmission.inspectCapabilities(expressions.distinct())) {
+        return inspectExpressions(expressions)
+    }
+
+    private fun inspectExpressions(expressions: List<String>): PreparationFailure? =
+        when (val result = IsolatedOgnlAstAdmission.inspectCapabilities(expressions.distinct())) {
             IsolatedOgnlAstAdmission.Result.Admitted -> null
             is IsolatedOgnlAstAdmission.Result.Unsupported -> unsupported(result.nodeType)
             is IsolatedOgnlAstAdmission.Result.Malformed -> PreparationFailure(
