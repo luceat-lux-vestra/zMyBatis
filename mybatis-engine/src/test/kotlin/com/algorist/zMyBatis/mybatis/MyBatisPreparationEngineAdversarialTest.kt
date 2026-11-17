@@ -185,9 +185,19 @@ class MyBatisPreparationEngineAdversarialTest {
     }
 
     @Test
-    fun nestedStaticRawPropertyIsStockOwnedAndMissingPropertyFailsAsOgnl() {
+    fun nestedRawPropertyRemainsRefusedWhenTopologyCannotBeProvenWithoutEvaluation() {
         val request = request(
-            "select * from ${'
+            "select * from " + "$" + "{id.missing}",
+            listOf(Parameter("java.lang.String", "id", InputValue.Text("abc"))),
+        )
+
+        val result = MyBatisPreparationEngine.prepare(request)
+
+        assertTrue(result is PreparationResult.Failed)
+        result as PreparationResult.Failed
+        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
+        assertEquals("raw-interpolation-expression-unsupported", result.failure.code)
+    }
 
     @Test
     fun concurrentPreparationsCannotCrossContaminateRawOrBoundValues() {
