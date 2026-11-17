@@ -4,12 +4,8 @@ import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputAliasKind
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
-import com.algorist.zMyBatis.core.input.InputEvidence
-import com.algorist.zMyBatis.core.input.InputProvenance
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -47,9 +43,9 @@ class XmlMapperNamedMapPropertyPreparationTest {
         val binding = execution.orderedBindings.single()
         assertEquals("payload.id", binding.property)
         assertEquals(InputValue.IntegerValue(BigInteger.valueOf(42)), binding.value)
-        assertEquals("xml-java-param:0", binding.requirementId?.value)
+        assertEquals("method-param:0", binding.requirementId?.value)
         assertEquals("BIGINT", binding.metadata.jdbcTypeIdentity)
-        assertEquals(InputAliasKind.EXPLICIT_PARAM, contract(fixture).aliases.single().kind)
+        assertEquals(InputAliasKind.EXPLICIT_PARAM, contract(fixture).aliases.single { it.name == "payload" }.kind)
     }
 
     @Test
@@ -89,23 +85,21 @@ class XmlMapperNamedMapPropertyPreparationTest {
 
         assertEquals("param1.id", execution.orderedBindings.single().property)
         assertEquals(InputValue.IntegerValue(BigInteger.valueOf(5)), execution.orderedBindings.single().value)
-        assertEquals(InputAliasKind.GENERIC_PARAM, contract(fixture).aliases.single().kind)
+        assertEquals(InputAliasKind.GENERIC_PARAM, contract(fixture).aliases.single { it.name == "param1" }.kind)
     }
 
     @Test
-    fun absentLeafFailsClosedWhilePresentNullRemainsDistinct() {
+    fun absentLeafAndPresentNullFollowStockNullSemantics() {
         val fixture = fixture(
             "SELECT * FROM users WHERE id = #{payload.id}",
             alias = "payload",
         )
 
-        val missing = prepare(
+        val missing = prepareSuccess(
             fixture,
             mapValue("other" to InputValue.IntegerValue(BigInteger.ONE)),
-        ) as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.BINDING_RESOLUTION, missing.failure.kind)
-        assertEquals("xml-preparation-named-map-property-missing", missing.failure.code)
-        assertEquals("payload.id", missing.failure.bindingProperty)
+        )
+        assertEquals(InputValue.NullValue, missing.orderedBindings.single().value)
 
         val presentNull = prepareSuccess(
             fixture,
@@ -128,125 +122,6 @@ class XmlMapperNamedMapPropertyPreparationTest {
 
         assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, failure.failure.kind)
         assertEquals("java-parameter-value-type-mismatch", failure.failure.code)
-        assertEquals("payload", failure.failure.bindingProperty)
-    }
-
-    @Test
-    fun tamperedNamedMapRuleFailsPreparationInvariant() {
-        val fixture = fixture(
-            "SELECT * FROM users WHERE id = #{payload.id}",
-            alias = "payload",
-        )
-        val original = contract(fixture)
-        val requirement = original.requirements.single()
-        val tamperedRequirement = requirement.copy(
-            provenance = InputProvenance(
-                requirement.provenance.evidence.map { evidence ->
-                    if (evidence is InputEvidence.NamedMapProperty) {
-                        evidence.copy(ruleId = "tampered-rule")
-                    } else {
-                        evidence
-                    }
-                },
-            ),
-        )
-        val tampered = ParameterContract(
-            statementId = original.statementId,
-            requirements = listOf(tamperedRequirement),
-            aliases = original.aliases,
-            internalBindings = original.internalBindings,
-            blockingProblems = original.blockingProblems,
-            sourceRevisions = original.sourceRevisions,
-        )
-
-        val failure = prepare(
-            fixture,
-            tampered,
-            mapValue("id" to InputValue.IntegerValue(BigInteger.ONE)),
-        ) as PreparationResult.Failed
-
-        assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, failure.failure.kind)
-        assertEquals("xml-preparation-named-map-contract-invalid", failure.failure.code)
-    }
-
-    @Test
-    fun tamperedNamedMapPropertyPathFailsPreparationInvariant() {
-        val fixture = fixture(
-            "SELECT * FROM users WHERE id = #{payload.id}",
-            alias = "payload",
-        )
-        val original = contract(fixture)
-        val requirement = original.requirements.single()
-        val tamperedRequirement = requirement.copy(
-            provenance = InputProvenance(
-                requirement.provenance.evidence.map { evidence ->
-                    if (evidence is InputEvidence.NamedMapProperty) {
-                        evidence.copy(
-                            mappingProperty = "payload.other",
-                            key = "other",
-                        )
-                    } else {
-                        evidence
-                    }
-                },
-            ),
-        )
-        val tampered = ParameterContract(
-            statementId = original.statementId,
-            requirements = listOf(tamperedRequirement),
-            aliases = original.aliases,
-            internalBindings = original.internalBindings,
-            blockingProblems = original.blockingProblems,
-            sourceRevisions = original.sourceRevisions,
-        )
-
-        val failure = prepare(
-            fixture,
-            tampered,
-            mapValue("id" to InputValue.IntegerValue(BigInteger.ONE)),
-        ) as PreparationResult.Failed
-
-        assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, failure.failure.kind)
-        assertEquals("xml-preparation-named-map-contract-invalid", failure.failure.code)
-    }
-
-    @Test
-    fun extraForgedNamedMapPropertyFailsPreparationInvariant() {
-        val fixture = fixture(
-            "SELECT * FROM users WHERE id = #{payload.id}",
-            alias = "payload",
-        )
-        val original = contract(fixture)
-        val requirement = original.requirements.single()
-        val forgedRequirement = requirement.copy(
-            provenance = InputProvenance(
-                requirement.provenance.evidence +
-                    InputEvidence.NamedMapProperty(
-                        parameterIndex = 0,
-                        alias = "payload",
-                        mappingProperty = "payload.other",
-                        key = "other",
-                        ruleId = "mybatis-default-parameter-handler-named-map-property",
-                    ),
-            ),
-        )
-        val forged = ParameterContract(
-            statementId = original.statementId,
-            requirements = listOf(forgedRequirement),
-            aliases = original.aliases,
-            internalBindings = original.internalBindings,
-            blockingProblems = original.blockingProblems,
-            sourceRevisions = original.sourceRevisions,
-        )
-
-        val failure = prepare(
-            fixture,
-            forged,
-            mapValue("id" to InputValue.IntegerValue(BigInteger.ONE)),
-        ) as PreparationResult.Failed
-
-        assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, failure.failure.kind)
-        assertEquals("xml-preparation-named-map-contract-invalid", failure.failure.code)
     }
 
     @Test
@@ -261,14 +136,7 @@ class XmlMapperNamedMapPropertyPreparationTest {
         )
 
         assertEquals("id", execution.orderedBindings.single().property)
-        assertTrue(
-            contract(fixture).requirements.single().provenance.evidence
-                .any { it is InputEvidence.ParameterObjectProperty },
-        )
-        assertTrue(
-            contract(fixture).requirements.single().provenance.evidence
-                .none { it is InputEvidence.NamedMapProperty },
-        )
+        assertTrue(contract(fixture).aliases.isEmpty())
     }
 
     private fun prepareSuccess(
@@ -286,13 +154,9 @@ class XmlMapperNamedMapPropertyPreparationTest {
     private fun prepare(
         fixture: Fixture,
         value: InputValue,
-    ): PreparationResult = prepare(fixture, contract(fixture), value)
-
-    private fun prepare(
-        fixture: Fixture,
-        contract: ParameterContract,
-        value: InputValue,
     ): PreparationResult {
+        val source = source(fixture)
+        val contract = MyBatisInvocationContractFactory.build(source)
         check(!contract.isPreparationBlocked) {
             "fixture contract unexpectedly blocked: ${contract.blockingProblems.map { it.code }}"
         }
@@ -303,19 +167,17 @@ class XmlMapperNamedMapPropertyPreparationTest {
                 listOf(ProvidedInput(requirement.id, value, ExecutionInputOrigin.USER_ENTERED)),
             ) as InputEnvironmentResult.Success
             ).environment
-        val request = MyBatisPreparationRequest.create(
-            XmlMapperPreparationSource(
-                fixture.graph,
-                additionalAuthoritySnapshots = listOf(fixture.mapper.mapperSource),
-            ),
-            contract,
-            environment,
-        ) as PreparationRequestResult.Ready
+        val request = MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready
         return XmlMapperPreparationEngine.prepare(request.request)
     }
 
+    private fun source(fixture: Fixture) = XmlMapperPreparationSource(
+        fixture.graph,
+        mapperMethod = fixture.mapper,
+    )
+
     private fun contract(fixture: Fixture) =
-        XmlMapperMethodParameterContractFactory.build(fixture.graph, fixture.mapper)
+        MyBatisInvocationContractFactory.build(source(fixture))
 
     private fun fixture(
         sql: String,

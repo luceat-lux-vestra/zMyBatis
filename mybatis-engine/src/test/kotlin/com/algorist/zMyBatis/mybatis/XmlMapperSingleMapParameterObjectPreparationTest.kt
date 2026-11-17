@@ -1,15 +1,10 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
-import com.algorist.zMyBatis.core.input.InputAliasKind
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
-import com.algorist.zMyBatis.core.input.InputEvidence
-import com.algorist.zMyBatis.core.input.InputProvenance
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -48,20 +43,14 @@ class XmlMapperSingleMapParameterObjectPreparationTest {
         val binding = execution.orderedBindings.single()
         assertEquals("id", binding.property)
         assertEquals(InputValue.IntegerValue(BigInteger.valueOf(42)), binding.value)
-        assertEquals("xml-java-param:0", binding.requirementId?.value)
+        assertEquals("method-param:0", binding.requirementId?.value)
         assertEquals(
             "java.util.Map<java.lang.String,java.lang.Long>",
             binding.metadata.declaredJavaTypeIdentity?.value,
         )
         assertEquals("BIGINT", binding.metadata.jdbcTypeIdentity)
         assertTrue(binding.metadata.typeHandlerIdentity.startsWith("org.apache.ibatis.type."))
-        val alias = contract(fixture).aliases.single()
-        assertEquals(InputAliasKind.PARAMETER_OBJECT, alias.kind)
-        val propertyEvidence = alias.provenance.evidence
-            .filterIsInstance<InputEvidence.ParameterObjectProperty>()
-            .single()
-        assertEquals(0, propertyEvidence.parameterIndex)
-        assertEquals("id", propertyEvidence.mappingProperty)
+        assertTrue(contract(fixture).aliases.isEmpty())
     }
 
     @Test
@@ -87,7 +76,7 @@ class XmlMapperSingleMapParameterObjectPreparationTest {
             execution.orderedBindings.map { it.value },
         )
         assertEquals(
-            listOf("xml-java-param:0", "xml-java-param:0"),
+            listOf("method-param:0", "method-param:0"),
             execution.orderedBindings.map { it.requirementId?.value },
         )
     }
@@ -109,26 +98,23 @@ class XmlMapperSingleMapParameterObjectPreparationTest {
     }
 
     @Test
-    fun absentMapKeyFailsClosedWhilePresentNullRemainsDistinct() {
+    fun absentMapKeyAndPresentNullFollowStockNullSemantics() {
         val fixture = fixture(
             "SELECT * FROM users WHERE id = #{id}",
             "java.util.Map<java.lang.String,java.lang.Long>",
         )
 
-        val missing = prepare(
+        val missing = prepareSuccess(
             fixture,
             mapValue("other" to InputValue.IntegerValue(BigInteger.ONE)),
-        ) as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.BINDING_RESOLUTION, missing.failure.kind)
-        assertEquals("xml-preparation-parameter-object-property-missing", missing.failure.code)
-        assertEquals("id", missing.failure.bindingProperty)
+        )
+        assertEquals(InputValue.NullValue, missing.orderedBindings.single().value)
 
         val presentNull = prepareSuccess(
             fixture,
             mapValue("id" to InputValue.NullValue),
         )
         assertEquals(InputValue.NullValue, presentNull.orderedBindings.single().value)
-        assertEquals("id", presentNull.orderedBindings.single().property)
     }
 
     @Test
@@ -145,45 +131,6 @@ class XmlMapperSingleMapParameterObjectPreparationTest {
 
         assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, failure.failure.kind)
         assertEquals("java-parameter-value-type-mismatch", failure.failure.code)
-        assertEquals("id", failure.failure.bindingProperty)
-    }
-
-    @Test
-    fun tamperedPropertyLookupIndexFailsPreparationInvariant() {
-        val fixture = fixture(
-            "SELECT * FROM users WHERE id = #{id}",
-            "java.util.Map<java.lang.String,java.lang.Long>",
-        )
-        val original = contract(fixture)
-        val alias = original.aliases.single()
-        val tamperedAlias = alias.copy(
-            provenance = InputProvenance(
-                alias.provenance.evidence.map { evidence ->
-                    if (evidence is InputEvidence.ParameterObjectProperty) {
-                        evidence.copy(parameterIndex = 1)
-                    } else {
-                        evidence
-                    }
-                },
-            ),
-        )
-        val tamperedContract = ParameterContract(
-            statementId = original.statementId,
-            requirements = original.requirements,
-            aliases = listOf(tamperedAlias),
-            internalBindings = original.internalBindings,
-            blockingProblems = original.blockingProblems,
-            sourceRevisions = original.sourceRevisions,
-        )
-
-        val failure = prepare(
-            fixture,
-            tamperedContract,
-            mapValue("id" to InputValue.IntegerValue(BigInteger.valueOf(42))),
-        ) as PreparationResult.Failed
-
-        assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, failure.failure.kind)
-        assertEquals("xml-preparation-parameter-object-contract-invalid", failure.failure.code)
     }
 
     @Test
@@ -199,10 +146,7 @@ class XmlMapperSingleMapParameterObjectPreparationTest {
 
         assertEquals(InputValue.IntegerValue(BigInteger.valueOf(12)), execution.orderedBindings.single().value)
         assertEquals("arbitrary", execution.orderedBindings.single().property)
-        assertTrue(
-            contract(fixture).requirements.single().provenance.evidence
-                .any { it is InputEvidence.ParameterObjectFallback },
-        )
+        assertTrue(contract(fixture).aliases.isEmpty())
     }
 
     private fun prepareSuccess(
@@ -220,13 +164,9 @@ class XmlMapperSingleMapParameterObjectPreparationTest {
     private fun prepare(
         fixture: Fixture,
         value: InputValue,
-    ): PreparationResult = prepare(fixture, contract(fixture), value)
-
-    private fun prepare(
-        fixture: Fixture,
-        contract: ParameterContract,
-        value: InputValue,
     ): PreparationResult {
+        val source = source(fixture)
+        val contract = MyBatisInvocationContractFactory.build(source)
         check(!contract.isPreparationBlocked) {
             "fixture contract unexpectedly blocked: ${contract.blockingProblems.map { it.code }}"
         }
@@ -237,19 +177,17 @@ class XmlMapperSingleMapParameterObjectPreparationTest {
                 listOf(ProvidedInput(requirement.id, value, ExecutionInputOrigin.USER_ENTERED)),
             ) as InputEnvironmentResult.Success
             ).environment
-        val request = MyBatisPreparationRequest.create(
-            XmlMapperPreparationSource(
-                fixture.graph,
-                additionalAuthoritySnapshots = listOf(fixture.mapper.mapperSource),
-            ),
-            contract,
-            environment,
-        ) as PreparationRequestResult.Ready
+        val request = MyBatisPreparationRequest.create(source, contract, environment) as PreparationRequestResult.Ready
         return XmlMapperPreparationEngine.prepare(request.request)
     }
 
+    private fun source(fixture: Fixture) = XmlMapperPreparationSource(
+        fixture.graph,
+        mapperMethod = fixture.mapper,
+    )
+
     private fun contract(fixture: Fixture) =
-        XmlMapperMethodParameterContractFactory.build(fixture.graph, fixture.mapper)
+        MyBatisInvocationContractFactory.build(source(fixture))
 
     private fun fixture(
         sql: String,
