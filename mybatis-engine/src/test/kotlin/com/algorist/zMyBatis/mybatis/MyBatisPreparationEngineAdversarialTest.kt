@@ -2,9 +2,9 @@ package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputEnvironment
+import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.JavaAnnotationParameterContractFactory
 import com.algorist.zMyBatis.core.input.ProvidedInput
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
@@ -223,20 +223,20 @@ class MyBatisPreparationEngineAdversarialTest {
 
     private fun request(sql: String, parameters: List<Parameter>): MyBatisPreparationRequest {
         val capture = capture(sql, parameters)
-        val contract = JavaAnnotationParameterContractFactory.build(capture)
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
         assertFalse("test fixture unexpectedly produced a blocked contract", contract.isPreparationBlocked)
         val provided = contract.requirements.map { requirement ->
-            val index = requirement.id.value.substringAfter("java-param:").toInt()
+            val index = requirement.provenance.evidence
+                .filterIsInstance<InputEvidence.MapperMethodParameter>()
+                .single()
+                .index
             ProvidedInput(requirement.id, parameters[index].value, ExecutionInputOrigin.USER_ENTERED)
         }
         val environmentResult = InputEnvironment.validate(contract, provided)
         assertTrue(environmentResult is InputEnvironmentResult.Success)
         val environment = (environmentResult as InputEnvironmentResult.Success).environment
-        val requestResult = MyBatisPreparationRequest.create(
-            PreparationSource.JavaAnnotation(capture),
-            contract,
-            environment,
-        )
+        val requestResult = MyBatisPreparationRequest.create(source, contract, environment)
         assertTrue(requestResult is PreparationRequestResult.Ready)
         return (requestResult as PreparationRequestResult.Ready).request
     }
