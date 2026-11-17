@@ -31,7 +31,10 @@ object MyBatisPreparationEngine {
             return PreparationResult.Failed(it)
         }
         if (containsDynamicScript(script)) {
-            DynamicOgnlSafetyAdmission.failureForScript(script)?.let {
+            DynamicOgnlSafetyAdmission.failureForScript(
+                script,
+                databaseIdAvailable = request.effectiveDatabaseId != null,
+            )?.let {
                 return PreparationResult.Failed(it)
             }
         } else {
@@ -39,7 +42,10 @@ object MyBatisPreparationEngine {
                 .map { it.groupValues[1].trim() }
                 .filter(String::isNotEmpty)
                 .toList()
-            DynamicOgnlSafetyAdmission.failureForExpressions(rawExpressions)?.let {
+            DynamicOgnlSafetyAdmission.failureForExpressions(
+                rawExpressions,
+                databaseIdAvailable = request.effectiveDatabaseId != null,
+            )?.let {
                 return PreparationResult.Failed(it)
             }
         }
