@@ -1,6 +1,10 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.InputAliasKind
+import com.algorist.zMyBatis.core.input.InputProvenance
+import com.algorist.zMyBatis.core.input.InternalBinding
+import com.algorist.zMyBatis.core.input.InternalBindingKind
+import com.algorist.zMyBatis.core.input.SourceEvidence
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.XmlBooleanGuardSyntax
 import com.algorist.zMyBatis.core.input.InputKind
@@ -96,6 +100,9 @@ object XmlMapperPreparationEngine {
     private const val CLASSLOADER_INVARIANT = "mybatis-xml-classloader-isolation-failure"
 
     private val rawInterpolation = Regex("""\$\{([^}]*)}""")
+    private val runtimeDynamicSyntax = Regex(
+        """(?is)<\s*(?:if|choose|when|otherwise|foreach|where|set|trim|bind)\b|\$\{""",
+    )
     private val rawStructuralAttribute = Regex("""(?s)<(?![!?])[^>]*\$\{""")
     private val simpleIdentifier = Regex("[A-Za-z_][A-Za-z0-9_]*")
     private val parameterObjectMapValueTypes = setOf(
@@ -134,6 +141,434 @@ object XmlMapperPreparationEngine {
     ) : RuntimeException(failureCode, cause)
 
     fun prepare(request: MyBatisPreparationRequest): PreparationResult {
+        val source = request.source as? XmlMapperPreparationSource
+            ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, WRONG_SOURCE)
+        val statementId = source.sourceGraph.rootStatement.id as? XmlStatementId
+            ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
+
+        val projection = when (
+            val result = XmlMapperPreparationProjection.project(
+                source = source,
+                statementId = statementId,
+                effectiveDatabaseId = request.effectiveDatabaseId,
+            )
+        ) {
+            is XmlMapperPreparationProjection.Result.Ready -> result
+            is XmlMapperPreparationProjection.Result.Failed -> return PreparationResult.Failed(result.failure)
+        }
+
+        DynamicOgnlSafetyAdmission.failureForMapperDocuments(
+            projection.documents.map { it.content },
+        )?.let { return PreparationResult.Failed(it) }
+
+        val usage = MyBatisInvocationContractFactory.XmlInvocationUsageScanner.scan(projection)
+        rawSourceFailureP2(usage.rawUses, request)?.let {
+            return PreparationResult.Failed(it)
+        }
+
+        val payload = when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
+            is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
+            is MyBatisInvocationParameterObjectFactory.Result.Failed ->
+                return PreparationResult.Failed(result.failure)
+        }
+
+        val requiresFreshRuntime = projection.documents.any { document ->
+            runtimeDynamicSyntax.containsMatchIn(document.content)
+        }
+
+        return try {
+            if (requiresFreshRuntime) {
+                val runtime = createIsolatedRuntime(fresh = true)
+                runtime.loader.use {
+                    prepareP2WithContextLoader(
+                        runtime,
+                        source,
+                        projection,
+                        statementId,
+                        request,
+                        payload,
+                    )
+                }
+            } else {
+                prepareP2WithContextLoader(
+                    isolatedRuntime,
+                    source,
+                    projection,
+                    statementId,
+                    request,
+                    payload,
+                )
+            }
+        } catch (failure: Throwable) {
+            rethrowFatal(failure)
+            when (failure) {
+                is IsolationFailure -> failed(
+                    PreparationFailureKind.PREPARATION_INVARIANT,
+                    failure.failureCode,
+                    failure.cause?.javaClass?.name,
+                )
+                is SecurityException -> failed(
+                    PreparationFailureKind.PREPARATION_INVARIANT,
+                    CLASSLOADER_INVARIANT,
+                    failure.javaClass.name,
+                )
+                else -> PreparationResult.Failed(
+                    PreparationFailure(
+                        kind = if (diagnosticType(failure).contains(".ognl.")) {
+                            PreparationFailureKind.OGNL
+                        } else {
+                            PreparationFailureKind.MYBATIS_PARSE
+                        },
+                        code = if (diagnosticType(failure).contains(".ognl.")) {
+                            "mybatis-ognl-evaluation-failure"
+                        } else {
+                            PARSE_FAILURE
+                        },
+                        diagnosticType = diagnosticType(failure),
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun prepareP2WithContextLoader(
+        runtime: IsolatedRuntime,
+        source: XmlMapperPreparationSource,
+        projection: XmlMapperPreparationProjection.Result.Ready,
+        statementId: XmlStatementId,
+        request: MyBatisPreparationRequest,
+        payload: MyBatisInvocationParameterObjectFactory.Ready,
+    ): PreparationResult {
+        val thread = Thread.currentThread()
+        val previousContextLoader = thread.contextClassLoader
+        var switched = false
+        return try {
+            thread.contextClassLoader = runtime.loader
+            switched = true
+            prepareP2In(runtime, source, projection, statementId, request, payload)
+        } finally {
+            if (switched) thread.contextClassLoader = previousContextLoader
+        }
+    }
+
+    private fun prepareP2In(
+        runtime: IsolatedRuntime,
+        source: XmlMapperPreparationSource,
+        projection: XmlMapperPreparationProjection.Result.Ready,
+        statementId: XmlStatementId,
+        request: MyBatisPreparationRequest,
+        payload: MyBatisInvocationParameterObjectFactory.Ready,
+    ): PreparationResult {
+        val configurationClass = runtime.configurationClass
+        val builderClass = runtime.builderClass
+        val mappedStatementClass = runtime.mappedStatementClass
+        val boundSqlClass = runtime.boundSqlClass
+
+        val configuration = configurationClass.getDeclaredConstructor().newInstance()
+        request.effectiveDatabaseId?.let { databaseId ->
+            configurationClass
+                .getMethod("setDatabaseId", String::class.java)
+                .invoke(configuration, databaseId.value)
+        }
+        val sqlFragments = configurationClass.getMethod("getSqlFragments").invoke(configuration) as? Map<*, *>
+            ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
+        val constructor = builderClass.getConstructor(
+            InputStream::class.java,
+            configurationClass,
+            String::class.java,
+            Map::class.java,
+        )
+
+        projection.documents.forEach { document ->
+            val resource = projectedResourceIdentity(document)
+            ByteArrayInputStream(document.content.toByteArray(StandardCharsets.UTF_8)).use { input ->
+                val builder = constructor.newInstance(input, configuration, resource, sqlFragments)
+                builderClass.getMethod("parse").invoke(builder)
+            }
+        }
+
+        val canonicalStatementId = "${statementId.namespace}.${statementId.statementId}"
+        val mappedStatement = try {
+            configurationClass
+                .getMethod("getMappedStatement", String::class.java)
+                .invoke(configuration, canonicalStatementId)
+        } catch (failure: InvocationTargetException) {
+            rethrowFatal(failure)
+            return PreparationResult.Failed(
+                PreparationFailure(
+                    PreparationFailureKind.MYBATIS_PARSE,
+                    ROOT_STATEMENT_MISSING,
+                    diagnosticType = diagnosticType(failure),
+                ),
+            )
+        }
+        if (mappedStatement == null || !mappedStatementClass.isInstance(mappedStatement)) {
+            return failed(PreparationFailureKind.MYBATIS_PARSE, ROOT_STATEMENT_MISSING)
+        }
+
+        val projectedRoot = projection.documents.singleOrNull { it.rootStatementDocument }
+            ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
+        val mappedResource = mappedStatementClass.getMethod("getResource").invoke(mappedStatement) as? String
+        if (mappedResource != projectedResourceIdentity(projectedRoot)) {
+            return failed(PreparationFailureKind.PREPARATION_INVARIANT, ROOT_RESOURCE_MISMATCH)
+        }
+
+        val sqlCommandType = mappedStatementClass.getMethod("getSqlCommandType").invoke(mappedStatement) as? Enum<*>
+            ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
+        if (sqlCommandType.name != request.statementKind.name) {
+            return failed(PreparationFailureKind.PREPARATION_INVARIANT, STATEMENT_KIND_MISMATCH)
+        }
+
+        val parameterObject = payload.parameterObject
+        val boundSql = try {
+            mappedStatementClass
+                .getMethod("getBoundSql", Any::class.java)
+                .invoke(mappedStatement, parameterObject)
+        } catch (failure: InvocationTargetException) {
+            rethrowFatal(failure)
+            throw failure.targetException ?: failure
+        } ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
+        if (!boundSqlClass.isInstance(boundSql)) {
+            return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
+        }
+
+        val sql = boundSqlClass.getMethod("getSql").invoke(boundSql) as? String
+            ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
+        if (sql.isBlank()) {
+            return failed(PreparationFailureKind.PREPARATION_INVARIANT, EMPTY_SQL)
+        }
+        val mappings = boundSqlClass.getMethod("getParameterMappings").invoke(boundSql) as? List<*>
+            ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
+        val snapshots = IsolatedDynamicMyBatisPreparation.snapshotMappings(
+            runtime.loader,
+            configuration,
+            boundSql,
+            parameterObject,
+            mappings,
+            emptyMap(),
+        )
+        val bindings = when (
+            val captured = captureP2Bindings(
+                snapshots = snapshots,
+                request = request,
+                payload = payload,
+            )
+        ) {
+            is XmlBindingCapture.Ready -> captured.bindings
+            is XmlBindingCapture.Failed -> return PreparationResult.Failed(captured.failure)
+        }
+
+        val rawInterpolations = mutableListOf<PreparedRawInterpolation>()
+        for (requirement in request.parameterContract.requirements.filter { it.usesRawInterpolation }) {
+            val provided = request.inputEnvironment.value(requirement.id)
+                ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, RAW_INPUT_UNSUPPORTED)
+            rawInterpolations += PreparedRawInterpolation(
+                requirementId = requirement.id,
+                provenance = requirement.provenance,
+                origin = provided.origin,
+            )
+        }
+
+        val languageDriver = mappedStatementClass.getMethod("getLang").invoke(mappedStatement)
+            ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, INVARIANT_FAILURE)
+        if (languageDriver.javaClass.classLoader !== runtime.loader) {
+            return failed(
+                PreparationFailureKind.PREPARATION_INVARIANT,
+                "mybatis-language-driver-not-isolated",
+            )
+        }
+
+        return try {
+            PreparationResult.Success(
+                PreparedExecution(
+                    statementId = request.statementId,
+                    statementKind = request.statementKind,
+                    sourceRevisions = request.sourceRevisions,
+                    sqlWithPlaceholders = sql,
+                    orderedBindings = bindings,
+                    rawInterpolations = rawInterpolations,
+                    preparationMetadata = PreparationMetadata(
+                        engineIdentity = ENGINE_ID,
+                        engineVersion = ENGINE_VERSION,
+                        languageDriverIdentity = languageDriver.javaClass.name,
+                        databaseId = request.effectiveDatabaseId?.value,
+                    ),
+                ),
+            )
+        } catch (failure: IllegalArgumentException) {
+            failed(
+                PreparationFailureKind.PREPARATION_INVARIANT,
+                INVARIANT_FAILURE,
+                failure.javaClass.name,
+            )
+        }
+    }
+
+    private fun captureP2Bindings(
+        snapshots: List<MyBatisParameterMappingSnapshot>,
+        request: MyBatisPreparationRequest,
+        payload: MyBatisInvocationParameterObjectFactory.Ready,
+    ): XmlBindingCapture {
+        val rootSource = request.source.sourceGraph.rootStatement.let { statement ->
+            val revision = request.sourceRevisions[statement.id.sourceFileId]
+                ?: return XmlBindingCapture.Failed(
+                    PreparationFailure(
+                        PreparationFailureKind.PREPARATION_INVARIANT,
+                        INVARIANT_FAILURE,
+                    ),
+                )
+            SourceEvidence(statement.id.sourceFileId, revision, statement.sourceRange)
+        }
+        val bindings = mutableListOf<PreparedBinding>()
+        for ((index, mapping) in snapshots.withIndex()) {
+            val property = mapping.property?.takeIf(String::isNotBlank)
+                ?: return XmlBindingCapture.Failed(
+                    PreparationFailure(
+                        PreparationFailureKind.PARAMETER_MAPPING_MISMATCH,
+                        MAPPING_PROPERTY_MISSING,
+                    ),
+                )
+            if (mapping.parameterMode != "IN") {
+                return XmlBindingCapture.Failed(
+                    PreparationFailure(
+                        PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                        PARAMETER_MODE_UNSUPPORTED,
+                        property,
+                    ),
+                )
+            }
+            val runtimeValue = when (val value = mapping.runtimeValue) {
+                is MyBatisRuntimeValueSnapshot.Ready -> value.value
+                is MyBatisRuntimeValueSnapshot.Failed ->
+                    return XmlBindingCapture.Failed(
+                        PreparationFailure(
+                            if (value.bindingFailure) {
+                                PreparationFailureKind.BINDING_RESOLUTION
+                            } else {
+                                PreparationFailureKind.PREPARATION_INVARIANT
+                            },
+                            if (value.bindingFailure) MAPPING_ALIAS_UNRESOLVED else INVARIANT_FAILURE,
+                            property,
+                            value.diagnosticType,
+                        ),
+                    )
+            }
+
+            val rootProperty = property.substringBefore('.')
+            val generated = mapping.capturedValue || mapping.additionalParameter
+            val callerRequirement = if (generated) {
+                null
+            } else {
+                val requirementId = payload.aliasToRequirementId[rootProperty]
+                    ?: payload.directRequirementId
+                    ?: return XmlBindingCapture.Failed(
+                        PreparationFailure(
+                            PreparationFailureKind.BINDING_RESOLUTION,
+                            MAPPING_ALIAS_UNRESOLVED,
+                            property,
+                        ),
+                    )
+                request.parameterContract.requirement(requirementId)
+                    ?: return XmlBindingCapture.Failed(
+                        PreparationFailure(
+                            PreparationFailureKind.PREPARATION_INVARIANT,
+                            INVARIANT_FAILURE,
+                            property,
+                        ),
+                    )
+            }
+            val origin = if (generated) {
+                PreparedBindingOrigin.MyBatisAdditional(
+                    InternalBinding(
+                        name = rootProperty,
+                        kind = InternalBindingKind.ADDITIONAL_PARAMETER,
+                        provenance = InputProvenance(
+                            listOf(InputEvidence.RuntimeGeneratedBinding(property, rootSource)),
+                        ),
+                    ),
+                )
+            } else {
+                PreparedBindingOrigin.CallerInput(
+                    requireNotNull(callerRequirement).id,
+                    callerRequirement.provenance,
+                )
+            }
+
+            val typeHandlerName = mapping.typeHandlerIdentity
+                ?: return XmlBindingCapture.Failed(
+                    PreparationFailure(
+                        PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER,
+                        TYPE_HANDLER_UNSUPPORTED,
+                        property,
+                    ),
+                )
+            if (!typeHandlerName.startsWith("org.apache.ibatis.type.")) {
+                return XmlBindingCapture.Failed(
+                    PreparationFailure(
+                        PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER,
+                        TYPE_HANDLER_UNSUPPORTED,
+                        property,
+                        typeHandlerName,
+                    ),
+                )
+            }
+            val alias = payload.aliasToRequirementId[rootProperty]?.let { requirementId ->
+                request.parameterContract.aliases.singleOrNull {
+                    it.name == rootProperty && it.requirementId == requirementId
+                }
+            }
+            val coreValue = MyBatisValueConversion.toCoreValue(
+                runtimeValue,
+                callerRequirement,
+                property,
+                alias,
+            ) ?: return XmlBindingCapture.Failed(
+                PreparationFailure(
+                    PreparationFailureKind.UNSUPPORTED_BINDING_VALUE,
+                    BINDING_VALUE_UNSUPPORTED,
+                    property,
+                    runtimeValue?.javaClass?.name,
+                ),
+            )
+
+            bindings += PreparedBinding(
+                index = index,
+                property = property,
+                value = coreValue,
+                origin = origin,
+                metadata = PreparedBindingMetadata(
+                    declaredJavaTypeIdentity = callerRequirement?.expectedType?.javaTypeIdentity,
+                    mappingJavaTypeIdentity = mapping.mappingJavaTypeIdentity,
+                    jdbcTypeIdentity = mapping.jdbcTypeIdentity,
+                    typeHandlerIdentity = typeHandlerName,
+                    parameterMode = mapping.parameterMode,
+                    numericScale = mapping.numericScale,
+                ),
+            )
+        }
+        return XmlBindingCapture.Ready(bindings)
+    }
+
+    private fun rawSourceFailureP2(
+        rawUses: List<MyBatisInvocationContractFactory.RawUse>,
+        request: MyBatisPreparationRequest,
+    ): PreparationFailure? {
+        val expected = rawUses
+            .groupingBy { it.source.sourceFileId to it.expression.trim() }
+            .eachCount()
+        val proven = request.parameterContract.requirements
+            .asSequence()
+            .filter { it.usesRawInterpolation }
+            .flatMap { it.provenance.evidence.asSequence() }
+            .filterIsInstance<InputEvidence.Placeholder>()
+            .filter { it.kind == InputKind.RAW_INTERPOLATION }
+            .map { it.source.sourceFileId to it.expression.trim() }
+            .groupingBy { it }
+            .eachCount()
+        return if (expected == proven) null else rawInputUnsupported()
+    }
+
+    private fun prepareLegacy(request: MyBatisPreparationRequest): PreparationResult {
         val source = request.source as? XmlMapperPreparationSource
             ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, WRONG_SOURCE)
         val statementId = source.sourceGraph.rootStatement.id as? XmlStatementId
