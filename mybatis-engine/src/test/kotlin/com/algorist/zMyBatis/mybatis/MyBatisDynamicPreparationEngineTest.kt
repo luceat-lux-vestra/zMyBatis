@@ -112,19 +112,21 @@ class MyBatisDynamicPreparationEngineTest {
 
     @Test
     fun dynamicRawInterpolationUsesCallerValueAndRetainsRiskProvenance() {
-        val result = prepare(
-            fixture(
-                "<script>select * from " + "$" + "{table}</script>",
-                listOf(Parameter("java.lang.String", "table", InputValue.Text("users"))),
-            ),
+        val fixture = fixture(
+            "<script>select * from " + "$" + "{table}</script>",
+            listOf(Parameter("java.lang.String", "table", InputValue.Text("users"))),
         )
+        val result = prepare(fixture)
 
         assertTrue(result is PreparationResult.Success)
         result as PreparationResult.Success
         assertEquals("select * from users", normalizeSql(result.execution.sqlWithPlaceholders))
         assertTrue(result.execution.orderedBindings.isEmpty())
         assertEquals(1, result.execution.rawInterpolations.size)
-        assertEquals(result.execution.rawInterpolations.single().requirementId, result.execution.rawInterpolations.single().requirementId)
+        assertEquals(
+            fixture.contract.requirements.single().id,
+            result.execution.rawInterpolations.single().requirementId,
+        )
     }
 
     @Test
