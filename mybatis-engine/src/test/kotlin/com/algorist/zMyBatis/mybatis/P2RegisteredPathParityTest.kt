@@ -284,7 +284,7 @@ class P2RegisteredPathParityTest {
             is PreparationResult.Success -> result.execution
             is PreparationResult.Failed -> throw AssertionError("P2 XML preparation failed: " + result.failure)
         }
-        val stock = stockSnapshot(fixture.content, fixture.statementId.value, payload.parameterObject)
+        val stock = stockSnapshot(fixture.content, fixture.statementId.namespace + "." + fixture.statementId.statementId, payload.parameterObject)
 
         assertEquals(normalizeSql(stock.sql), normalizeSql(execution.sqlWithPlaceholders))
         assertEquals(stock.properties, execution.orderedBindings.map { it.property })
