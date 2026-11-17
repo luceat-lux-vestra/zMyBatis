@@ -246,6 +246,7 @@ internal object IsolatedDynamicMyBatisPreparation {
             typeHandlerIdentity = metadata.typeHandlerIdentity,
             parameterMode = metadata.parameterMode,
             numericScale = metadata.numericScale,
+            capturedValue = capturedValue,
         )
     }
 
