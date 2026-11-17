@@ -1,24 +1,10 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
-import com.algorist.zMyBatis.core.input.ExpectedInputType
-import com.algorist.zMyBatis.core.input.InputAlias
-import com.algorist.zMyBatis.core.input.InputAliasKind
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
-import com.algorist.zMyBatis.core.input.InputEvidence
-import com.algorist.zMyBatis.core.input.InputKind
-import com.algorist.zMyBatis.core.input.InputNullability
-import com.algorist.zMyBatis.core.input.InputProvenance
-import com.algorist.zMyBatis.core.input.InputRequiredness
-import com.algorist.zMyBatis.core.input.InputRequirement
-import com.algorist.zMyBatis.core.input.InputRequirementId
-import com.algorist.zMyBatis.core.input.InputScalarType
-import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.SourceEvidence
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -49,14 +35,7 @@ class MyBatisDynamicPreflightAdversarialTest {
             parameter = Parameter(
                 javaType = "java.lang.String",
                 alias = "table",
-                expectedType = ExpectedInputType(
-                    shape = InputShape.RAW_TEXT,
-                    scalarType = InputScalarType.STRING,
-                    javaTypeIdentity = JavaTypeIdentity("java.lang.String"),
-                    nullability = InputNullability.NON_NULL,
-                ),
-                value = InputValue.RawText("users"),
-                kind = InputKind.RAW_INTERPOLATION,
+                value = InputValue.Text("users"),
             ),
         )
 
@@ -70,14 +49,7 @@ class MyBatisDynamicPreflightAdversarialTest {
             parameter = Parameter(
                 javaType = "java.lang.Long",
                 alias = "id",
-                expectedType = ExpectedInputType(
-                    shape = InputShape.SCALAR,
-                    scalarType = InputScalarType.INTEGER,
-                    javaTypeIdentity = JavaTypeIdentity("java.lang.Long"),
-                    nullability = InputNullability.NON_NULL,
-                ),
                 value = InputValue.IntegerValue(BigInteger.ONE),
-                kind = InputKind.BOUND,
             ),
         )
 
@@ -123,51 +95,21 @@ class MyBatisDynamicPreflightAdversarialTest {
                 ),
             ),
         )
-        val evidence = SourceEvidence(fileId, revision, sourceRange)
-        val requirementId = InputRequirementId("encoded-param:0")
-        val provenance = InputProvenance(
-            listOf(
-                InputEvidence.MapperMethodParameter(0, parameter.alias, typeIdentity, evidence),
-                InputEvidence.ExplicitParamAlias(0, parameter.alias, evidence),
-                if (parameter.kind == InputKind.RAW_INTERPOLATION) {
-                    InputEvidence.Placeholder(InputKind.RAW_INTERPOLATION, parameter.alias, evidence)
-                } else {
-                    InputEvidence.Placeholder(InputKind.BOUND, parameter.alias, evidence)
-                },
-            ),
-        )
-        val contract = ParameterContract(
-            statementId = statementId,
-            requirements = listOf(
-                InputRequirement(
-                    id = requirementId,
-                    kind = parameter.kind,
-                    expectedType = parameter.expectedType,
-                    requiredness = InputRequiredness.REQUIRED,
-                    provenance = provenance,
-                ),
-            ),
-            aliases = listOf(
-                InputAlias(
-                    name = parameter.alias,
-                    requirementId = requirementId,
-                    kind = InputAliasKind.EXPLICIT_PARAM,
-                    provenance = provenance,
-                ),
-            ),
-            internalBindings = emptyList(),
-            blockingProblems = emptyList(),
-            sourceRevisions = mapOf(fileId to revision),
-        )
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
+        check(!contract.isPreparationBlocked) {
+            "adversarial fixture contract must be usable: ${contract.blockingProblems.map { it.code }}"
+        }
+        val requirement = contract.requirements.single()
         val environmentResult = InputEnvironment.validate(
             contract,
-            listOf(ProvidedInput(requirementId, parameter.value, ExecutionInputOrigin.USER_ENTERED)),
+            listOf(ProvidedInput(requirement.id, parameter.value, ExecutionInputOrigin.USER_ENTERED)),
         )
         check(environmentResult is InputEnvironmentResult.Success) {
             "adversarial fixture environment must be valid: $environmentResult"
         }
         val requestResult = MyBatisPreparationRequest.create(
-            PreparationSource.JavaAnnotation(capture),
+            source,
             contract,
             environmentResult.environment,
         )
@@ -180,8 +122,6 @@ class MyBatisDynamicPreflightAdversarialTest {
     private data class Parameter(
         val javaType: String,
         val alias: String,
-        val expectedType: ExpectedInputType,
         val value: InputValue,
-        val kind: InputKind,
     )
 }
