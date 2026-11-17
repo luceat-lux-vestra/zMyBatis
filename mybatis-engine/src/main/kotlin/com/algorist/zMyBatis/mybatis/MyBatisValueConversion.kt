@@ -48,8 +48,17 @@ internal object MyBatisValueConversion {
     fun invocationRuntimeValue(
         value: InputValue,
         expectedType: com.algorist.zMyBatis.core.input.ExpectedInputType,
-    ): RuntimeValueResult =
-        if (
+    ): RuntimeValueResult {
+        if (!inputComplexityIsBounded(listOf(value))) {
+            return RuntimeValueResult.Failed(
+                PreparationFailure(
+                    PreparationFailureKind.UNSUPPORTED_BINDING_VALUE,
+                    VALUE_TOO_COMPLEX,
+                ),
+            )
+        }
+
+        return if (
             expectedType.shape in setOf(InputShape.LIST, InputShape.MAP, InputShape.ARRAY) &&
             expectedType.javaTypeIdentity != null
         ) {
@@ -57,6 +66,7 @@ internal object MyBatisValueConversion {
         } else {
             toRuntimeValue(value, expectedType.javaTypeIdentity)
         }
+    }
 
     fun parameterValues(
         request: MyBatisPreparationRequest,
