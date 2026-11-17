@@ -7,7 +7,6 @@ import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
-import com.algorist.zMyBatis.core.preparation.rawRequirements
 import org.apache.ibatis.parsing.GenericTokenParser
 
 /**
@@ -17,9 +16,9 @@ import org.apache.ibatis.parsing.GenericTokenParser
  * value must therefore be proven unable to create, remove, replace, escape, or mutate a source bound
  * token before MyBatis is allowed to evaluate the raw expression.
  *
- * This slice admits only an exact caller alias (`${alias}`). Nested/raw OGNL property traversal is
- * deliberately refused because the authoritative root RawText value does not prove the value that
- * MyBatis would obtain after evaluating `${alias.property}`.
+ * This topology proof admits only a direct caller-root expression (`${alias}`). Nested/raw OGNL
+ * property traversal remains outside this proof because its resolved string is not available without
+ * evaluating the expression. That is a raw-safety capability boundary, not a second OGNL evaluator.
  */
 internal object StaticRawSubstitutionAdmission {
     private const val AUTHORITY_MISMATCH = "raw-interpolation-source-authority-mismatch"
@@ -37,7 +36,7 @@ internal object StaticRawSubstitutionAdmission {
         script: String,
         request: MyBatisPreparationRequest,
     ): PreparationFailure? {
-        val rawRequirements = request.parameterContract.rawRequirements()
+        val rawRequirements = request.parameterContract.requirements.filter { it.usesRawInterpolation }
 
         val rawSlotSentinels = unusedPrivateUseCharacters(listOf(script), count = 2)
             ?: return unsupported(TOKEN_TOPOLOGY_UNSUPPORTED)
@@ -62,9 +61,9 @@ internal object StaticRawSubstitutionAdmission {
 
         val authorities = mutableListOf<RawAuthority>()
         for ((requirementId, _, expectedType, _, provenance) in rawRequirements) {
-            val placeholders = provenance.evidence.filterIsInstance<InputEvidence.Placeholder>()
-            if (placeholders.any { it.kind != InputKind.RAW_INTERPOLATION }) return authorityMismatch()
-            val rawPlaceholders = placeholders.filter { it.kind == InputKind.RAW_INTERPOLATION }
+            val rawPlaceholders = provenance.evidence
+                .filterIsInstance<InputEvidence.Placeholder>()
+                .filter { it.kind == InputKind.RAW_INTERPOLATION }
             if (rawPlaceholders.isEmpty()) return authorityMismatch()
             if (expectedType.javaTypeIdentity?.value?.trim() !in supportedStringTypes) {
                 return unsupported(EXPRESSION_UNSUPPORTED)
@@ -78,7 +77,6 @@ internal object StaticRawSubstitutionAdmission {
             return authorityMismatch()
         }
 
-        val aliasesByName = request.inputEnvironment.aliases.groupBy { it.name }
         val requirementByExpression = linkedMapOf<String, InputRequirementId>()
         for (expression in sourceExpressions.distinct()) {
             if (!aliasName.matches(expression) || expression in reservedContextNames) {
@@ -93,16 +91,17 @@ internal object StaticRawSubstitutionAdmission {
                 .toList()
             if (candidateIds.size != 1) return authorityMismatch()
 
-            val requirementId = candidateIds.single()
-            val aliases = aliasesByName[expression].orEmpty()
-            if (aliases.size != 1 || aliases.single().requirementId != requirementId) return authorityMismatch()
-            requirementByExpression[expression] = requirementId
+            requirementByExpression[expression] = candidateIds.single()
         }
 
         val rawValuesByRequirement = linkedMapOf<InputRequirementId, String>()
         for (requirementId in requirementByExpression.values.toSet()) {
             val provided = request.inputEnvironment.value(requirementId) ?: return authorityMismatch()
-            val raw = (provided.value as? InputValue.RawText)?.value ?: return authorityMismatch()
+            val raw = when (val value = provided.value) {
+                is InputValue.Text -> value.value
+                is InputValue.RawText -> value.value
+                else -> return authorityMismatch()
+            }
             rawValuesByRequirement[requirementId] = raw
         }
 
