@@ -29,6 +29,7 @@ internal object MyBatisInvocationParameterObjectFactory {
 
     data class Ready(
         val parameterObject: Any?,
+        val parameterType: MyBatisParameterType,
         val aliasToRequirementId: Map<String, InputRequirementId>,
         val directRequirementId: InputRequirementId?,
     )
@@ -51,7 +52,7 @@ internal object MyBatisInvocationParameterObjectFactory {
         val requirement = request.parameterContract.requirements.singleOrNull()
         if (requirement == null) {
             if (request.parameterContract.requirements.isNotEmpty()) return invalid()
-            return Result.Success(Ready(null, emptyMap(), null))
+            return Result.Success(Ready(null, MyBatisParameterType.None, emptyMap(), null))
         }
         if (
             requirement.id.value != XML_PARAMETER_OBJECT_ID ||
@@ -66,6 +67,7 @@ internal object MyBatisInvocationParameterObjectFactory {
             return Result.Success(
                 Ready(
                     parameterObject = linkedMapOf<String, Any?>(),
+                    parameterType = MyBatisParameterType.Single(Map::class.java),
                     aliasToRequirementId = emptyMap(),
                     directRequirementId = requirement.id,
                 ),
@@ -85,6 +87,7 @@ internal object MyBatisInvocationParameterObjectFactory {
                     Result.Success(
                         Ready(
                             parameterObject = parameterObject,
+                            parameterType = MyBatisParameterType.Single(Map::class.java),
                             aliasToRequirementId = emptyMap(),
                             directRequirementId = requirement.id,
                         ),
@@ -129,6 +132,9 @@ internal object MyBatisInvocationParameterObjectFactory {
             }
         }
 
+        val resolvedParameterType = MyBatisValueConversion.resolveParameterType(
+            parameters.map { it.typeIdentity },
+        )
         val hasExplicitParam = parameters.any { it.myBatisParamAlias != null }
         if (parameters.size == 1 && !hasExplicitParam) {
             val parameter = parameters.single()
@@ -148,6 +154,8 @@ internal object MyBatisInvocationParameterObjectFactory {
                 return Result.Success(
                     Ready(
                         parameterObject = value,
+                        parameterType = resolvedParameterType
+                            ?: MyBatisParameterType.Single(Map::class.java),
                         aliasToRequirementId = emptyMap(),
                         directRequirementId = requirement.id,
                     ),
@@ -157,6 +165,8 @@ internal object MyBatisInvocationParameterObjectFactory {
             return Result.Success(
                 Ready(
                     parameterObject = wrapper,
+                    parameterType = resolvedParameterType
+                        ?: MyBatisParameterType.Single(Map::class.java),
                     aliasToRequirementId = wrapper.keys.associateWith { requirement.id },
                     directRequirementId = null,
                 ),
@@ -185,6 +195,7 @@ internal object MyBatisInvocationParameterObjectFactory {
         return Result.Success(
             Ready(
                 parameterObject = parameterMap,
+                parameterType = MyBatisParameterType.Multi,
                 aliasToRequirementId = aliases,
                 directRequirementId = null,
             ),
