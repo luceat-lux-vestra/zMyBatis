@@ -155,7 +155,7 @@ object MyBatisInvocationContractFactory {
                         shape = InputShape.OBJECT,
                         nullability = com.algorist.zMyBatis.core.input.InputNullability.UNKNOWN,
                     ),
-                    requiredness = InputRequiredness.OPTIONAL,
+                    requiredness = InputRequiredness.REQUIRED,
                     provenance = provenance,
                     usageKinds = usages,
                 ),
@@ -176,12 +176,12 @@ object MyBatisInvocationContractFactory {
     ): ParameterContract {
         val active = parameters.filterNot(::isSpecialParameter)
         val requirementByParameter = linkedMapOf<Int, InputRequirementId>()
-        val rawParameters = rawParameterIndexes(active, rawUses)
+        val rawUsesByParameter = rawUsesByParameter(active, rawUses)
 
         val requirements = active.map { parameter ->
             val id = InputRequirementId("method-param:${parameter.index}")
             requirementByParameter[parameter.index] = id
-            val rawEvidence = if (parameter.index in rawParameters) rawUses else emptyList()
+            val rawEvidence = rawUsesByParameter[parameter.index].orEmpty()
             InputRequirement(
                 id = id,
                 kind = InputKind.BOUND,
@@ -206,7 +206,7 @@ object MyBatisInvocationContractFactory {
                 ),
                 usageKinds = buildSet {
                     add(InputUsageKind.BOUND_PLACEHOLDER)
-                    if (parameter.index in rawParameters) add(InputUsageKind.RAW_INTERPOLATION)
+                    if (rawEvidence.isNotEmpty()) add(InputUsageKind.RAW_INTERPOLATION)
                 },
             )
         }
@@ -347,12 +347,12 @@ object MyBatisInvocationContractFactory {
         source = source,
     )
 
-    private fun rawParameterIndexes(
+    private fun rawUsesByParameter(
         parameters: List<JavaMethodParameterMetadata>,
         rawUses: List<RawUse>,
-    ): Set<Int> {
-        if (rawUses.isEmpty() || parameters.isEmpty()) return emptySet()
-        if (parameters.size == 1) return setOf(parameters.single().index)
+    ): Map<Int, List<RawUse>> {
+        if (rawUses.isEmpty() || parameters.isEmpty()) return emptyMap()
+        if (parameters.size == 1) return mapOf(parameters.single().index to rawUses)
 
         val aliases = buildMap<String, Int> {
             parameters.forEachIndexed { ordinal, parameter ->
@@ -361,16 +361,19 @@ object MyBatisInvocationContractFactory {
                 putIfAbsent("param${ordinal + 1}", parameter.index)
             }
         }
-        val indexes = linkedSetOf<Int>()
+        val result = linkedMapOf<Int, MutableList<RawUse>>()
         for (use in rawUses) {
             val root = use.expression.substringBefore('.').trim()
             val index = root.takeIf(simpleRoot::matches)?.let(aliases::get)
             if (index == null) {
-                return parameters.mapTo(linkedSetOf()) { it.index }
+                parameters.forEach { parameter ->
+                    result.getOrPut(parameter.index) { mutableListOf() } += use
+                }
+            } else {
+                result.getOrPut(index) { mutableListOf() } += use
             }
-            indexes += index
         }
-        return indexes
+        return result.mapValues { (_, uses) -> uses.toList() }
     }
 
     private fun runtimeRawUses(
@@ -407,12 +410,12 @@ object MyBatisInvocationContractFactory {
         sourceRevisions = sourceRevisions,
     )
 
-    private data class RawUse(
+    internal data class RawUse(
         val expression: String,
         val source: SourceEvidence,
     )
 
-    private object XmlInvocationUsageScanner {
+    internal object XmlInvocationUsageScanner {
         data class Result(
             val requiresCallerObject: Boolean,
             val rawUses: List<RawUse>,
