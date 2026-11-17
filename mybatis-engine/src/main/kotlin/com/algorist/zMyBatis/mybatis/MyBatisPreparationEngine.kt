@@ -16,6 +16,8 @@ object MyBatisPreparationEngine {
     private const val RAW_INPUT_MISSING = "raw-interpolation-input-missing"
     private const val EMPTY_SQL = "mybatis-prepared-sql-empty"
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
+    private const val DYNAMIC_NUMERIC_CHARACTER_REFERENCE =
+        "java-annotation-dynamic-numeric-character-reference-unsupported"
 
     private val rawInterpolationExpression = Regex("""\$\{([^}]*)}""")
 
@@ -24,6 +26,12 @@ object MyBatisPreparationEngine {
             ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_SOURCE)
 
         val script = source.capture.sqlSegments.joinToString(separator = " ").trim()
+        if (containsDynamicScript(script) && script.contains("&#")) {
+            return failed(
+                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                DYNAMIC_NUMERIC_CHARACTER_REFERENCE,
+            )
+        }
         MyBatisParameterMappingCapabilityAdmission.failureForSourceText(script)?.let {
             return PreparationResult.Failed(it)
         }
