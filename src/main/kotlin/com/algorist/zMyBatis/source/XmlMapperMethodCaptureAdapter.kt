@@ -82,7 +82,7 @@ object XmlMapperMethodCaptureAdapter {
         }
 
         val virtualFile = when (
-            val source = ReadAction.compute<MapperSourceResolution, RuntimeException> {
+            val source = ReadAction.computeBlocking<MapperSourceResolution, RuntimeException> {
                 resolveMapperSource(project, statementId.namespace)
             }
         ) {
@@ -125,7 +125,7 @@ object XmlMapperMethodCaptureAdapter {
             return failed(XmlMapperMethodCaptureFailure.SOURCE_CHANGED_DURING_CAPTURE)
         }
 
-        return ReadAction.compute<XmlMapperMethodCaptureResult, RuntimeException> {
+        return ReadAction.computeBlocking<XmlMapperMethodCaptureResult, RuntimeException> {
             captureCommittedMapperMethod(
                 project = project,
                 statementId = statementId,
