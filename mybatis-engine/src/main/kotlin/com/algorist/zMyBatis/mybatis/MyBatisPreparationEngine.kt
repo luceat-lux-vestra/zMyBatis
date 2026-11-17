@@ -58,6 +58,8 @@ object MyBatisPreparationEngine {
             }
         }
 
+        val foreachLocals = DynamicForeachProvenanceScanner.forScript(script)
+
         val payload = when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
             is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
             is MyBatisInvocationParameterObjectFactory.Result.Failed ->
@@ -69,6 +71,7 @@ object MyBatisPreparationEngine {
                 script = script,
                 payload = payload,
                 databaseId = request.effectiveDatabaseId?.value,
+                foreachLocals = foreachLocals,
             )
         ) {
             is IsolatedDynamicMyBatisPreparation.Result.Ready -> isolated.boundSql

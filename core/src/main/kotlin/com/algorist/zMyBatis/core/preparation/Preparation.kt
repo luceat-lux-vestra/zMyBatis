@@ -284,14 +284,6 @@ class PreparedExecution(
         require(rawInterpolationSnapshot.map { it.requirementId }.distinct().size == rawInterpolationSnapshot.size) {
             "raw interpolation requirements must not be duplicated"
         }
-        val rawRequirementIds = rawInterpolationSnapshot.mapTo(linkedSetOf()) { it.requirementId }
-        require(
-            bindingSnapshot.none { binding ->
-                binding.requirementId != null && binding.requirementId in rawRequirementIds
-            },
-        ) {
-            "one input requirement cannot be both raw interpolation and a bound mapping"
-        }
     }
 
     val sourceRevisions: Map<SourceFileId, SourceRevision>

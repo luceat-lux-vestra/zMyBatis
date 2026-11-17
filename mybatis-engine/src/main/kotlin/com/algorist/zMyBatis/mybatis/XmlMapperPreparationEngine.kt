@@ -155,6 +155,10 @@ object XmlMapperPreparationEngine {
             return PreparationResult.Failed(it)
         }
 
+        val foreachLocals = DynamicForeachProvenanceScanner.forMapperDocuments(
+            projection.documents.map { it.content },
+        )
+
         val payload = when (val result = MyBatisInvocationParameterObjectFactory.create(request)) {
             is MyBatisInvocationParameterObjectFactory.Result.Success -> result.payload
             is MyBatisInvocationParameterObjectFactory.Result.Failed ->
@@ -334,7 +338,7 @@ object XmlMapperPreparationEngine {
             boundSql,
             parameterObject,
             mappings,
-            emptyMap(),
+            foreachLocals,
         )
         val bindings = when (
             val captured = MyBatisInvocationBindingCapture.capture(

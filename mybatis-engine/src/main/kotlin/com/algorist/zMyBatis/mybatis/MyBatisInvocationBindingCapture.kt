@@ -74,7 +74,7 @@ internal object MyBatisInvocationBindingCapture {
             // MyBatis 3.6 captures runtime values in ParameterMapping for ordinary caller
             // parameters as well. BoundSql additional parameters, however, are reserved for
             // dynamic-context values such as <bind> and foreach locals.
-            val generated = mapping.additionalParameter
+            val generated = mapping.additionalParameter || mapping.foreachLocal != null
             val callerRequirement = if (generated) {
                 null
             } else {

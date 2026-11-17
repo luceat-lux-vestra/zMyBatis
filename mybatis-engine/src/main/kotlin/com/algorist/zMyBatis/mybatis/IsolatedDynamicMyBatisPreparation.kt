@@ -40,6 +40,7 @@ internal object IsolatedDynamicMyBatisPreparation {
         script: String,
         payload: MyBatisInvocationParameterObjectFactory.Ready,
         databaseId: String? = null,
+        foreachLocals: Map<String, InternalBindingKind> = emptyMap(),
     ): Result {
         if (!safeParameterType(payload.parameterType)) {
             return Result.Failed(invariantFailure("mybatis-isolated-parameter-type-not-jdk-owned"))
@@ -56,7 +57,7 @@ internal object IsolatedDynamicMyBatisPreparation {
 
         return try {
             URLClassLoader(arrayOf(myBatisLocation), platformLoader).use { loader ->
-                prepareInvocationIn(loader, script, payload, databaseId)
+                prepareInvocationIn(loader, script, payload, databaseId, foreachLocals)
             }
         } catch (failure: Throwable) {
             rethrowFatal(failure)
@@ -178,6 +179,7 @@ internal object IsolatedDynamicMyBatisPreparation {
         script: String,
         payload: MyBatisInvocationParameterObjectFactory.Ready,
         databaseId: String?,
+        foreachLocals: Map<String, InternalBindingKind>,
     ): Result {
         val configurationClass = Class.forName(CONFIGURATION, true, loader)
         if (configurationClass.classLoader !== loader) {
@@ -236,7 +238,7 @@ internal object IsolatedDynamicMyBatisPreparation {
             boundSql,
             parameterObject,
             mappings,
-            emptyMap(),
+            foreachLocals,
         )
 
         return Result.Ready(
