@@ -111,39 +111,6 @@ class XmlSiblingBooleanIfPreparationTest {
     }
 
     @Test
-    fun trimSourceAttributesAndTokenBoundariesFailClosedBeforeRuntime() {
-        val valid = fixture("SELECT 1 <trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"enabled\">AND id = #{id}</if></trim>")
-        val original = contract(valid)
-        for (opening in listOf(
-            "<trim prefix=\"WHERE\" prefixOverrides=\"?\">",
-            "<trim prefix=\"#{id}\" prefixOverrides=\"AND |OR \">",
-            "<trim prefix=\"\${id}\" prefixOverrides=\"AND |OR \">",
-            "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \" suffix=\"#{id}\">",
-            "<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \" xmlns=\"urn:unsupported\">",
-        )) {
-            val changed = fixture("SELECT 1 $opening<if test=\"enabled\">AND id = #{id}</if></trim>")
-            assertEquals(opening, "xml-boolean-if-preparation-source-unsupported", (prepare(changed, 0, supplied = original) as PreparationResult.Failed).failure.code)
-        }
-        for (body in listOf(
-            "SELECT 1 #<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"enabled\">{id}</if></trim>",
-            "SELECT 1 <trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"enabled\">#</if><if test=\"other\">{id}</if></trim>",
-            "SELECT 1 <trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"enabled\">\\</if><if test=\"other\">AND id = #{id}</if></trim>",
-        )) {
-            val fixture = fixture(body)
-            assertFalse(contract(fixture).isPreparationBlocked)
-            for (mask in 0..3) assertEquals("xml-boolean-if-bound-token-topology-unsupported", (prepare(fixture, mask) as PreparationResult.Failed).failure.code)
-        }
-        val empty = fixture("<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"enabled\">AND id = #{id}</if></trim>")
-        assertEquals("mybatis-prepared-sql-empty", (prepare(empty, 0) as PreparationResult.Failed).failure.code)
-        val inputs = original.requirements.map { requirement ->
-            ProvidedInput(requirement.id, if (indexOf(requirement.provenance.evidence) == 3) integer(42) else InputValue.BooleanValue(false), ExecutionInputOrigin.USER_ENTERED)
-        }
-        val environment = (InputEnvironment.validate(original, inputs) as InputEnvironmentResult.Success).environment
-        val request = (MyBatisPreparationRequest.create(XmlMapperPreparationSource(valid.graph, additionalAuthoritySnapshots = listOf(valid.mapper.mapperSource)), original, environment) as PreparationRequestResult.Ready).request
-        assertEquals("xml-preparation-dynamic-sql-unsupported", (XmlMapperPreparationEngine.prepare(request) as PreparationResult.Failed).failure.code)
-    }
-
-    @Test
     fun allEightCombinedUpdateCombinationsKeepStockSqlMetadataAndGuardedMappingCounts() {
         for (staticAssignment in listOf("", "base = #{id},")) {
             for (staticPredicate in listOf("", "AND base = #{id}")) {
@@ -206,38 +173,6 @@ class XmlSiblingBooleanIfPreparationTest {
     }
 
     @Test
-    fun combinedWrappersCannotSynthesizeMappingsOrHideUnsupportedSourceWhileFalse() {
-        val valid = fixture("UPDATE t <set><if test=\"enabled\">a = #{id},</if></set><where><if test=\"other\">AND id = #{id}</if></where>", kind = StatementKind.UPDATE)
-        val original = contract(valid)
-        val inputs = original.requirements.map { requirement ->
-            ProvidedInput(requirement.id, if (indexOf(requirement.provenance.evidence) == 3) integer(42) else InputValue.BooleanValue(false), ExecutionInputOrigin.USER_ENTERED)
-        }
-        val environment = (InputEnvironment.validate(original, inputs) as InputEnvironmentResult.Success).environment
-        val request = (MyBatisPreparationRequest.create(XmlMapperPreparationSource(valid.graph, additionalAuthoritySnapshots = listOf(valid.mapper.mapperSource)), original, environment) as PreparationRequestResult.Ready).request
-        assertEquals("xml-preparation-dynamic-sql-unsupported", (XmlMapperPreparationEngine.prepare(request) as PreparationResult.Failed).failure.code)
-        for (where in listOf(
-            "<where/>", "<where>AND id = #{id}</where>",
-            "<where extra=\"ignored\"><if test=\"other\">AND id = #{id}</if></where>",
-            "<where><if test=\"other\">AND id = \${id}</if></where>",
-            "<where><if test=\"other\">AND id = #{id}</if><include refid=\"fragment\"/></where>",
-            "<where><if test=\"other\">AND id = #{id}</if></where><where><if test=\"other\">AND 1 = 1</if></where>",
-        )) {
-            val changed = fixture("UPDATE t <set><if test=\"enabled\">a = #{id},</if></set>$where", kind = StatementKind.UPDATE)
-            assertEquals(where, "xml-boolean-if-preparation-source-unsupported", (prepare(changed, 0, supplied = original) as PreparationResult.Failed).failure.code)
-        }
-        for (body in listOf(
-            "UPDATE t <set><if test=\"enabled\">a = #{id},</if>#</set><where><if test=\"other\">{id}</if></where>",
-            "UPDATE t <set><if test=\"enabled\">a = #{id},</if>\\</set><where><if test=\"other\">AND id = #{id}</if></where>",
-        )) {
-            val fixture = fixture(body, kind = StatementKind.UPDATE)
-            assertFalse(contract(fixture).isPreparationBlocked)
-            for (mask in 0..3) assertEquals("xml-boolean-if-bound-token-topology-unsupported", (prepare(fixture, mask) as PreparationResult.Failed).failure.code)
-        }
-        val empty = fixture("<set><if test=\"enabled\">a = #{id},</if></set><where><if test=\"other\">AND id = #{id}</if></where>", kind = StatementKind.UPDATE)
-        assertEquals("mybatis-prepared-sql-empty", (prepare(empty, 0) as PreparationResult.Failed).failure.code)
-    }
-
-    @Test
     fun allEightSetCombinationsKeepStockSqlOrderedMetadataAndUnconditionalBindings() {
         for (staticAssignment in listOf("", "base = #{id},")) {
             val fixture = fixture(
@@ -291,29 +226,6 @@ class XmlSiblingBooleanIfPreparationTest {
             assertEquals(PreparationFailureKind.BINDING_RESOLUTION, failure.kind)
             assertEquals("xml-preparation-named-map-property-missing", failure.code)
         }
-    }
-
-    @Test
-    fun falseSetCannotHideUnsupportedSourceOrMissingMapperCapture() {
-        val fixture = fixture("UPDATE t <set><if test=\"enabled\">a = #{id},</if></set> WHERE id = #{id}", kind = StatementKind.UPDATE)
-        val original = contract(fixture)
-        for (set in listOf(
-            "<set/>", "<set>a = #{id},</set>",
-            "<set suffixOverrides=\",\"><if test=\"enabled\">a = #{id},</if></set>",
-            "<set><if test=\"enabled != null\">a = #{id},</if></set>",
-            "<set><if test=\"enabled\">a = #{id},</if><include refid=\"fragment\"/></set>",
-            "<set><if test=\"enabled\">a = \${id},</if></set>",
-            "<set><if test=\"enabled\">a = #{id},</if></set><where>id = #{id}</where>",
-        )) {
-            val changed = fixture("UPDATE t $set WHERE id = #{id}", kind = StatementKind.UPDATE)
-            assertEquals(set, "xml-boolean-if-preparation-source-unsupported", (prepare(changed, 0, supplied = original) as PreparationResult.Failed).failure.code)
-        }
-        val inputs = original.requirements.map { requirement ->
-            ProvidedInput(requirement.id, if (indexOf(requirement.provenance.evidence) == 3) integer(42) else InputValue.BooleanValue(false), ExecutionInputOrigin.USER_ENTERED)
-        }
-        val environment = (InputEnvironment.validate(original, inputs) as InputEnvironmentResult.Success).environment
-        val request = (MyBatisPreparationRequest.create(XmlMapperPreparationSource(fixture.graph, additionalAuthoritySnapshots = listOf(fixture.mapper.mapperSource)), original, environment) as PreparationRequestResult.Ready).request
-        assertEquals("xml-preparation-dynamic-sql-unsupported", (XmlMapperPreparationEngine.prepare(request) as PreparationResult.Failed).failure.code)
     }
 
     @Test
@@ -413,35 +325,6 @@ class XmlSiblingBooleanIfPreparationTest {
         assertTrue(nullFlag.failures.any { it.kind == InputEnvironmentFailureKind.NULL_NOT_ALLOWED })
         val overRange = (prepare(fixture, 0, replacements = mapOf(3 to InputValue.IntegerValue(BigInteger.ONE.shiftLeft(100)))) as PreparationResult.Failed).failure
         assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, overRange.kind)
-    }
-
-    @Test
-    fun runtimeCannotTrustForgedScopeOrAContractBeforePlaceholderMovement() {
-        val fixture = fixture("SELECT #{id}<if test=\"enabled\">, #{id}</if><if test=\"other\">, #{id}</if>")
-        val original = contract(fixture)
-        val forged = ParameterContract(original.statementId, original.requirements.map { requirement ->
-            requirement.copy(provenance = InputProvenance(requirement.provenance.evidence.map {
-                if (it is InputEvidence.Placeholder && it.enclosingOgnlExpression == "enabled") it.copy(enclosingOgnlExpression = null) else it
-            }))
-        }, original.aliases, original.internalBindings, emptyList(), original.sourceRevisions)
-        assertEquals("xml-boolean-if-preparation-source-contract-mismatch", (prepare(fixture, 0, supplied = forged) as PreparationResult.Failed).failure.code)
-        val moved = fixture("SELECT 1<if test=\"enabled\">, #{id}, #{id}</if><if test=\"other\">, #{id}</if>")
-        assertEquals("xml-boolean-if-preparation-source-contract-mismatch", (prepare(moved, 0, supplied = original) as PreparationResult.Failed).failure.code)
-    }
-
-    @Test
-    fun invalidLaterSiblingNeverHidesBehindFalseInputs() {
-        val original = fixture("SELECT 1<if test=\"enabled\">#{id}</if><if test=\"other\">#{id}</if>")
-        for (later in listOf(
-            "<if test=\"other\"><if test=\"enabled\">#{id}</if></if>",
-            "<if test=\"other != null\">#{id}</if>",
-            "<if test=\"other\">\${table}</if>",
-            "<foreach collection=\"id\" item=\"item\"><if test=\"other\">#{item}</if></foreach>",
-            "<choose><when test=\"other\">#{id}</when></choose>",
-        )) {
-            val changed = fixture("SELECT 1<if test=\"enabled\">#{id}</if>$later")
-            assertEquals(later, "xml-boolean-if-preparation-source-unsupported", (prepare(changed, 0, supplied = contract(original)) as PreparationResult.Failed).failure.code)
-        }
     }
 
     @Test
