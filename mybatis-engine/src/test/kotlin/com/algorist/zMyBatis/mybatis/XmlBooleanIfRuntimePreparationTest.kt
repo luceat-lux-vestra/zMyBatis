@@ -120,15 +120,14 @@ class XmlBooleanIfRuntimePreparationTest {
     }
 
     @Test
-    fun whereNamedMapLeafIsRequiredOnlyWhenStockEmitsItsMapping() {
+    fun whereNamedMapLeafUsesStockMissingAsNullWhenBranchEmitsMapping() {
         val fixture = fixture("SELECT 1 <where><if test=\"enabled\">AND id = #{id.key}</if></where>", idType = "java.util.Map<java.lang.String,java.lang.Long>")
         val emptyMap = InputValue.MapValue(emptyMap())
         val inactive = success(prepare(fixture, false, overrides = mapOf(1 to emptyMap)))
         assertEquals("SELECT 1", normalize(inactive.sqlWithPlaceholders))
         assertTrue(inactive.orderedBindings.isEmpty())
-        val missing = (prepare(fixture, true, overrides = mapOf(1 to emptyMap)) as PreparationResult.Failed).failure
-        assertEquals(PreparationFailureKind.BINDING_RESOLUTION, missing.kind)
-        assertEquals("xml-preparation-named-map-property-missing", missing.code)
+        val missing = success(prepare(fixture, true, overrides = mapOf(1 to emptyMap)))
+        assertEquals(InputValue.NullValue, missing.orderedBindings.single().value)
         val presentNull = success(prepare(fixture, true, overrides = mapOf(1 to InputValue.MapValue(mapOf("key" to InputValue.NullValue)))))
         assertEquals(InputValue.NullValue, presentNull.orderedBindings.single().value)
     }
@@ -211,7 +210,7 @@ class XmlBooleanIfRuntimePreparationTest {
     }
 
     @Test
-    fun namedMapPropertiesRetainMissingVersusNullSemanticsAcrossBranches() {
+    fun namedMapPropertiesFollowStockMissingAsNullSemanticsAcrossBranches() {
         val fixture = fixture("SELECT #{id.first} <if test=\"enabled\">, #{id.second}</if>", idType = "java.util.Map<java.lang.String,java.lang.Long>")
         val complete = InputValue.MapValue(mapOf("first" to integer(42), "second" to InputValue.NullValue))
         val active = success(prepare(fixture, true, overrides = mapOf(1 to complete)))
@@ -220,9 +219,11 @@ class XmlBooleanIfRuntimePreparationTest {
         val incomplete = InputValue.MapValue(mapOf("first" to integer(42)))
         val inactive = success(prepare(fixture, false, overrides = mapOf(1 to incomplete)))
         assertEquals(listOf("id.first"), inactive.orderedBindings.map { it.property })
-        val missing = (prepare(fixture, true, overrides = mapOf(1 to incomplete)) as PreparationResult.Failed).failure
-        assertEquals(PreparationFailureKind.BINDING_RESOLUTION, missing.kind)
-        assertEquals("xml-preparation-named-map-property-missing", missing.code)
+        val missing = success(prepare(fixture, true, overrides = mapOf(1 to incomplete)))
+        assertEquals(
+            listOf(integer(42), InputValue.NullValue),
+            missing.orderedBindings.map { it.value },
+        )
     }
 
     @Test

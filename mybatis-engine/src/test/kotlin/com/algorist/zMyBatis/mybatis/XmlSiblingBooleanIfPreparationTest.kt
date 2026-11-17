@@ -100,12 +100,19 @@ class XmlSiblingBooleanIfPreparationTest {
     }
 
     @Test
-    fun trimMapLeavesRemainPresenceAwareAndFalseBranchesDoNotInventBindings() {
+    fun trimMapLeavesFollowStockMissingAsNullSemanticsWithoutInventingInactiveBindings() {
         val fixture = fixture("UPDATE t <trim prefix=\"SET\" suffixOverrides=\",\"><if test=\"enabled\">a = #{id.first},</if></trim><trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \"><if test=\"other\">AND b = #{id.second}</if></trim>", "java.util.Map<java.lang.String,java.lang.Long>", StatementKind.UPDATE)
         val partial = InputValue.MapValue(mapOf("first" to InputValue.NullValue))
         assertEquals(InputValue.NullValue, success(prepare(fixture, 1, replacements = mapOf(3 to partial))).orderedBindings.single().value)
         assertTrue(success(prepare(fixture, 0, replacements = mapOf(3 to partial))).orderedBindings.isEmpty())
-        for (mask in listOf(2, 3)) assertEquals("xml-preparation-named-map-property-missing", (prepare(fixture, mask, replacements = mapOf(3 to partial)) as PreparationResult.Failed).failure.code)
+        assertEquals(
+            listOf(InputValue.NullValue),
+            success(prepare(fixture, 2, replacements = mapOf(3 to partial))).orderedBindings.map { it.value },
+        )
+        assertEquals(
+            listOf(InputValue.NullValue, InputValue.NullValue),
+            success(prepare(fixture, 3, replacements = mapOf(3 to partial))).orderedBindings.map { it.value },
+        )
         val complete = InputValue.MapValue(mapOf("first" to integer(5), "second" to InputValue.NullValue))
         assertEquals(listOf(integer(5), InputValue.NullValue), success(prepare(fixture, 3, replacements = mapOf(3 to complete))).orderedBindings.map { it.value })
     }
@@ -160,14 +167,19 @@ class XmlSiblingBooleanIfPreparationTest {
     }
 
     @Test
-    fun combinedUpdateMapLeavesStayPresenceAwareAcrossBothWrappers() {
+    fun combinedUpdateMapLeavesFollowStockMissingAsNullAcrossBothWrappers() {
         val fixture = fixture("UPDATE t <set><if test=\"enabled\">a = #{id.first},</if></set><where><if test=\"other\">AND b = #{id.second}</if></where>", "java.util.Map<java.lang.String,java.lang.Long>", StatementKind.UPDATE)
         val partial = InputValue.MapValue(mapOf("first" to InputValue.NullValue))
         assertEquals(InputValue.NullValue, success(prepare(fixture, 1, replacements = mapOf(3 to partial))).orderedBindings.single().value)
         assertTrue(success(prepare(fixture, 0, replacements = mapOf(3 to partial))).orderedBindings.isEmpty())
-        for (mask in listOf(2, 3)) {
-            assertEquals("xml-preparation-named-map-property-missing", (prepare(fixture, mask, replacements = mapOf(3 to partial)) as PreparationResult.Failed).failure.code)
-        }
+        assertEquals(
+            listOf(InputValue.NullValue),
+            success(prepare(fixture, 2, replacements = mapOf(3 to partial))).orderedBindings.map { it.value },
+        )
+        assertEquals(
+            listOf(InputValue.NullValue, InputValue.NullValue),
+            success(prepare(fixture, 3, replacements = mapOf(3 to partial))).orderedBindings.map { it.value },
+        )
         val complete = InputValue.MapValue(mapOf("first" to integer(5), "second" to InputValue.NullValue))
         assertEquals(listOf(integer(5), InputValue.NullValue), success(prepare(fixture, 3, replacements = mapOf(3 to complete))).orderedBindings.map { it.value })
     }
@@ -214,18 +226,21 @@ class XmlSiblingBooleanIfPreparationTest {
     }
 
     @Test
-    fun setActiveMapLeavesRemainPresenceAwareWhileInactiveLeavesAreUnread() {
+    fun setActiveMapLeavesFollowStockMissingAsNullWhileInactiveLeavesAreUnread() {
         val fixture = fixture("UPDATE t <set><if test=\"enabled\">a = #{id.first},</if><if test=\"other\">b = #{id.second},</if></set> WHERE id = 1", "java.util.Map<java.lang.String,java.lang.Long>", StatementKind.UPDATE)
         val partial = InputValue.MapValue(mapOf("first" to InputValue.NullValue))
         assertEquals(InputValue.NullValue, success(prepare(fixture, 1, replacements = mapOf(3 to partial))).orderedBindings.single().value)
         val inactive = success(prepare(fixture, 0, replacements = mapOf(3 to partial)))
         assertTrue(inactive.orderedBindings.isEmpty())
         assertEquals("UPDATE t WHERE id = 1", normalize(inactive.sqlWithPlaceholders))
-        for (mask in listOf(2, 3)) {
-            val failure = (prepare(fixture, mask, replacements = mapOf(3 to partial)) as PreparationResult.Failed).failure
-            assertEquals(PreparationFailureKind.BINDING_RESOLUTION, failure.kind)
-            assertEquals("xml-preparation-named-map-property-missing", failure.code)
-        }
+        assertEquals(
+            listOf(InputValue.NullValue),
+            success(prepare(fixture, 2, replacements = mapOf(3 to partial))).orderedBindings.map { it.value },
+        )
+        assertEquals(
+            listOf(InputValue.NullValue, InputValue.NullValue),
+            success(prepare(fixture, 3, replacements = mapOf(3 to partial))).orderedBindings.map { it.value },
+        )
     }
 
     @Test
@@ -293,7 +308,7 @@ class XmlSiblingBooleanIfPreparationTest {
     }
 
     @Test
-    fun siblingConditionsRetainPresentNullVersusMissingNamedMapLeaves() {
+    fun siblingConditionsFollowStockMissingAsNullNamedMapSemantics() {
         val fixture = fixture("SELECT 1<where><if test=\"enabled\">AND a = #{id.first}</if><if test=\"other\">AND b = #{id.second}</if></where>", "java.util.Map<java.lang.String,java.lang.Long>")
         val partial = InputValue.MapValue(mapOf("first" to InputValue.NullValue))
         val firstOnly = success(prepare(fixture, 1, replacements = mapOf(3 to partial)))
@@ -301,11 +316,14 @@ class XmlSiblingBooleanIfPreparationTest {
         val inactive = success(prepare(fixture, 0, replacements = mapOf(3 to partial)))
         assertTrue(inactive.orderedBindings.isEmpty())
         assertEquals("SELECT 1", normalize(inactive.sqlWithPlaceholders))
-        for (mask in listOf(2, 3)) {
-            val failure = (prepare(fixture, mask, replacements = mapOf(3 to partial)) as PreparationResult.Failed).failure
-            assertEquals(PreparationFailureKind.BINDING_RESOLUTION, failure.kind)
-            assertEquals("xml-preparation-named-map-property-missing", failure.code)
-        }
+        assertEquals(
+            listOf(InputValue.NullValue),
+            success(prepare(fixture, 2, replacements = mapOf(3 to partial))).orderedBindings.map { it.value },
+        )
+        assertEquals(
+            listOf(InputValue.NullValue, InputValue.NullValue),
+            success(prepare(fixture, 3, replacements = mapOf(3 to partial))).orderedBindings.map { it.value },
+        )
     }
 
     @Test
