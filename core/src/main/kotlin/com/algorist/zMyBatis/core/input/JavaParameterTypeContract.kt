@@ -67,7 +67,7 @@ internal object JavaParameterTypeContract {
         val shape = when (rawType) {
             "java.util.List", "java.util.Collection" -> InputShape.LIST
             "java.util.Map" -> InputShape.MAP
-            else -> InputShape.UNKNOWN
+            else -> InputShape.OBJECT
         }
         return ExpectedInputType(
             shape = shape,
