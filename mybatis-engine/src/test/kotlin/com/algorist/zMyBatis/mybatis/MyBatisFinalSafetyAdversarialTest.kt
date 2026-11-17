@@ -63,7 +63,7 @@ class MyBatisFinalSafetyAdversarialTest {
 
     @Test
     fun deeplyNestedDynamicTagsAreRejectedBeforeStockMyBatisEvaluation() {
-        val depth = 65
+        val depth = 129
         val script = buildString {
             append("<script>")
             repeat(depth) { append("<if test=\"flag\">") }
@@ -72,16 +72,11 @@ class MyBatisFinalSafetyAdversarialTest {
             append("</script>")
         }
 
-        val result = DynamicOgnlAdmission.inspect(
-            script = script,
-            callerRootProperties = setOf("flag"),
-            internalBindings = emptyList(),
-        )
-
-        assertEquals(
-            DynamicOgnlAdmission.Result.Unsupported("DynamicScript[depth]"),
-            result,
-        )
+        val failure = DynamicOgnlSafetyAdmission.failureForScript(script)
+        requireNotNull(failure)
+        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, failure.kind)
+        assertEquals("mybatis-ognl-runtime-capability-unsupported", failure.code)
+        assertEquals("DynamicScript[depth]", failure.bindingProperty)
     }
 
     @Test
