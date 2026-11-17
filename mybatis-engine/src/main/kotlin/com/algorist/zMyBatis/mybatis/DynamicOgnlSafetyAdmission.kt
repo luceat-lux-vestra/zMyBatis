@@ -113,7 +113,6 @@ internal object DynamicOgnlSafetyAdmission {
             is IsolatedOgnlAstAdmission.Result.UnprovenProperty ->
                 error("capability-only OGNL inspection cannot produce caller-property admission failures")
         }
-    }
 
     private fun unsupported(capability: String): PreparationFailure = PreparationFailure(
         PreparationFailureKind.UNSUPPORTED_SEMANTIC,
