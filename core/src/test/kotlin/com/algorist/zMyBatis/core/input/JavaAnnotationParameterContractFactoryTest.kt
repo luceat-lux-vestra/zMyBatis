@@ -195,7 +195,7 @@ class JavaAnnotationParameterContractFactoryTest {
     }
 
     @Test
-    fun customObjectShapeIsRetainedAsUnknownWithExplicitBlockingProblem() {
+    fun customObjectShapeIsRetainedAsObjectCallerAuthority() {
         val capture = capture(
             sqlSegments = listOf("select * from users where filter = #{filter}"),
             parameters = listOf(parameter(0, "com.acme.Filter", "filter", "filter")),
@@ -203,14 +203,11 @@ class JavaAnnotationParameterContractFactoryTest {
 
         val contract = JavaAnnotationParameterContractFactory.build(capture)
 
-        assertTrue(contract.isPreparationBlocked)
+        assertFalse(contract.isPreparationBlocked)
         val requirement = contract.requirements.single()
-        assertEquals(InputShape.UNKNOWN, requirement.expectedType.shape)
+        assertEquals(InputShape.OBJECT, requirement.expectedType.shape)
         assertEquals(JavaTypeIdentity("com.acme.Filter"), requirement.expectedType.javaTypeIdentity)
-        val problem = contract.blockingProblems.single()
-        assertEquals(requirement.id, problem.requirementId)
-        assertEquals(InputContractProblemKind.UNSUPPORTED, problem.kind)
-        assertEquals("java-annotation-unproven-parameter-shape", problem.code)
+        assertTrue(contract.blockingProblems.isEmpty())
     }
 
     @Test
