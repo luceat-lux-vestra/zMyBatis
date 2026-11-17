@@ -18,7 +18,7 @@ evidence. The old IntelliJ template rename test and evaluator debug/reproduction
 | Contract-driven parameter/input boundary | `JavaAnnotationParameterContractFactoryTest`, XML parameter-contract tests, `ContractInputAdapterTest`, `ContractInputSubmissionPolicyTest`, `ContractInputSwingRendererProjectFixtureTest`, `ContractInputHistoryPolicyTest` | requirements and aliases come from source/method provenance; input parsing/validation is independent of Swing; raw interpolation is distinct and non-retainable; unsupported/ambiguous requirements block |
 | Java direct-annotation source authority | `JavaAnnotationSourceCaptureAdapterProjectFixtureTest`, `JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest`, `LeapActionContextAdmissionCoordinatorTest` | immutable Java method identity, ordered signature, explicit `@Param`, constants/dependencies, databaseId variants, source revision authority, and typed unsupported cases feed the registered action |
 | XML source/dependency authority | `XmlMapperSourceDiscoveryTest`, `XmlStatementSourceGraphResolverTest`, adversarial source-graph tests, `LeapActionContextAdmissionCoordinatorTest` | canonical XML statement identity and reachable `<sql>/<include>` dependencies are complete, source-backed, target-selected where applicable, and fail typed on missing/ambiguous/cyclic/stale authority |
-| Isolated MyBatis preparation | `MyBatisPreparationEngineTest`, `XmlMapperPreparationEngineTest`, Boolean-if/foreach preparation suites | admitted source/input contracts run through isolated stock MyBatis semantics, preserving SQL/mapping/additional-parameter evidence without global evaluator state |
+| Isolated MyBatis preparation | `MyBatisPreparationEngineTest`, `XmlMapperPreparationEngineTest`, `XmlMapperPreparationProjectionParityTest`, Boolean-if/foreach preparation suites | selected XML statements prepare through a structural statement/dependency projection; unrelated result/cache declarations are excluded from parser authority, the P1-safe slice matches stock full-mapper BoundSql/mapping metadata, and admitted dynamic preparation still preserves isolated stock MyBatis semantics |
 | Stock MyBatis 1.0 parity oracle | `StockMyBatisParityOracleTest` + `mybatis-engine/src/test/resources/parity/**` | stock MyBatis 3.6.0 semantics for ordinary mapper metadata, include/databaseId graphs, all standard dynamic-tag families, realistic compositions, mapper-method input shapes, additional parameters, direct Java annotations/raw interpolation, and sanitized historical `mybatisTest` Product/Customer mapper shapes; this is target-semantic evidence, not current registered-path support |
 | Raw-interpolation confirmation | `LeapExecutionApprovalPolicyTest`, `LeapExecutionApprovalAdapterTest`, `LeapExecutionDeliveryCoordinatorTest`, `ZMyBatisStarterDriverE2ETest` | raw provenance forces final-artifact approval even when ordinary preview is off; cancellation is fail-closed; packaged XML and direct-Java raw composition is exercised |
 | Direct Java annotation raw composition | `JavaAnnotationParameterContractFactoryTest`, `MyBatisPreparationEngineTest`, `ContractInputSwingRendererProjectFixtureTest`, `StarterDatabaseE2EIsolationContractTest`, `ZMyBatisStarterDriverE2ETest` | direct Java `@Select` + explicit `@Param` raw input reaches the registered packaged action, remains non-retained, previews exact SQL, cancels without native history, and executes approved SQL through Database Tools |
@@ -48,9 +48,11 @@ direct Java dynamic annotations, raw interpolation, and sanitized source-derived
 `mybatisTest` Product/Customer mapper shapes.
 
 The oracle deliberately does **not** encode current Leap refusal as target truth and does not call
-the production zMyBatis admission/materialization path. P1 is the next work unit and must add
-zMyBatis-vs-oracle preparation parity for the statement-scoped projection slice before replacing
-current behavior. P2/P3 extend the same frozen oracle into invocation and prepared-backend evidence.
+the production zMyBatis admission/materialization path. P1 adds
+`XmlMapperPreparationProjectionParityTest`: stock full-mapper BoundSql is compared with stock
+MyBatis parsing of the structural selected-statement/reachable-fragment projection for the P1-safe
+slice. P2 is the next work unit and extends the frozen oracle into invocation/input authority; P3
+extends it into prepared-backend evidence.
 
 Current Boolean-if/foreach/trim admission and PostgreSQL BIGINT materialization tests remain useful
 current-state safety evidence until replacement. They are not preservation constraints for the
@@ -162,8 +164,9 @@ conversion and isolated runtime preparation, including when the collection is em
 This proves consistency with supplied immutable source captures, not independent Java parsing or
 live IDE revision validation. It does not authenticate exact lexical positions of XML placeholders
 whose producer evidence has no source range. Multiple captured XML documents remain supported in
-this bounded island; all their revisions participate in authority and their content still passes
-the token/preflight guards.
+this bounded island; all their revisions participate in source authority, while token/topology
+guards now apply only to the selected statement and transitively reachable projected fragments.
+Unreachable captured mapper content no longer becomes preparation authority.
 Dependency/include resolution and other dynamic composition retain their existing refusals. Existing
 stock parity, typed LIST/ARRAY/MAP conversion, generated local capture and concurrent isolation tests
 continue to apply with complete mapper capture. Static XML request construction remains available
@@ -199,7 +202,8 @@ binding. An empty final SQL remains a typed failure.
 The shared dynamic bound-token topology guard now runs before all admitted XML foreach evaluation,
 including the existing direct form. Incomplete/escaped openers and unsafe fragment endings in source
 text or loop open/close/separator attributes cannot synthesize mappings across loop/wrapper boundaries,
-even when a collection is empty. Raw structural attributes remain refused by XML preflight. Concurrent
+even when a collection is empty. Raw structural attributes in projected reachable content remain
+refused by the raw-source guard. Concurrent
 direct/where/trim foreach preparations under a poisoned parent OGNL accessor retain generated local
 identity, per-invocation loader ownership and TCCL restoration. These tests remain lower-level preparation evidence only; current production authority is granted separately by the registered action's bounded materialization and delivery chain.
 

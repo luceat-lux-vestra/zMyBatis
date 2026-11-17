@@ -32,7 +32,10 @@ import org.apache.ibatis.session.Configuration
 /**
  * Bounded XML mapper preparation island for #149 / #161.
  *
- * The complete captured mapper documents are parsed by an isolated stock MyBatis 3.6.0 runtime.
+ * A statement-scoped structural projection of the captured mapper graph is parsed by an isolated
+ * stock MyBatis 3.6.0 runtime. Source snapshots remain the revision authority; unrelated mapper
+ * declarations do not become preparation authority.
+ *
  * Static zero-input statements and the deliberately narrow proven scalar/temporal bound-input
  * island and source-proven foreach/Boolean-if contracts are admitted. Dynamic preparation owns
  * a fresh runtime; flat Boolean-if siblings directly or inside bounded where/set/trim wrappers require
@@ -84,8 +87,6 @@ object XmlMapperPreparationEngine {
     private const val TYPE_HANDLER_UNSUPPORTED = "xml-preparation-type-handler-unsupported"
     private const val BINDING_VALUE_UNSUPPORTED = "xml-preparation-binding-value-unsupported"
     private const val DYNAMIC_UNSUPPORTED = "xml-preparation-dynamic-sql-unsupported"
-    private const val CLASS_LOADING_UNSUPPORTED = "xml-preparation-runtime-class-loading-unsupported"
-    private const val EXTERNAL_ENTITY_UNSUPPORTED = "xml-preparation-external-entity-unsupported"
     private const val ROOT_STATEMENT_MISSING = "xml-preparation-root-statement-missing"
     private const val ROOT_RESOURCE_MISMATCH = "xml-preparation-root-resource-mismatch"
     private const val STATEMENT_KIND_MISMATCH = "xml-preparation-statement-kind-mismatch"
@@ -94,15 +95,6 @@ object XmlMapperPreparationEngine {
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
     private const val CLASSLOADER_INVARIANT = "mybatis-xml-classloader-isolation-failure"
 
-    private val dangerousAttribute = Regex(
-        """(?i)\b(?:lang|parameterType|parameterMap|resultType|resultMap|typeHandler|javaType)\s*=""",
-    )
-    private val dangerousElement = Regex(
-        """(?i)<\s*(?:resultMap|parameterMap|cache|cache-ref|selectKey)\b""",
-    )
-    private val safeMapperDoctype = Regex(
-        """(?is)<!DOCTYPE\s+mapper\s+PUBLIC\s+["']-//mybatis\.org//DTD Mapper 3\.0//EN["']\s+["']https?://mybatis\.org/dtd/mybatis-3-mapper\.dtd["']\s*>""",
-    )
     private val rawInterpolation = Regex("""\$\{([^}]*)}""")
     private val rawStructuralAttribute = Regex("""(?s)<(?![!?])[^>]*\$\{""")
     private val simpleIdentifier = Regex("[A-Za-z_][A-Za-z0-9_]*")
@@ -197,8 +189,18 @@ object XmlMapperPreparationEngine {
             is XmlParameterPayload.Failed -> return PreparationResult.Failed(payload.failure)
         }
 
-        for (snapshot in source.sourceGraph.sourceSnapshots) {
-            preflight(snapshot, request)?.let { return PreparationResult.Failed(it) }
+        val projection = when (
+            val result = XmlMapperPreparationProjection.project(
+                source = source,
+                statementId = statementId,
+                effectiveDatabaseId = request.effectiveDatabaseId,
+            )
+        ) {
+            is XmlMapperPreparationProjection.Result.Ready -> result
+            is XmlMapperPreparationProjection.Result.Failed -> return PreparationResult.Failed(result.failure)
+        }
+        rawSourceFailure(projection.documents, request)?.let {
+            return PreparationResult.Failed(it)
         }
 
         val hasRawInterpolation = request.parameterContract.requirements.any {
@@ -206,7 +208,7 @@ object XmlMapperPreparationEngine {
         }
 
         if (booleanIf != null || foreach != null) {
-            for ((_, _, content) in source.sourceGraph.sourceSnapshots) {
+            for ((_, _, content) in projection.documents) {
                 DynamicBoundTokenTopologyAdmission.failureOrNull(
                     content,
                     rootPath = "/mapper",
@@ -222,11 +224,29 @@ object XmlMapperPreparationEngine {
 
         return try {
             if (foreach == null && booleanIf == null && !hasRawInterpolation) {
-                prepareWithContextLoader(isolatedRuntime, source, statementId, request, parameterPayload, null, null)
+                prepareWithContextLoader(
+                    isolatedRuntime,
+                    source,
+                    projection,
+                    statementId,
+                    request,
+                    parameterPayload,
+                    null,
+                    null,
+                )
             } else {
                 val runtime = createIsolatedRuntime(fresh = true)
                 runtime.loader.use {
-                    prepareWithContextLoader(runtime, source, statementId, request, parameterPayload, foreach, booleanIf)
+                    prepareWithContextLoader(
+                        runtime,
+                        source,
+                        projection,
+                        statementId,
+                        request,
+                        parameterPayload,
+                        foreach,
+                        booleanIf,
+                    )
                 }
             }
         } catch (failure: Throwable) {
@@ -256,6 +276,7 @@ object XmlMapperPreparationEngine {
     private fun prepareWithContextLoader(
         runtime: IsolatedRuntime,
         source: XmlMapperPreparationSource,
+        projection: XmlMapperPreparationProjection.Result.Ready,
         statementId: XmlStatementId,
         request: MyBatisPreparationRequest,
         parameterPayload: XmlParameterPayload.Ready,
@@ -268,7 +289,7 @@ object XmlMapperPreparationEngine {
         return try {
             thread.contextClassLoader = runtime.loader
             switched = true
-            prepareIn(runtime, source, statementId, request, parameterPayload, foreach, booleanIf)
+            prepareIn(runtime, source, projection, statementId, request, parameterPayload, foreach, booleanIf)
         } finally {
             if (switched) {
                 thread.contextClassLoader = previousContextLoader
@@ -279,6 +300,7 @@ object XmlMapperPreparationEngine {
     private fun prepareIn(
         runtime: IsolatedRuntime,
         source: XmlMapperPreparationSource,
+        projection: XmlMapperPreparationProjection.Result.Ready,
         statementId: XmlStatementId,
         request: MyBatisPreparationRequest,
         parameterPayload: XmlParameterPayload.Ready,
@@ -306,9 +328,9 @@ object XmlMapperPreparationEngine {
             Map::class.java,
         )
 
-        source.sourceGraph.sourceSnapshots.forEach { snapshot ->
-            val resource = resourceIdentity(snapshot)
-            ByteArrayInputStream(snapshot.content.toByteArray(StandardCharsets.UTF_8)).use { input ->
+        projection.documents.forEach { document ->
+            val resource = projectedResourceIdentity(document)
+            ByteArrayInputStream(document.content.toByteArray(StandardCharsets.UTF_8)).use { input ->
                 val builder = constructor.newInstance(input, configuration, resource, sqlFragments)
                 builderClass.getMethod("parse").invoke(builder)
             }
@@ -522,59 +544,44 @@ object XmlMapperPreparationEngine {
         return systemLoaderField.get(wrapper) === loader
     }
 
-    private fun preflight(
-        snapshot: SourceSnapshot,
+    private fun rawSourceFailure(
+        documents: List<XmlMapperPreparationProjection.ProjectedDocument>,
         request: MyBatisPreparationRequest,
     ): PreparationFailure? {
-        val content = snapshot.content
-        rawSourceFailure(snapshot, request)?.let { return it }
-        if (dangerousAttribute.containsMatchIn(content) || dangerousElement.containsMatchIn(content)) {
-            return PreparationFailure(PreparationFailureKind.UNSUPPORTED_SEMANTIC, CLASS_LOADING_UNSUPPORTED)
-        }
-        if (content.contains("<!ENTITY", ignoreCase = true)) {
-            return PreparationFailure(PreparationFailureKind.UNSUPPORTED_SEMANTIC, EXTERNAL_ENTITY_UNSUPPORTED)
-        }
-        val doctypeCount = Regex("(?i)<!DOCTYPE\\b").findAll(content).count()
-        if (doctypeCount > 1 || (doctypeCount == 1 && !safeMapperDoctype.containsMatchIn(content))) {
-            return PreparationFailure(PreparationFailureKind.UNSUPPORTED_SEMANTIC, EXTERNAL_ENTITY_UNSUPPORTED)
+        for ((sourceFileId, sourceDocuments) in documents.groupBy { it.sourceFileId }) {
+            val contents = sourceDocuments.map { it.content }
+            val rawOpen = "$" + "{"
+            if (contents.none { rawOpen in it }) continue
+            if (contents.any(rawStructuralAttribute::containsMatchIn)) return rawInputUnsupported()
+
+            val sourceExpressions = contents
+                .flatMap { content ->
+                    rawInterpolation.findAll(content)
+                        .map { match -> match.groupValues[1].trim() }
+                        .toList()
+                }
+            if (sourceExpressions.isEmpty()) return rawInputUnsupported()
+
+            val provenExpressions = request.parameterContract.requirements
+                .asSequence()
+                .filter { requirement -> requirement.kind == InputKind.RAW_INTERPOLATION }
+                .flatMap { requirement -> requirement.provenance.evidence.asSequence() }
+                .filterIsInstance<InputEvidence.Placeholder>()
+                .filter { evidence ->
+                    evidence.kind == InputKind.RAW_INTERPOLATION &&
+                        evidence.source.sourceFileId == sourceFileId
+                }
+                .map { evidence -> evidence.expression.trim() }
+                .toList()
+
+            if (
+                sourceExpressions.groupingBy(String::toString).eachCount() !=
+                provenExpressions.groupingBy(String::toString).eachCount()
+            ) {
+                return rawInputUnsupported()
+            }
         }
         return null
-    }
-
-    private fun rawSourceFailure(
-        snapshot: SourceSnapshot,
-        request: MyBatisPreparationRequest,
-    ): PreparationFailure? {
-        val content = snapshot.content
-        val rawOpen = "$" + "{"
-        if (!content.contains(rawOpen)) return null
-        if (rawStructuralAttribute.containsMatchIn(content)) return rawInputUnsupported()
-
-        val sourceExpressions = rawInterpolation.findAll(content)
-            .map { match -> match.groupValues[1].trim() }
-            .toList()
-        if (sourceExpressions.isEmpty()) return rawInputUnsupported()
-
-        val provenExpressions = request.parameterContract.requirements
-            .asSequence()
-            .filter { requirement -> requirement.kind == InputKind.RAW_INTERPOLATION }
-            .flatMap { requirement -> requirement.provenance.evidence.asSequence() }
-            .filterIsInstance<InputEvidence.Placeholder>()
-            .filter { evidence ->
-                evidence.kind == InputKind.RAW_INTERPOLATION &&
-                    evidence.source.sourceFileId == snapshot.fileId
-            }
-            .map { evidence -> evidence.expression.trim() }
-            .toList()
-
-        return if (
-            sourceExpressions.groupingBy(String::toString).eachCount() ==
-            provenExpressions.groupingBy(String::toString).eachCount()
-        ) {
-            null
-        } else {
-            rawInputUnsupported()
-        }
     }
 
     private fun rawInputUnsupported(): PreparationFailure = PreparationFailure(
@@ -1254,6 +1261,13 @@ object XmlMapperPreparationEngine {
 
     private fun resourceIdentity(snapshot: SourceSnapshot): String =
         "zmybatis:${snapshot.fileId.value}@${snapshot.revision.value}"
+
+    private fun projectedResourceIdentity(
+        document: XmlMapperPreparationProjection.ProjectedDocument,
+    ): String {
+        val base = "zmybatis:${document.sourceFileId.value}@${document.sourceRevision.value}"
+        return if (document.rootStatementDocument) base else "$base#projection-fragments"
+    }
 
     private fun failed(
         kind: PreparationFailureKind,

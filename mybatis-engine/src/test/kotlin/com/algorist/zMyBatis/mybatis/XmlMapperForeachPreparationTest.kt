@@ -1080,7 +1080,7 @@ class XmlMapperForeachPreparationTest {
     }
 
     @Test
-    fun topologyChecksEveryCapturedMapperWithoutAssumingASingleSnapshot() {
+    fun topologyChecksOnlyProjectedReachableContentAcrossCapturedSnapshots() {
         for ((open, close) in wrappers() + ("" to "")) {
             val original = fixture("SELECT 1 $open<foreach collection=\"ids\" item=\"item\">#{item}</foreach>$close", listOf(parameter(0, "java.util.List<java.lang.Long>", "ids")))
             val other = original.graph.sourceSnapshots.single().copy(
@@ -1092,10 +1092,18 @@ class XmlMapperForeachPreparationTest {
             val prepared = success(request(captured, mapOf(0 to listValue(7))))
             assertEquals(contract(captured).sourceRevisions, prepared.sourceRevisions)
             assertEquals(listOf(integer(7)), prepared.orderedBindings.map { it.value })
-            val unsafe = other.copy(content = other.content.replace("#{item}", "\\#{item}"))
-            val drifted = original.copy(graph = StatementSourceGraph(original.graph.rootStatement, original.graph.sourceSnapshots + unsafe, emptyList()))
-            val failure = XmlMapperPreparationEngine.prepare(request(drifted, mapOf(0 to listValue(7)))) as PreparationResult.Failed
-            assertEquals("xml-foreach-bound-token-topology-unsupported", failure.failure.code)
+
+            val unsafeUnreachable = other.copy(content = other.content.replace("#{item}", "\\#{item}"))
+            val drifted = original.copy(
+                graph = StatementSourceGraph(
+                    original.graph.rootStatement,
+                    original.graph.sourceSnapshots + unsafeUnreachable,
+                    emptyList(),
+                ),
+            )
+            val stillPrepared = success(request(drifted, mapOf(0 to listValue(7))))
+            assertEquals(contract(drifted).sourceRevisions, stillPrepared.sourceRevisions)
+            assertEquals(listOf(integer(7)), stillPrepared.orderedBindings.map { it.value })
         }
     }
 
