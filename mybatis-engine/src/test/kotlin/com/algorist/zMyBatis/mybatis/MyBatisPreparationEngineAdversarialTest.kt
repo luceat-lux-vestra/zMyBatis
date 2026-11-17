@@ -35,6 +35,7 @@ import org.apache.ibatis.type.BaseTypeHandler
 import org.apache.ibatis.type.JdbcType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -52,8 +53,10 @@ class MyBatisPreparationEngineAdversarialTest {
             ),
         )
 
+        val contextLoader = Thread.currentThread().contextClassLoader
         val result = MyBatisPreparationEngine.prepare(request)
 
+        assertSame(contextLoader, Thread.currentThread().contextClassLoader)
         assertTrue(result is PreparationResult.Success)
         val binding = (result as PreparationResult.Success).execution.orderedBindings.single()
         assertEquals("payload.missing", binding.property)
@@ -117,7 +120,7 @@ class MyBatisPreparationEngineAdversarialTest {
         assertTrue(result is PreparationResult.Failed)
         result as PreparationResult.Failed
         assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, result.failure.kind)
-        assertEquals("java-parameter-value-unsupported", result.failure.code)
+        assertEquals("mybatis-binding-value-unsupported", result.failure.code)
     }
 
     @Test

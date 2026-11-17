@@ -57,7 +57,14 @@ internal object IsolatedDynamicMyBatisPreparation {
 
         return try {
             URLClassLoader(arrayOf(myBatisLocation), platformLoader).use { loader ->
-                prepareInvocationIn(loader, script, payload, databaseId, foreachLocals)
+                val thread = Thread.currentThread()
+                val previousContextLoader = thread.contextClassLoader
+                try {
+                    thread.contextClassLoader = loader
+                    prepareInvocationIn(loader, script, payload, databaseId, foreachLocals)
+                } finally {
+                    thread.contextClassLoader = previousContextLoader
+                }
             }
         } catch (failure: Throwable) {
             rethrowFatal(failure)
