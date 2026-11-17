@@ -111,7 +111,7 @@ internal object ContractInputHistoryPolicy {
     private fun retainableIds(contract: ParameterContract): Set<InputRequirementId> =
         contract.requirements
             .asSequence()
-            .filter { it.kind != InputKind.RAW_INTERPOLATION }
+            .filterNot { it.usesRawInterpolation }
             .map { it.id }
             .toSet()
 }
