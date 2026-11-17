@@ -9,7 +9,6 @@ import com.algorist.zMyBatis.core.input.InputProvenance
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
 import com.algorist.zMyBatis.core.materialization.MaintainedExecutionMaterializer
 import com.algorist.zMyBatis.core.materialization.MaterializationFailureKind
 import com.algorist.zMyBatis.core.materialization.MaterializationResult
@@ -566,7 +565,10 @@ class XmlSiblingBooleanIfPreparationTest {
         return (result as PreparationResult.Success).execution
     }
 
-    private fun contract(fixture: Fixture) = XmlMapperMethodParameterContractFactory.build(fixture.graph, fixture.mapper)
+    private fun contract(fixture: Fixture): ParameterContract {
+        val source = XmlMapperPreparationSource(fixture.graph, mapperMethod = fixture.mapper)
+        return MyBatisInvocationContractFactory.build(source)
+    }
     private fun indexOf(evidence: List<InputEvidence>) = evidence.filterIsInstance<InputEvidence.MapperMethodParameter>().single().index
     private fun flag(mask: Int, index: Int) = mask and (1 shl index) != 0
     private fun integer(value: Long) = InputValue.IntegerValue(BigInteger.valueOf(value))
