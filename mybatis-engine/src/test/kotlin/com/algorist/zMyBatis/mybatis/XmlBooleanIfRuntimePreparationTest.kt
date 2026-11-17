@@ -6,7 +6,6 @@ import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -458,7 +457,10 @@ class XmlBooleanIfRuntimePreparationTest {
         return (result as PreparationResult.Success).execution
     }
 
-    private fun contract(fixture: Fixture) = XmlMapperMethodParameterContractFactory.build(fixture.graph, fixture.mapper)
+    private fun contract(fixture: Fixture): ParameterContract {
+        val source = XmlMapperPreparationSource(fixture.graph, mapperMethod = fixture.mapper)
+        return MyBatisInvocationContractFactory.build(source)
+    }
 
     private fun fixture(body: String, type: String = "boolean", idType: String = "long"): Fixture {
         val xml = """
