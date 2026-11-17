@@ -58,7 +58,7 @@ class XmlBooleanIfProducerBoundaryTest {
     }
 
     @Test
-    fun provenConditionDoesNotAuthorizeXmlDynamicRuntimePreparation() {
+    fun mapperAuthorityAllowsStockXmlDynamicRuntimePreparation() {
         val file = SourceFileId("file:///mapper.xml")
         val statement = XmlStatementId(file, "example.Mapper", "find")
         val xml = """
@@ -78,7 +78,8 @@ class XmlBooleanIfProducerBoundaryTest {
             SourceRange(0, 100),
             listOf(JavaMethodParameterMetadata(0, "enabled", JavaTypeIdentity("boolean"), "enabled")),
         )
-        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+        val source = XmlMapperPreparationSource(graph, mapperMethod = mapper)
+        val contract = MyBatisInvocationContractFactory.build(source)
         assertFalse(contract.isPreparationBlocked)
         val missing = InputEnvironment.validate(contract, emptyList()) as InputEnvironmentResult.Failure
         assertEquals(InputEnvironmentFailureKind.MISSING_REQUIRED_INPUT, missing.failures.single().kind)
@@ -89,14 +90,19 @@ class XmlBooleanIfProducerBoundaryTest {
                 listOf(ProvidedInput(contract.requirements.single().id, InputValue.BooleanValue(enabled), ExecutionInputOrigin.USER_ENTERED)),
             ) as InputEnvironmentResult.Success).environment
             val request = (MyBatisPreparationRequest.create(
-                XmlMapperPreparationSource(graph, additionalAuthoritySnapshots = listOf(mapper.mapperSource)),
+                source,
                 contract,
                 environment,
             ) as PreparationRequestResult.Ready).request
 
-            val failure = (XmlMapperPreparationEngine.prepare(request) as PreparationResult.Failed).failure
-            assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, failure.kind)
-            assertEquals("xml-preparation-dynamic-sql-unsupported", failure.code)
+            val result = XmlMapperPreparationEngine.prepare(request)
+            assertTrue("expected stock MyBatis success, received $result", result is PreparationResult.Success)
+            val execution = (result as PreparationResult.Success).execution
+            assertEquals(
+                if (enabled) "SELECT 1 WHERE 1 = 1" else "SELECT 1",
+                execution.sqlWithPlaceholders.trim().replace(Regex("\\s+"), " "),
+            )
+            assertTrue(execution.orderedBindings.isEmpty())
         }
     }
 }
