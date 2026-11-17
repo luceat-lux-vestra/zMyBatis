@@ -180,6 +180,7 @@ object XmlMapperPreparationEngine {
                         statementId,
                         request,
                         payload,
+                        foreachLocals,
                     )
                 }
             } else {
@@ -190,6 +191,7 @@ object XmlMapperPreparationEngine {
                     statementId,
                     request,
                     payload,
+                    foreachLocals,
                 )
             }
         } catch (failure: Throwable) {
@@ -231,6 +233,7 @@ object XmlMapperPreparationEngine {
         statementId: XmlStatementId,
         request: MyBatisPreparationRequest,
         payload: MyBatisInvocationParameterObjectFactory.Ready,
+        foreachLocals: Map<String, com.algorist.zMyBatis.core.input.InternalBindingKind>,
     ): PreparationResult {
         val thread = Thread.currentThread()
         val previousContextLoader = thread.contextClassLoader
@@ -238,7 +241,7 @@ object XmlMapperPreparationEngine {
         return try {
             thread.contextClassLoader = runtime.loader
             switched = true
-            prepareP2In(runtime, source, projection, statementId, request, payload)
+            prepareP2In(runtime, source, projection, statementId, request, payload, foreachLocals)
         } finally {
             if (switched) thread.contextClassLoader = previousContextLoader
         }
@@ -251,6 +254,7 @@ object XmlMapperPreparationEngine {
         statementId: XmlStatementId,
         request: MyBatisPreparationRequest,
         payload: MyBatisInvocationParameterObjectFactory.Ready,
+        foreachLocals: Map<String, com.algorist.zMyBatis.core.input.InternalBindingKind>,
     ): PreparationResult {
         val configurationClass = runtime.configurationClass
         val builderClass = runtime.builderClass
