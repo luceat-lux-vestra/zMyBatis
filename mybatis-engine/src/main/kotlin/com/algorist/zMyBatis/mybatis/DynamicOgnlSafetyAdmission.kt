@@ -18,27 +18,38 @@ internal object DynamicOgnlSafetyAdmission {
     private const val UNSUPPORTED = "mybatis-ognl-runtime-capability-unsupported"
     private const val MALFORMED = "mybatis-ognl-expression-malformed"
     private const val INVARIANT = "mybatis-ognl-safety-invariant"
+    private const val DATABASE_ID_AUTHORITY_UNAVAILABLE = "mybatis-database-id-authority-unavailable"
     private const val MAX_XML_LENGTH = 2 * 1024 * 1024
     private const val MAX_DYNAMIC_NODES = 65_536
     private const val MAX_DYNAMIC_DEPTH = 128
     private val rawExpression = Regex("""\$\{([^}]*)}""")
     private val reservedBindNames = setOf("_parameter", "_databaseId")
 
-    fun failureForScript(script: String): PreparationFailure? =
-        inspectDocuments(listOf(script), "/script")
+    fun failureForScript(
+        script: String,
+        databaseIdAvailable: Boolean = true,
+    ): PreparationFailure? =
+        inspectDocuments(listOf(script), "/script", databaseIdAvailable)
 
-    fun failureForMapperDocuments(contents: List<String>): PreparationFailure? =
+    fun failureForMapperDocuments(
+        contents: List<String>,
+        databaseIdAvailable: Boolean = true,
+    ): PreparationFailure? =
         contents.asSequence()
-            .mapNotNull { content -> inspectDocuments(listOf(content), "/mapper") }
+            .mapNotNull { content -> inspectDocuments(listOf(content), "/mapper", databaseIdAvailable) }
             .firstOrNull()
 
-    fun failureForExpressions(expressions: List<String>): PreparationFailure? =
-        inspectExpressions(expressions)
+    fun failureForExpressions(
+        expressions: List<String>,
+        databaseIdAvailable: Boolean = true,
+    ): PreparationFailure? =
+        inspectExpressions(expressions, databaseIdAvailable)
 
 
     private fun inspectDocuments(
         contents: List<String>,
         rootPath: String,
+        databaseIdAvailable: Boolean,
     ): PreparationFailure? {
         val expressions = mutableListOf<String>()
         for (content in contents) {
@@ -93,11 +104,20 @@ internal object DynamicOgnlSafetyAdmission {
             }
         }
 
-        return inspectExpressions(expressions)
+        return inspectExpressions(expressions, databaseIdAvailable)
     }
 
-    private fun inspectExpressions(expressions: List<String>): PreparationFailure? =
-        when (val result = IsolatedOgnlAstAdmission.inspectCapabilities(expressions.distinct())) {
+    private fun inspectExpressions(
+        expressions: List<String>,
+        databaseIdAvailable: Boolean,
+    ): PreparationFailure? {
+        if (!databaseIdAvailable && expressions.any(::referencesDatabaseId)) {
+            return PreparationFailure(
+                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
+                DATABASE_ID_AUTHORITY_UNAVAILABLE,
+            )
+        }
+        return when (val result = IsolatedOgnlAstAdmission.inspectCapabilities(expressions.distinct())) {
             IsolatedOgnlAstAdmission.Result.Admitted -> null
             is IsolatedOgnlAstAdmission.Result.Unsupported -> unsupported(result.nodeType)
             is IsolatedOgnlAstAdmission.Result.Malformed -> PreparationFailure(
@@ -113,6 +133,44 @@ internal object DynamicOgnlSafetyAdmission {
             is IsolatedOgnlAstAdmission.Result.UnprovenProperty ->
                 error("capability-only OGNL inspection cannot produce caller-property admission failures")
         }
+    }
+
+    private fun referencesDatabaseId(expression: String): Boolean {
+        var index = 0
+        var quote: Char? = null
+        var escaped = false
+        while (index < expression.length) {
+            val character = expression[index]
+            if (quote != null) {
+                when {
+                    escaped -> escaped = false
+                    character == '\\' -> escaped = true
+                    character == quote -> quote = null
+                }
+                index++
+                continue
+            }
+            if (character == '\'' || character == '"') {
+                quote = character
+                index++
+                continue
+            }
+            if (character == '_' || character.isLetter()) {
+                val start = index
+                index++
+                while (
+                    index < expression.length &&
+                    (expression[index] == '_' || expression[index].isLetterOrDigit())
+                ) {
+                    index++
+                }
+                if (expression.substring(start, index) == "_databaseId") return true
+                continue
+            }
+            index++
+        }
+        return false
+    }
 
     private fun unsupported(capability: String): PreparationFailure = PreparationFailure(
         PreparationFailureKind.UNSUPPORTED_SEMANTIC,
