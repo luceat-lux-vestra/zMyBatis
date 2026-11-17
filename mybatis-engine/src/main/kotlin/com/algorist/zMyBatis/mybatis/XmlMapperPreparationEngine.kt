@@ -81,6 +81,10 @@ object XmlMapperPreparationEngine {
     private const val STATEMENT_KIND_MISMATCH = "xml-preparation-statement-kind-mismatch"
     private const val EMPTY_SQL = "mybatis-prepared-sql-empty"
     private const val PARSE_FAILURE = "mybatis-xml-mapper-parse-failure"
+    private const val BOOLEAN_BOUND_TOKEN_TOPOLOGY_UNSUPPORTED =
+        "xml-boolean-if-bound-token-topology-unsupported"
+    private const val FOREACH_BOUND_TOKEN_TOPOLOGY_UNSUPPORTED =
+        "xml-foreach-bound-token-topology-unsupported"
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
     private const val CLASSLOADER_INVARIANT = "mybatis-xml-classloader-isolation-failure"
 
@@ -150,6 +154,29 @@ object XmlMapperPreparationEngine {
             databaseIdAvailable = request.effectiveDatabaseId != null,
         )?.let { return PreparationResult.Failed(it) }
 
+        val dynamicDocuments = projection.documents.filter { document ->
+            runtimeDynamicSyntax.containsMatchIn(document.content)
+        }
+        if (dynamicDocuments.isNotEmpty()) {
+            val topologyFailureCode = if (
+                dynamicDocuments.any { document ->
+                    Regex("""(?is)<\s*foreach\b""").containsMatchIn(document.content)
+                }
+            ) {
+                FOREACH_BOUND_TOKEN_TOPOLOGY_UNSUPPORTED
+            } else {
+                BOOLEAN_BOUND_TOKEN_TOPOLOGY_UNSUPPORTED
+            }
+            for (document in dynamicDocuments) {
+                DynamicBoundTokenTopologyAdmission.failureOrNull(
+                    document.content,
+                    rootPath = "/mapper",
+                    unsupportedCode = topologyFailureCode,
+                    parseFailureCode = PARSE_FAILURE,
+                )?.let { return PreparationResult.Failed(it) }
+            }
+        }
+
         val usage = MyBatisInvocationContractFactory.XmlInvocationUsageScanner.scan(projection)
         rawSourceFailureP2(usage.rawUses, request)?.let {
             return PreparationResult.Failed(it)
@@ -165,9 +192,7 @@ object XmlMapperPreparationEngine {
                 return PreparationResult.Failed(result.failure)
         }
 
-        val requiresFreshRuntime = projection.documents.any { document ->
-            runtimeDynamicSyntax.containsMatchIn(document.content)
-        }
+        val requiresFreshRuntime = dynamicDocuments.isNotEmpty()
 
         return try {
             if (requiresFreshRuntime) {
