@@ -40,7 +40,7 @@ import org.junit.Test
 
 class MyBatisPreparationEngineAdversarialTest {
     @Test
-    fun missingNestedMapKeyFailsInsteadOfBecomingNullBinding() {
+    fun missingNestedMapKeyFollowsStockNullBindingSemantics() {
         val request = request(
             "select #{payload.missing}",
             listOf(
@@ -54,10 +54,10 @@ class MyBatisPreparationEngineAdversarialTest {
 
         val result = MyBatisPreparationEngine.prepare(request)
 
-        assertTrue(result is PreparationResult.Failed)
-        result as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.BINDING_RESOLUTION, result.failure.kind)
-        assertEquals("payload.missing", result.failure.bindingProperty)
+        assertTrue(result is PreparationResult.Success)
+        val binding = (result as PreparationResult.Success).execution.orderedBindings.single()
+        assertEquals("payload.missing", binding.property)
+        assertEquals(InputValue.NullValue, binding.value)
     }
 
     @Test
@@ -79,7 +79,6 @@ class MyBatisPreparationEngineAdversarialTest {
         result as PreparationResult.Failed
         assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, result.failure.kind)
         assertEquals("java-parameter-value-out-of-range", result.failure.code)
-        assertEquals("id", result.failure.bindingProperty)
     }
 
     @Test
@@ -101,16 +100,15 @@ class MyBatisPreparationEngineAdversarialTest {
         result as PreparationResult.Failed
         assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, result.failure.kind)
         assertEquals("java-parameter-value-out-of-range", result.failure.code)
-        assertEquals("amount", result.failure.bindingProperty)
     }
 
     @Test
-    fun unknownMapperParameterTypeFailsClosedWithoutRuntimeFallback() {
+    fun applicationParameterObjectTypeFailsClosedWithoutRuntimeClassLoading() {
         val request = request(
             "select #{id}",
             listOf(
                 Parameter("java.lang.Long", "id", InputValue.IntegerValue(BigInteger.valueOf(17))),
-                Parameter("fixture.DoesNotExist", "unused", InputValue.Text("not-consumed")),
+                Parameter("fixture.DoesNotExist", "unused", InputValue.ObjectValue(emptyMap())),
             ),
         )
 
@@ -118,8 +116,8 @@ class MyBatisPreparationEngineAdversarialTest {
 
         assertTrue(result is PreparationResult.Failed)
         result as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
-        assertEquals("java-annotation-parameter-type-unavailable", result.failure.code)
+        assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, result.failure.kind)
+        assertEquals("java-parameter-value-unsupported", result.failure.code)
     }
 
     @Test
@@ -157,7 +155,7 @@ class MyBatisPreparationEngineAdversarialTest {
     }
 
     @Test
-    fun explicitJavaTypeIsRefusedBeforeMyBatisRuntimeClassResolution() {
+    fun explicitJavaTypeRemainsStockOwnedAndPreservesMappingMetadata() {
         val request = request(
             "select #{id,javaType=java.lang.Long}",
             listOf(Parameter("java.lang.Long", "id", InputValue.IntegerValue(BigInteger.ONE))),
@@ -165,25 +163,150 @@ class MyBatisPreparationEngineAdversarialTest {
 
         val result = MyBatisPreparationEngine.prepare(request)
 
-        assertTrue(result is PreparationResult.Failed)
-        result as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
-        assertEquals("mybatis-explicit-java-type-unsupported", result.failure.code)
+        assertTrue(result is PreparationResult.Success)
+        val binding = (result as PreparationResult.Success).execution.orderedBindings.single()
+        assertEquals(InputValue.IntegerValue(BigInteger.ONE), binding.value)
+        assertEquals("java.lang.Long", binding.metadata.mappingJavaTypeIdentity)
+        assertEquals("org.apache.ibatis.type.LongTypeHandler", binding.metadata.typeHandlerIdentity)
     }
 
     @Test
-    fun nestedStaticRawOgnlIsRejectedBeforeEvaluation() {
+    fun explicitStockTypeHandlerRemainsInsideThePositiveEnvelope() {
         val request = request(
-            "select * from ${'$'}{id.missing}",
-            listOf(Parameter("java.lang.String", "id", InputValue.RawText("abc"))),
+            "select #{id,typeHandler=org.apache.ibatis.type.LongTypeHandler}",
+            listOf(Parameter("java.lang.Long", "id", InputValue.IntegerValue(BigInteger.ONE))),
+        )
+
+        val result = MyBatisPreparationEngine.prepare(request)
+
+        assertTrue(result is PreparationResult.Success)
+        val binding = (result as PreparationResult.Success).execution.orderedBindings.single()
+        assertEquals("org.apache.ibatis.type.LongTypeHandler", binding.metadata.typeHandlerIdentity)
+    }
+
+    @Test
+    fun nestedStaticRawPropertyIsStockOwnedAndMissingPropertyFailsAsOgnl() {
+        val request = request(
+            "select * from ${'
+
+    @Test
+    fun concurrentPreparationsCannotCrossContaminateRawOrBoundValues() {
+        val executor = Executors.newFixedThreadPool(4)
+        try {
+            val futures = (0 until 24).map { index ->
+                executor.submit<String> {
+                    val request = request(
+                        "select * from ${'$'}{table} where id = #{id}",
+                        listOf(
+                            Parameter("java.lang.String", "table", InputValue.Text("table_$index")),
+                            Parameter(
+                                "java.lang.Long",
+                                "id",
+                                InputValue.IntegerValue(BigInteger.valueOf(index.toLong())),
+                            ),
+                        ),
+                    )
+                    val result = MyBatisPreparationEngine.prepare(request)
+                    check(result is PreparationResult.Success) { "preparation failed for index $index" }
+                    val execution = result.execution
+                    check(execution.orderedBindings.single().value == InputValue.IntegerValue(BigInteger.valueOf(index.toLong())))
+                    execution.sqlWithPlaceholders
+                }
+            }
+
+            val sql = futures.map { it.get(10, TimeUnit.SECONDS) }
+            assertEquals(
+                (0 until 24).mapTo(linkedSetOf()) { "select * from table_$it where id = ?" },
+                sql.toSet(),
+            )
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    private fun request(sql: String, parameters: List<Parameter>): MyBatisPreparationRequest {
+        val capture = capture(sql, parameters)
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
+        assertFalse("test fixture unexpectedly produced a blocked contract", contract.isPreparationBlocked)
+        val provided = contract.requirements.map { requirement ->
+            val index = requirement.provenance.evidence
+                .filterIsInstance<InputEvidence.MapperMethodParameter>()
+                .single()
+                .index
+            ProvidedInput(requirement.id, parameters[index].value, ExecutionInputOrigin.USER_ENTERED)
+        }
+        val environmentResult = InputEnvironment.validate(contract, provided)
+        assertTrue(environmentResult is InputEnvironmentResult.Success)
+        val environment = (environmentResult as InputEnvironmentResult.Success).environment
+        val requestResult = MyBatisPreparationRequest.create(source, contract, environment)
+        assertTrue(requestResult is PreparationRequestResult.Ready)
+        return (requestResult as PreparationRequestResult.Ready).request
+    }
+
+    private fun capture(sql: String, parameters: List<Parameter>): JavaAnnotationStatementCapture {
+        val fileId = SourceFileId("fixture/AdversarialMapper.java")
+        val types = parameters.map { JavaTypeIdentity(it.type) }
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.AdversarialMapper",
+            MethodSignature("query", types),
+        )
+        val snapshot = SourceSnapshot(fileId, SourceRevision("revision-1"), "authoritative-java-source")
+        return JavaAnnotationStatementCapture(
+            StatementSourceGraph(
+                CapturedStatement(statementId, StatementKind.SELECT, SourceRange(0, snapshot.content.length)),
+                listOf(snapshot),
+                emptyList(),
+            ),
+            listOf(sql),
+            parameters.mapIndexed { index, parameter ->
+                JavaMethodParameterMetadata(index, parameter.alias, types[index], parameter.alias)
+            },
+        )
+    }
+
+    class CustomLongTypeHandler : BaseTypeHandler<Long>() {
+        init {
+            customHandlerConstructions.incrementAndGet()
+        }
+
+        override fun setNonNullParameter(
+            ps: PreparedStatement,
+            i: Int,
+            parameter: Long,
+            jdbcType: JdbcType?,
+        ) {
+            ps.setLong(i, parameter)
+        }
+
+        override fun getNullableResult(rs: ResultSet, columnName: String): Long = rs.getLong(columnName)
+
+        override fun getNullableResult(rs: ResultSet, columnIndex: Int): Long = rs.getLong(columnIndex)
+
+        override fun getNullableResult(cs: CallableStatement, columnIndex: Int): Long = cs.getLong(columnIndex)
+    }
+
+    private data class Parameter(
+        val type: String,
+        val alias: String,
+        val value: InputValue,
+    )
+
+    companion object {
+        private val customHandlerConstructions = AtomicInteger()
+    }
+}
+}{id.missing}",
+            listOf(Parameter("java.lang.String", "id", InputValue.Text("abc"))),
         )
 
         val result = MyBatisPreparationEngine.prepare(request)
 
         assertTrue(result is PreparationResult.Failed)
         result as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
-        assertEquals("raw-interpolation-expression-unsupported", result.failure.code)
+        assertEquals(PreparationFailureKind.OGNL, result.failure.kind)
+        assertEquals("mybatis-ognl-evaluation-failure", result.failure.code)
     }
 
     @Test
