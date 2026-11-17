@@ -55,8 +55,9 @@
 
 <h2>Compatibility evidence</h2>
 <ul>
-  <li><b>Declared minimum IDE build:</b> 262 (2026.2 line)</li>
-  <li><b>Maintained Plugin Verifier targets:</b> IntelliJ IDEA Ultimate 2026.2.3 and 2026.2, plus DataGrip 2026.2.3 and 2026.2 as a separate host matrix.</li>
+  <li><b>Declared minimum IDE build:</b> 263 (2026.3 line)</li>
+  <li><b>Configured compile/test SDK:</b> IntelliJ IDEA Ultimate 2026.3 (IU-263.7307.200); 2026.3 support requires exact-head evidence from issue #521.</li>
+  <li><b>Configured Plugin Verifier targets:</b> IntelliJ IDEA Ultimate 2026.3 and DataGrip 2026.3, each requiring independent exact-HEAD verifier and process E2E evidence. 2026.2 is no longer supported; verifier success does not establish full GUI/runtime coverage.</li>
   <li>JetBrains Database Tools (<code>com.intellij.database</code>) and a configured datasource are required for execution.</li>
   <li><b>Runtime host evidence:</b> IDEA Ultimate retains the maintained PostgreSQL execution suite; DataGrip separately proves packaged-plugin/service loading and the registered XML action's typed no-datasource refusal. DataGrip evidence does not imply Java-annotation or native PostgreSQL parity.</li>
 </ul>

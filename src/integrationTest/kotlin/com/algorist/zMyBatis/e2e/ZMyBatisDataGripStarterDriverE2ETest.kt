@@ -22,6 +22,7 @@ import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
 import com.intellij.ide.starter.runner.Starter
 import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTestKind
+import com.intellij.platform.testFramework.teamCity.TeamCityReporter.TestMetadata
 import com.intellij.tools.ide.starter.product.datagrip.DataGrip
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -38,7 +39,7 @@ import kotlin.time.Duration.Companion.minutes
  * Separate DataGrip host evidence.
  *
  * IDEA Ultimate evidence is intentionally not reused as proof here. This class launches the exact
- * packaged plugin in DataGrip 2026.2.3 through Starter-managed licensing/bootstrap, explicitly avoids
+ * packaged plugin in DataGrip 2026.3 through Starter-managed licensing/bootstrap, explicitly avoids
  * the IDEA-specific StartTrial assumption, and exercises only the XML/Database Tools action boundary
  * that DataGrip can credibly own. Java-source parity remains
  * outside this host proof.
@@ -46,7 +47,7 @@ import kotlin.time.Duration.Companion.minutes
 class ZMyBatisDataGripStarterDriverE2ETest {
 
     companion object {
-        private const val DATAGRIP_RELEASE = "2026.2.3"
+        private const val DATAGRIP_RELEASE = "2026.3"
         private val pluginArchive: Path =
             pathOf(System.getProperty("path.to.build.plugin")).toAbsolutePath()
         private val sampleProject: Path =
@@ -65,6 +66,7 @@ class ZMyBatisDataGripStarterDriverE2ETest {
                             linkToLogs: String?,
                             kind: SyntheticTestKind,
                             generifyTestName: Boolean,
+                            additionalMetadata: List<TestMetadata>,
                         ) {
                             fail {
                                 "DataGrip $DATAGRIP_RELEASE: $testName fails: $message\n$details"

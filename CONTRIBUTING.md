@@ -32,7 +32,8 @@ CI green is necessary, not sufficient. UNKNOWN/UNVERIFIED evidence is not a PASS
 ## Local IDE SDK
 
 Build and test with JDK 25. The default SDK is the vendor-distributed IDEA Ultimate
-version in `gradle.properties` (currently 2026.2.3). If a local environment cannot
+version in `gradle.properties` (2026.3 / IU-263.7307.200). DataGrip 2026.3
+runtime and verifier are separately pinned; the minimum supported build is 263. If a local environment cannot
 mount the macOS installer, use an existing installation of that exact version:
 
 ```sh

@@ -4,7 +4,6 @@ import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
-import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 
 plugins {
     id("java") // Java support
@@ -233,19 +232,13 @@ intellijPlatform {
         }
     }
 
-    // Keep compatibility verification deterministic. `recommended()` drifts as
-    // JetBrains publishes new IDE builds and can turn the merge gate into a
-    // moving target. Broader IDEA/DataGrip coverage must be added explicitly
-    // with evidence rather than inferred from the maintained IDEA targets.
+    // Pin each maintained host explicitly. The 263-only editor-open contract
+    // does not support the older 262 binary APIs. Do not weaken the verifier's
+    // internal/override-only API failure levels to make this baseline pass.
     pluginVerification {
         ides {
             create(IntelliJPlatformType.IntellijIdeaUltimate, providers.gradleProperty("platformVersion").get())
-            // Preserve evidence for the declared minimum 262 line after compiling on the patch baseline.
-            create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.2")
-            // DataGrip is a separate maintained host claim. Keep its patch baseline and
-            // minimum 262 line explicit rather than inferring compatibility from IDEA Ultimate.
-            create(IntelliJPlatformType.DataGrip, providers.gradleProperty("platformVersion").get())
-            create(IntelliJPlatformType.DataGrip, "2026.2")
+            create(IntelliJPlatformType.DataGrip, providers.gradleProperty("dataGripPlatformVersion").get())
         }
     }
 }
@@ -258,7 +251,6 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
     testFramework(TestFrameworkType.Plugin.Java)
     plugins {
         disablePlugin("org.jetbrains.plugins.vue")
-        disablePlugin("com.intellij.modules.ultimate")
     }
     task {
         filter {
@@ -282,7 +274,6 @@ val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundar
     plugins {
         bundledPlugin("org.jetbrains.kotlin")
         disablePlugin("org.jetbrains.plugins.vue")
-        disablePlugin("com.intellij.modules.ultimate")
     }
     task {
         filter {
@@ -306,6 +297,11 @@ intellijPlatformTesting.testIdeUi.register("integrationTest") {
         javaLauncher = javaToolchains.launcherFor {
             languageVersion = JavaLanguageVersion.of(25)
         }
+        // Starter 263 loads JetBrains MultiRoutingFsPath while unpacking IDE 262.
+        // That class implements JDK-internal BasicFileAttributesHolder, so its
+        // separate Gradle test JVM needs this exact export before any IDE starts.
+        // Keep strict CIServer error reporting and all runtime assertions intact.
+        jvmArgs("--add-exports=java.base/sun.nio.fs=ALL-UNNAMED")
         useJUnitPlatform()
         filter {
             includeTestsMatching("com.algorist.zMyBatis.e2e.ZMyBatisStarterDriverE2ETest")
@@ -322,7 +318,7 @@ intellijPlatformTesting.testIdeUi.register("integrationTest") {
 // DataGrip product module, so the process test can use IdeInfo.DataGrip directly.
 intellijPlatformTesting.testIdeUi.register("dataGripIntegrationTest") {
     type = IntelliJPlatformType.DataGrip
-    version = providers.gradleProperty("platformVersion").get()
+    version = providers.gradleProperty("dataGripPlatformVersion").get()
 
     task {
         dependsOn(verifyStarterSecurityGraph)
@@ -332,6 +328,11 @@ intellijPlatformTesting.testIdeUi.register("dataGripIntegrationTest") {
         javaLauncher = javaToolchains.launcherFor {
             languageVersion = JavaLanguageVersion.of(25)
         }
+        // Starter 263 loads JetBrains MultiRoutingFsPath while unpacking IDE 262.
+        // That class implements JDK-internal BasicFileAttributesHolder, so its
+        // separate Gradle test JVM needs this exact export before any IDE starts.
+        // Keep strict CIServer error reporting and all runtime assertions intact.
+        jvmArgs("--add-exports=java.base/sun.nio.fs=ALL-UNNAMED")
         useJUnitPlatform()
         filter {
             includeTestsMatching("com.algorist.zMyBatis.e2e.ZMyBatisDataGripStarterDriverE2ETest")
@@ -378,14 +379,10 @@ tasks.withType<Test>().configureEach {
     systemProperty("intellij.platform.log.sync", "true")
 }
 
-// Unit fixtures share SDK classes through the Gradle test loader. IDEA 2026.2.3
-// reuses an obfuscated platform class name in the unrelated Ultimate startup
-// wrapper, which resolves to the wrong class in this flattened test environment.
-// Database Tools remains enabled; packaged process-level E2E separately tests
-// the full IDE plugin graph with its normal plugin classloader boundaries.
-tasks.named<PrepareSandboxTask>("prepareTestSandbox") {
-    disabledPlugins.add("com.intellij.modules.ultimate")
-}
+// IDEA 263: do not disable the Ultimate platform module in unit fixtures.
+// The registered zMyBatis plugin depends on com.intellij.database; hiding the
+// host's Ultimate module can prevent loading DatabaseTools and the plugin's
+// own Java PSI capability extension points. Preserve genuine host-plugin loading.
 
 // Keep the unit/PSI fixtures independent of a desktop session on every host.
 // The separate Starter/Driver launcher retains its real UI process.

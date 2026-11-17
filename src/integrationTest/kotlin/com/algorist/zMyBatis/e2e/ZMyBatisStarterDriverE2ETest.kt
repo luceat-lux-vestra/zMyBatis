@@ -65,6 +65,7 @@ import com.intellij.ide.starter.runner.Starter
 import com.intellij.ide.starter.runner.startIdeWithoutProject
 import com.intellij.ide.starter.ide.IDETestContext
 import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTestKind
+import com.intellij.platform.testFramework.teamCity.TeamCityReporter.TestMetadata
 import com.intellij.tools.ide.starter.product.idea.ultimate.IdeaUltimate
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -153,13 +154,9 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     companion object {
-        private const val IDE_RELEASE = "2026.2.3"
+        private const val IDE_RELEASE = "2026.3"
         private const val POSTGRES_E2E_DRIVER_NAME = "zMyBatis PostgreSQL 42.7.14"
         private const val POSTGRES_E2E_DATA_SOURCE_NAME = POSTGRES_E2E_DRIVER_NAME
-        private const val KNOWN_ISLANDS_ISSUE = "IJPL-222870"
-        private const val ISLANDS_FAILURE_PREFIX = "Theme Islands Dark refers to unknown color scheme"
-        private const val ISLANDS_FAILURE_STACK =
-            "com.intellij.openapi.editor.colors.impl.EditorColorsManagerImpl.getSchemeForCurrentUITheme"
         private val pluginArchive: Path = pathOf(System.getProperty("path.to.build.plugin")).toAbsolutePath()
         private val sampleProject: Path = pathOf("src/integrationTest/testProject").toAbsolutePath()
         private val activationSeedLock = Any()
@@ -176,8 +173,8 @@ class ZMyBatisStarterDriverE2ETest {
             }
         }
 
-        // Starter 262 exposes SyntheticTestKind from its internal TeamCity reporter as a required
-        // CIServer method parameter. Keep the unavoidable unstable API usage inside this adapter;
+        // Starter 263 adds TeamCity TestMetadata to the mandatory CIServer failure callback
+        // alongside SyntheticTestKind. Keep this unstable API scoped to the test adapter;
         // production code and the rest of the E2E harness do not depend on that internal type.
         @Suppress("UnstableApiUsage")
         private fun strictCIServer(): CIServer =
@@ -189,55 +186,34 @@ class ZMyBatisStarterDriverE2ETest {
                     linkToLogs: String?,
                     kind: SyntheticTestKind,
                     generifyTestName: Boolean,
+                    additionalMetadata: List<TestMetadata>,
                 ) {
-                    if (isKnownPinnedIdePlatformFailure(message, details)) {
-                        System.err.println(
-                            "Ignoring known IntelliJ IDEA $IDE_RELEASE platform failure $KNOWN_ISLANDS_ISSUE; " +
-                                "the exact exception remains preserved in Starter diagnostics.",
-                        )
-                        return
-                    }
                     fail { "$testName fails: $message\n$details" }
                 }
             }
 
-        /**
-         * IDEA 2026.2 reported IJPL-222870 while initializing the bundled Islands Dark
-         * theme: the UI theme can refer to a color scheme that has not been registered yet. This
-         * is an upstream platform startup defect, not a zMyBatis exception.
-         *
-         * Keep the mapping deliberately two-factor: both the exact failure family and the platform
-         * stack frame must be present. Any other Logger.error, crash, freeze, or Driver failure
-         * continues through the strict CIServer failure path.
-         */
-        private fun isKnownPinnedIdePlatformFailure(message: String, details: String): Boolean {
-            val combined = "$message\n$details"
-            return combined.contains(ISLANDS_FAILURE_PREFIX) &&
-                combined.contains("Islands Dark") &&
-                details.contains(ISLANDS_FAILURE_STACK)
-        }
     }
 
     @Test
-    fun knownIslandsPlatformFailureIsNarrowlyMapped() {
-        assertTrue(
-            isKnownPinnedIdePlatformFailure(
-                "Theme Islands Dark refers to unknown color scheme Islands Dark",
-                "java.lang.Throwable\n\tat $ISLANDS_FAILURE_STACK(EditorColorsManagerImpl.kt:266)",
-            ),
-        )
-        assertFalse(
-            isKnownPinnedIdePlatformFailure(
-                "Theme Islands Dark refers to unknown color scheme Islands Dark",
-                "java.lang.Throwable\n\tat com.algorist.zMyBatis.PluginCode.fail(PluginCode.kt:1)",
-            ),
-        )
-        assertFalse(
-            isKnownPinnedIdePlatformFailure(
-                "Unrelated IDE failure",
-                "java.lang.Throwable\n\tat $ISLANDS_FAILURE_STACK(EditorColorsManagerImpl.kt:266)",
-            ),
-        )
+    fun known262ThemeFailureIsStrictlyReportedOn263() {
+        // The 262 platform-specific Islands Dark exemption is deliberately
+        // removed with the 263 minimum. No IDE Logger.error may be ignored.
+        val message = "Theme Islands Dark refers to unknown color scheme Islands Dark"
+        val details = "java.lang.Throwable: platform theme initialization"
+        val failure = org.junit.jupiter.api.Assertions.assertThrows(
+            org.opentest4j.AssertionFailedError::class.java,
+        ) {
+            strictCIServer().reportTestFailure(
+                testName = "legacy-platform-theme",
+                message = message,
+                details = details,
+                linkToLogs = null,
+                kind = SyntheticTestKind.IDE_EXCEPTION,
+                generifyTestName = true,
+                additionalMetadata = emptyList(),
+            )
+        }
+        assertTrue(failure.message?.contains("legacy-platform-theme fails: $message") == true)
     }
 
     @Test
