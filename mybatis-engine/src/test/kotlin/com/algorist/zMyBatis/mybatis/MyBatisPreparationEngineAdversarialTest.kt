@@ -106,7 +106,7 @@ class MyBatisPreparationEngineAdversarialTest {
     }
 
     @Test
-    fun applicationParameterObjectTypeFailsClosedWithoutRuntimeClassLoading() {
+    fun applicationParameterObjectUsesJdkOwnedMapSurrogateWithoutRuntimeClassLoading() {
         val request = request(
             "select #{id}",
             listOf(
@@ -117,10 +117,13 @@ class MyBatisPreparationEngineAdversarialTest {
 
         val result = MyBatisPreparationEngine.prepare(request)
 
-        assertTrue(result is PreparationResult.Failed)
-        result as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, result.failure.kind)
-        assertEquals("mybatis-binding-value-unsupported", result.failure.code)
+        assertTrue(result is PreparationResult.Success)
+        result as PreparationResult.Success
+        assertEquals(listOf("id"), result.execution.orderedBindings.map { it.property })
+        assertEquals(
+            listOf(InputValue.IntegerValue(BigInteger.valueOf(17))),
+            result.execution.orderedBindings.map { it.value },
+        )
     }
 
     @Test

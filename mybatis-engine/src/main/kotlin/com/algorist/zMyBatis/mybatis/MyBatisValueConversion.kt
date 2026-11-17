@@ -58,14 +58,6 @@ internal object MyBatisValueConversion {
             )
         }
 
-        if (
-            expectedType.shape == InputShape.OBJECT &&
-            expectedType.javaTypeIdentity?.value?.trim()?.substringBefore('<')?.trim()
-                !in setOf(null, "java.lang.Object", "Object")
-        ) {
-            return unsupportedValue()
-        }
-
         return if (
             expectedType.shape in setOf(InputShape.LIST, InputShape.MAP, InputShape.ARRAY) &&
             expectedType.javaTypeIdentity != null
