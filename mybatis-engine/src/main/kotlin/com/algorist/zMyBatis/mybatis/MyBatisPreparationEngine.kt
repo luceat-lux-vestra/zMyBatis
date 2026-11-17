@@ -27,6 +27,9 @@ object MyBatisPreparationEngine {
         MyBatisParameterMappingCapabilityAdmission.failureForSourceText(script)?.let {
             return PreparationResult.Failed(it)
         }
+        StaticRawSubstitutionAdmission.failureOrNull(script, request)?.let {
+            return PreparationResult.Failed(it)
+        }
         if (containsDynamicScript(script)) {
             DynamicOgnlSafetyAdmission.failureForScript(script)?.let {
                 return PreparationResult.Failed(it)
