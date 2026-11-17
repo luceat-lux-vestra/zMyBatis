@@ -60,6 +60,9 @@ internal object DynamicOgnlSafetyAdmission {
             } catch (failure: StackOverflowError) {
                 return unsupported("DynamicScript[parser-depth]")
             } catch (failure: RuntimeException) {
+                if (isParserDepthLimitFailure(failure)) {
+                    return unsupported("DynamicScript[depth]")
+                }
                 return PreparationFailure(
                     PreparationFailureKind.MYBATIS_PARSE,
                     SCRIPT_MALFORMED,
@@ -135,6 +138,17 @@ internal object DynamicOgnlSafetyAdmission {
                 error("capability-only OGNL inspection cannot produce caller-property admission failures")
         }
     }
+
+    private fun isParserDepthLimitFailure(failure: RuntimeException): Boolean =
+        generateSequence<Throwable>(failure) { it.cause }
+            .mapNotNull { it.message }
+            .any { message ->
+                message.contains("maxElementDepth", ignoreCase = true) ||
+                    (
+                        message.contains("depth", ignoreCase = true) &&
+                            message.contains("exceeds the limit", ignoreCase = true)
+                    )
+            }
 
     private fun referencesDatabaseId(expression: String): Boolean {
         var index = 0
