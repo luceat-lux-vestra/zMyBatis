@@ -38,7 +38,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class P2CallerAuthorityParityTest {
-    private val rawOpen = String(charArrayOf('
+    private val rawOpen = String(charArrayOf(36.toChar(), 123.toChar()))
+
     @Test
     fun mapperMethodPayloadMatchesStockParamNameResolverForScalarMultiAndCollectionShapes() {
         val scalar = javaFixture(
