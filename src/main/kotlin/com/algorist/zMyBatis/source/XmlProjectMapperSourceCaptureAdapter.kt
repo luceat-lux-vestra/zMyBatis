@@ -41,7 +41,7 @@ internal object XmlProjectMapperSourceCaptureAdapter {
     ): XmlProjectMapperSourceCaptureResult {
         checkCanceled()
         val xmlFiles = try {
-            ReadAction.compute<List<VirtualFile>, RuntimeException> {
+            ReadAction.computeBlocking<List<VirtualFile>, RuntimeException> {
                 FilenameIndex.getAllFilesByExt(
                     project,
                     "xml",
