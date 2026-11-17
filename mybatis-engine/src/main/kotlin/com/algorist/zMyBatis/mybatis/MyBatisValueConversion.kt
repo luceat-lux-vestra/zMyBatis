@@ -330,14 +330,18 @@ internal object MyBatisValueConversion {
         if (value is InputValue.NullValue) return RuntimeValueResult.Ready(null)
         return when (descriptor) {
             is DeclaredType.Simple -> {
-                val canonicalType = JavaTypeIdentity(descriptor.name)
-                if (
-                    descriptor.name in setOf("java.util.List", "java.util.Collection", "java.util.Map") ||
-                    resolveSafeJavaType(canonicalType) == null
-                ) {
-                    unsupportedValue()
+                if (descriptor.name in setOf("java.lang.Object", "Object")) {
+                    RuntimeValueResult.Ready(toUntypedRuntimeValue(value))
                 } else {
-                    toRuntimeValue(value, canonicalType)
+                    val canonicalType = JavaTypeIdentity(descriptor.name)
+                    if (
+                        descriptor.name in setOf("java.util.List", "java.util.Collection", "java.util.Map") ||
+                        resolveSafeJavaType(canonicalType) == null
+                    ) {
+                        unsupportedValue()
+                    } else {
+                        toRuntimeValue(value, canonicalType)
+                    }
                 }
             }
             is DeclaredType.Parameterized -> when (descriptor.rawType) {
