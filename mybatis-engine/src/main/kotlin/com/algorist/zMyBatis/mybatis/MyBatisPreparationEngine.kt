@@ -24,6 +24,9 @@ object MyBatisPreparationEngine {
             ?: return failed(PreparationFailureKind.UNSUPPORTED_SEMANTIC, UNSUPPORTED_SOURCE)
 
         val script = source.capture.sqlSegments.joinToString(separator = " ").trim()
+        MyBatisParameterMappingCapabilityAdmission.failureForSourceText(script)?.let {
+            return PreparationResult.Failed(it)
+        }
         if (containsDynamicScript(script)) {
             DynamicOgnlSafetyAdmission.failureForScript(script)?.let {
                 return PreparationResult.Failed(it)

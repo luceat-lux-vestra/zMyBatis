@@ -141,6 +141,10 @@ object XmlMapperPreparationEngine {
             is XmlMapperPreparationProjection.Result.Failed -> return PreparationResult.Failed(result.failure)
         }
 
+        MyBatisParameterMappingCapabilityAdmission.failureForSourceTexts(
+            projection.documents.map { it.content },
+        )?.let { return PreparationResult.Failed(it) }
+
         DynamicOgnlSafetyAdmission.failureForMapperDocuments(
             projection.documents.map { it.content },
         )?.let { return PreparationResult.Failed(it) }
