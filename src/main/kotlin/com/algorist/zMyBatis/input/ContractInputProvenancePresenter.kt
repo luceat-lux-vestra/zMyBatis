@@ -51,6 +51,9 @@ internal object ContractInputProvenancePresenter {
                 "parameter-object property ${evidence.mappingProperty} (${evidence.ruleId})"
             is InputEvidence.NamedMapProperty ->
                 "named Map property ${evidence.mappingProperty} (${evidence.ruleId})"
+            is InputEvidence.XmlParameterObject -> "XML parameter object"
+            is InputEvidence.RuntimeGeneratedBinding ->
+                "MyBatis runtime binding ${evidence.property}"
             is InputEvidence.Placeholder -> "${evidence.kind}: ${evidence.expression}"
             is InputEvidence.OgnlExpression -> "OGNL: ${evidence.expression}"
             is InputEvidence.ForeachCollection -> "foreach collection: ${evidence.expression}"
@@ -71,6 +74,8 @@ internal object ContractInputProvenancePresenter {
         is InputEvidence.ParameterObjectFallback -> null
         is InputEvidence.ParameterObjectProperty -> null
         is InputEvidence.NamedMapProperty -> null
+        is InputEvidence.XmlParameterObject -> evidence.source
+        is InputEvidence.RuntimeGeneratedBinding -> evidence.source
         is InputEvidence.Placeholder -> evidence.source
         is InputEvidence.OgnlExpression -> evidence.source
         is InputEvidence.ForeachCollection -> evidence.source
