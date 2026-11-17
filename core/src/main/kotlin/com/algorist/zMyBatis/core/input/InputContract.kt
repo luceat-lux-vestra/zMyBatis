@@ -23,6 +23,18 @@ enum class InputRequiredness {
     OPTIONAL,
 }
 
+/**
+ * How authoritative mapper source may consume one caller-supplied value.
+ *
+ * This is deliberately separate from [InputKind]. P2 caller-authority contracts use normal typed
+ * caller values and record raw interpolation as a usage/risk surface rather than changing the value
+ * itself into a second input type.
+ */
+enum class InputUsageKind {
+    BOUND_PLACEHOLDER,
+    RAW_INTERPOLATION,
+}
+
 enum class InputShape {
     SCALAR,
     OBJECT,
@@ -263,12 +275,23 @@ data class InputRequirement(
     val expectedType: ExpectedInputType,
     val requiredness: InputRequiredness,
     val provenance: InputProvenance,
+    val usageKinds: Set<InputUsageKind> = setOf(
+        if (kind == InputKind.RAW_INTERPOLATION) {
+            InputUsageKind.RAW_INTERPOLATION
+        } else {
+            InputUsageKind.BOUND_PLACEHOLDER
+        },
+    ),
 ) {
     init {
         require((kind == InputKind.RAW_INTERPOLATION) == (expectedType.shape == InputShape.RAW_TEXT)) {
             "RAW_TEXT shape and RAW_INTERPOLATION kind must be used together"
         }
+        require(usageKinds.isNotEmpty()) { "input requirement must declare at least one source usage" }
     }
+
+    val usesRawInterpolation: Boolean
+        get() = InputUsageKind.RAW_INTERPOLATION in usageKinds
 }
 
 enum class InputAliasKind {
