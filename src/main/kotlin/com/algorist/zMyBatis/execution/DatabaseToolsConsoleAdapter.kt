@@ -22,7 +22,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.ex.EditorEx
-import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
@@ -318,39 +318,56 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             LOG.info("zMyBatis: no existing console editor, attempting to open one")
             val vFile = consolePsiFile.virtualFile
             if (vFile != null) {
-                FileEditorManager.getInstance(project).openFile(vFile, true)
-                ApplicationManager.getApplication().invokeLater({
-                    try {
-                        if (isProjectUnavailable()) return@invokeLater
-                        if (!preExecutionCheck()) {
-                            onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
-                            return@invokeLater
+                // OpenFileDescriptor.navigate uses the platform's public navigatable
+                // path. Under IDEA 263 FileNavigatorImpl opens the file editor before
+                // returning; the EDT continuation checks the actual live SQL editor.
+                // This stable navigation entry point avoids experimental APIs.
+                // Never inject SQL if the editor did not open.
+                try {
+                    OpenFileDescriptor(project, vFile).navigate(true)
+                    ApplicationManager.getApplication().invokeLater({
+                        try {
+                            if (isProjectUnavailable()) return@invokeLater
+                            if (!preExecutionCheck()) {
+                                onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
+                                return@invokeLater
+                            }
+                            if (!console.isValid) {
+                                LOG.warn("zMyBatis: console unavailable after editor-open scheduling")
+                                onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
+                                return@invokeLater
+                            }
+                            val retryEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
+                                .firstOrNull { it is EditorEx && !it.isDisposed } as? EditorEx
+                            if (retryEditor != null) {
+                                performExecution(
+                                    console,
+                                    sql,
+                                    retryEditor,
+                                    preExecutionCheck,
+                                    onExecuted,
+                                    onFailure,
+                                    finish,
+                                )
+                            } else {
+                                LOG.warn("zMyBatis: console editor still unavailable after opening")
+                                onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
+                            }
+                        } finally {
+                            finish()
                         }
-                        if (!console.isValid) {
-                            LOG.warn("zMyBatis: console unavailable after editor-open scheduling")
-                            onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
-                            return@invokeLater
-                        }
-                        val retryEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
-                            .firstOrNull { it is EditorEx && !it.isDisposed } as? EditorEx
-                        if (retryEditor != null) {
-                            performExecution(
-                                console,
-                                sql,
-                                retryEditor,
-                                preExecutionCheck,
-                                onExecuted,
-                                onFailure,
-                                finish,
-                            )
-                        } else {
-                            LOG.warn("zMyBatis: console editor still unavailable after opening")
-                            onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
-                        }
-                    } finally {
-                        finish()
-                    }
-                }, ModalityState.defaultModalityState())
+                    }, ModalityState.defaultModalityState())
+                } catch (canceled: ProcessCanceledException) {
+                    finish()
+                    throw canceled
+                } catch (ex: Exception) {
+                    LOG.warn("zMyBatis: could not open console editor (type=${ex.javaClass.name})")
+                    fail(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
+                } catch (fatal: Throwable) {
+                    LOG.error("zMyBatis: fatal console editor-open failure", fatal)
+                    finish()
+                    throw fatal
+                }
             } else {
                 LOG.warn("zMyBatis: console virtual file is null")
                 finish()

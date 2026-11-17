@@ -23,6 +23,7 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         assertFalse(action.contains("JdbcConsoleProvider.doRunQueryInConsole"))
         assertFalse(action.contains("WriteCommandAction.runWriteCommandAction"))
         assertFalse(action.contains("FileEditorManager.getInstance"))
+        assertFalse(action.contains("project.getService(FileEditorManager::class.java)"))
         assertFalse(action.contains("executeMaterialized("))
     }
 
@@ -37,7 +38,19 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         assertTrue(adapter.contains("JdbcConsoleProvider.findScriptModelNoInject"))
         assertTrue(adapter.contains("JdbcConsoleProvider.doRunQueryInConsole"))
         assertTrue(adapter.contains("WriteCommandAction.runWriteCommandAction"))
-        assertTrue(adapter.contains("FileEditorManager.getInstance"))
+        // IDEA 263: use the stable, public navigation entry point, not either
+        // the internal editor options API or the experimental file-open request.
+        // The EDT continuation must recheck the immutable execution authority
+        // and the actual SQL editor before any native query is issued.
+        assertTrue(adapter.contains("OpenFileDescriptor(project, vFile).navigate(true)"))
+        assertTrue(adapter.contains("ApplicationManager.getApplication().invokeLater({"))
+        assertTrue(adapter.contains("if (!preExecutionCheck())"))
+        assertTrue(adapter.contains("if (!console.isValid)"))
+        assertTrue(adapter.contains("onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)"))
+        assertFalse(adapter.contains("FileEditorManagerEx"))
+        assertFalse(adapter.contains("FileEditorOpenOptions"))
+        assertFalse(adapter.contains("FileEditorOpenRequest"))
+        assertFalse(adapter.contains("requestOpenFile("))
 
         assertFalse(adapter.contains("ExecutionTargetDescriptorStore"))
         assertFalse(adapter.contains("StoredExecutionTargetBridge"))
