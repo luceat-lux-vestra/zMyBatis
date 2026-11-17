@@ -299,7 +299,12 @@ class XmlSiblingBooleanIfPreparationTest {
     @Test
     fun repeatedExplicitAndGenericGuardsUseOneTypedCallerWithoutLosingOccurrences() {
         val fixture = fixture("SELECT #{id}<if test=\"enabled\">, #{id}</if><if test=\"param1\">, #{param4}</if><if test=\"enabled\">, #{id}</if>")
-        assertEquals(2, contract(fixture).requirements.size)
+        val contract = contract(fixture)
+        assertEquals(4, contract.requirements.size)
+        assertEquals(
+            listOf("method-param:0", "method-param:1", "method-param:2", "method-param:3"),
+            contract.requirements.map { it.id.value },
+        )
         for (mask in listOf(0, 1)) {
             val execution = success(prepare(fixture, mask))
             assertEquals(if (mask == 0) 1 else 4, execution.orderedBindings.size)
@@ -339,8 +344,17 @@ class XmlSiblingBooleanIfPreparationTest {
             assertTrue(failure.failures.any { it.kind == InputEnvironmentFailureKind.MISSING_REQUIRED_INPUT })
         }
         val other = inputs[1]
-        val nullFlag = InputEnvironment.validate(contract, inputs.map { if (it == other) it.copy(value = InputValue.NullValue) else it }) as InputEnvironmentResult.Failure
-        assertTrue(nullFlag.failures.any { it.kind == InputEnvironmentFailureKind.NULL_NOT_ALLOWED })
+        val nullableEnvironment = InputEnvironment.validate(
+            contract,
+            inputs.map { if (it == other) it.copy(value = InputValue.NullValue) else it },
+        )
+        assertTrue(nullableEnvironment is InputEnvironmentResult.Success)
+        val nullableExecution = success(
+            prepare(fixture, 0, replacements = mapOf(1 to InputValue.NullValue)),
+        )
+        assertEquals("SELECT 1", normalize(nullableExecution.sqlWithPlaceholders))
+        assertTrue(nullableExecution.orderedBindings.isEmpty())
+
         val overRange = (prepare(fixture, 0, replacements = mapOf(3 to InputValue.IntegerValue(BigInteger.ONE.shiftLeft(100)))) as PreparationResult.Failed).failure
         assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, overRange.kind)
     }
