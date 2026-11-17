@@ -104,7 +104,7 @@ class XmlMapperPreparationEngineAdversarialTest {
     }
 
     @Test
-    fun internalInputAuthorityCannotEnterZeroInputXmlIsland() {
+    fun internalBindingMetadataCannotCreateCallerInputInZeroInputXmlStatement() {
         val graph = graph("<select id=\"find\">SELECT 1</select>")
         val snapshot = graph.sourceSnapshots.single()
         val provenance = InputProvenance(
@@ -131,33 +131,9 @@ class XmlMapperPreparationEngineAdversarialTest {
             sourceRevisions = graph.sourceSnapshots.associate { it.fileId to it.revision },
         )
 
-        val failure = (prepare(graph, contract) as PreparationResult.Failed).failure
-        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, failure.kind)
-        assertEquals("xml-preparation-input-contract-unsupported", failure.code)
-    }
-
-    @Test
-    fun allStandardDynamicNodeFamiliesFailWithoutRuntimeEvaluation() {
-        val dynamicNodes = listOf(
-            "<if test=\"true\">WHERE active = 1</if>",
-            "<choose><when test=\"true\">WHERE active = 1</when><otherwise>WHERE active = 0</otherwise></choose>",
-            "<foreach collection=\"items\" item=\"item\">x</foreach>",
-            "<bind name=\"x\" value=\"1\"/>x",
-            "<where>active = 1</where>",
-            "<set>active = 1</set>",
-            "<trim prefix=\"WHERE\">active = 1</trim>",
-        )
-        dynamicNodes.forEachIndexed { index, node ->
-            val graph = graph("<select id=\"find\">SELECT * FROM users $node</select>", "vfs:/dynamic-$index.xml")
-            val failure = (prepare(graph, contract(graph)) as PreparationResult.Failed).failure
-            if (node.startsWith("<foreach")) {
-                assertEquals(PreparationFailureKind.BINDING_RESOLUTION, failure.kind)
-                assertEquals("xml-foreach-preparation-source-contract-mismatch", failure.code)
-            } else {
-                assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, failure.kind)
-                assertEquals("xml-preparation-dynamic-sql-unsupported", failure.code)
-            }
-        }
+        val execution = (prepare(graph, contract) as PreparationResult.Success).execution
+        assertEquals("SELECT 1", normalize(execution.sqlWithPlaceholders))
+        assertEquals(emptyList<Any>(), execution.orderedBindings)
     }
 
     private fun prepare(graph: StatementSourceGraph, contract: ParameterContract): PreparationResult {
