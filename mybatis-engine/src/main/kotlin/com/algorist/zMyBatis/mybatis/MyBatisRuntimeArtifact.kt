@@ -165,17 +165,33 @@ internal object MyBatisRuntimeArtifact {
     }
 
     private fun jarArtifact(resource: URL, resourcePath: String): URL? {
-        val connection = resource.openConnection() as? JarURLConnection ?: return null
-        if (connection.entryName != resourcePath) return null
-        val backing = connection.jarFileURL
+        val connection = runCatching { resource.openConnection() }.getOrNull()
+        val backing = if (connection is JarURLConnection) {
+            if (connection.entryName != resourcePath) return null
+            connection.jarFileURL
+        } else {
+            jarBackingUrl(resource, resourcePath) ?: return null
+        }
         if (backing.protocol != "file") return null
 
-        val jarPath = Paths.get(backing.toURI())
+        val jarPath = Paths.get(backing.toURI()).toAbsolutePath().normalize()
         if (!Files.isRegularFile(jarPath)) return null
         JarFile(jarPath.toFile()).use { jar ->
             if (jar.getJarEntry(resourcePath) == null) return null
         }
         return jarPath.toUri().toURL()
+    }
+
+    private fun jarBackingUrl(resource: URL, resourcePath: String): URL? {
+        if (resource.protocol != "jar") return null
+        val external = resource.toExternalForm()
+        val separator = external.indexOf("!/")
+        if (!external.startsWith("jar:") || separator < 0) return null
+        if (external.substring(separator + 2) != resourcePath) return null
+
+        return runCatching {
+            URL(external.substring("jar:".length, separator))
+        }.getOrNull()
     }
 
     private fun classesArtifact(resource: URL, resourcePath: String): URL? {

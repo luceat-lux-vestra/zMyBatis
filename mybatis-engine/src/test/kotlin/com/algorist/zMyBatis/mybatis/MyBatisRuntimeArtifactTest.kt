@@ -4,6 +4,8 @@ import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.net.URL
 import java.net.URLClassLoader
+import java.net.URLConnection
+import java.net.URLStreamHandler
 import java.nio.file.Files
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
@@ -46,6 +48,30 @@ class MyBatisRuntimeArtifactTest {
             URLClassLoader(arrayOf(recovered!!), ClassLoader.getPlatformClassLoader()).use { loader ->
                 assertSame(loader, Class.forName(probeType.name, false, loader).classLoader)
             }
+        } finally {
+            Files.deleteIfExists(jarPath)
+        }
+    }
+
+    @Test
+    fun nullCodeSourceRecoversJetBrainsStyleJarUrlWithoutJarURLConnection() {
+        val jarPath = Files.createTempFile("mybatis-runtime-custom-jar-url", ".jar")
+        try {
+            writeProbeJar(jarPath)
+            val resourceUrl = URL(
+                null,
+                "jar:" + jarPath.toUri().toURL() + "!/" + probeEntry,
+                object : URLStreamHandler() {
+                    override fun openConnection(url: URL): URLConnection =
+                        object : URLConnection(url) {
+                            override fun connect() = Unit
+                        }
+                },
+            )
+            val classFromResourceOnlyLoader = defineWithoutCodeSource(resourceUrl)
+            assertNull(classFromResourceOnlyLoader.protectionDomain?.codeSource?.location)
+
+            assertEquals(jarPath.toUri().toURL(), MyBatisRuntimeArtifact.resolve(classFromResourceOnlyLoader))
         } finally {
             Files.deleteIfExists(jarPath)
         }
