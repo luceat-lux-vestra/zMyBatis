@@ -805,7 +805,7 @@ class XmlMapperForeachPreparationTest {
             request(fixture, mapOf(0 to InputValue.NullValue)),
         ) as PreparationResult.Failed
         assertEquals(PreparationFailureKind.MYBATIS_PARSE, nullCollection.failure.kind)
-        assertEquals("mybatis-sql-source-parse-failure", nullCollection.failure.code)
+        assertEquals("mybatis-xml-mapper-parse-failure", nullCollection.failure.code)
     }
 
     @Test
