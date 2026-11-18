@@ -49,6 +49,8 @@ import com.intellij.database.dataSource.LocalDataSourceManager
 import com.intellij.database.datagrid.DataRequest
 import com.intellij.database.remote.jdbc.RemoteConnection
 import com.intellij.database.remote.jdbc.RemotePreparedStatement
+import com.intellij.database.psi.DbDataSource
+import com.intellij.database.psi.DbPsiFacade
 import com.intellij.database.dataSource.url.template.UrlTemplate
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.util.Disposer
@@ -275,7 +277,8 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 items = listOf("left", "right"),
                 effectiveDatabaseId = MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
             )
-            val target = p4PreparedTarget(fixture.dataSource)
+            val dbDataSource = p4DbDataSource(fixture.dataSource)
+            val target = p4PreparedTarget(dbDataSource)
             val plan = when (val result = PreparedExecutionPlanner.freeze(execution, target)) {
                 is PreparedExecutionPlanResult.Ready -> result.plan
                 is PreparedExecutionPlanResult.Failed ->
@@ -283,7 +286,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             }
 
             val outcome = executeProductionPreparedBackend(
-                dataSource = fixture.dataSource,
+                dataSource = dbDataSource,
                 plan = plan,
                 target = target,
             )
@@ -1158,15 +1161,27 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         }
     }
 
-    private fun p4PreparedTarget(dataSource: LocalDataSource): ResolvedExecutionTarget =
+    private fun p4DbDataSource(dataSource: LocalDataSource): DbDataSource {
+        val stableId = dataSource.uniqueId
+            .trim()
+            .takeIf { it.isNotEmpty() }
+            ?: error("P4 runtime fixture datasource must expose stable identity")
+        val matches = DbPsiFacade.getInstance(project).dataSources.filter { candidate ->
+            databaseToolsStableDataSourceId(candidate) == stableId
+        }
+        return checkNotNull(matches.singleOrNull()) {
+            "P4 runtime fixture must resolve to exactly one DbDataSource by stable identity"
+        }
+    }
+
+    private fun p4PreparedTarget(dataSource: DbDataSource): ResolvedExecutionTarget =
         ResolvedExecutionTarget(
             descriptor = ExecutionTargetDescriptor(
                 targetId = ExecutionTargetId(
                     dataSourceId = StableDataSourceId(
-                        dataSource.uniqueId
-                            .trim()
-                            .takeIf { it.isNotEmpty() }
-                            ?: error("P4 runtime fixture datasource must expose stable identity"),
+                        checkNotNull(databaseToolsStableDataSourceId(dataSource)) {
+                            "P4 runtime DbDataSource must expose stable identity"
+                        },
                     ),
                     schema = ExplicitSchemaIdentity("public"),
                 ),
@@ -1176,7 +1191,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         )
 
     private fun executeProductionPreparedBackend(
-        dataSource: LocalDataSource,
+        dataSource: DbDataSource,
         plan: com.algorist.zMyBatis.core.execution.PreparedExecutionPlan,
         target: ResolvedExecutionTarget,
     ): DatabaseSessionPreparedOutcome {
