@@ -16,7 +16,6 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.LightVirtualFile
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.util.ui.classpath.SimpleClasspathElementFactory
-import java.io.File
 import java.nio.file.Path
 import java.util.UUID
 import java.sql.Types
@@ -169,11 +168,11 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
     }
 
     private fun registerPostgreSqlDataSource(): Fixture {
-        val postgresJar = System.getProperty("java.class.path")
-            .split(File.pathSeparator)
-            .map { entry -> Path.of(entry) }
-            .singleOrNull { path -> path.fileName.toString() == "postgresql-42.7.14.jar" }
-            ?: error("P3 PostgreSQL runtime classpath must contain exactly one pgJDBC 42.7.14 JAR")
+        val postgresJar = Path.of(
+            checkNotNull(System.getProperty("zmybatis.p3.postgresql.driverJar")) {
+                "P3 PostgreSQL driver JAR path must be supplied by the dedicated Gradle task"
+            },
+        )
         check(postgresJar.toFile().isFile) {
             "P3 PostgreSQL driver JAR path must resolve to a local file"
         }

@@ -71,10 +71,6 @@ dependencies {
     }
 
     testImplementation(libs.junit)
-    // P3.3 test-only runtime driver. The probe discovers this resolved JAR from the
-    // test JVM classpath and registers a dedicated Database Tools driver around it.
-    // It is never packaged in the plugin artifact.
-    testRuntimeOnly("org.postgresql:postgresql:42.7.14")
     testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
     testImplementation(platform("tools.jackson:jackson-bom:3.2.4"))
     testImplementation(platform("io.opentelemetry:opentelemetry-bom:1.67.0"))
@@ -273,6 +269,17 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
 // P3.3 real-PostgreSQL prepared-backend stop-gate probe. The task participates in
 // verification, but is executable only when the E2E workflow explicitly enables the
 // PostgreSQL service.
+//
+// Resolve the already-declared integration-test pgJDBC artifact to a plain String during
+// configuration. Do not capture a Gradle Configuration/Provider in the TestIdeTask action:
+// Gradle 9 configuration-cache rejects that task graph, while the transformed IDE test
+// process also does not expose external test artifacts through java.class.path.
+val p3PostgresDriverJarPath = configurations
+    .getByName("integrationTestRuntimeClasspath")
+    .files
+    .single { file -> file.name == "postgresql-42.7.14.jar" }
+    .absolutePath
+
 val p3PostgresPreparedBackendTest = intellijPlatformTesting.testIde.register("p3PostgresPreparedBackendTest") {
     testFramework(TestFrameworkType.Platform)
     testFramework(TestFrameworkType.Plugin.Java)
@@ -286,6 +293,7 @@ val p3PostgresPreparedBackendTest = intellijPlatformTesting.testIde.register("p3
         onlyIf("P3 PostgreSQL runtime service is explicitly enabled") {
             System.getenv("ZMYBATIS_P3_POSTGRES_RUNTIME") == "1"
         }
+        systemProperty("zmybatis.p3.postgresql.driverJar", p3PostgresDriverJarPath)
         filter {
             includeTestsMatching(
                 "com.algorist.zMyBatis.execution.P3PostgreSqlPreparedBackendRuntimeTest",
