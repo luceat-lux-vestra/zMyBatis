@@ -208,12 +208,13 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
                     )
                 } else {
                     preparedExecutionTask.execute(
-                        executeBackend = { onCompleted ->
+                        executeBackend = { onHandleReady, onCompleted ->
                             preparedBackend.execute(
                                 console = console,
                                 plan = plan,
                                 currentTarget = deliveryTarget.resolvedTarget,
                                 preExecutionCheck = preExecutionCheck,
+                                onHandleReady = onHandleReady,
                                 onCompleted = onCompleted,
                             )
                         },
