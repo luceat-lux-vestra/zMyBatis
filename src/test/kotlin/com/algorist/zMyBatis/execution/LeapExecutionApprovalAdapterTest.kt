@@ -5,9 +5,9 @@ import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
 import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.algorist.zMyBatis.core.execution.StableDataSourceId
-import com.algorist.zMyBatis.core.materialization.MaterializationResult
-import com.algorist.zMyBatis.core.materialization.MaterializedExecution
-import com.algorist.zMyBatis.core.materialization.TargetBoundZeroBindingExecutionMaterializer
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlan
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanResult
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanner
 import com.algorist.zMyBatis.core.preparation.PreparationMetadata
 import com.algorist.zMyBatis.core.preparation.PreparedExecution
 import com.algorist.zMyBatis.core.source.SourceFileId
@@ -23,12 +23,12 @@ import org.junit.Test
 class LeapExecutionApprovalAdapterTest {
     @Test
     fun noPreviewApprovalDoesNotFormatOrOpenModal() {
-        val artifact = artifact(declaredMutation = false)
+        val plan = plan(declaredMutation = false)
         var formatCalls = 0
         var modalCalls = 0
 
         val result = runLeapExecutionApproval(
-            artifact = artifact,
+            plan = plan,
             options = LeapExecutionApprovalOptions(
                 showSqlPreview = false,
                 formatPreviewSql = true,
@@ -50,14 +50,14 @@ class LeapExecutionApprovalAdapterTest {
     }
 
     @Test
-    fun formattedPreviewIsPresentationOnlyAndOriginalArtifactRemainsAuthority() {
-        val artifact = artifact(declaredMutation = true)
-        val originalSql = artifact.executionSql
+    fun formattedPreviewIsPresentationOnlyAndOriginalPlanRemainsAuthority() {
+        val plan = plan(declaredMutation = true)
+        val originalSql = plan.sqlWithPlaceholders
         var formatterInput: String? = null
         var previewText: String? = null
 
         val result = runLeapExecutionApproval(
-            artifact = artifact,
+            plan = plan,
             options = LeapExecutionApprovalOptions(
                 showSqlPreview = false,
                 formatPreviewSql = true,
@@ -76,16 +76,16 @@ class LeapExecutionApprovalAdapterTest {
         assertSame(LeapExecutionApprovalResult.Approved, result)
         assertEquals(originalSql, formatterInput)
         assertEquals("FORMATTED<$originalSql>", previewText)
-        assertEquals(originalSql, artifact.executionSql)
+        assertEquals(originalSql, plan.sqlWithPlaceholders)
     }
 
     @Test
     fun userCancellationStopsAtApprovalBoundary() {
-        val artifact = artifact(declaredMutation = true)
+        val plan = plan(declaredMutation = true)
         var activeChecks = 0
 
         val result = runLeapExecutionApproval(
-            artifact = artifact,
+            plan = plan,
             options = LeapExecutionApprovalOptions(
                 showSqlPreview = false,
                 formatPreviewSql = false,
@@ -104,11 +104,11 @@ class LeapExecutionApprovalAdapterTest {
 
     @Test
     fun invocationIsRecheckedAfterPositiveModalApproval() {
-        val artifact = artifact(declaredMutation = true)
+        val plan = plan(declaredMutation = true)
         var activeChecks = 0
 
         val result = runLeapExecutionApproval(
-            artifact = artifact,
+            plan = plan,
             options = LeapExecutionApprovalOptions(
                 showSqlPreview = false,
                 formatPreviewSql = false,
@@ -126,12 +126,12 @@ class LeapExecutionApprovalAdapterTest {
     }
 
     @Test
-    fun explicitUserPreviewUsesSameImmutableArtifactText() {
-        val artifact = artifact(declaredMutation = false)
+    fun explicitUserPreviewUsesSameImmutablePlanText() {
+        val plan = plan(declaredMutation = false)
         var previewText: String? = null
 
         val result = runLeapExecutionApproval(
-            artifact = artifact,
+            plan = plan,
             options = LeapExecutionApprovalOptions(
                 showSqlPreview = true,
                 formatPreviewSql = false,
@@ -145,14 +145,71 @@ class LeapExecutionApprovalAdapterTest {
         )
 
         assertSame(LeapExecutionApprovalResult.Approved, result)
-        assertEquals(artifact.executionSql, previewText)
-        assertFalse(artifact.executionSql.isBlank())
-        assertTrue(previewText === artifact.executionSql || previewText == artifact.executionSql)
+        assertEquals(plan.sqlWithPlaceholders, previewText)
+        assertFalse(plan.sqlWithPlaceholders.isBlank())
+        assertTrue(previewText === plan.sqlWithPlaceholders || previewText == plan.sqlWithPlaceholders)
     }
 
-    private fun artifact(
+    @Test
+    fun boundPreviewShowsTypedMetadataWithoutBoundValue() {
+        val file = SourceFileId("vfs:/Mapper.xml")
+        val prepared = PreparedExecution(
+            statementId = XmlStatementId(file, "fixture.Mapper", "find"),
+            statementKind = StatementKind.SELECT,
+            sourceRevisions = mapOf(file to SourceRevision("vfs:1")),
+            sqlWithPlaceholders = "select ?",
+            orderedBindings = listOf(
+                com.algorist.zMyBatis.core.preparation.PreparedBinding(
+                    index = 0,
+                    property = "name",
+                    value = com.algorist.zMyBatis.core.input.InputValue.Text("Ada"),
+                    origin = com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin.CallerInput(
+                        com.algorist.zMyBatis.core.input.InputRequirementId("method-param:0"),
+                        com.algorist.zMyBatis.core.input.InputProvenance(emptyList()),
+                    ),
+                    metadata = com.algorist.zMyBatis.core.preparation.PreparedBindingMetadata(
+                        declaredJavaTypeIdentity = null,
+                        mappingJavaTypeIdentity = "java.lang.String",
+                        jdbcTypeIdentity = "VARCHAR",
+                        effectiveJdbcTypeIdentity = "VARCHAR",
+                        typeHandlerIdentity = "org.apache.ibatis.type.StringTypeHandler",
+                        parameterMode = "IN",
+                        numericScale = null,
+                    ),
+                ),
+            ),
+            rawInterpolations = emptyList(),
+            preparationMetadata = PreparationMetadata(
+                engineIdentity = "org.mybatis:mybatis",
+                engineVersion = "3.5.19",
+                languageDriverIdentity = "org.apache.ibatis.scripting.xmltags.XMLLanguageDriver",
+            ),
+        )
+        val target = ResolvedExecutionTarget(
+            ExecutionTargetDescriptor(
+                ExecutionTargetId(
+                    StableDataSourceId("fixture-ds"),
+                    ExplicitSchemaIdentity("public"),
+                ),
+                "fixture",
+            ),
+        )
+        val plan = when (val result = PreparedExecutionPlanner.freeze(prepared, target)) {
+            is PreparedExecutionPlanResult.Ready -> result.plan
+            is PreparedExecutionPlanResult.Failed -> error("fixture plan failed")
+        }
+
+        val preview = preparedPlanPreview(plan)
+
+        assertTrue(preview.contains("select ?"))
+        assertTrue(preview.contains("#1 property=name"))
+        assertTrue(preview.contains("jdbcType=VARCHAR"))
+        assertFalse(preview.contains("Ada"))
+    }
+
+    private fun plan(
         declaredMutation: Boolean,
-    ): MaterializedExecution {
+    ): PreparedExecutionPlan {
         val file = SourceFileId("vfs:/Mapper.xml")
         val prepared = PreparedExecution(
             statementId = XmlStatementId(file, "fixture.Mapper", "find"),
@@ -176,9 +233,10 @@ class LeapExecutionApprovalAdapterTest {
                 "fixture",
             ),
         )
-        return (
-            TargetBoundZeroBindingExecutionMaterializer(target).materialize(prepared) as
-                MaterializationResult.Success
-            ).execution
+        return when (val result = PreparedExecutionPlanner.freeze(prepared, target)) {
+            is PreparedExecutionPlanResult.Ready -> result.plan
+            is PreparedExecutionPlanResult.Failed ->
+                error("fixture plan failed: ${result.failure.kind} / ${result.failure.code}")
+        }
     }
 }
