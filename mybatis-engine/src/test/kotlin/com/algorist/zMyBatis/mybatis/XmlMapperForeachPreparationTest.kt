@@ -2,7 +2,6 @@ package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputEnvironment
-import com.algorist.zMyBatis.core.input.InputEnvironmentFailureKind
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputValue
@@ -539,7 +538,7 @@ class XmlMapperForeachPreparationTest {
             assertEquals(listOf(InputValue.Text("a"), InputValue.DateValue(date)), execution.orderedBindings.map { it.value })
             val generic = fixture("UPDATE t $open<foreach collection=\"param2\" item=\"item\">v=#{item},</foreach>$close",
                 listOf(parameter(0, "long", "unused"), parameter(1, "java.util.List<java.lang.Long>", "ids")), StatementKind.UPDATE)
-            assertStockParity(generic, mapOf("param2" to listOf(7L)), success(request(generic, mapOf(1 to listValue(7)))))
+            assertStockParity(generic, mapOf("param2" to listOf(7L)), success(request(generic, mapOf(0 to integer(0), 1 to listValue(7)))))
         }
     }
 
@@ -653,7 +652,7 @@ class XmlMapperForeachPreparationTest {
             assertStockParity(fixture, mapOf("entries" to linkedMapOf("a" to date)), execution)
             assertEquals(listOf(InputValue.Text("a"), InputValue.DateValue(date)), execution.orderedBindings.map { it.value })
             val generic = fixture("SELECT 1 $open<foreach collection=\"param2\" item=\"item\">#{item}</foreach>$close", listOf(parameter(0, "long", "unused"), parameter(1, "java.util.List<java.lang.Long>", "ids")))
-            assertStockParity(generic, mapOf("param2" to listOf(7L)), success(request(generic, mapOf(1 to listValue(7)))))
+            assertStockParity(generic, mapOf("param2" to listOf(7L)), success(request(generic, mapOf(0 to integer(0), 1 to listValue(7)))))
         }
     }
 
@@ -797,11 +796,16 @@ class XmlMapperForeachPreparationTest {
         val nullItem = success(request(fixture, mapOf(0 to InputValue.ListValue(listOf(InputValue.NullValue)))))
         assertEquals(InputValue.NullValue, nullItem.orderedBindings.single().value)
         assertTrue(nullItem.orderedBindings.single().additionalParameter)
-        val nullCollection = InputEnvironment.validate(
+        val nullableEnvironment = InputEnvironment.validate(
             contract(fixture),
             listOf(ProvidedInput(contract(fixture).requirements.single().id, InputValue.NullValue, ExecutionInputOrigin.USER_ENTERED)),
-        ) as InputEnvironmentResult.Failure
-        assertEquals(InputEnvironmentFailureKind.NULL_NOT_ALLOWED, nullCollection.failures.single().kind)
+        )
+        assertTrue(nullableEnvironment is InputEnvironmentResult.Success)
+        val nullCollection = XmlMapperPreparationEngine.prepare(
+            request(fixture, mapOf(0 to InputValue.NullValue)),
+        ) as PreparationResult.Failed
+        assertEquals(PreparationFailureKind.MYBATIS_PARSE, nullCollection.failure.kind)
+        assertEquals("mybatis-sql-source-parse-failure", nullCollection.failure.code)
     }
 
     @Test
