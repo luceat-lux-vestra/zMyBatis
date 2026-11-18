@@ -623,6 +623,12 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             "java.time.LocalTime" -> LocalTime::class.java
             "java.time.LocalDateTime" -> LocalDateTime::class.java
             "java.time.Instant" -> Instant::class.java
+            "java.lang.Object" -> {
+                check(binding.value == InputValue.NullValue) {
+                    "Object mapping type is allowed only for captured null authority"
+                }
+                Object::class.java
+            }
             else -> throw UnsupportedOperationException(
                 "unsupported captured standard Java type: " +
                     binding.metadata.mappingJavaTypeIdentity,
