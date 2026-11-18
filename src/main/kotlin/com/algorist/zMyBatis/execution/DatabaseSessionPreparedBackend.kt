@@ -402,6 +402,7 @@ internal class PreparedBackendCancellationControl : PreparedBackendExecutionHand
     private val requested = AtomicBoolean(false)
     private val dispatchStarted = AtomicBoolean(false)
     private val dispatchSucceeded = AtomicBoolean(false)
+    private val dispatchFailureType = AtomicReference<String?>()
     private val finished = AtomicBoolean(false)
     private val statement = AtomicReference<RemotePreparedStatement?>()
 
@@ -436,11 +437,8 @@ internal class PreparedBackendCancellationControl : PreparedBackendExecutionHand
     private fun dispatchIfPossible(): PreparedBackendCancellationResult {
         val current = statement.get() ?: return PreparedBackendCancellationResult.Requested
         if (!dispatchStarted.compareAndSet(false, true)) {
-            return if (dispatchSucceeded.get()) {
-                PreparedBackendCancellationResult.Requested
-            } else {
-                PreparedBackendCancellationResult.Failed("cancellation-dispatch-already-failed")
-            }
+            return dispatchFailureType.get()?.let(PreparedBackendCancellationResult::Failed)
+                ?: PreparedBackendCancellationResult.Requested
         }
         return try {
             current.cancel()
@@ -449,7 +447,9 @@ internal class PreparedBackendCancellationControl : PreparedBackendExecutionHand
         } catch (cancelled: ProcessCanceledException) {
             throw cancelled
         } catch (failure: Exception) {
-            PreparedBackendCancellationResult.Failed(failure.javaClass.name)
+            val diagnosticType = failure.javaClass.name
+            dispatchFailureType.set(diagnosticType)
+            PreparedBackendCancellationResult.Failed(diagnosticType)
         }
     }
 }
