@@ -19,7 +19,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
-import org.postgresql.Driver as PostgreSqlDriver
 
 /**
  * P3.3 stop-gate proof against the real PostgreSQL service started by e2e.yml.
@@ -165,8 +164,14 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
     }
 
     private fun registerPostgreSqlDataSource(): Fixture {
-        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
-        check(postgresJar.toFile().isFile) { "pgJDBC test artifact must resolve to a local JAR" }
+        val postgresJar = Path.of(
+            checkNotNull(System.getProperty("zmybatis.p3.postgresql.driverJar")) {
+                "P3 PostgreSQL driver JAR path must be supplied by the dedicated Gradle test task"
+            },
+        )
+        check(postgresJar.toFile().isFile) {
+            "P3 PostgreSQL driver JAR path must resolve to a local file"
+        }
 
         val driver = checkNotNull(DatabaseDriverManagerImpl.getInstance().getDriver("postgresql")) {
             "IDEA 263 must expose its PostgreSQL Database Tools driver descriptor"

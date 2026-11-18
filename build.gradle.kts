@@ -71,9 +71,6 @@ dependencies {
     }
 
     testImplementation(libs.junit)
-    // P3.3 test-only artifact. The dedicated PostgreSQL platform probe pins this already-resolved
-    // JAR into the Database Tools driver classpath; it is never packaged in the plugin.
-    testImplementation("org.postgresql:postgresql:42.7.14")
     testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
     testImplementation(platform("tools.jackson:jackson-bom:3.2.4"))
     testImplementation(platform("io.opentelemetry:opentelemetry-bom:1.67.0"))
@@ -269,8 +266,14 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
     }
 }
 
-// P3.3 real-PostgreSQL prepared-backend stop-gate probe. This task is intentionally
-// separate from ordinary test because the pinned PostgreSQL service exists only in e2e.yml.
+// P3.3 real-PostgreSQL prepared-backend stop-gate probe. Reuse the pgJDBC artifact already
+// present on the Starter integration-test graph; pass its concrete local path into the platform
+// test instead of relying on the IDE test classloader's CodeSource (which is null for transformed
+// test classes).
+val p3PostgresDriverJar = configurations.named("integrationTestRuntimeClasspath").map { configuration ->
+    configuration.files.single { file -> file.name == "postgresql-42.7.14.jar" }
+}
+
 val p3PostgresPreparedBackendTest = intellijPlatformTesting.testIde.register("p3PostgresPreparedBackendTest") {
     testFramework(TestFrameworkType.Platform)
     testFramework(TestFrameworkType.Plugin.Java)
@@ -278,6 +281,19 @@ val p3PostgresPreparedBackendTest = intellijPlatformTesting.testIde.register("p3
         disablePlugin("org.jetbrains.plugins.vue")
     }
     task {
+        // IntelliJ Platform testIde registrations participate in the verification lifecycle.
+        // The PostgreSQL service exists only in the dedicated E2E job, so ordinary check must
+        // see this task as non-applicable rather than trying to connect to localhost:5432.
+        onlyIf("P3 PostgreSQL runtime service is explicitly enabled") {
+            System.getenv("ZMYBATIS_P3_POSTGRES_RUNTIME") == "1"
+        }
+        inputs.file(p3PostgresDriverJar)
+        doFirst {
+            systemProperty(
+                "zmybatis.p3.postgresql.driverJar",
+                p3PostgresDriverJar.get().absolutePath,
+            )
+        }
         filter {
             includeTestsMatching(
                 "com.algorist.zMyBatis.execution.P3PostgreSqlPreparedBackendRuntimeTest",
