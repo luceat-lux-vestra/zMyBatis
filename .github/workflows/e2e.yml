@@ -125,6 +125,13 @@ jobs:
           done
           docker exec zmybatis-postgres-e2e             psql -h 127.0.0.1 -U zmybatis -d zmybatis -Atc 'select version()'
 
+      - name: Run P3 PostgreSQL prepared-backend probe
+        if: ${{ github.event_name != 'push' }}
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME p3PostgresPreparedBackendTest --stacktrace 2>&1 | tee p3-postgres-prepared.log
+
       - name: Run Starter / Driver E2E
         if: ${{ github.event_name != 'push' }}
         shell: bash
@@ -165,8 +172,11 @@ jobs:
           # Starter test tree (which includes downloaded/runtime bulk data).
           path: |
             e2e.log
+            p3-postgres-prepared.log
             build/reports/tests/integrationTest
             build/test-results/integrationTest
+            build/reports/tests/p3PostgresPreparedBackendTest
+            build/test-results/p3PostgresPreparedBackendTest
             out/ide-tests/tests/**/log/idea.log
             out/ide-tests/tests/**/screenshots/**
           if-no-files-found: warn

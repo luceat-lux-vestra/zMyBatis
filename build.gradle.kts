@@ -71,6 +71,9 @@ dependencies {
     }
 
     testImplementation(libs.junit)
+    // P3.3 test-only artifact. The dedicated PostgreSQL platform probe pins this already-resolved
+    // JAR into the Database Tools driver classpath; it is never packaged in the plugin.
+    testImplementation("org.postgresql:postgresql:42.7.14")
     testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
     testImplementation(platform("tools.jackson:jackson-bom:3.2.4"))
     testImplementation(platform("io.opentelemetry:opentelemetry-bom:1.67.0"))
@@ -266,6 +269,27 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
     }
 }
 
+// P3.3 real-PostgreSQL prepared-backend stop-gate probe. This task is intentionally
+// separate from ordinary test because the pinned PostgreSQL service exists only in e2e.yml.
+val p3PostgresPreparedBackendTest = intellijPlatformTesting.testIde.register("p3PostgresPreparedBackendTest") {
+    testFramework(TestFrameworkType.Platform)
+    testFramework(TestFrameworkType.Plugin.Java)
+    plugins {
+        disablePlugin("org.jetbrains.plugins.vue")
+    }
+    task {
+        filter {
+            includeTestsMatching(
+                "com.algorist.zMyBatis.execution.P3PostgreSqlPreparedBackendRuntimeTest",
+            )
+        }
+        testLogging {
+            events("passed", "failed")
+            showStandardStreams = true
+        }
+    }
+}
+
 // Run the Kotlin boundary characterization with the real bundled Kotlin plugin,
 // without adding Kotlin as a production plugin dependency or claiming support.
 val kotlinBoundaryTest = intellijPlatformTesting.testIde.register("kotlinBoundaryTest") {
@@ -397,6 +421,7 @@ tasks {
         filter {
             excludeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.KotlinActionContextBoundaryTest")
+            excludeTestsMatching("com.algorist.zMyBatis.execution.P3PostgreSqlPreparedBackendRuntimeTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.DependentMapperSourceSnapshotAdapterProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapterProjectFixtureTest")
