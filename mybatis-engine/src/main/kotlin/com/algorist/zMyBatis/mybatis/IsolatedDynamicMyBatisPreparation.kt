@@ -549,12 +549,20 @@ internal object IsolatedDynamicMyBatisPreparation {
         }
 
         if (value.javaClass.isArray) {
+            val componentType = value.javaClass.componentType
+            if (!componentType.isPrimitive && !jdkOwned(componentType)) {
+                return CrossLoaderValue.Unsupported(value.javaClass.name)
+            }
             val size = ReflectArray.getLength(value)
-            val copy = arrayOfNulls<Any?>(size)
+            val copy = ReflectArray.newInstance(componentType, size)
             for (index in 0 until size) {
                 val copied = copyAcrossLoader(ReflectArray.get(value, index), loader)
                 if (copied is CrossLoaderValue.Unsupported) return copied
-                copy[index] = (copied as CrossLoaderValue.Ready).value
+                try {
+                    ReflectArray.set(copy, index, (copied as CrossLoaderValue.Ready).value)
+                } catch (_: IllegalArgumentException) {
+                    return CrossLoaderValue.Unsupported(value.javaClass.name)
+                }
             }
             return CrossLoaderValue.Ready(copy)
         }

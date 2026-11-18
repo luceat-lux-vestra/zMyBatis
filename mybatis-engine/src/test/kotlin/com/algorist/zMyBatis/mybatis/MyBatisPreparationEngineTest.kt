@@ -360,6 +360,31 @@ class MyBatisPreparationEngineTest {
     }
 
     @Test
+    fun primitiveByteArrayRetainsRuntimeArrayTypeAndStockHandlerAcrossIsolation() {
+        val bytes = InputValue.ArrayValue(
+            listOf(
+                InputValue.IntegerValue(BigInteger.ONE),
+                InputValue.IntegerValue(BigInteger.TWO),
+                InputValue.IntegerValue(BigInteger.valueOf(3)),
+            ),
+        )
+
+        val result = MyBatisPreparationEngine.prepare(
+            request(
+                "select #{payload,jdbcType=VARBINARY}",
+                listOf(Parameter("byte[]", "payload", bytes)),
+            ),
+        )
+
+        assertTrue(result is PreparationResult.Success)
+        val binding = (result as PreparationResult.Success).execution.orderedBindings.single()
+        assertEquals(bytes, binding.value)
+        assertEquals("[B", binding.metadata.mappingJavaTypeIdentity)
+        assertEquals("VARBINARY", binding.metadata.jdbcTypeIdentity)
+        assertEquals("org.apache.ibatis.type.ByteArrayTypeHandler", binding.metadata.typeHandlerIdentity)
+    }
+
+    @Test
     fun structuredBindingsWithoutRegisteredHandlersFailClosedUnderMyBatis360() {
         val map = InputValue.MapValue(
             linkedMapOf(
