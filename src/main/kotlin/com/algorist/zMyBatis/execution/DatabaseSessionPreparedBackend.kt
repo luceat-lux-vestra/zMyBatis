@@ -400,7 +400,8 @@ internal class DatabaseSessionPreparedBackend(
 
 internal class PreparedBackendCancellationControl : PreparedBackendExecutionHandle {
     private val requested = AtomicBoolean(false)
-    private val dispatched = AtomicBoolean(false)
+    private val dispatchStarted = AtomicBoolean(false)
+    private val dispatchSucceeded = AtomicBoolean(false)
     private val finished = AtomicBoolean(false)
     private val statement = AtomicReference<RemotePreparedStatement?>()
 
@@ -412,7 +413,7 @@ internal class PreparedBackendCancellationControl : PreparedBackendExecutionHand
 
     fun isCancellationRequested(): Boolean = requested.get()
 
-    fun cancelWasDispatched(): Boolean = dispatched.get()
+    fun cancelWasDispatched(): Boolean = dispatchSucceeded.get()
 
     fun attach(candidate: RemotePreparedStatement) {
         check(statement.compareAndSet(null, candidate)) {
@@ -434,11 +435,16 @@ internal class PreparedBackendCancellationControl : PreparedBackendExecutionHand
 
     private fun dispatchIfPossible(): PreparedBackendCancellationResult {
         val current = statement.get() ?: return PreparedBackendCancellationResult.Requested
-        if (!dispatched.compareAndSet(false, true)) {
-            return PreparedBackendCancellationResult.Requested
+        if (!dispatchStarted.compareAndSet(false, true)) {
+            return if (dispatchSucceeded.get()) {
+                PreparedBackendCancellationResult.Requested
+            } else {
+                PreparedBackendCancellationResult.Failed("cancellation-dispatch-already-failed")
+            }
         }
         return try {
             current.cancel()
+            dispatchSucceeded.set(true)
             PreparedBackendCancellationResult.Requested
         } catch (cancelled: ProcessCanceledException) {
             throw cancelled
