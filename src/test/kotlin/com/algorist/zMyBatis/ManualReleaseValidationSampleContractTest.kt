@@ -198,7 +198,7 @@ class ManualReleaseValidationSampleContractTest {
             "PendingParameterTypeMapper.xml",
         )
         Files.walk(sample).use { paths ->
-            val names = paths.filter(Files::isRegularFile)
+            val names = paths.filter { path -> Files.isRegularFile(path) }
                 .map { it.fileName.toString() }
                 .toList()
                 .toSet()
