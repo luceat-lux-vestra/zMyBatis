@@ -63,6 +63,7 @@ import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Proxy
 import java.math.BigDecimal
 import java.math.BigInteger
+import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.PreparedStatement
 import java.sql.Timestamp
@@ -1102,6 +1103,12 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             username = "zmybatis"
             authProviderId = DatabaseAuthProviderNames.CREDENTIALS_ID
             isAutoSynchronize = false
+            // BasePlatformTestCase replaces and deletes its per-test project directory between
+            // methods, while Database Tools may launch/relaunch the JDBC remote process after that
+            // teardown. Keep the process working directory outside that disposable fixture root.
+            workingDir = Files.createDirectories(
+                Path.of("build", "p3-postgres-remote-working-dir"),
+            ).toAbsolutePath().toString()
         }
 
         val manager = LocalDataSourceManager.getInstance(project)
