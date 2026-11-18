@@ -263,6 +263,7 @@ internal class DatabaseSessionPreparedBackend(
             control.detach(attached)
         }
         val closeFailure = attached?.let { closeStatement(it) }
+        control.markFinished()
 
         escaped?.let { throw it }
         val completed = checkNotNull(outcome) {
