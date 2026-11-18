@@ -51,6 +51,7 @@ import com.intellij.database.remote.jdbc.RemoteConnection
 import com.intellij.database.remote.jdbc.RemotePreparedStatement
 import com.intellij.database.psi.DbDataSource
 import com.intellij.database.psi.DbPsiFacade
+import com.intellij.database.util.DbImplUtil
 import com.intellij.database.dataSource.url.template.UrlTemplate
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.util.Disposer
@@ -1189,8 +1190,11 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         plan: com.algorist.zMyBatis.core.execution.PreparedExecutionPlan,
         target: ResolvedExecutionTarget,
     ): DatabaseSessionPreparedOutcome {
+        val sessionDataSource = checkNotNull(DbImplUtil.getMaybeLocalDataSource(dataSource)) {
+            "P4 production backend must retain registered LocalDataSource session authority"
+        }
         val console = JdbcConsole.newConsole(project)
-            .fromDataSource(dataSource)
+            .fromDataSource(sessionDataSource)
             .forFile(
                 LightVirtualFile(
                     "p4-production-backend.sql",
