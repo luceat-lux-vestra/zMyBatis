@@ -2,7 +2,7 @@ package com.algorist.zMyBatis.execution
 
 import com.algorist.zMyBatis.SqlFormatter
 import com.algorist.zMyBatis.SqlPreviewDialog
-import com.algorist.zMyBatis.core.materialization.MaterializedExecution
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlan
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.project.Project
@@ -24,12 +24,37 @@ internal sealed interface LeapExecutionApprovalResult {
     data object InvocationInvalidated : LeapExecutionApprovalResult
 }
 
+internal fun preparedPlanPreview(
+    plan: PreparedExecutionPlan,
+    sqlPresentation: String = plan.sqlWithPlaceholders,
+): String {
+    if (plan.orderedBindings.isEmpty()) return sqlPresentation
+
+    val bindings = plan.orderedBindings.joinToString(separator = "\n") { binding ->
+        val javaType = binding.metadata.mappingJavaTypeIdentity
+            ?: binding.metadata.declaredJavaTypeIdentity?.value
+            ?: "unknown"
+        val jdbcType = binding.metadata.effectiveJdbcTypeIdentity
+            ?: binding.metadata.jdbcTypeIdentity
+            ?: "unknown"
+        "#${binding.index + 1} property=${binding.property} " +
+            "javaType=$javaType jdbcType=$jdbcType " +
+            "handler=${binding.metadata.typeHandlerIdentity}"
+    }
+
+    return buildString {
+        append(sqlPresentation)
+        append("\n\nBindings (values hidden):\n")
+        append(bindings)
+    }
+}
+
 /**
  * Testable approval kernel. [formatPreview] and [showPreview] may transform/display only a
- * presentation copy. [artifact] remains the sole execution authority.
+ * presentation copy. [plan] remains the sole execution authority.
  */
 internal fun runLeapExecutionApproval(
-    artifact: MaterializedExecution,
+    plan: PreparedExecutionPlan,
     options: LeapExecutionApprovalOptions,
     isInvocationActive: () -> Boolean,
     formatPreview: (String) -> String,
@@ -41,15 +66,20 @@ internal fun runLeapExecutionApproval(
 
     val decision = leapExecutionApprovalDecision(
         showSqlPreview = options.showSqlPreview,
-        safetyFlags = artifact.safetyFlags,
+        safetyFlags = plan.safetyFlags,
     )
     if (!decision.requiresPreview) {
         return LeapExecutionApprovalResult.Approved
     }
 
     val previewSql =
-        if (options.formatPreviewSql) formatPreview(artifact.executionSql) else artifact.executionSql
-    if (!showPreview(previewSql)) {
+        if (options.formatPreviewSql) {
+            formatPreview(plan.sqlWithPlaceholders)
+        } else {
+            plan.sqlWithPlaceholders
+        }
+    val previewText = preparedPlanPreview(plan, previewSql)
+    if (!showPreview(previewText)) {
         return LeapExecutionApprovalResult.UserCancelled
     }
 
@@ -63,12 +93,12 @@ internal fun runLeapExecutionApproval(
 /**
  * IDE modal adapter for immutable-artifact approval.
  *
- * A required preview is always scheduled onto the EDT. The original artifact is never rewritten;
- * formatting is presentation-only and approval resumes with the exact same artifact instance.
+ * A required preview is always scheduled onto the EDT. The original plan is never rewritten;
+ * formatting is presentation-only and approval resumes with the exact same plan instance.
  */
 internal class LeapExecutionApprovalAdapter(private val project: Project) {
     fun requestApproval(
-        artifact: MaterializedExecution,
+        plan: PreparedExecutionPlan,
         options: LeapExecutionApprovalOptions,
         isInvocationActive: () -> Boolean,
         onResult: (LeapExecutionApprovalResult) -> Unit,
@@ -76,7 +106,7 @@ internal class LeapExecutionApprovalAdapter(private val project: Project) {
         val liveInvocation = { !project.isDisposed && isInvocationActive() }
         val decision = leapExecutionApprovalDecision(
             showSqlPreview = options.showSqlPreview,
-            safetyFlags = artifact.safetyFlags,
+            safetyFlags = plan.safetyFlags,
         )
 
         if (!decision.requiresPreview) {
@@ -93,7 +123,7 @@ internal class LeapExecutionApprovalAdapter(private val project: Project) {
         ApplicationManager.getApplication().invokeLater({
             onResult(
                 runLeapExecutionApproval(
-                    artifact = artifact,
+                    plan = plan,
                     options = options,
                     isInvocationActive = liveInvocation,
                     formatPreview = { sql -> SqlFormatter.format(project, sql) },
