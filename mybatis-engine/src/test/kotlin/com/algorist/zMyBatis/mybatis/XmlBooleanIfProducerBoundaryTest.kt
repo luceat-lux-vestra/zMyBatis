@@ -1,12 +1,12 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
+import com.algorist.zMyBatis.core.input.InputAliasKind
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentFailureKind
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -31,7 +31,7 @@ import org.junit.Test
 
 class XmlBooleanIfProducerBoundaryTest {
     @Test
-    fun maintainedStockOgnlKeywordsCannotAcquireCallerAuthority() {
+    fun stockOgnlKeywordsDoNotOverrideMapperCallerAuthority() {
         val keywords = OgnlParserConstants.tokenImage
             .map { it.removeSurrounding("\"") }
             .filter { Regex("[a-zA-Z]+").matches(it) }
@@ -51,9 +51,19 @@ class XmlBooleanIfProducerBoundaryTest {
                 SourceRange(0, 100),
                 listOf(JavaMethodParameterMetadata(0, "enabled", JavaTypeIdentity("boolean"), keyword)),
             )
-            val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
-            assertTrue(keyword, contract.isPreparationBlocked)
-            assertTrue(keyword, contract.requirements.isEmpty())
+            val source = XmlMapperPreparationSource(graph, mapperMethod = mapper)
+            val contract = MyBatisInvocationContractFactory.build(source)
+            assertFalse(keyword, contract.isPreparationBlocked)
+            assertEquals(keyword, 1, contract.requirements.size)
+            assertEquals(keyword, "method-param:0", contract.requirements.single().id.value)
+            assertEquals(
+                keyword,
+                listOf(
+                    keyword to InputAliasKind.EXPLICIT_PARAM,
+                    "param1" to InputAliasKind.GENERIC_PARAM,
+                ),
+                contract.aliases.map { it.name to it.kind },
+            )
         }
     }
 
