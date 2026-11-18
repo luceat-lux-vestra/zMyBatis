@@ -3,6 +3,8 @@ package com.algorist.zMyBatis.execution
 import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
 import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanFailure
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanFailureKind
 import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.core.input.InputEnvironment
@@ -46,7 +48,7 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
         val result = CompletableFuture<LeapExecutionCandidateResult>()
 
         val builder: LeapExecutionCandidateBuilder =
-            { _, _, _, target, _, checkCanceled ->
+            { _, _, _, _, _, checkCanceled ->
                 checkCanceled()
                 candidateWasOnEdt.set(ApplicationManager.getApplication().isDispatchThread)
                 started.countDown()
@@ -54,7 +56,7 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
                     builderTimedOut.set(true)
                 }
                 checkCanceled()
-                LeapExecutionCandidateResult.TargetIdentityMismatch(target.targetId, null)
+                planFailureCandidate()
             }
 
         try {
@@ -89,7 +91,7 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
         }
 
         val completed = PlatformTestUtil.waitForFuture(result, FIXTURE_TIMEOUT_MILLIS)
-        assertTrue(completed is LeapExecutionCandidateResult.TargetIdentityMismatch)
+        assertTrue(completed is LeapExecutionCandidateResult.PlanFailed)
         assertFalse("candidate fixture timed out waiting for deterministic release", builderTimedOut.get())
     }
 
@@ -104,7 +106,7 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
         val cancelled = CompletableFuture<Unit>()
 
         val builder: LeapExecutionCandidateBuilder =
-            { _, _, _, target, _, checkCanceled ->
+            { _, _, _, _, _, checkCanceled ->
                 checkCanceled()
                 indicatorRef.set(ProgressManager.getInstance().progressIndicator)
                 started.countDown()
@@ -113,7 +115,7 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
                 }
                 checkCanceled()
                 passedCancellationGate.set(true)
-                LeapExecutionCandidateResult.TargetIdentityMismatch(target.targetId, null)
+                planFailureCandidate()
             }
 
         try {
@@ -153,14 +155,14 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
         val observed = CompletableFuture<LeapExecutionCandidateResult>()
 
         val builder: LeapExecutionCandidateBuilder =
-            { _, _, _, target, _, checkCanceled ->
+            { _, _, _, _, _, checkCanceled ->
                 checkCanceled()
                 started.countDown()
                 if (!release.await(FIXTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                     builderTimedOut.set(true)
                 }
                 checkCanceled()
-                LeapExecutionCandidateResult.TargetIdentityMismatch(target.targetId, null)
+                planFailureCandidate()
             }
 
         try {
@@ -269,6 +271,15 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
 
         return CandidateInputs(source, contract, environment, target)
     }
+
+
+    private fun planFailureCandidate(): LeapExecutionCandidateResult =
+        LeapExecutionCandidateResult.PlanFailed(
+            PreparedExecutionPlanFailure(
+                kind = PreparedExecutionPlanFailureKind.DATABASE_ID_MISMATCH,
+                code = "fixture-plan-failure",
+            ),
+        )
 
     private fun await(latch: CountDownLatch): Boolean =
         latch.await(FIXTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
