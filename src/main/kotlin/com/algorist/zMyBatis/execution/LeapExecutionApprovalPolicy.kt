@@ -1,6 +1,6 @@
 package com.algorist.zMyBatis.execution
 
-import com.algorist.zMyBatis.core.materialization.MaterializationSafetyFlags
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanSafetyFlags
 
 internal enum class LeapExecutionApprovalReason {
     USER_PREVIEW_SETTING,
@@ -16,14 +16,14 @@ internal data class LeapExecutionApprovalDecision(
 }
 
 /**
- * Pure approval policy over explicit user policy plus immutable materialization safety evidence.
+ * Pure approval policy over explicit user policy plus immutable prepared-plan safety evidence.
  *
  * SQL text is deliberately not classified here. Mutation/raw evidence is established before this
- * boundary and carried by [MaterializationSafetyFlags].
+ * boundary and carried by [PreparedExecutionPlanSafetyFlags].
  */
 internal fun leapExecutionApprovalDecision(
     showSqlPreview: Boolean,
-    safetyFlags: MaterializationSafetyFlags,
+    safetyFlags: PreparedExecutionPlanSafetyFlags,
 ): LeapExecutionApprovalDecision {
     val reasons = linkedSetOf<LeapExecutionApprovalReason>()
     if (showSqlPreview) {
