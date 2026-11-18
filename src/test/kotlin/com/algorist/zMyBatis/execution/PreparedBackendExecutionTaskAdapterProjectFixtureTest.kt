@@ -32,7 +32,7 @@ class PreparedBackendExecutionTaskAdapterProjectFixtureTest : BasePlatformTestCa
                         }
                     }
                 },
-                onCompleted = completed::complete,
+                onCompleted = { outcome -> completed.complete(outcome) },
             )
 
             assertTrue(
@@ -68,7 +68,7 @@ class PreparedBackendExecutionTaskAdapterProjectFixtureTest : BasePlatformTestCa
                         }
                     }
                 },
-                onCompleted = completed::complete,
+                onCompleted = { outcome -> completed.complete(outcome) },
             )
 
             assertEquals(
