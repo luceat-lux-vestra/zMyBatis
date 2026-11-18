@@ -64,7 +64,12 @@ internal class PreparedBackendExecutionTaskAdapter(
             }
 
             override fun onCancel() {
-                onCompleted(cancellationOutcome(requestCancellation()))
+                val completedOutcome = outcome.get()
+                if (completedOutcome != null) {
+                    onCompleted(completedOutcome)
+                } else {
+                    onCompleted(cancellationOutcome(requestCancellation()))
+                }
             }
 
             private fun requestCancellation(): PreparedBackendCancellationResult {
