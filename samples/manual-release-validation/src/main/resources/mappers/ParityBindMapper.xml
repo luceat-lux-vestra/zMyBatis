@@ -4,6 +4,6 @@
     <!-- R02: P5 parity acceptance case — stock MyBatis bind semantics + raw approval. -->
     <select id="bindParity">
         <bind name="pattern" value="'%' + value + '%'"/>
-        SELECT ${pattern} AS result_value
+        SELECT '${pattern}' AS result_value
     </select>
 </mapper>
