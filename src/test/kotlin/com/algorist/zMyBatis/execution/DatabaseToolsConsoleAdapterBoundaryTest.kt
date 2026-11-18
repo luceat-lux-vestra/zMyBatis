@@ -16,7 +16,9 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         )
 
         assertTrue(delivery.contains("consoleAdapter.acquireAndDeliverConsole("))
-        assertTrue(delivery.contains("consoleAdapter.executeMaterialized("))
+        assertTrue(delivery.contains("nativeBackend.execute("))
+        assertTrue(delivery.contains("preparedBackend.execute("))
+        assertFalse(delivery.contains("consoleAdapter.executeMaterialized("))
         assertFalse(action.contains("JdbcConsole.newConsole"))
         assertFalse(action.contains(".switchSchema("))
         assertFalse(action.contains("JdbcConsoleProvider.findScriptModelNoInject"))
