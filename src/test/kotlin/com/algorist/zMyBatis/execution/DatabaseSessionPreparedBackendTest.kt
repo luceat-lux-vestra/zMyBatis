@@ -154,6 +154,42 @@ class DatabaseSessionPreparedBackendTest {
     }
 
     @Test
+    fun attachedCancellationDispatchesRemoteCancelAndRecordsSuccess() {
+        val cancelCalls = AtomicInteger(0)
+        val statement = Proxy.newProxyInstance(
+            RemotePreparedStatement::class.java.classLoader,
+            arrayOf(RemotePreparedStatement::class.java),
+        ) { _, method, _ ->
+            if (method.name == "cancel") cancelCalls.incrementAndGet()
+            defaultValue(method.returnType)
+        } as RemotePreparedStatement
+        val control = PreparedBackendCancellationControl()
+        control.attach(statement)
+
+        assertSame(PreparedBackendCancellationResult.Requested, control.cancel())
+        assertTrue(control.cancelWasDispatched())
+        assertEquals(1, cancelCalls.get())
+    }
+
+    @Test
+    fun failedRemoteCancelIsNotReportedAsSuccessfullyDispatched() {
+        val statement = Proxy.newProxyInstance(
+            RemotePreparedStatement::class.java.classLoader,
+            arrayOf(RemotePreparedStatement::class.java),
+        ) { _, method, _ ->
+            if (method.name == "cancel") throw IllegalStateException("fixture cancel failure")
+            defaultValue(method.returnType)
+        } as RemotePreparedStatement
+        val control = PreparedBackendCancellationControl()
+        control.attach(statement)
+
+        val result = control.cancel()
+
+        assertTrue(result is PreparedBackendCancellationResult.Failed)
+        assertTrue(!control.cancelWasDispatched())
+    }
+
+    @Test
     fun rowLimitFailsClosedAndStillClosesResources() {
         val statementClosed = AtomicBoolean(false)
         val resultClosed = AtomicBoolean(false)

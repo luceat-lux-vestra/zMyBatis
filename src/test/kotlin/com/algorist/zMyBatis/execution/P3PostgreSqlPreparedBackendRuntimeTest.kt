@@ -1,5 +1,12 @@
 package com.algorist.zMyBatis.execution
 
+import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
+import com.algorist.zMyBatis.core.execution.ExecutionTargetId
+import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanResult
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanner
+import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
+import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.ForeachLocalRole
 import com.algorist.zMyBatis.core.input.InputEnvironment
@@ -16,11 +23,13 @@ import com.algorist.zMyBatis.core.preparation.PreparedBinding
 import com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin
 import com.algorist.zMyBatis.core.preparation.PreparedExecution
 import com.algorist.zMyBatis.core.source.CapturedStatement
+import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
 import com.algorist.zMyBatis.core.source.JavaAnnotationStatementCapture
 import com.algorist.zMyBatis.core.source.JavaMethodParameterMetadata
 import com.algorist.zMyBatis.core.source.JavaStatementId
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
 import com.algorist.zMyBatis.core.source.MethodSignature
+import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRange
 import com.algorist.zMyBatis.core.source.SourceRevision
@@ -238,6 +247,83 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                     "databaseErrorType=${databaseError.diagnosticType.substringAfterLast('.')} " +
                     "cancelled=${cancellation.interrupted} " +
                     "cancelElapsedMs=${cancellation.elapsedMillis}",
+            )
+        } finally {
+            fixture.dispose()
+        }
+    }
+
+    fun testProductionDatabaseSessionPreparedBackendThroughDatabaseToolsOwnedSession() {
+        val fixture = registerPostgreSqlDataSource()
+        try {
+            val instant = Instant.parse("2026-11-18T03:00:17Z")
+            val execution = prepareCapturedBindingExecution(
+                byteValue = 7.toByte(),
+                shortValue = 8.toShort(),
+                intValue = 9,
+                longValue = 42L,
+                floatValue = 11.25f,
+                doubleValue = 12.5,
+                decimalValue = BigDecimal("13.75"),
+                flag = true,
+                text = "captured-proof",
+                binary = byteArrayOf(1, 2, 3),
+                date = LocalDate.of(2026, 11, 18),
+                time = LocalTime.of(12, 34, 56),
+                dateTime = LocalDateTime.of(2026, 11, 18, 12, 34, 56),
+                instant = instant,
+                items = listOf("left", "right"),
+                effectiveDatabaseId = MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+            )
+            val target = p4PreparedTarget(fixture.dataSource)
+            val plan = when (val result = PreparedExecutionPlanner.freeze(execution, target)) {
+                is PreparedExecutionPlanResult.Ready -> result.plan
+                is PreparedExecutionPlanResult.Failed ->
+                    error("P4 runtime plan creation failed: ${result.failure.kind} / ${result.failure.code}")
+            }
+
+            val outcome = executeProductionPreparedBackend(
+                dataSource = fixture.dataSource,
+                plan = plan,
+                target = target,
+            )
+            check(outcome is DatabaseSessionPreparedOutcome.Query) {
+                "P4 production backend must return structured query rows: $outcome"
+            }
+            check(outcome.columns.size == 16) {
+                "P4 production backend must expose all sixteen result columns"
+            }
+            check(outcome.rows.size == 1) {
+                "P4 production backend must expose the single runtime row"
+            }
+            val expected = listOf(
+                "7",
+                "8",
+                "9",
+                "42",
+                "11.25",
+                "12.5",
+                "13.75",
+                "true",
+                "captured-proof",
+                "010203",
+                "2026-11-18",
+                "12:34:56",
+                "2026-11-18 12:34:56",
+                Timestamp.from(instant).toLocalDateTime().toString().replace('T', ' '),
+                "NULL",
+                "left|right",
+            )
+            check(outcome.rows.single() == expected) {
+                "P4 production backend PostgreSQL round-trip mismatch"
+            }
+
+            println(
+                "ZMYBATIS_P4_PREPARED_BACKEND " +
+                    "bindingCount=${plan.orderedBindings.size} " +
+                    "queryColumns=${outcome.columns.size} " +
+                    "queryRows=${outcome.rows.size} " +
+                    "sessionOwned=true targetMatched=true structuredRows=true",
             )
         } finally {
             fixture.dispose()
@@ -712,6 +798,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         dateTime: LocalDateTime,
         instant: Instant,
         items: List<String>,
+        effectiveDatabaseId: MyBatisDatabaseId? = null,
     ): PreparedExecution {
         val fileId = SourceFileId("fixture/P3CapturedBindingRuntimeMapper.java")
         val revision = SourceRevision("p3-captured-binding-runtime-r1")
@@ -827,6 +914,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             source = source,
             parameterContract = contract,
             inputEnvironment = environment.environment,
+            effectiveDatabaseId = effectiveDatabaseId,
         )
         check(request is PreparationRequestResult.Ready) {
             "P3.7 captured-binding preparation request must be ready: $request"
@@ -1065,6 +1153,64 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             )
             failure.get()?.let { throw AssertionError("P3 PostgreSQL RawRequest failed", it) }
             return checkNotNull(outcome.get()) { "P3 PostgreSQL RawRequest completed without an outcome" }
+        } finally {
+            Disposer.dispose(console)
+        }
+    }
+
+    private fun p4PreparedTarget(dataSource: LocalDataSource): ResolvedExecutionTarget =
+        ResolvedExecutionTarget(
+            descriptor = ExecutionTargetDescriptor(
+                targetId = ExecutionTargetId(
+                    dataSourceId = StableDataSourceId(
+                        checkNotNull(databaseToolsStableDataSourceId(dataSource)) {
+                            "P4 runtime fixture datasource must expose stable identity"
+                        },
+                    ),
+                    schema = ExplicitSchemaIdentity("public"),
+                ),
+                dataSourceDisplayName = "P4 runtime fixture",
+            ),
+            effectiveDatabaseId = MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+        )
+
+    private fun executeProductionPreparedBackend(
+        dataSource: LocalDataSource,
+        plan: com.algorist.zMyBatis.core.execution.PreparedExecutionPlan,
+        target: ResolvedExecutionTarget,
+    ): DatabaseSessionPreparedOutcome {
+        val console = JdbcConsole.newConsole(project)
+            .fromDataSource(dataSource)
+            .forFile(
+                LightVirtualFile(
+                    "p4-production-backend.sql",
+                    FileTypeManager.getInstance().getFileTypeByExtension("sql"),
+                    "",
+                ),
+            )
+            .build()
+        try {
+            val outcome = AtomicReference<DatabaseSessionPreparedOutcome?>()
+            val completed = CountDownLatch(1)
+            DatabaseSessionPreparedBackend(
+                PreparedResultLimits(maxRows = 4, maxColumns = 32),
+            ).execute(
+                console = console,
+                plan = plan,
+                currentTarget = target,
+                preExecutionCheck = { true },
+                onCompleted = {
+                    outcome.set(it)
+                    completed.countDown()
+                },
+            )
+            assertTrue(
+                "P4 production prepared backend must complete through Database Tools session",
+                completed.await(30, TimeUnit.SECONDS),
+            )
+            return checkNotNull(outcome.get()) {
+                "P4 production prepared backend completed without an outcome"
+            }
         } finally {
             Disposer.dispose(console)
         }
