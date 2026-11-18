@@ -160,14 +160,22 @@ internal class DatabaseSessionPreparedBackend(
                 context: DataRequest.Context,
                 connection: DatabaseConnectionCore,
             ) {
-                val outcome = executeOnConnection(
-                    connection = connection.remoteConnection,
-                    plan = plan,
-                    currentTarget = currentTarget,
-                    preExecutionCheck = preExecutionCheck,
-                    control = control,
-                )
-                complete(outcome)
+                try {
+                    val outcome = executeOnConnection(
+                        connection = connection.remoteConnection,
+                        plan = plan,
+                        currentTarget = currentTarget,
+                        preExecutionCheck = preExecutionCheck,
+                        control = control,
+                    )
+                    complete(outcome)
+                } catch (cancelled: ProcessCanceledException) {
+                    control.markFinished()
+                    throw cancelled
+                } catch (fatal: Throwable) {
+                    control.markFinished()
+                    throw fatal
+                }
             }
         }
 
@@ -207,14 +215,15 @@ internal class DatabaseSessionPreparedBackend(
         }
 
         var statement: RemotePreparedStatement? = null
-        var outcome: DatabaseSessionPreparedOutcome
+        var outcome: DatabaseSessionPreparedOutcome? = null
+        var escaped: Throwable? = null
         try {
             statement = connection.prepareStatement(plan.sqlWithPlaceholders)
             control.attach(statement)
-            if (control.isCancellationRequested()) {
-                outcome = DatabaseSessionPreparedOutcome.Cancelled
+            outcome = if (control.isCancellationRequested()) {
+                DatabaseSessionPreparedOutcome.Cancelled
             } else {
-                outcome = executePrepared(
+                executePrepared(
                     statement = statement,
                     plan = plan,
                     preExecutionCheck = preExecutionCheck,
@@ -222,7 +231,7 @@ internal class DatabaseSessionPreparedBackend(
                 )
             }
         } catch (cancelled: ProcessCanceledException) {
-            throw cancelled
+            escaped = cancelled
         } catch (failure: SQLException) {
             outcome = if (control.cancelWasDispatched()) {
                 DatabaseSessionPreparedOutcome.Cancelled
@@ -245,18 +254,28 @@ internal class DatabaseSessionPreparedBackend(
                     diagnosticType = failure.javaClass.name,
                 )
             }
+        } catch (fatal: Throwable) {
+            escaped = fatal
         }
 
-        val closeFailure = statement?.let { closeStatement(it) }
-        if (statement != null) control.detach(statement)
-        if (closeFailure != null && outcome !is DatabaseSessionPreparedOutcome.Failed) {
+        val attached = statement
+        if (attached != null) {
+            control.detach(attached)
+        }
+        val closeFailure = attached?.let { closeStatement(it) }
+
+        escaped?.let { throw it }
+        val completed = checkNotNull(outcome) {
+            "prepared backend execution completed without an outcome"
+        }
+        if (closeFailure != null && completed !is DatabaseSessionPreparedOutcome.Failed) {
             return failed(
                 kind = DatabaseSessionPreparedFailureKind.RESOURCE_CLOSE_FAILED,
                 code = RESOURCE_CLOSE_FAILED,
                 diagnosticType = closeFailure.javaClass.name,
             )
         }
-        return outcome
+        return completed
     }
 
     private fun executePrepared(
@@ -299,18 +318,20 @@ internal class DatabaseSessionPreparedBackend(
     }
 
     private fun readQuery(resultSet: RemoteResultSet): DatabaseSessionPreparedOutcome {
-        var outcome: DatabaseSessionPreparedOutcome = try {
-            PublicRemoteResultSetAdapter.read(resultSet, resultLimits)
+        var outcome: DatabaseSessionPreparedOutcome? = null
+        var escaped: Throwable? = null
+        try {
+            outcome = PublicRemoteResultSetAdapter.read(resultSet, resultLimits)
         } catch (cancelled: ProcessCanceledException) {
-            throw cancelled
+            escaped = cancelled
         } catch (failure: UnsupportedOperationException) {
-            failed(
+            outcome = failed(
                 kind = DatabaseSessionPreparedFailureKind.RESULT_METADATA_UNSUPPORTED,
                 code = RESULT_METADATA_UNSUPPORTED,
                 diagnosticType = failure.javaClass.name,
             )
         } catch (failure: SQLException) {
-            failed(
+            outcome = failed(
                 kind = DatabaseSessionPreparedFailureKind.DATABASE_ERROR,
                 code = DATABASE_ERROR,
                 diagnosticType = failure.javaClass.name,
@@ -318,22 +339,28 @@ internal class DatabaseSessionPreparedBackend(
                 vendorCode = failure.errorCode,
             )
         } catch (failure: Exception) {
-            failed(
+            outcome = failed(
                 kind = DatabaseSessionPreparedFailureKind.EXECUTION_FAILED,
                 code = EXECUTION_FAILED,
                 diagnosticType = failure.javaClass.name,
             )
+        } catch (fatal: Throwable) {
+            escaped = fatal
         }
 
         val closeFailure = closeResultSet(resultSet)
-        if (closeFailure != null && outcome !is DatabaseSessionPreparedOutcome.Failed) {
-            outcome = failed(
+        escaped?.let { throw it }
+        val completed = checkNotNull(outcome) {
+            "prepared query read completed without an outcome"
+        }
+        if (closeFailure != null && completed !is DatabaseSessionPreparedOutcome.Failed) {
+            return failed(
                 kind = DatabaseSessionPreparedFailureKind.RESOURCE_CLOSE_FAILED,
                 code = RESOURCE_CLOSE_FAILED,
                 diagnosticType = closeFailure.javaClass.name,
             )
         }
-        return outcome
+        return completed
     }
 
     private fun validatePlan(
