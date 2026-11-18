@@ -1,5 +1,6 @@
 package com.algorist.zMyBatis.mybatis
 
+import com.algorist.zMyBatis.core.input.ForeachLocalRole
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputProvenance
 import com.algorist.zMyBatis.core.input.InternalBinding
@@ -89,15 +90,33 @@ internal object MyBatisInvocationBindingCapture {
             }
 
             val origin = if (generated) {
-                PreparedBindingOrigin.MyBatisAdditional(
+                val internalBinding = mapping.foreachLocal?.let { foreachLocal ->
+                    val role = when (foreachLocal.kind) {
+                        InternalBindingKind.FOREACH_ITEM -> ForeachLocalRole.ITEM
+                        InternalBindingKind.FOREACH_INDEX -> ForeachLocalRole.INDEX
+                        else -> return invariant(property)
+                    }
                     InternalBinding(
-                        name = rootProperty,
-                        kind = InternalBindingKind.ADDITIONAL_PARAMETER,
+                        name = foreachLocal.sourceLocalName,
+                        kind = foreachLocal.kind,
                         provenance = InputProvenance(
-                            listOf(InputEvidence.RuntimeGeneratedBinding(property, rootSource)),
+                            listOf(
+                                InputEvidence.ForeachLocal(
+                                    foreachLocal.sourceLocalName,
+                                    role,
+                                    rootSource,
+                                ),
+                            ),
                         ),
+                    )
+                } ?: InternalBinding(
+                    name = rootProperty,
+                    kind = InternalBindingKind.ADDITIONAL_PARAMETER,
+                    provenance = InputProvenance(
+                        listOf(InputEvidence.RuntimeGeneratedBinding(property, rootSource)),
                     ),
                 )
+                PreparedBindingOrigin.MyBatisAdditional(internalBinding)
             } else {
                 PreparedBindingOrigin.CallerInput(
                     requireNotNull(callerRequirement).id,

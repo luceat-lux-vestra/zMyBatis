@@ -1,5 +1,33 @@
 package com.algorist.zMyBatis.execution
 
+import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
+import com.algorist.zMyBatis.core.input.ForeachLocalRole
+import com.algorist.zMyBatis.core.input.InputEnvironment
+import com.algorist.zMyBatis.core.input.InputEnvironmentResult
+import com.algorist.zMyBatis.core.input.InputEvidence
+import com.algorist.zMyBatis.core.input.InputValue
+import com.algorist.zMyBatis.core.input.InternalBindingKind
+import com.algorist.zMyBatis.core.input.ProvidedInput
+import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
+import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
+import com.algorist.zMyBatis.core.preparation.PreparationResult
+import com.algorist.zMyBatis.core.preparation.PreparationSource
+import com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin
+import com.algorist.zMyBatis.core.preparation.PreparedExecution
+import com.algorist.zMyBatis.core.source.CapturedStatement
+import com.algorist.zMyBatis.core.source.JavaAnnotationStatementCapture
+import com.algorist.zMyBatis.core.source.JavaMethodParameterMetadata
+import com.algorist.zMyBatis.core.source.JavaStatementId
+import com.algorist.zMyBatis.core.source.JavaTypeIdentity
+import com.algorist.zMyBatis.core.source.MethodSignature
+import com.algorist.zMyBatis.core.source.SourceFileId
+import com.algorist.zMyBatis.core.source.SourceRange
+import com.algorist.zMyBatis.core.source.SourceRevision
+import com.algorist.zMyBatis.core.source.SourceSnapshot
+import com.algorist.zMyBatis.core.source.StatementKind
+import com.algorist.zMyBatis.core.source.StatementSourceGraph
+import com.algorist.zMyBatis.mybatis.MyBatisInvocationContractFactory
+import com.algorist.zMyBatis.mybatis.MyBatisPreparationEngine
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.dataSource.DatabaseAuthProviderNames
 import com.intellij.database.dataSource.DatabaseConnectionCore
@@ -144,6 +172,8 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 }
             }
 
+            provePreparedExecutionForeachBindings(fixture.dataSource)
+
             assertEquals("zmybatis", functional.database)
             assertEquals("public", functional.schema)
             assertEquals(1, functional.dmlUpdateCount)
@@ -165,6 +195,131 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             )
         } finally {
             fixture.dispose()
+        }
+    }
+
+    private fun provePreparedExecutionForeachBindings(dataSource: LocalDataSource) {
+        val execution = prepareForeachTextExecution(listOf("alpha", "beta", "gamma"))
+        val bindings = execution.orderedBindings
+
+        assertEquals(3, bindings.size)
+        assertEquals(listOf(0, 1, 2), bindings.map { it.index })
+        assertEquals(List(3) { "item" }, bindings.map { it.property })
+        assertEquals(
+            listOf(InputValue.Text("alpha"), InputValue.Text("beta"), InputValue.Text("gamma")),
+            bindings.map { it.value },
+        )
+        bindings.forEach { binding ->
+            val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
+            assertEquals(InternalBindingKind.FOREACH_ITEM, origin.internalBinding.kind)
+            val local = origin.internalBinding.provenance.evidence
+                .filterIsInstance<InputEvidence.ForeachLocal>()
+                .single()
+            assertEquals(ForeachLocalRole.ITEM, local.role)
+            assertEquals("item", local.name)
+            assertEquals("java.lang.String", binding.metadata.mappingJavaTypeIdentity)
+            assertEquals("VARCHAR", binding.metadata.jdbcTypeIdentity)
+            assertEquals("org.apache.ibatis.type.StringTypeHandler", binding.metadata.typeHandlerIdentity)
+        }
+
+        val result = executeRaw(dataSource, "foreach-prepared-execution") { connection ->
+            withPrepared(connection, execution.sqlWithPlaceholders) { statement ->
+                for (binding in bindings) {
+                    val value = binding.value as? InputValue.Text
+                        ?: error("P3.4 text foreach proof received a non-text binding")
+                    statement.setString(binding.index + 1, value.value)
+                }
+                statement.execute()
+                withResultSet(statement) { resultSet ->
+                    check(resultSet.next())
+                    resultSet.getString(1)
+                }
+            }
+        }
+
+        assertEquals("alpha|beta|gamma", result)
+        println(
+            "ZMYBATIS_P3_FOREACH " +
+                "preparedExecution=true bindingCount=${bindings.size} " +
+                "foreachIdentity=true orderPreserved=true handler=StringTypeHandler",
+        )
+    }
+
+    private fun prepareForeachTextExecution(values: List<String>): PreparedExecution {
+        val fileId = SourceFileId("fixture/P3ForeachRuntimeMapper.java")
+        val revision = SourceRevision("p3-foreach-runtime-r1")
+        val sourceSnapshot = SourceSnapshot(fileId, revision, "authoritative-p3-foreach-runtime-source")
+        val listType = JavaTypeIdentity("java.util.List<java.lang.String>")
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.P3ForeachRuntimeMapper",
+            MethodSignature("query", listOf(listType)),
+        )
+        val script = """
+            <script>
+              SELECT array_to_string(
+                ARRAY[
+                  <foreach collection="values" item="item" separator=",">
+                    #{item,jdbcType=VARCHAR}
+                  </foreach>
+                ]::text[],
+                '|'
+              )
+            </script>
+        """.trimIndent()
+        val source = PreparationSource.JavaAnnotation(
+            JavaAnnotationStatementCapture(
+                sourceGraph = StatementSourceGraph(
+                    rootStatement = CapturedStatement(
+                        statementId,
+                        StatementKind.SELECT,
+                        SourceRange(0, sourceSnapshot.content.length),
+                    ),
+                    sourceSnapshots = listOf(sourceSnapshot),
+                    dependencies = emptyList(),
+                ),
+                sqlSegments = listOf(script),
+                parameters = listOf(
+                    JavaMethodParameterMetadata(
+                        index = 0,
+                        sourceName = "values",
+                        typeIdentity = listType,
+                        myBatisParamAlias = "values",
+                    ),
+                ),
+            ),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+        check(!contract.isPreparationBlocked) {
+            "P3.4 foreach invocation contract must be executable: ${contract.blockingProblems}"
+        }
+        val requirement = contract.requirements.single()
+        val environment = InputEnvironment.validate(
+            contract,
+            listOf(
+                ProvidedInput(
+                    requirementId = requirement.id,
+                    value = InputValue.ListValue(values.map { InputValue.Text(it) }),
+                    origin = ExecutionInputOrigin.USER_ENTERED,
+                ),
+            ),
+        )
+        check(environment is InputEnvironmentResult.Success) {
+            "P3.4 foreach input environment must validate: $environment"
+        }
+        val request = MyBatisPreparationRequest.create(
+            source = source,
+            parameterContract = contract,
+            inputEnvironment = environment.environment,
+        )
+        check(request is PreparationRequestResult.Ready) {
+            "P3.4 foreach preparation request must be ready: $request"
+        }
+        return when (val prepared = MyBatisPreparationEngine.prepare(request.request)) {
+            is PreparationResult.Success -> prepared.execution
+            is PreparationResult.Failed -> error(
+                "P3.4 foreach preparation failed: ${prepared.failure.kind} / ${prepared.failure.code}",
+            )
         }
     }
 

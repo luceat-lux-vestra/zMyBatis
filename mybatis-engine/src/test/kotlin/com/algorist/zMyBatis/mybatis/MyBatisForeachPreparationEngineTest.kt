@@ -55,7 +55,7 @@ class MyBatisForeachPreparationEngineTest {
         result.execution.orderedBindings.forEach { binding ->
             assertTrue(binding.additionalParameter)
             val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
-            assertEquals(InternalBindingKind.ADDITIONAL_PARAMETER, origin.internalBinding.kind)
+            assertEquals(InternalBindingKind.FOREACH_ITEM, origin.internalBinding.kind)
         }
     }
 
@@ -83,7 +83,12 @@ class MyBatisForeachPreparationEngineTest {
         )
         assertTrue(result.execution.orderedBindings.all { it.additionalParameter })
         assertEquals(
-            List(4) { InternalBindingKind.ADDITIONAL_PARAMETER },
+            listOf(
+                InternalBindingKind.FOREACH_INDEX,
+                InternalBindingKind.FOREACH_ITEM,
+                InternalBindingKind.FOREACH_INDEX,
+                InternalBindingKind.FOREACH_ITEM,
+            ),
             result.execution.orderedBindings.map {
                 (it.origin as PreparedBindingOrigin.MyBatisAdditional).internalBinding.kind
             },

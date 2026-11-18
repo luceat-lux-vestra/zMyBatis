@@ -154,7 +154,7 @@ class MyBatisForeachTypeFidelityTest {
             assertEquals("org.apache.ibatis.type.LongTypeHandler", binding.metadata.typeHandlerIdentity)
             assertTrue(binding.additionalParameter)
             val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
-            assertEquals(InternalBindingKind.ADDITIONAL_PARAMETER, origin.internalBinding.kind)
+            assertEquals(InternalBindingKind.FOREACH_ITEM, origin.internalBinding.kind)
         }
     }
 
