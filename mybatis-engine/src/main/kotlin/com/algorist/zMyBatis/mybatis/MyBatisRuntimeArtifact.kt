@@ -67,7 +67,9 @@ internal object MyBatisRuntimeArtifact {
     ): ByteArray? {
         val ownBytesMethod = loader.javaClass.methods.firstOrNull {
             it.name == "getResourceAsBytes" &&
-                it.parameterTypes.contentEquals(arrayOf(String::class.java, Boolean::class.javaPrimitiveType))
+                it.parameterCount == 2 &&
+                it.parameterTypes[0] == String::class.java &&
+                it.parameterTypes[1] == Boolean::class.javaPrimitiveType
         }
         if (ownBytesMethod != null) {
             val value = try {
