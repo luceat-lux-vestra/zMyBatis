@@ -370,7 +370,15 @@ internal object IsolatedDynamicMyBatisPreparation {
     ): MyBatisEffectiveMappingMetadata {
         val mappingClass = mapping.javaClass
         val mappingJavaType = mappingClass.getMethod("getJavaType").invoke(mapping) as? Class<*>
-        val jdbcType = mappingClass.getMethod("getJdbcType").invoke(mapping)
+        val mappingJdbcType = mappingClass.getMethod("getJdbcType").invoke(mapping)
+        // DefaultParameterHandler/BaseTypeHandler substitutes Configuration.jdbcTypeForNull
+        // when a null value has no explicit mapping JDBC type. Capture that effective authority
+        // now so the later prepared backend never has to guess null binding semantics.
+        val effectiveJdbcType = if (runtimeValue == null && mappingJdbcType == null) {
+            configuration.javaClass.getMethod("getJdbcTypeForNull").invoke(configuration)
+        } else {
+            mappingJdbcType
+        }
         val mappingHandler = mappingClass.getMethod("getTypeHandler").invoke(mapping)
         val effectiveHandler = when {
             mappingHandler != null -> mappingHandler
@@ -384,8 +392,8 @@ internal object IsolatedDynamicMyBatisPreparation {
                 val jdbcTypeClass = Class.forName(JDBC_TYPE, true, loader)
                 registry.javaClass
                     .getMethod("getTypeHandler", Type::class.java, jdbcTypeClass)
-                    .invoke(registry, runtimeValue.javaClass, jdbcType)
-                    ?: jdbcType?.let {
+                    .invoke(registry, runtimeValue.javaClass, effectiveJdbcType)
+                    ?: effectiveJdbcType?.let {
                         registry.javaClass
                             .getMethod("getTypeHandler", jdbcTypeClass)
                             .invoke(registry, it)
@@ -400,7 +408,7 @@ internal object IsolatedDynamicMyBatisPreparation {
         }
         return MyBatisEffectiveMappingMetadata(
             javaTypeIdentity = effectiveJavaType,
-            jdbcTypeIdentity = enumName(jdbcType),
+            jdbcTypeIdentity = enumName(effectiveJdbcType),
             typeHandlerIdentity = effectiveHandler?.javaClass?.name,
             parameterMode = enumName(mappingClass.getMethod("getMode").invoke(mapping)),
             numericScale = mappingClass.getMethod("getNumericScale").invoke(mapping) as? Int,
