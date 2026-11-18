@@ -33,6 +33,7 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
             maxColumns = PREPARED_RESULT_MAX_COLUMNS,
         ),
     )
+    private val preparedExecutionTask = PreparedBackendExecutionTaskAdapter(project)
     private val preparedResultAdapter = PreparedResultPresentationAdapter(project)
 
     fun execute(
@@ -206,11 +207,16 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
                         onFinished = releaseConsole,
                     )
                 } else {
-                    preparedBackend.execute(
-                        console = console,
-                        plan = plan,
-                        currentTarget = deliveryTarget.resolvedTarget,
-                        preExecutionCheck = preExecutionCheck,
+                    preparedExecutionTask.execute(
+                        executeBackend = { onCompleted ->
+                            preparedBackend.execute(
+                                console = console,
+                                plan = plan,
+                                currentTarget = deliveryTarget.resolvedTarget,
+                                preExecutionCheck = preExecutionCheck,
+                                onCompleted = onCompleted,
+                            )
+                        },
                         onCompleted = { outcome ->
                             handlePreparedOutcome(
                                 outcome = outcome,
