@@ -355,6 +355,7 @@ internal object IsolatedDynamicMyBatisPreparation {
             runtimeValue = runtimeValue,
             mappingJavaTypeIdentity = metadata.javaTypeIdentity,
             jdbcTypeIdentity = metadata.jdbcTypeIdentity,
+            effectiveJdbcTypeIdentity = metadata.effectiveJdbcTypeIdentity,
             typeHandlerIdentity = metadata.typeHandlerIdentity,
             parameterMode = metadata.parameterMode,
             numericScale = metadata.numericScale,
@@ -408,7 +409,8 @@ internal object IsolatedDynamicMyBatisPreparation {
         }
         return MyBatisEffectiveMappingMetadata(
             javaTypeIdentity = effectiveJavaType,
-            jdbcTypeIdentity = enumName(effectiveJdbcType),
+            jdbcTypeIdentity = enumName(mappingJdbcType),
+            effectiveJdbcTypeIdentity = enumName(effectiveJdbcType),
             typeHandlerIdentity = effectiveHandler?.javaClass?.name,
             parameterMode = enumName(mappingClass.getMethod("getMode").invoke(mapping)),
             numericScale = mappingClass.getMethod("getNumericScale").invoke(mapping) as? Int,
@@ -417,9 +419,11 @@ internal object IsolatedDynamicMyBatisPreparation {
 
     private fun rawMappingMetadata(mapping: Any): MyBatisEffectiveMappingMetadata {
         val mappingClass = mapping.javaClass
+        val mappingJdbcType = mappingClass.getMethod("getJdbcType").invoke(mapping)
         return MyBatisEffectiveMappingMetadata(
             javaTypeIdentity = (mappingClass.getMethod("getJavaType").invoke(mapping) as? Class<*>)?.name,
-            jdbcTypeIdentity = enumName(mappingClass.getMethod("getJdbcType").invoke(mapping)),
+            jdbcTypeIdentity = enumName(mappingJdbcType),
+            effectiveJdbcTypeIdentity = enumName(mappingJdbcType),
             typeHandlerIdentity = mappingClass.getMethod("getTypeHandler").invoke(mapping)?.javaClass?.name,
             parameterMode = enumName(mappingClass.getMethod("getMode").invoke(mapping)),
             numericScale = mappingClass.getMethod("getNumericScale").invoke(mapping) as? Int,

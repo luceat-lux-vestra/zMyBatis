@@ -180,7 +180,10 @@ private fun PreparationSource.authoritySourceRevisions(): Map<SourceFileId, Sour
 data class PreparedBindingMetadata(
     val declaredJavaTypeIdentity: JavaTypeIdentity?,
     val mappingJavaTypeIdentity: String?,
+    /** JDBC type explicitly carried by the MyBatis ParameterMapping, if any. */
     val jdbcTypeIdentity: String?,
+    /** Effective JDBC type used for binding; may come from Configuration.jdbcTypeForNull. */
+    val effectiveJdbcTypeIdentity: String? = jdbcTypeIdentity,
     val typeHandlerIdentity: String,
     val parameterMode: String,
     val numericScale: Int?,
@@ -191,6 +194,9 @@ data class PreparedBindingMetadata(
         }
         require(jdbcTypeIdentity == null || jdbcTypeIdentity.isNotBlank()) {
             "JDBC type identity must be null or non-blank"
+        }
+        require(effectiveJdbcTypeIdentity == null || effectiveJdbcTypeIdentity.isNotBlank()) {
+            "effective JDBC type identity must be null or non-blank"
         }
         require(typeHandlerIdentity.isNotBlank()) { "type handler identity must not be blank" }
         require(parameterMode.isNotBlank()) { "parameter mode must not be blank" }

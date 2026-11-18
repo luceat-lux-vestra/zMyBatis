@@ -63,7 +63,9 @@ class P3RemotePreparedStatementBindingBridgeContractTest {
             val typedClass = javaType as Class<Any>
             val handler = registry.getTypeHandler(typedClass)
             assertNotNull("stock MyBatis handler missing for ${javaType.name}", handler)
-            handler!!.setParameter(recorder, 1, value, null)
+            @Suppress("UNCHECKED_CAST")
+            val untypedHandler = handler as TypeHandler<Any>
+            untypedHandler.setParameter(recorder, 1, value, null)
         }
 
         val stringHandler = registry.getTypeHandler(String::class.java)
