@@ -211,17 +211,19 @@ Stock MyBatis owns:
 - property traversal;
 - standard dynamic-SQL composition.
 
-The following current mechanisms are migration implementation rather than target design:
+P2 replacement parity is now the registered semantic model. The earlier migration mechanisms are
+not registered authorities:
 
 - dynamic grammar restrictions in `XmlStatementParameterContractFactory`;
-- Boolean-if admission islands;
-- foreach admission islands;
+- Boolean-if / foreach admission islands;
 - `DynamicOgnlAdmission`;
 - `ForeachProvenanceAdmission`;
-- fixed lexical UPDATE/WHERE/trim allowlists.
+- fixed lexical UPDATE/WHERE/trim permission tables.
 
-After replacement parity exists, these responsibilities must either shrink to provenance/safety only
-or be deleted. Do not retain two semantic authorities.
+Those owners were deleted or disconnected from the registered path once replacement evidence became
+green. Retained scanners/gates may enforce provenance, resource and security/topology constraints
+only; they must not become a second standard-MyBatis semantic authority. Do not reintroduce two
+semantic authorities.
 
 ## 8. PreparedExecutionPlan
 

@@ -15,13 +15,13 @@ evidence. The old IntelliJ template rename test and evaluator debug/reproduction
 
 | Correctness boundary | Authoritative evidence | What it proves |
 | --- | --- | --- |
-| Contract-driven parameter/input boundary | `JavaAnnotationParameterContractFactoryTest`, XML parameter-contract tests, `ContractInputAdapterTest`, `ContractInputSubmissionPolicyTest`, `ContractInputSwingRendererProjectFixtureTest`, `ContractInputHistoryPolicyTest` | requirements and aliases come from source/method provenance; input parsing/validation is independent of Swing; raw interpolation is distinct and non-retainable; unsupported/ambiguous requirements block |
+| Caller-authority parameter/input boundary | `P2CallerAuthorityParityTest`, `P2RegisteredPathParityTest`, `LeapExecutionInvocationCoordinatorTest`, `LeapExecutionCandidateCoordinatorTest`, `ContractInputAdapterTest`, `ContractInputSubmissionPolicyTest`, `ContractInputSwingRendererProjectFixtureTest`, `ContractInputHistoryPolicyTest` | mapper method metadata or the explicit XML-only parameter object owns caller requirements; stock-compatible aliases/parameter objects are built independently of dynamic SQL syntax; bound/raw usage is separate from caller value type; raw-used input remains non-retainable |
 | Java direct-annotation source authority | `JavaAnnotationSourceCaptureAdapterProjectFixtureTest`, `JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest`, `LeapActionContextAdmissionCoordinatorTest` | immutable Java method identity, ordered signature, explicit `@Param`, constants/dependencies, databaseId variants, source revision authority, and typed unsupported cases feed the registered action |
 | XML source/dependency authority | `XmlMapperSourceDiscoveryTest`, `XmlStatementSourceGraphResolverTest`, adversarial source-graph tests, `LeapActionContextAdmissionCoordinatorTest` | canonical XML statement identity and reachable `<sql>/<include>` dependencies are complete, source-backed, target-selected where applicable, and fail typed on missing/ambiguous/cyclic/stale authority |
-| Isolated MyBatis preparation | `MyBatisPreparationEngineTest`, `XmlMapperPreparationEngineTest`, `XmlMapperPreparationProjectionParityTest`, Boolean-if/foreach preparation suites | selected XML statements prepare through a structural statement/dependency projection; unrelated result/cache declarations are excluded from parser authority, the P1-safe slice matches stock full-mapper BoundSql/mapping metadata, and admitted dynamic preparation still preserves isolated stock MyBatis semantics |
-| Stock MyBatis 1.0 parity oracle | `StockMyBatisParityOracleTest` + `mybatis-engine/src/test/resources/parity/**` | stock MyBatis 3.6.0 semantics for ordinary mapper metadata, include/databaseId graphs, all standard dynamic-tag families, realistic compositions, mapper-method input shapes, additional parameters, direct Java annotations/raw interpolation, and sanitized historical `mybatisTest` Product/Customer mapper shapes; this is target-semantic evidence, not current registered-path support |
+| Isolated MyBatis preparation | `P2RegisteredPathParityTest`, `P2OgnlSafetyAdmissionTest`, `MyBatisPreparationEngineTest`, `XmlMapperPreparationEngineTest`, `XmlMapperPreparationProjectionParityTest`, `XmlSiblingBooleanIfPreparationTest`, `XmlMapperForeachPreparationTest` | selected Java/XML statements prepare through stock MyBatis after caller authority and capability-only safety checks; standard if/choose/foreach/where/set/trim/bind semantics are not gated by syntax-specific admission owners; source projection, topology, runtime isolation and typed capability failures remain enforced |
+| Stock MyBatis parity oracle and registered P2 parity | `StockMyBatisParityOracleTest`, `P2CallerAuthorityParityTest`, `P2RegisteredPathParityTest` + `mybatis-engine/src/test/resources/parity/**` | the frozen stock oracle defines expected MyBatis 3.6.0 semantics, while P2 registered-path tests prove caller-object construction and standard dynamic-tag execution now reach the maintained Java/XML preparation paths without a second zMyBatis semantic grammar |
 | Raw-interpolation confirmation | `LeapExecutionApprovalPolicyTest`, `LeapExecutionApprovalAdapterTest`, `LeapExecutionDeliveryCoordinatorTest`, `ZMyBatisStarterDriverE2ETest` | raw provenance forces final-artifact approval even when ordinary preview is off; cancellation is fail-closed; packaged XML and direct-Java raw composition is exercised |
-| Direct Java annotation raw composition | `JavaAnnotationParameterContractFactoryTest`, `MyBatisPreparationEngineTest`, `ContractInputSwingRendererProjectFixtureTest`, `StarterDatabaseE2EIsolationContractTest`, `ZMyBatisStarterDriverE2ETest` | direct Java `@Select` + explicit `@Param` raw input reaches the registered packaged action, remains non-retained, previews exact SQL, cancels without native history, and executes approved SQL through Database Tools |
+| Direct Java annotation raw composition | `P2CallerAuthorityParityTest`, `MyBatisPreparationEngineTest`, `LeapExecutionInvocationCoordinatorTest`, `ContractInputSwingRendererProjectFixtureTest`, `StarterDatabaseE2EIsolationContractTest`, `ZMyBatisStarterDriverE2ETest` | direct Java `@Select` / dynamic `<script>` uses mapper-signature caller authority; one String value may participate in both bound and raw usage; raw use remains non-retained and approval-gated before Database Tools delivery |
 | Mutation-declaration confirmation | `LeapExecutionApprovalPolicyTest`, `LeapExecutionApprovalAdapterTest`, `LeapExecutionDeliveryCoordinatorTest` | mutation declaration forces approval but is not SQL authorization |
 | Registered action boundary | `MyBatisActionUpdateProjectFixtureTest`, `MyBatisActionUpdateBoundaryTest`, `LeapActionContextAdmissionCoordinatorTest` | `MyBatisExecuteAction` keeps update bounded and delegates supported execution only to Leap admission; no low-level Database Tools or alternative execution route is present at the action edge |
 | Target persistence and console lifecycle | `PersistedExecutionTargetSelectionTest`, `ExecutionTargetDescriptorStoreTest`, `MyBatisActionInterceptorActivityLifecycleTest`, `ConsoleCacheServiceLifecycleTest`, `ConsoleCacheOwnedResourceDisposalContractTest`, `DatabaseToolsTargetResolverTest`, `DatabaseToolsConsoleAdapterBoundaryTest` | current v3 source→target persistence is independent of live consoles; exact target identity gates REUSE; matching live consoles are reused under source-key ownership; same-source overlap, shutdown, invalid/disposed resources, and stale targets fail closed |
@@ -53,16 +53,16 @@ that stock MyBatis has already substituted the include property into `BoundSql.s
 `ParameterMapping`. That load-time mapper feature is distinct from caller-controlled runtime
 `${}` raw interpolation.
 
-The oracle deliberately does **not** encode current Leap refusal as target truth and does not call
-the production zMyBatis admission/materialization path. P1 adds
-`XmlMapperPreparationProjectionParityTest`: stock full-mapper BoundSql is compared with stock
-MyBatis parsing of the structural selected-statement/reachable-fragment projection for the P1-safe
-slice. P2 is the next work unit and extends the frozen oracle into invocation/input authority; P3
-extends it into prepared-backend evidence.
+The oracle deliberately does **not** encode historical Leap refusal as target truth. P1 added
+`XmlMapperPreparationProjectionParityTest` for structural selected-statement/reachable-fragment
+projection. P2 now extends that frozen oracle into the registered invocation/input authority:
+`P2CallerAuthorityParityTest`, `P2RegisteredPathParityTest` and the Java/XML engine suites prove
+mapper-signature / explicit XML-object caller authority and stock dynamic-SQL execution. P3 is the
+next hard-stop phase and extends this evidence into the prepared Database Tools backend.
 
-Current Boolean-if/foreach/trim admission and PostgreSQL BIGINT materialization tests remain useful
-current-state safety evidence until replacement. They are not preservation constraints for the
-1.0 target.
+Historical Boolean-if/foreach syntax-admission owners are no longer registered semantic authorities.
+Their retained successor tests exercise stock behavior plus provenance/topology/security invariants,
+not a second dynamic-language permission table.
 
 ## Manual release acceptance boundary
 
@@ -86,7 +86,12 @@ This test is deliberately narrower than a semantic information-flow proof. It ca
 
 ## Contract-driven input provenance evidence boundary
 
-The shipping input model is no longer a source-text heuristic. Source/method capture produces typed `ParameterContract` requirements and aliases with explicit provenance. Java and XML contract factories distinguish caller inputs, generated aliases only when proven, MyBatis internal values, foreach/bind locals, bound requirements, and raw-interpolation requirements.
+The shipping input model is no longer a source-text heuristic. `MyBatisInvocationContractFactory`
+derives caller requirements from mapper method metadata or one explicit XML-only parameter object.
+MyBatis-compatible explicit/generic/collection aliases are derived from declaration authority.
+SQL syntax contributes usage/risk evidence only: a caller requirement may carry both
+`BOUND_PLACEHOLDER` and `RAW_INTERPOLATION` usage, while foreach/bind/additional values remain
+MyBatis-generated internal bindings rather than caller inputs.
 
 `ContractInputAdapterTest`, submission/history policy tests, provenance/presentation tests and the real Swing fixture prove that codecs and validation are independent from presentation, required values fail closed, canonical identity scopes retention, and raw interpolation is never retained. These are current registered-path contracts rather than characterization of a removed extractor/dialog.
 
@@ -104,12 +109,15 @@ The source-capture boundary by itself does not prove MyBatis preparation or Data
 
 ## MyBatis preparation evidence boundary
 
-**Current-state evidence note:** the bounded Boolean-if/foreach/wrapper admission suites below
-describe the present Leap implementation. Under the 1.0 target, stock MyBatis owns standard
-dynamic-SQL semantics and these syntax islands are deletion/replacement candidates after oracle
-parity exists. Their current fail-closed assertions must not be used to veto target parity cases.
+**Current-state evidence note:** P2 replacement parity is now the registered preparation model.
+Mapper method / explicit XML-object metadata owns caller authority and stock MyBatis owns standard
+dynamic-SQL semantics. There is no registered Boolean-if/foreach grammar-admission island.
 
-Supported dynamic SQL meaning is delegated to isolated stock MyBatis after source and parameter authority are proven. The Boolean-if, foreach, wrapper/trim, source-graph and mapper-preparation suites compare maintained SQL/mapping behavior with stock MyBatis while preserving strict typed refusals for unsupported composition, stale/forged provenance, unsafe raw structural interpolation, and runtime isolation failures.
+`P2CallerAuthorityParityTest`, `P2RegisteredPathParityTest`, `XmlSiblingBooleanIfPreparationTest`
+and `XmlMapperForeachPreparationTest` compare maintained SQL/mapping behavior with stock MyBatis.
+The remaining preflight logic is capability/safety-only: unsafe executable OGNL/class loading,
+custom application TypeHandler/LanguageDriver boundaries, resource budgets, raw non-retention/
+approval provenance, source revision identity and bound-token topology remain fail closed.
 
 There is no compatibility evaluator, unknown-tag stripping mode, OGNL source rewrite, error-as-SQL path, or evaluator-owned generic literalization in the registered execution architecture. Unsupported preparation/materialization returns typed failure before approval or Database Tools delivery.
 
@@ -152,275 +160,46 @@ DataGrip evidence is deliberately narrower than the IU PostgreSQL golden path. I
 
 `Inspect code`/Qodana and `Verify plugin` remain separate required evidence for static analysis and JetBrains compatibility. They do not substitute for the product assertions in `Test`.
 
-## XML foreach complete-mapper authority evidence
+## P2 caller-authority and dynamic-SQL parity evidence
 
-Every admitted XML foreach now requires `XmlMapperPreparationSource.mapperMethod`, the complete
-immutable `XmlMapperMethodCapture` supplied independently by the #62 source boundary. A Java snapshot
-and matching revision alone cannot authorize foreach preparation. Admission rebuilds the full producer
-contract and compares every requirement, alias and internal binding, including caller uses outside the
-loop. Hand-written partial alias/type coherence checks no longer define this consumer's authority.
+P2 removes syntax-derived caller admission from the registered preparation path. For mapper-backed
+Java/XML statements, the canonical method signature and explicit `@Param` metadata own caller
+requirements. A single unannotated scalar/object remains the whole parameter object; multi-parameter
+calls use stock-compatible primary/generic aliases; List/Collection/array wrappers and nested
+Map/object values follow the frozen `ParamNameResolver` parity oracle. XML-only statements expose
+one explicit object-tree parameter environment when caller-dependent runtime content exists.
 
-`XmlForeachPreparationAdmissionTest` and `XmlMapperForeachPreparationTest` cover absent capture,
-wrong statement/source identity or revision, changed method range, removed caller requirements/aliases/
-placeholder evidence, changed caller placeholder inventory, coherent fabricated mapper types/aliases
-and stripped foreach authority. Unused mapper parameters still matter: an explicit alias can suppress `paramN`
-or shadow item/index locals without becoming a requested input. These failures occur before value
-conversion and isolated runtime preparation, including when the collection is empty.
+`P2CallerAuthorityParityTest` proves the invocation object and alias model. `P2RegisteredPathParityTest`
+proves the maintained Java/XML preparation entries for static CRUD, mapper objects, collections,
+standard dynamic families and realistic if/choose/foreach/where/set/trim/bind combinations.
+`XmlSiblingBooleanIfPreparationTest` and `XmlMapperForeachPreparationTest` retain deeper
+stock-behavior, mapping-order, nullability/type-fidelity, generated-additional-parameter and
+concurrency coverage without granting syntax-derived caller authority.
 
-This proves consistency with supplied immutable source captures, not independent Java parsing or
-live IDE revision validation. It does not authenticate exact lexical positions of XML placeholders
-whose producer evidence has no source range. Multiple captured XML documents remain supported in
-this bounded island; all their revisions participate in source authority, while token/topology
-guards now apply only to the selected statement and transitively reachable projected fragments.
-Unreachable captured mapper content no longer becomes preparation authority.
-Dependency/include resolution and other dynamic composition retain their existing refusals. Existing
-stock parity, typed LIST/ARRAY/MAP conversion, generated local capture and concurrent isolation tests
-continue to apply with complete mapper capture. Static XML request construction remains available
-without it. This paragraph records the lower-level preparation evidence as originally proven; the engine is now packaged and the registered action applies the current bounded zero-binding/PostgreSQL-BIGINT materialization envelope.
+Raw interpolation is usage/risk, not a separate caller-value authority. The same String caller
+requirement may be consumed by both `#{...}` and `${...}`. `PreparedExecution.rawInterpolations`
+preserves the affected requirement identity/origin so approval and non-retention policy remain
+enforceable. Raw text must not synthesize, delete, escape or mutate authoritative `#{...}`
+topology.
 
-E2E applicability: not applicable to this lower-level authority invariant, owned by pure core contract
-and engine consumer tests. The shipping plugin does not consume this engine; installed action/UI,
-Database Tools, packaging dependencies and workflow policy are unchanged. Any automatically scheduled
-Starter/Driver run is shipping-path regression evidence, not foreach production-cutover evidence.
+The registered path still fails closed for capability boundaries that P2 does not own: arbitrary
+application TypeHandlers/LanguageDrivers, executable class/static OGNL outside the maintained
+safe envelope, malformed MyBatis/OGNL, resource limits, source/statement/databaseId drift and
+runtime isolation failures. `P2OgnlSafetyAdmissionTest`, adversarial engine suites and the dynamic
+bound-token topology tests own those constraints.
 
-## XML foreach where-wrapper evidence
+The isolated MyBatis runtime is per invocation. `MyBatisRuntimeArtifactTest` proves exact local
+artifact recovery, including IntelliJ custom `jar:` resource URLs, while rejecting remote,
+missing or ambiguous artifact authority. Fresh loaders, TCCL restoration and JDK-owned cross-loader
+payloads prevent application/plugin classes or shared OGNL state from becoming hidden execution
+authority.
 
-The source-proven single foreach may be direct or the direct child of one unqualified `<where>`
-without attributes, or `<trim prefix="WHERE" prefixOverrides="AND |OR ">` with those two exact
-unqualified XML-decoded attributes. Wrapper text may contain static SQL and caller bindings before
-and after the loop. The loop must retain the bounded collection/item/index rules: foreach locals
-never become caller requirements, and a local outside the loop is rejected. Empty/static-only
-wrappers without an admitted foreach, Boolean-if composition, unsupported multiple-wrapper composition,
-other dynamic tags, nested or duplicate loops/wrappers, arbitrary
-trim attributes, qualified elements, raw interpolation and explicit nullable remain refused.
-This is separate from the Boolean-if wrapper island; foreach and if still cannot compose.
-
-`XmlForeachParameterContractTest` and `XmlForeachPreparationAdmissionTest` prove source/mapper alias,
-shape and local authority, including explicit/generated/stock collection aliases and wrapper drift
-against an older contract. `XmlMapperForeachPreparationTest` compares native and literal trim wrappers
-against an independent stock mapper-parser oracle: exact SQL bytes, mapping order, Java/JDBC/handler/
-mode/scale metadata and values, with scalar caller bindings outside/inside the wrapper, repeated
-item/index mappings, arrays, Map keys/temporal values, null items and empty collections. Tests preserve
-statement declaration kind without claiming SQL grammar validity. Stock MyBatis owns WHERE insertion,
-override whitespace behavior and omission of an empty wrapper; preparation invents no predicate or
-binding. An empty final SQL remains a typed failure.
-
-The shared dynamic bound-token topology guard now runs before all admitted XML foreach evaluation,
-including the existing direct form. Incomplete/escaped openers and unsafe fragment endings in source
-text or loop open/close/separator attributes cannot synthesize mappings across loop/wrapper boundaries,
-even when a collection is empty. Raw structural attributes in projected reachable content remain
-refused by the raw-source guard. Concurrent
-direct/where/trim foreach preparations under a poisoned parent OGNL accessor retain generated local
-identity, per-invocation loader ownership and TCCL restoration. These tests remain lower-level preparation evidence only; current production authority is granted separately by the registered action's bounded materialization and delivery chain.
-
-## XML foreach UPDATE SET-wrapper evidence
-
-For UPDATE declarations, the source-proven single foreach may also be the sole dynamic child of
-one unqualified attribute-free `<set>` or exact `<trim prefix="SET" suffixOverrides=",">`.
-Both trim attributes must be unqualified; XML-decoded character references and attribute ordering
-retain the same authority. Static text and caller bindings may surround the loop inside the wrapper
-or outside it. Foreach locals remain internal and cannot escape the loop.
-
-`XmlForeachParameterContractTest` and `XmlForeachPreparationAdmissionTest` prove this bounded
-source shape and rebuild its complete independent mapper contract. SET foreach in SELECT/INSERT/
-DELETE declarations, wrappers without an admitted foreach, modified/extra/qualified attributes, nested/repeated
-loops or wrappers, Boolean-if/unsupported multiple-wrapper composition, local escape and other dynamic nodes
-remain blocked. Missing complete mapper capture and forged local authority are still typed refusals.
-
-`XmlMapperForeachPreparationTest` compares exact stock SQL bytes, ordered mapping properties,
-Java/JDBC/handler/mode/scale metadata and values for native and literal trim SET: empty/single/multiple
-collections, null items, repeated item/index mappings, scalar caller bindings before/after the loop,
-list/collection/array and generic aliases, and Map keys/temporal values. Comments/CDATA, decoded
-attributes and trailing comma/newline/comment cases retain stock trimming. An empty collection
-omits SET when the wrapper has no remaining text; no assignment is invented. An empty final SQL
-is a typed failure. These assertions preserve UPDATE declaration kind, not SQL grammar validity.
-
-The existing source-bound token topology guard also rejects synthesis/escaping in SET source text
-and foreach structural attributes before runtime, including empty collections; raw structural
-interpolation and source/wrapper drift are refused. Concurrent direct/WHERE/SET/trim invocations
-under poisoned parent OGNL preserve generated local identity, fresh runtime ownership and TCCL.
-These lower-level tests do not grant production execution authority by themselves. The engine is now packaged; registered execution still requires the current bounded materializer envelope and exact target/delivery checks.
-
-E2E applicability: not applicable to this pure source-contract/isolated-preparation invariant.
-The source factories have no shipping action consumer and the engine remains unpackaged. Existing
-Starter/Driver runs provide packaged-plugin regression evidence, not SET foreach execution proof.
-
-## XML foreach combined UPDATE SET/WHERE evidence
-
-UPDATE may combine one set-role wrapper and one where-role wrapper with exactly one direct foreach
-inside either role. The other wrapper contains only static text and caller bindings and may be empty.
-Both source orders and native/trim combinations retain the exact wrapper attributes above; duplicate
-roles, nested wrappers, a second loop, direct loops outside the wrappers, Boolean-if composition,
-raw interpolation and foreach locals escaping into the other wrapper remain refused. A statement
-with no foreach still needs the separately admitted Boolean-if shape: empty/static-only wrappers
-do not acquire authority from this extension.
-
-The source scanner defers the static wrapper's admission until the complete statement proves the
-single loop, so a static wrapper before the loop has the same authority as one after it. Complete
-mapper capture remains mandatory. Admission rebuilds caller placeholder inventory in both wrappers
-and rejects missing/forged caller evidence or source drift before runtime, including empty collections.
-
-`XmlForeachParameterContractTest`, `XmlForeachPreparationAdmissionTest` and
-`XmlMapperForeachPreparationTest` cover these positive and negative boundaries. The independent stock
-mapper-parser oracle compares unmodified SQL bytes, ordered properties, Java/JDBC/handler/mode/scale
-metadata and values across both loop positions and source orders, all maintained native/trim combinations,
-XML-decoded/reordered attributes, empty/single/multiple/null items, repeated item/index mappings,
-generic/stock collection aliases, arrays and temporal Map values. Comments/CDATA and empty wrappers
-retain stock semantics. Empty collections may omit SET, WHERE or both; no assignment/predicate or
-SQL grammar validity is invented. Empty final SQL is a typed failure. Source-bound token synthesis
-across the two wrappers is rejected even for an empty collection. Concurrent direct/single-wrapper/
-combined-wrapper invocations under poisoned parent OGNL retain fresh runtime ownership and TCCL.
-
-E2E applicability: not applicable to this pure source-contract/isolated-preparation invariant by itself. The registered action now consumes these source/preparation boundaries, but production execution still depends on the separately proven materializer, target, approval and Database Tools delivery contracts.
-
-## XML Boolean-if preparation admission evidence
-
-`XmlBooleanIfPreparationAdmission.inspect` consumes an immutable XML source graph, the complete
-`XmlMapperMethodCapture` from the source authority boundary, and the proposed `ParameterContract`.
-It rebuilds the source and mapper contract rather than accepting a contract's alias evidence as
-self-authenticating. The complete capture matters even when some parameters are not requested: an
-unused explicit alias can suppress a generated `paramN` alias and change which value a condition reads.
-
-This proves consistency with the supplied authoritative captures; it does not independently parse
-Java source to authenticate mapper metadata or revalidate live IDE documents. Those source-capture
-and revision responsibilities remain at the #62 boundary. The admitted result snapshots distinct core
-condition requirement ids and aliases, with no source/platform object or runtime value retained.
-
-E2E applicability: not applicable to this admission-only slice. The changed invariant is fully owned
-by pure source/contract tests in `:mybatis-engine`; installed-plugin wiring, production action/UI,
-Database Tools behavior and packaging dependencies are unchanged. The engine's true/false
-Boolean-if producer-boundary test still requires typed refusal when complete mapper capture is absent.
-The runtime consumer below now consumes admission only when that additional authority is present;
-production execution remains governed by the registered action's proven materialization, target, approval, and delivery boundaries.
-
-## XML Boolean-if isolated runtime evidence
-
-`XmlMapperPreparationSource.mapperMethod` optionally carries the complete immutable mapper capture.
-Its snapshot is automatically included in source-revision authority; an explicitly supplied duplicate
-must match both bytes and revision. A conflicting snapshot is rejected rather than silently substituted.
-The default source construction remains compatible with the static XML path and continues to refuse
-dynamic XML without this capture. Request construction rejects stale mapper revisions before runtime.
-
-For the admitted flat Boolean-if island (direct siblings or siblings inside bounded direct
-`<where>` / UPDATE `<set>` wrappers and the exact trim forms below),
-`XmlMapperPreparationEngine` owns a fresh classloader and Configuration, delegates evaluation to
-stock MyBatis, restores the thread context loader and closes
-the invocation loader. No MyBatis object or mutable runtime state survives in `PreparedExecution`.
-Missing/invalid required caller roots remain failures even when the condition is false. Empty rendered SQL
-and ordinary mapping errors return typed failure; reflection-wrapped cancellation and every non-Exception
-fatal failure propagate with original object identity. Tests poison the parent OGNL accessor and parser
-length limit and run concurrent true/false invocations to falsify isolation regressions.
-
-The static path retains exact whole-source mapping cardinality. The conditional path first applies the
-existing DOM/token-parser topology guard to source fragments: incomplete/escaped openers and unsafe
-fragment endings cannot synthesize new mappings at node boundaries. Each emitted mapping must resolve
-to an exact source-proven caller input. Each XML placeholder carries its immediate Boolean condition
-alias in `enclosingOgnlExpression`, or null for unconditional source text; this metadata grants no
-runtime authority by itself. Admission rebuilds it from captured source, so moved/missing/forged
-scope cannot authenticate itself, even when aliases and total occurrence counts are unchanged.
-
-For every true/false combination, mapping cardinality must exactly match the per-property counts of
-unconditional occurrences plus occurrences whose proven flat Boolean guard is true. An inactive
-branch cannot excuse losing an unconditional mapping or adding an inactive mapping. This is a
-provenance check over typed Boolean values, not an OGNL evaluator or SQL renderer: stock MyBatis
-continues to own condition evaluation, SQL bytes, order and WHERE/SET trimming semantics.
-
-The bounded `<where>` wrapper contains one or more direct Boolean-if siblings and may also contain static
-text and bound placeholders before or after it. It accepts no attributes or namespace-qualified
-name. UPDATE may also carry the single set wrapper described below. Static-only/empty where
-nodes, a second where, an if outside the wrappers, nested where/if,
-mixed foreach/if, bind/include/other tags and raw interpolation remain typed refusals before runtime, even
-when the supplied condition is false. Comments and CDATA cannot invent a conditional caller.
-
-Stock MyBatis owns `WHERE` insertion, leading `AND`/`OR` trimming and omission of an empty where.
-For example, `SELECT 1 <where><if test="enabled">AND id = #{id}</if></where>` produces
-`SELECT 1 WHERE id = ?` when true and `SELECT 1` when false (whitespace normalized here only for
-documentation). Tests compare the unmodified SQL bytes, mapping order and Java/JDBC/handler/mode/
-scale metadata with an independent stock MyBatis mapper-parser oracle, including newline/tab/case
-variants and identifiers such as `ANDROID` that must not lose their leading letters. Parent OGNL
-poisoning and concurrent preparation tests exercise both direct and where-wrapped conditions.
-`XmlSiblingBooleanIfPreparationTest` checks all eight combinations of three independent Boolean
-conditions against stock MyBatis, repeated explicit/generic guards and Map missing/null leaves.
-Concurrent invocations also interleave this Boolean path with the merged source-proven foreach
-path; both own fresh loaders that bypass shared JAR-resource caching and restore each thread's
-context loader. This proves coexistence of the two preparation islands, not support for combining
-foreach and if in one XML statement.
-The existing topology guard additionally rejects token synthesis/escaping across the new where
-boundaries; missing active Map leaves remain failures, while a present-null leaf remains null.
-
-The bounded UPDATE `<set>` island uses the same complete mapper admission and condition-scoped
-mapping proof. One unqualified attribute-free direct `<set>` must contain one or more direct
-simple Boolean-if siblings; unconditional text/bindings may occur before, within or after it.
-`XmlBooleanIfParameterContractTest` and `XmlBooleanIfPreparationAdmissionTest` cover source/type/alias
-and moved-placeholder authority. SELECT/INSERT/DELETE declarations with set, empty/static-only set,
-nested/repeated wrappers, direct conditions outside the wrappers, raw interpolation and
-other dynamic tags remain refused without partial caller authority.
-
-`XmlSiblingBooleanIfPreparationTest` compares all eight combinations of three UPDATE conditions,
-with and without a static assignment, against stock SQL bytes and ordered mapping metadata/values.
-Stock MyBatis owns SET insertion and trailing-comma removal. All-false conditions with no static
-assignment omit SET, preserving stock SQL even when that SQL is not a valid UPDATE; preparation is
-not SQL grammar validation and adds no synthetic assignment. Empty prepared SQL remains a typed
-failure. Missing active Map leaves, absent complete mapper capture, forged/stale source provenance
-and token synthesis across set boundaries remain typed refusals. Concurrent set/where/foreach
-invocations under poisoned parent OGNL exercise isolation and TCCL restoration. This fixture adds no execution authority by itself; production admission remains constrained by the registered action's bounded materializer envelope.
-
-UPDATE may compose one direct `<set>` and one direct `<where>`. Each wrapper independently
-requires at least one simple Boolean-if child; conditions in the first wrapper cannot authorize
-an empty/static-only second wrapper. The source scanner retains immediate guard provenance in
-source order across both wrappers, including repeated explicit/generic aliases. Admission rebuilds
-the complete source/mapper contract before isolated runtime preparation; moving an unconditional
-mapping into a condition or changing the second guard's mapper type cannot reuse old authority.
-Both source orders are admitted: preparation delegates SQL grammar and trimming to MyBatis.
-
-The core and admission tests retain duplicate/nested/attribute/namespace/raw/other-tag refusals
-and the SELECT/INSERT/DELETE set refusal. `XmlSiblingBooleanIfPreparationTest` compares all eight
-combinations of three guards, with and without static assignments/predicates, against the stock
-mapper-parser oracle's SQL bytes and ordered metadata. A shared guard in both wrappers contributes
-both proven occurrences when true. Tests additionally cover generic/repeated guards, comments/CDATA,
-both source orders, Map present-null/missing active leaves, all-false/empty SQL, cross-wrapper token
-synthesis and concurrent set/where/combined/foreach invocations under poisoned parent OGNL.
-All-false conditions may omit SET, WHERE, or both; no assignment, predicate, or SQL-validity claim
-is invented. This lower-level engine evidence grants no execution authority beyond the registered production materialization boundary.
-
-Two literal `<trim>` forms share these wrapper limits:
-
-- `<trim prefix="WHERE" prefixOverrides="AND |OR ">` counts as the single where wrapper;
-- `<trim prefix="SET" suffixOverrides=",">` counts as the single set wrapper and requires UPDATE.
-
-Both attributes must be unqualified, with those exact XML-decoded values and no other attributes.
-The element must be unqualified. In the Boolean-if island each trim requires a direct simple
-Boolean-if child; the separate foreach island above permits one direct foreach inside WHERE trim or,
-for UPDATE, SET trim, optionally with a static wrapper of the other role. Native and
-trim forms may compose for UPDATE, but two wrappers of the same role are rejected even when their
-element names differ. Empty/static-only trim, nested/duplicate/outside-condition structures, arbitrary
-prefix/suffix/override values, property-substituted or bound attributes, raw interpolation and other
-dynamic tags remain refused before runtime. XML character references and attribute ordering do not
-alter the decoded authority; no attributes are rewritten into native where/set tags.
-
-The core/admission tests cover mapper caller/type/scope authority and these refusals.
-`XmlSiblingBooleanIfPreparationTest` compares native/native, native/trim, trim/native and trim/trim
-UPDATE combinations across all eight guard combinations against stock SQL bytes, mapping order,
-metadata and values. Additional cases cover generic/repeated guards, comments/CDATA, decoded
-attributes, SET comma removal, all-false WHERE/SET omission, empty SQL, Map missing/null leaves,
-absent complete mapper capture and source-bound token topology. Concurrent trim/native/foreach
-preparations under poisoned parent OGNL retain per-invocation isolation and TCCL restoration.
-
-The literal trim override string stays semantically distinct from native `<where>` defaults:
-for example `AND` followed by a newline is not stripped by the admitted `AND ` override token.
-Stock MyBatis owns that result; preparation does not normalize whitespace or supply default
-override tokens. Native where/set remain attribute-free and general trim is unsupported. Production executability is decided later by the registered action's bounded materializer envelope rather than by this preparation fixture.
-
-An independent stock-MyBatis oracle checks byte-identical SQL and effective binding metadata. In
-MyBatis 3.6, a mapping may intentionally retain no type handler until parameter binding; preparation
-therefore resolves the same stock handler from the runtime value plus any explicit JDBC type instead
-of treating a null `ParameterMapping.typeHandler` as unsupported. Declared input type remains
-separate authority. Named Map leaf reads remain presence-aware in emitted
-mappings: present-null binds as null, a missing active leaf fails, and an inactive leaf does not become
-an invented caller requirement. Production materialization remains deliberately bounded: zero ordered bindings use the target-bound zero-binding/raw routes, exactly one proven PostgreSQL BIGINT binding may use the maintained BIGINT materializer, and every other non-zero binding shape fails closed.
-
-E2E applicability: not applicable to this lower-level preparation slice. Core request authority and
-standalone engine semantics change, while installed-plugin execution authority is proven separately by the registered action's materializer/target/approval/delivery contracts and maintained IU/DataGrip host evidence.
+The root execution tests (`LeapExecutionInvocationCoordinatorTest`,
+`LeapExecutionCandidateCoordinatorTest`, and the project-fixture handoff tests) use the same
+`MyBatisInvocationContractFactory` as production. This prevents test-only legacy contracts from
+masking registered-path drift. Materialization remains intentionally bounded after preparation:
+current zero-binding/raw/PostgreSQL-BIGINT adapters are execution envelopes, not MyBatis semantic
+authorities. P3 is the next hard-stop phase for prepared Database Tools backend evidence.
 
 ## IDEA 2026.2.3 compatibility and console lifetime authority
 
