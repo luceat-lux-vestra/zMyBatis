@@ -122,6 +122,7 @@ internal interface PreparedBackendExecutionHandle {
     fun cancel(): PreparedBackendCancellationResult
 }
 
+@Suppress("TooGenericExceptionCaught")
 internal class DatabaseSessionPreparedBackend(
     private val resultLimits: PreparedResultLimits,
     private val registryFactory: () -> TypeHandlerRegistry = { TypeHandlerRegistry() },
@@ -309,7 +310,7 @@ internal class DatabaseSessionPreparedBackend(
 
         val resultSet = statement.resultSet
         if (resultSet != null) {
-            return readQuery(resultSet)
+            return readQuery(resultSet, control)
         }
         val updateCount = statement.updateCount
         if (updateCount >= 0) {
@@ -318,7 +319,10 @@ internal class DatabaseSessionPreparedBackend(
         return failed(DatabaseSessionPreparedFailureKind.NO_RESULT, NO_RESULT)
     }
 
-    private fun readQuery(resultSet: RemoteResultSet): DatabaseSessionPreparedOutcome {
+    private fun readQuery(
+        resultSet: RemoteResultSet,
+        control: PreparedBackendCancellationControl,
+    ): DatabaseSessionPreparedOutcome {
         var outcome: DatabaseSessionPreparedOutcome? = null
         var escaped: Throwable? = null
         try {
@@ -332,19 +336,27 @@ internal class DatabaseSessionPreparedBackend(
                 diagnosticType = failure.javaClass.name,
             )
         } catch (failure: SQLException) {
-            outcome = failed(
-                kind = DatabaseSessionPreparedFailureKind.DATABASE_ERROR,
-                code = DATABASE_ERROR,
-                diagnosticType = failure.javaClass.name,
-                sqlState = failure.sqlState,
-                vendorCode = failure.errorCode,
-            )
+            outcome = if (control.cancelWasDispatched()) {
+                DatabaseSessionPreparedOutcome.Cancelled
+            } else {
+                failed(
+                    kind = DatabaseSessionPreparedFailureKind.DATABASE_ERROR,
+                    code = DATABASE_ERROR,
+                    diagnosticType = failure.javaClass.name,
+                    sqlState = failure.sqlState,
+                    vendorCode = failure.errorCode,
+                )
+            }
         } catch (failure: Exception) {
-            outcome = failed(
-                kind = DatabaseSessionPreparedFailureKind.EXECUTION_FAILED,
-                code = EXECUTION_FAILED,
-                diagnosticType = failure.javaClass.name,
-            )
+            outcome = if (control.cancelWasDispatched()) {
+                DatabaseSessionPreparedOutcome.Cancelled
+            } else {
+                failed(
+                    kind = DatabaseSessionPreparedFailureKind.EXECUTION_FAILED,
+                    code = EXECUTION_FAILED,
+                    diagnosticType = failure.javaClass.name,
+                )
+            }
         } catch (fatal: Throwable) {
             escaped = fatal
         }
@@ -426,6 +438,7 @@ internal class DatabaseSessionPreparedBackend(
         )
 }
 
+@Suppress("TooGenericExceptionCaught")
 internal class PreparedBackendCancellationControl : PreparedBackendExecutionHandle {
     private val requested = AtomicBoolean(false)
     private val dispatchStarted = AtomicBoolean(false)
