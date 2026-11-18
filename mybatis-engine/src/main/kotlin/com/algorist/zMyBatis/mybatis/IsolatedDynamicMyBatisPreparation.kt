@@ -36,6 +36,42 @@ internal object IsolatedDynamicMyBatisPreparation {
 
     private val platformLoader = ClassLoader.getPlatformClassLoader()
 
+    fun prepareInvocation(
+        script: String,
+        payload: MyBatisInvocationParameterObjectFactory.Ready,
+        databaseId: String? = null,
+        foreachLocals: Map<String, InternalBindingKind> = emptyMap(),
+    ): Result {
+        if (!safeParameterType(payload.parameterType)) {
+            return Result.Failed(invariantFailure("mybatis-isolated-parameter-type-not-jdk-owned"))
+        }
+        if (!safeInboundValue(payload.parameterObject)) {
+            return Result.Failed(invariantFailure("mybatis-isolated-parameter-value-not-jdk-owned"))
+        }
+
+        val myBatisLocation = MyBatisRuntimeArtifact.resolve(Configuration::class.java)
+            ?: return Result.Failed(invariantFailure("mybatis-code-source-unavailable"))
+        if (myBatisLocation.protocol != "file") {
+            return Result.Failed(invariantFailure("mybatis-code-source-non-local"))
+        }
+
+        return try {
+            URLClassLoader(arrayOf(myBatisLocation), platformLoader).use { loader ->
+                val thread = Thread.currentThread()
+                val previousContextLoader = thread.contextClassLoader
+                try {
+                    thread.contextClassLoader = loader
+                    prepareInvocationIn(loader, script, payload, databaseId, foreachLocals)
+                } finally {
+                    thread.contextClassLoader = previousContextLoader
+                }
+            }
+        } catch (failure: Throwable) {
+            rethrowFatal(failure)
+            Result.Failed(classifyPreparationFailure(failure))
+        }
+    }
+
     fun prepare(
         script: String,
         parameterType: MyBatisParameterType,
@@ -135,6 +171,82 @@ internal object IsolatedDynamicMyBatisPreparation {
             ?: return Result.Failed(invariantFailure("mybatis-parameter-mappings-unavailable"))
 
         val snapshots = snapshotMappings(loader, configuration, boundSql, parameterObject, mappings, admittedForeachLocals)
+
+        return Result.Ready(
+            MyBatisBoundSqlSnapshot(
+                sql = sql,
+                mappings = snapshots,
+                languageDriverIdentity = languageDriver.javaClass.name,
+            ),
+        )
+    }
+
+    private fun prepareInvocationIn(
+        loader: URLClassLoader,
+        script: String,
+        payload: MyBatisInvocationParameterObjectFactory.Ready,
+        databaseId: String?,
+        foreachLocals: Map<String, InternalBindingKind>,
+    ): Result {
+        val configurationClass = Class.forName(CONFIGURATION, true, loader)
+        if (configurationClass.classLoader !== loader) {
+            return Result.Failed(invariantFailure("mybatis-configuration-not-isolated"))
+        }
+        val ognlRuntimeClass = Class.forName(OGNL_RUNTIME, false, loader)
+        if (ognlRuntimeClass.classLoader !== loader) {
+            return Result.Failed(invariantFailure("mybatis-ognl-runtime-not-isolated"))
+        }
+        val languageDriverClass = Class.forName(LANGUAGE_DRIVER, true, loader)
+        val sqlSourceClass = Class.forName(SQL_SOURCE, true, loader)
+        val boundSqlClass = Class.forName(BOUND_SQL, true, loader)
+        val paramMapClass = Class.forName(PARAM_MAP, true, loader)
+
+        val configuration = configurationClass.getDeclaredConstructor().newInstance()
+        databaseId?.let {
+            configurationClass
+                .getMethod("setDatabaseId", String::class.java)
+                .invoke(configuration, it)
+        }
+        val languageDriver = configurationClass
+            .getMethod("getDefaultScriptingLanguageInstance")
+            .invoke(configuration)
+            ?: return Result.Failed(invariantFailure("mybatis-language-driver-unavailable"))
+        if (languageDriver.javaClass.classLoader !== loader) {
+            return Result.Failed(invariantFailure("mybatis-language-driver-not-isolated"))
+        }
+
+        val resolvedParameterType = when (val type = payload.parameterType) {
+            MyBatisParameterType.None -> null
+            is MyBatisParameterType.Single -> type.type
+            MyBatisParameterType.Multi -> paramMapClass
+        }
+        val sqlSource = languageDriverClass
+            .getMethod(
+                "createSqlSource",
+                configurationClass,
+                String::class.java,
+                Class::class.java,
+            )
+            .invoke(languageDriver, configuration, script, resolvedParameterType)
+            ?: return Result.Failed(invariantFailure("mybatis-sql-source-unavailable"))
+
+        val parameterObject = payload.parameterObject
+        val boundSql = sqlSourceClass
+            .getMethod("getBoundSql", Any::class.java)
+            .invoke(sqlSource, parameterObject)
+            ?: return Result.Failed(invariantFailure("mybatis-bound-sql-unavailable"))
+        val sql = boundSqlClass.getMethod("getSql").invoke(boundSql) as? String
+            ?: return Result.Failed(invariantFailure("mybatis-bound-sql-text-unavailable"))
+        val mappings = boundSqlClass.getMethod("getParameterMappings").invoke(boundSql) as? List<*>
+            ?: return Result.Failed(invariantFailure("mybatis-parameter-mappings-unavailable"))
+        val snapshots = snapshotMappings(
+            loader,
+            configuration,
+            boundSql,
+            parameterObject,
+            mappings,
+            foreachLocals,
+        )
 
         return Result.Ready(
             MyBatisBoundSqlSnapshot(
@@ -246,6 +358,7 @@ internal object IsolatedDynamicMyBatisPreparation {
             typeHandlerIdentity = metadata.typeHandlerIdentity,
             parameterMode = metadata.parameterMode,
             numericScale = metadata.numericScale,
+            capturedValue = capturedValue,
         )
     }
 
@@ -377,18 +490,20 @@ internal object IsolatedDynamicMyBatisPreparation {
         is MyBatisParameterType.Single -> jdkOwned(parameterType.type)
     }
 
-    private fun safeInboundValue(value: Any?): Boolean {
-        if (value == null) return true
-        if (!jdkOwned(value.javaClass)) return false
-        return when (value) {
-            is Map<*, *> -> value.entries.all { (key, item) ->
-                safeInboundValue(key) && safeInboundValue(item)
-            }
-            is List<*> -> value.all(::safeInboundValue)
-            else -> !value.javaClass.isArray ||
+    private fun safeInboundValue(value: Any?): Boolean = when (value) {
+        null -> true
+        is Map<*, *> -> value.entries.all { (key, item) ->
+            safeInboundValue(key) && safeInboundValue(item)
+        }
+        is List<*> -> value.all(::safeInboundValue)
+        else -> {
+            if (value.javaClass.isArray) {
                 (0 until ReflectArray.getLength(value)).all { index ->
                     safeInboundValue(ReflectArray.get(value, index))
                 }
+            } else {
+                jdkOwned(value.javaClass)
+            }
         }
     }
 

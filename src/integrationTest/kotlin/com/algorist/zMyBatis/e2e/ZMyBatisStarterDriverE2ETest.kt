@@ -645,7 +645,7 @@ class ZMyBatisStarterDriverE2ETest {
                 ui.popups().list().last().waitOneText("public").click()
 
                 ui.dialog(title = "Enter MyBatis Parameters") {
-                    textArea().text = "7"
+                    textField().text = "7"
                     rawConfirmation().click()
                     button("OK").click()
                 }
@@ -717,8 +717,8 @@ class ZMyBatisStarterDriverE2ETest {
                 ui.popups().list().last().waitOneText("public").click()
 
                 ui.dialog(title = "Enter MyBatis Parameters") {
-                    assertTrue(textArea().text.isBlank(), "raw Java input must start without retained history")
-                    textArea().text = "45001"
+                    assertTrue(textField().text.isBlank(), "raw Java input must start without retained history")
+                    textField().text = "45001"
                     rawConfirmation().click()
                     button("OK").click()
                 }
@@ -754,10 +754,10 @@ class ZMyBatisStarterDriverE2ETest {
 
                 ui.dialog(title = "Enter MyBatis Parameters") {
                     assertTrue(
-                        textArea().text.isBlank(),
+                        textField().text.isBlank(),
                         "raw Java input must never be retained across registered-action invocations",
                     )
-                    textArea().text = "45002"
+                    textField().text = "45002"
                     rawConfirmation().click()
                     button("OK").click()
                 }

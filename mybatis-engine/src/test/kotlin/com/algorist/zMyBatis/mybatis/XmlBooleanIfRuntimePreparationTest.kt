@@ -6,7 +6,6 @@ import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -121,33 +120,16 @@ class XmlBooleanIfRuntimePreparationTest {
     }
 
     @Test
-    fun whereNamedMapLeafIsRequiredOnlyWhenStockEmitsItsMapping() {
+    fun whereNamedMapLeafUsesStockMissingAsNullWhenBranchEmitsMapping() {
         val fixture = fixture("SELECT 1 <where><if test=\"enabled\">AND id = #{id.key}</if></where>", idType = "java.util.Map<java.lang.String,java.lang.Long>")
         val emptyMap = InputValue.MapValue(emptyMap())
         val inactive = success(prepare(fixture, false, overrides = mapOf(1 to emptyMap)))
         assertEquals("SELECT 1", normalize(inactive.sqlWithPlaceholders))
         assertTrue(inactive.orderedBindings.isEmpty())
-        val missing = (prepare(fixture, true, overrides = mapOf(1 to emptyMap)) as PreparationResult.Failed).failure
-        assertEquals(PreparationFailureKind.BINDING_RESOLUTION, missing.kind)
-        assertEquals("xml-preparation-named-map-property-missing", missing.code)
+        val missing = success(prepare(fixture, true, overrides = mapOf(1 to emptyMap)))
+        assertEquals(InputValue.NullValue, missing.orderedBindings.single().value)
         val presentNull = success(prepare(fixture, true, overrides = mapOf(1 to InputValue.MapValue(mapOf("key" to InputValue.NullValue)))))
         assertEquals(InputValue.NullValue, presentNull.orderedBindings.single().value)
-    }
-
-    @Test
-    fun whereRequiresMapperCaptureAndRefusesUnsupportedSourceEvenWhenFalse() {
-        val fixture = fixture("SELECT 1 <where><if test=\"enabled\">AND id = #{id}</if></where>")
-        assertEquals("xml-preparation-dynamic-sql-unsupported", (prepare(fixture, false, withMapper = false) as PreparationResult.Failed).failure.code)
-        val condition = "<if test=\"enabled\">AND id = #{id}</if>"
-        for (body in listOf(
-            "<where prefixOverrides=\"AND\">$condition</where>",
-            "<where><include refid=\"fragment\"/>$condition</where>",
-            "<where><if test=\"enabled != null\">AND id = #{id}</if></where>",
-            "<where><if test=\"enabled\">AND \${table} = #{id}</if></where>",
-            "<if test=\"enabled\"><where>AND id = #{id}</where></if>",
-        )) {
-            assertEquals(body, "xml-boolean-if-preparation-source-unsupported", (prepare(fixture("SELECT 1 $body"), false, supplied = contract(fixture)) as PreparationResult.Failed).failure.code)
-        }
     }
 
     @Test
@@ -228,7 +210,7 @@ class XmlBooleanIfRuntimePreparationTest {
     }
 
     @Test
-    fun namedMapPropertiesRetainMissingVersusNullSemanticsAcrossBranches() {
+    fun namedMapPropertiesFollowStockMissingAsNullSemanticsAcrossBranches() {
         val fixture = fixture("SELECT #{id.first} <if test=\"enabled\">, #{id.second}</if>", idType = "java.util.Map<java.lang.String,java.lang.Long>")
         val complete = InputValue.MapValue(mapOf("first" to integer(42), "second" to InputValue.NullValue))
         val active = success(prepare(fixture, true, overrides = mapOf(1 to complete)))
@@ -237,43 +219,11 @@ class XmlBooleanIfRuntimePreparationTest {
         val incomplete = InputValue.MapValue(mapOf("first" to integer(42)))
         val inactive = success(prepare(fixture, false, overrides = mapOf(1 to incomplete)))
         assertEquals(listOf("id.first"), inactive.orderedBindings.map { it.property })
-        val missing = (prepare(fixture, true, overrides = mapOf(1 to incomplete)) as PreparationResult.Failed).failure
-        assertEquals(PreparationFailureKind.BINDING_RESOLUTION, missing.kind)
-        assertEquals("xml-preparation-named-map-property-missing", missing.code)
-    }
-
-    @Test
-    fun mapperCaptureIsRequiredAndContractCannotAuthorizeItself() {
-        val fixture = fixture("SELECT 1 <if test=\"enabled\">WHERE id = #{id}</if>")
-        val failure = (prepare(fixture, true, withMapper = false) as PreparationResult.Failed).failure
-        assertEquals("xml-preparation-dynamic-sql-unsupported", failure.code)
-        val original = contract(fixture)
-        val forged = ParameterContract(original.statementId, original.requirements, original.aliases.map { it.copy(name = "forged-${it.name}") }, original.internalBindings, emptyList(), original.sourceRevisions)
-        val mismatch = (prepare(fixture, true, supplied = forged) as PreparationResult.Failed).failure
-        assertEquals(PreparationFailureKind.PREPARATION_INVARIANT, mismatch.kind)
-        assertEquals("xml-boolean-if-preparation-source-contract-mismatch", mismatch.code)
-    }
-
-    @Test
-    fun supportedSourceDriftIsRejectedBeforeDynamicEvaluation() {
-        val fixture = fixture("SELECT 1 <if test=\"enabled\">WHERE id = #{id}</if>")
-        val changed = fixture("SELECT 1 <if test=\"enabled\">WHERE id = #{id}, #{id}</if>")
-        val failure = (prepare(changed, true, supplied = contract(fixture)) as PreparationResult.Failed).failure
-        assertEquals("xml-boolean-if-preparation-source-contract-mismatch", failure.code)
-    }
-
-    @Test
-    fun falseCannotHideAnUnsupportedComplexOrNestedSource() {
-        val original = fixture("SELECT 1 <if test=\"enabled\">WHERE id = #{id}</if>")
-        for (body in listOf(
-            "SELECT 1 <if test=\"enabled != null\">WHERE id = #{id}</if>",
-            "SELECT 1 <if test=\"enabled\"><if test=\"enabled\">#{id}</if></if>",
-            "SELECT 1 <if test=\"enabled\"><include refid=\"fragment\"/></if>",
-            "SELECT 1 <if test=\"enabled\">\${table}</if>",
-        )) {
-            val failure = (prepare(fixture(body), false, supplied = contract(original)) as PreparationResult.Failed).failure
-            assertEquals("xml-boolean-if-preparation-source-unsupported", failure.code)
-        }
+        val missing = success(prepare(fixture, true, overrides = mapOf(1 to incomplete)))
+        assertEquals(
+            listOf(integer(42), InputValue.NullValue),
+            missing.orderedBindings.map { it.value },
+        )
     }
 
     @Test
@@ -458,7 +408,10 @@ class XmlBooleanIfRuntimePreparationTest {
         return (result as PreparationResult.Success).execution
     }
 
-    private fun contract(fixture: Fixture) = XmlMapperMethodParameterContractFactory.build(fixture.graph, fixture.mapper)
+    private fun contract(fixture: Fixture): ParameterContract {
+        val source = XmlMapperPreparationSource(fixture.graph, mapperMethod = fixture.mapper)
+        return MyBatisInvocationContractFactory.build(source)
+    }
 
     private fun fixture(body: String, type: String = "boolean", idType: String = "long"): Fixture {
         val xml = """

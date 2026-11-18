@@ -2,10 +2,9 @@ package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputEnvironment
+import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.JavaAnnotationParameterContractFactory
-import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
@@ -119,7 +118,7 @@ class MyBatisPreparationEngineTest {
         val request = request(
             "select * from ${'$'}{table} where id = #{id}",
             listOf(
-                Parameter("java.lang.String", "table", InputValue.RawText("users")),
+                Parameter("java.lang.String", "table", InputValue.Text("users")),
                 Parameter("java.lang.Long", "id", InputValue.IntegerValue(BigInteger.valueOf(9))),
             ),
         )
@@ -130,8 +129,8 @@ class MyBatisPreparationEngineTest {
         val execution = (result as PreparationResult.Success).execution
         assertEquals("select * from users where id = ?", execution.sqlWithPlaceholders)
         assertEquals(listOf("id"), execution.orderedBindings.map { it.property })
-        assertEquals(listOf("java-param:0"), execution.rawInterpolations.map { it.requirementId.value })
-        assertEquals("java-param:1", execution.orderedBindings.single().requirementId?.value)
+        assertEquals(listOf("method-param:0"), execution.rawInterpolations.map { it.requirementId.value })
+        assertEquals("method-param:1", execution.orderedBindings.single().requirementId?.value)
         assertFalse(
             execution.rawInterpolations.any { raw ->
                 execution.orderedBindings.any { bound -> bound.requirementId == raw.requirementId }
@@ -148,7 +147,7 @@ class MyBatisPreparationEngineTest {
                     Parameter(
                         "java.lang.String",
                         "value",
-                        InputValue.RawText("45001"),
+                        InputValue.Text("45001"),
                     ),
                 ),
                 MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
@@ -159,7 +158,7 @@ class MyBatisPreparationEngineTest {
         val execution = (result as PreparationResult.Success).execution
         assertEquals("SELECT 45001 AS RESULT_VALUE", execution.sqlWithPlaceholders.trim())
         assertTrue(execution.orderedBindings.isEmpty())
-        assertEquals(listOf("java-param:0"), execution.rawInterpolations.map { it.requirementId.value })
+        assertEquals(listOf("method-param:0"), execution.rawInterpolations.map { it.requirementId.value })
         assertEquals("PostgreSQL", execution.preparationMetadata.databaseId)
     }
 
@@ -402,7 +401,7 @@ class MyBatisPreparationEngineTest {
         assertTrue(result is PreparationResult.Success)
         val binding = (result as PreparationResult.Success).execution.orderedBindings.single()
         assertEquals("id", binding.property)
-        assertEquals("java-param:0", binding.requirementId?.value)
+        assertEquals("method-param:0", binding.requirementId?.value)
     }
 
     private fun requestWithProvenZeroInputs(
@@ -410,20 +409,13 @@ class MyBatisPreparationEngineTest {
         databaseId: MyBatisDatabaseId? = null,
     ): MyBatisPreparationRequest {
         val capture = capture(sql, emptyList())
-        val sourceRevisions = capture.sourceGraph.sourceSnapshots.associate { it.fileId to it.revision }
-        val contract = ParameterContract(
-            statementId = capture.sourceGraph.rootStatement.id,
-            requirements = emptyList(),
-            aliases = emptyList(),
-            internalBindings = emptyList(),
-            blockingProblems = emptyList(),
-            sourceRevisions = sourceRevisions,
-        )
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
         val environmentResult = InputEnvironment.validate(contract, emptyList())
         assertTrue(environmentResult is InputEnvironmentResult.Success)
         val environment = (environmentResult as InputEnvironmentResult.Success).environment
         val requestResult = MyBatisPreparationRequest.create(
-            PreparationSource.JavaAnnotation(capture),
+            source,
             contract,
             environment,
             effectiveDatabaseId = databaseId,
@@ -438,17 +430,21 @@ class MyBatisPreparationEngineTest {
         databaseId: MyBatisDatabaseId? = null,
     ): MyBatisPreparationRequest {
         val capture = capture(sql, parameters)
-        val contract = JavaAnnotationParameterContractFactory.build(capture)
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
         assertFalse("test fixture unexpectedly produced a blocked contract", contract.isPreparationBlocked)
         val provided = contract.requirements.map { requirement ->
-            val index = requirement.id.value.substringAfter("java-param:").toInt()
+            val index = requirement.provenance.evidence
+                .filterIsInstance<InputEvidence.MapperMethodParameter>()
+                .single()
+                .index
             ProvidedInput(requirement.id, parameters[index].value, ExecutionInputOrigin.USER_ENTERED)
         }
         val environmentResult = InputEnvironment.validate(contract, provided)
         assertTrue(environmentResult is InputEnvironmentResult.Success)
         val environment = (environmentResult as InputEnvironmentResult.Success).environment
         val requestResult = MyBatisPreparationRequest.create(
-            PreparationSource.JavaAnnotation(capture),
+            source,
             contract,
             environment,
             effectiveDatabaseId = databaseId,

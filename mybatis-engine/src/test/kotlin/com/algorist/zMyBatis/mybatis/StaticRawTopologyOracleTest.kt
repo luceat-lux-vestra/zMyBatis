@@ -1,24 +1,10 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
-import com.algorist.zMyBatis.core.input.ExpectedInputType
-import com.algorist.zMyBatis.core.input.InputAlias
-import com.algorist.zMyBatis.core.input.InputAliasKind
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
-import com.algorist.zMyBatis.core.input.InputEvidence
-import com.algorist.zMyBatis.core.input.InputKind
-import com.algorist.zMyBatis.core.input.InputNullability
-import com.algorist.zMyBatis.core.input.InputProvenance
-import com.algorist.zMyBatis.core.input.InputRequiredness
-import com.algorist.zMyBatis.core.input.InputRequirement
-import com.algorist.zMyBatis.core.input.InputRequirementId
-import com.algorist.zMyBatis.core.input.InputScalarType
-import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.SourceEvidence
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationSource
@@ -113,55 +99,23 @@ class StaticRawTopologyOracleTest {
             listOf(script),
             listOf(JavaMethodParameterMetadata(0, "raw", typeIdentity, "raw")),
         )
-        val source = SourceEvidence(fileId, revision, range)
-        val requirementId = InputRequirementId("static-raw-topology-param:0")
-        val provenance = InputProvenance(
-            listOf(
-                InputEvidence.MapperMethodParameter(0, "raw", typeIdentity, source),
-                InputEvidence.ExplicitParamAlias(0, "raw", source),
-                InputEvidence.Placeholder(InputKind.RAW_INTERPOLATION, "raw", source),
-            ),
-        )
-        val requirement = InputRequirement(
-            id = requirementId,
-            kind = InputKind.RAW_INTERPOLATION,
-            expectedType = ExpectedInputType(
-                shape = InputShape.RAW_TEXT,
-                scalarType = InputScalarType.STRING,
-                javaTypeIdentity = typeIdentity,
-                nullability = InputNullability.NON_NULL,
-            ),
-            requiredness = InputRequiredness.REQUIRED,
-            provenance = provenance,
-        )
-        val contract = ParameterContract(
-            statementId = statementId,
-            requirements = listOf(requirement),
-            aliases = listOf(
-                InputAlias(
-                    name = "raw",
-                    requirementId = requirementId,
-                    kind = InputAliasKind.EXPLICIT_PARAM,
-                    provenance = provenance,
-                ),
-            ),
-            internalBindings = emptyList(),
-            blockingProblems = emptyList(),
-            sourceRevisions = mapOf(fileId to revision),
-        )
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
+        check(!contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
         val environment = InputEnvironment.validate(
             contract,
             listOf(
                 ProvidedInput(
-                    requirementId,
-                    InputValue.RawText(value),
+                    requirement.id,
+                    InputValue.Text(value),
                     ExecutionInputOrigin.USER_ENTERED,
                 ),
             ),
         )
         check(environment is InputEnvironmentResult.Success)
         val request = MyBatisPreparationRequest.create(
-            PreparationSource.JavaAnnotation(capture),
+            source,
             contract,
             environment.environment,
         )

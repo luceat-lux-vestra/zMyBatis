@@ -2,9 +2,9 @@ package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputEnvironment
+import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.JavaAnnotationParameterContractFactory
 import com.algorist.zMyBatis.core.input.ProvidedInput
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
@@ -35,12 +35,13 @@ import org.apache.ibatis.type.BaseTypeHandler
 import org.apache.ibatis.type.JdbcType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MyBatisPreparationEngineAdversarialTest {
     @Test
-    fun missingNestedMapKeyFailsInsteadOfBecomingNullBinding() {
+    fun missingNestedMapKeyFollowsStockNullBindingSemantics() {
         val request = request(
             "select #{payload.missing}",
             listOf(
@@ -52,12 +53,14 @@ class MyBatisPreparationEngineAdversarialTest {
             ),
         )
 
+        val contextLoader = Thread.currentThread().contextClassLoader
         val result = MyBatisPreparationEngine.prepare(request)
 
-        assertTrue(result is PreparationResult.Failed)
-        result as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.BINDING_RESOLUTION, result.failure.kind)
-        assertEquals("payload.missing", result.failure.bindingProperty)
+        assertSame(contextLoader, Thread.currentThread().contextClassLoader)
+        assertTrue(result is PreparationResult.Success)
+        val binding = (result as PreparationResult.Success).execution.orderedBindings.single()
+        assertEquals("payload.missing", binding.property)
+        assertEquals(InputValue.NullValue, binding.value)
     }
 
     @Test
@@ -79,7 +82,6 @@ class MyBatisPreparationEngineAdversarialTest {
         result as PreparationResult.Failed
         assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, result.failure.kind)
         assertEquals("java-parameter-value-out-of-range", result.failure.code)
-        assertEquals("id", result.failure.bindingProperty)
     }
 
     @Test
@@ -101,25 +103,27 @@ class MyBatisPreparationEngineAdversarialTest {
         result as PreparationResult.Failed
         assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, result.failure.kind)
         assertEquals("java-parameter-value-out-of-range", result.failure.code)
-        assertEquals("amount", result.failure.bindingProperty)
     }
 
     @Test
-    fun unknownMapperParameterTypeFailsClosedWithoutRuntimeFallback() {
+    fun applicationParameterObjectUsesJdkOwnedMapSurrogateWithoutRuntimeClassLoading() {
         val request = request(
             "select #{id}",
             listOf(
                 Parameter("java.lang.Long", "id", InputValue.IntegerValue(BigInteger.valueOf(17))),
-                Parameter("fixture.DoesNotExist", "unused", InputValue.Text("not-consumed")),
+                Parameter("fixture.DoesNotExist", "unused", InputValue.ObjectValue(emptyMap())),
             ),
         )
 
         val result = MyBatisPreparationEngine.prepare(request)
 
-        assertTrue(result is PreparationResult.Failed)
-        result as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
-        assertEquals("java-annotation-parameter-type-unavailable", result.failure.code)
+        assertTrue(result is PreparationResult.Success)
+        result as PreparationResult.Success
+        assertEquals(listOf("id"), result.execution.orderedBindings.map { it.property })
+        assertEquals(
+            listOf(InputValue.IntegerValue(BigInteger.valueOf(17))),
+            result.execution.orderedBindings.map { it.value },
+        )
     }
 
     @Test
@@ -157,7 +161,7 @@ class MyBatisPreparationEngineAdversarialTest {
     }
 
     @Test
-    fun explicitJavaTypeIsRefusedBeforeMyBatisRuntimeClassResolution() {
+    fun explicitJavaTypeRemainsStockOwnedAndPreservesMappingMetadata() {
         val request = request(
             "select #{id,javaType=java.lang.Long}",
             listOf(Parameter("java.lang.Long", "id", InputValue.IntegerValue(BigInteger.ONE))),
@@ -165,17 +169,32 @@ class MyBatisPreparationEngineAdversarialTest {
 
         val result = MyBatisPreparationEngine.prepare(request)
 
-        assertTrue(result is PreparationResult.Failed)
-        result as PreparationResult.Failed
-        assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
-        assertEquals("mybatis-explicit-java-type-unsupported", result.failure.code)
+        assertTrue(result is PreparationResult.Success)
+        val binding = (result as PreparationResult.Success).execution.orderedBindings.single()
+        assertEquals(InputValue.IntegerValue(BigInteger.ONE), binding.value)
+        assertEquals("java.lang.Long", binding.metadata.mappingJavaTypeIdentity)
+        assertEquals("org.apache.ibatis.type.LongTypeHandler", binding.metadata.typeHandlerIdentity)
     }
 
     @Test
-    fun nestedStaticRawOgnlIsRejectedBeforeEvaluation() {
+    fun explicitStockTypeHandlerRemainsInsideThePositiveEnvelope() {
         val request = request(
-            "select * from ${'$'}{id.missing}",
-            listOf(Parameter("java.lang.String", "id", InputValue.RawText("abc"))),
+            "select #{id,typeHandler=org.apache.ibatis.type.LongTypeHandler}",
+            listOf(Parameter("java.lang.Long", "id", InputValue.IntegerValue(BigInteger.ONE))),
+        )
+
+        val result = MyBatisPreparationEngine.prepare(request)
+
+        assertTrue(result is PreparationResult.Success)
+        val binding = (result as PreparationResult.Success).execution.orderedBindings.single()
+        assertEquals("org.apache.ibatis.type.LongTypeHandler", binding.metadata.typeHandlerIdentity)
+    }
+
+    @Test
+    fun nestedRawPropertyRemainsRefusedWhenTopologyCannotBeProvenWithoutEvaluation() {
+        val request = request(
+            "select * from " + "$" + "{id.missing}",
+            listOf(Parameter("java.lang.String", "id", InputValue.Text("abc"))),
         )
 
         val result = MyBatisPreparationEngine.prepare(request)
@@ -195,7 +214,7 @@ class MyBatisPreparationEngineAdversarialTest {
                     val request = request(
                         "select * from ${'$'}{table} where id = #{id}",
                         listOf(
-                            Parameter("java.lang.String", "table", InputValue.RawText("table_$index")),
+                            Parameter("java.lang.String", "table", InputValue.Text("table_$index")),
                             Parameter(
                                 "java.lang.Long",
                                 "id",
@@ -223,20 +242,20 @@ class MyBatisPreparationEngineAdversarialTest {
 
     private fun request(sql: String, parameters: List<Parameter>): MyBatisPreparationRequest {
         val capture = capture(sql, parameters)
-        val contract = JavaAnnotationParameterContractFactory.build(capture)
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
         assertFalse("test fixture unexpectedly produced a blocked contract", contract.isPreparationBlocked)
         val provided = contract.requirements.map { requirement ->
-            val index = requirement.id.value.substringAfter("java-param:").toInt()
+            val index = requirement.provenance.evidence
+                .filterIsInstance<InputEvidence.MapperMethodParameter>()
+                .single()
+                .index
             ProvidedInput(requirement.id, parameters[index].value, ExecutionInputOrigin.USER_ENTERED)
         }
         val environmentResult = InputEnvironment.validate(contract, provided)
         assertTrue(environmentResult is InputEnvironmentResult.Success)
         val environment = (environmentResult as InputEnvironmentResult.Success).environment
-        val requestResult = MyBatisPreparationRequest.create(
-            PreparationSource.JavaAnnotation(capture),
-            contract,
-            environment,
-        )
+        val requestResult = MyBatisPreparationRequest.create(source, contract, environment)
         assertTrue(requestResult is PreparationRequestResult.Ready)
         return (requestResult as PreparationRequestResult.Ready).request
     }

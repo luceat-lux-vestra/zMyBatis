@@ -38,6 +38,17 @@ internal object IsolatedOgnlAstAdmission {
         "ASTRemainder",
         "ASTSubtract",
     )
+    private val deniedCapabilityNodeTypes = setOf(
+        "ASTStaticMethod",
+        "ASTStaticField",
+        "ASTMethod",
+        "ASTCtor",
+        "ASTEval",
+        "ASTAssign",
+        "ASTVarRef",
+        "ASTThisVarRef",
+        "ASTRootVarRef",
+    )
     private val platformLoader = ClassLoader.getPlatformClassLoader()
 
     fun inspect(
@@ -46,6 +57,15 @@ internal object IsolatedOgnlAstAdmission {
     ): Result = inspectParsed(expressions, includeExpressionInFailure = false) { _, root ->
         inspectTree(root, allowedRootProperties)
     }
+
+    /**
+     * P2 safety-only admission. Standard property/operator semantics remain owned by stock MyBatis;
+     * only explicit code-execution/context-mutation capabilities and resource budgets are refused.
+     */
+    fun inspectCapabilities(expressions: List<String>): Result =
+        inspectParsed(expressions, includeExpressionInFailure = false) { _, root ->
+            inspectCapabilityTree(root)
+        }
 
     /**
      * Proves that stock MyBatis' shaded OGNL parser sees [expression] as exactly one non-indexed
@@ -157,6 +177,46 @@ internal object IsolatedOgnlAstAdmission {
         } else {
             Result.UnprovenProperty(property)
         }
+    }
+
+    private fun inspectCapabilityTree(root: Any): Result {
+        val pending = ArrayDeque<Pair<Any, Int>>()
+        pending.addLast(root to 1)
+        var visitedNodes = 0
+
+        while (pending.isNotEmpty()) {
+            if (++visitedNodes > MAX_AST_NODES) {
+                return Result.Unsupported("OGNL[ast-node-budget]")
+            }
+            val (node, depth) = pending.removeLast()
+            if (depth > MAX_AST_DEPTH) {
+                return Result.Unsupported("OGNL[ast-depth]")
+            }
+
+            val nodeType = node.javaClass.simpleName
+            if (nodeType in deniedCapabilityNodeTypes) {
+                return Result.Unsupported(nodeType)
+            }
+            if (nodeType == "ASTProperty") {
+                val count = childCount(node)
+                if (count == 1) {
+                    val constant = child(node, 0)
+                    if (constant.javaClass.simpleName == "ASTConst") {
+                        val property = constant.javaClass.getMethod("getValue").invoke(constant) as? String
+                        if (property == "class" || property == "getClass") {
+                            return Result.Unsupported("ASTProperty[class]")
+                        }
+                    }
+                }
+            }
+
+            val count = childCount(node)
+            for (index in count - 1 downTo 0) {
+                pending.addLast(child(node, index) to depth + 1)
+            }
+        }
+
+        return Result.Admitted
     }
 
     private fun inspectTree(

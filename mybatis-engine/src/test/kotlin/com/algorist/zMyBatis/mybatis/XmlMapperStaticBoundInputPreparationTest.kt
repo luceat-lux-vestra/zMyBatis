@@ -5,12 +5,9 @@ import com.algorist.zMyBatis.core.input.InputAliasKind
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputEvidence
-import com.algorist.zMyBatis.core.input.InputKind
-import com.algorist.zMyBatis.core.input.InputProvenance
+import com.algorist.zMyBatis.core.input.InputUsageKind
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
 import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
 import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
@@ -95,15 +92,12 @@ class XmlMapperStaticBoundInputPreparationTest {
         assertEquals("BIGINT", binding.metadata.jdbcTypeIdentity)
         assertEquals("IN", binding.metadata.parameterMode)
         assertTrue(binding.metadata.typeHandlerIdentity.startsWith("org.apache.ibatis.type."))
-        assertEquals("xml-java-param:0", binding.requirementId?.value)
+        assertEquals("method-param:0", binding.requirementId?.value)
         assertTrue(binding.provenance.evidence.any { it is InputEvidence.MapperMethodParameter })
         assertTrue(binding.provenance.evidence.any { it is InputEvidence.ExplicitParamAlias })
-        assertTrue(
-            binding.provenance.evidence.any {
-                it is InputEvidence.Placeholder &&
-                    it.kind == InputKind.BOUND &&
-                    it.expression == "id"
-            },
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER),
+            contract(fixture).requirements.single().usageKinds,
         )
     }
 
@@ -124,59 +118,31 @@ class XmlMapperStaticBoundInputPreparationTest {
             execution.orderedBindings.map { it.value },
         )
         assertEquals(
-            listOf("xml-java-param:0", "xml-java-param:0"),
+            listOf("method-param:0", "method-param:0"),
             execution.orderedBindings.map { it.requirementId?.value },
         )
     }
 
     @Test
-    fun mappingCardinalityMustMatchProvenPlaceholderOccurrences() {
+    fun boundPlaceholderCardinalityRemainsStockMyBatisOwned() {
         val fixture = fixture(
             "SELECT * FROM users WHERE id = #{id} OR parent_id = #{id}",
             listOf(parameter(0, "long", "id", "id")),
         )
-        val authentic = contract(fixture)
-        val requirement = authentic.requirements.single()
-        val firstPlaceholder = requirement.provenance.evidence
-            .filterIsInstance<InputEvidence.Placeholder>()
-            .first()
-        val forgedRequirement = requirement.copy(
-            provenance = InputProvenance(
-                requirement.provenance.evidence
-                    .filterNot { it is InputEvidence.Placeholder } +
-                    firstPlaceholder,
-            ),
-        )
-        val forgedContract = ParameterContract(
-            statementId = authentic.statementId,
-            requirements = listOf(forgedRequirement),
-            aliases = authentic.aliases,
-            internalBindings = authentic.internalBindings,
-            blockingProblems = emptyList(),
-            sourceRevisions = authentic.sourceRevisions,
-        )
-        val provided = ProvidedInput(
-            forgedRequirement.id,
-            InputValue.IntegerValue(BigInteger.ONE),
-            ExecutionInputOrigin.USER_ENTERED,
-        )
-        val environment = (
-            InputEnvironment.validate(forgedContract, listOf(provided)) as InputEnvironmentResult.Success
-            ).environment
-        val source = XmlMapperPreparationSource(
-            fixture.graph,
-            additionalAuthoritySnapshots = listOf(fixture.mapper.mapperSource),
-        )
-        val request = MyBatisPreparationRequest.create(
-            source,
-            forgedContract,
-            environment,
-        ) as PreparationRequestResult.Ready
+        val callerContract = contract(fixture)
+        val requirement = callerContract.requirements.single()
 
-        assertFailure(
-            XmlMapperPreparationEngine.prepare(request.request),
-            PreparationFailureKind.PARAMETER_MAPPING_MISMATCH,
-            "xml-preparation-mapping-cardinality-mismatch",
+        assertEquals("method-param:0", requirement.id.value)
+        assertEquals(setOf(InputUsageKind.BOUND_PLACEHOLDER), requirement.usageKinds)
+        assertTrue(requirement.provenance.evidence.none { it is InputEvidence.Placeholder })
+
+        val execution = success(
+            prepare(fixture, listOf(InputValue.IntegerValue(BigInteger.ONE))),
+        )
+        assertEquals(listOf("id", "id"), execution.orderedBindings.map { it.property })
+        assertEquals(
+            listOf("method-param:0", "method-param:0"),
+            execution.orderedBindings.map { it.requirementId?.value },
         )
     }
 
@@ -205,8 +171,14 @@ class XmlMapperStaticBoundInputPreparationTest {
             listOf(InputValue.IntegerValue(BigInteger.valueOf(7)), InputValue.Text("alice")),
             execution.orderedBindings.map { it.value },
         )
-        assertTrue(
-            contract(fixture).aliases.all { it.kind == InputAliasKind.GENERIC_PARAM },
+        assertEquals(
+            listOf(
+                "id" to InputAliasKind.EXPLICIT_PARAM,
+                "param1" to InputAliasKind.GENERIC_PARAM,
+                "name" to InputAliasKind.EXPLICIT_PARAM,
+                "param2" to InputAliasKind.GENERIC_PARAM,
+            ),
+            contract(fixture).aliases.map { it.name to it.kind },
         )
     }
 
@@ -237,7 +209,7 @@ class XmlMapperStaticBoundInputPreparationTest {
         assertFailure(
             prepare(fixture, listOf(InputValue.IntegerValue(BigInteger.ONE))),
             PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "xml-preparation-parameter-mode-unsupported",
+            "mybatis-parameter-mode-unsupported",
         )
     }
 
@@ -282,8 +254,8 @@ class XmlMapperStaticBoundInputPreparationTest {
         cases.forEach { (fixture, value, description) ->
             val result = prepare(fixture, listOf(value))
             val failure = result as PreparationResult.Failed
-            assertEquals(description, PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, failure.failure.kind)
-            assertEquals(description, "xml-preparation-bound-shape-unsupported", failure.failure.code)
+            assertEquals(description, PreparationFailureKind.UNSUPPORTED_TYPE_HANDLER, failure.failure.kind)
+            assertEquals(description, "mybatis-custom-type-handler-unsupported", failure.failure.code)
         }
     }
 
@@ -295,7 +267,7 @@ class XmlMapperStaticBoundInputPreparationTest {
         )
 
         val execution = success(
-            prepare(fixture, listOf(InputValue.RawText("7"))),
+            prepare(fixture, listOf(InputValue.Text("7"))),
         )
 
         assertEquals("SELECT 7 AS RESULT_VALUE", normalize(execution.sqlWithPlaceholders))
@@ -304,6 +276,10 @@ class XmlMapperStaticBoundInputPreparationTest {
         assertEquals(
             contract(fixture).requirements.single().id,
             execution.rawInterpolations.single().requirementId,
+        )
+        assertEquals(
+            setOf(InputUsageKind.BOUND_PLACEHOLDER, InputUsageKind.RAW_INTERPOLATION),
+            contract(fixture).requirements.single().usageKinds,
         )
     }
 
@@ -336,7 +312,9 @@ class XmlMapperStaticBoundInputPreparationTest {
     }
 
     private fun contract(fixture: Fixture) =
-        XmlMapperMethodParameterContractFactory.build(fixture.graph, fixture.mapper)
+        MyBatisInvocationContractFactory.build(
+            XmlMapperPreparationSource(fixture.graph, mapperMethod = fixture.mapper),
+        )
 
     private fun fixture(
         sql: String,

@@ -1,24 +1,10 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
-import com.algorist.zMyBatis.core.input.ExpectedInputType
-import com.algorist.zMyBatis.core.input.InputAlias
-import com.algorist.zMyBatis.core.input.InputAliasKind
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
-import com.algorist.zMyBatis.core.input.InputEvidence
-import com.algorist.zMyBatis.core.input.InputKind
-import com.algorist.zMyBatis.core.input.InputNullability
-import com.algorist.zMyBatis.core.input.InputProvenance
-import com.algorist.zMyBatis.core.input.InputRequiredness
-import com.algorist.zMyBatis.core.input.InputRequirement
-import com.algorist.zMyBatis.core.input.InputRequirementId
-import com.algorist.zMyBatis.core.input.InputScalarType
-import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.SourceEvidence
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -44,13 +30,13 @@ class MyBatisIsolationEdgeCaseTest {
     @Test
     fun sourceLiteralCannotCollideWithRawTopologyProofMarker() {
         val firstCandidate = "\u0000zmybatis_raw_slot_0_0\u0000"
-        val request = rawRequest(
-            script = "select '$firstCandidate' ${'$'}{fragment}",
-            alias = "fragment",
-            value = "#{id,typeHandler=fixture.DoesNotExist}",
+        val result = MyBatisPreparationEngine.prepare(
+            request(
+                script = "select '$firstCandidate' " + "$" + "{fragment}",
+                alias = "fragment",
+                value = "#{id,typeHandler=fixture.DoesNotExist}",
+            ),
         )
-
-        val result = MyBatisPreparationEngine.prepare(request)
 
         assertTrue(result is PreparationResult.Failed)
         result as PreparationResult.Failed
@@ -60,13 +46,13 @@ class MyBatisIsolationEdgeCaseTest {
 
     @Test
     fun reservedRawCallerAliasCannotBeReinterpretedAsMyBatisContext() {
-        val request = rawRequest(
-            script = "select ${'$'}{_databaseId}",
-            alias = "_databaseId",
-            value = "users",
+        val result = MyBatisPreparationEngine.prepare(
+            request(
+                script = "select " + "$" + "{_databaseId}",
+                alias = "_databaseId",
+                value = "users",
+            ),
         )
-
-        val result = MyBatisPreparationEngine.prepare(request)
 
         assertTrue(result is PreparationResult.Failed)
         result as PreparationResult.Failed
@@ -76,7 +62,9 @@ class MyBatisIsolationEdgeCaseTest {
 
     @Test
     fun zeroParameterDynamicScriptPreparesThroughIsolatedRuntime() {
-        val result = MyBatisPreparationEngine.prepare(noParameterRequest("<script>select 1</script>"))
+        val result = MyBatisPreparationEngine.prepare(
+            noParameterRequest("<script>select 1</script>"),
+        )
 
         assertTrue(result is PreparationResult.Success)
         result as PreparationResult.Success
@@ -94,36 +82,29 @@ class MyBatisIsolationEdgeCaseTest {
             "fixture.IsolationEdgeMapper",
             MethodSignature("query", emptyList()),
         )
-        val range = SourceRange(0, snapshot.content.length)
         val capture = JavaAnnotationStatementCapture(
             StatementSourceGraph(
-                CapturedStatement(statementId, StatementKind.SELECT, range),
+                CapturedStatement(
+                    statementId,
+                    StatementKind.SELECT,
+                    SourceRange(0, snapshot.content.length),
+                ),
                 listOf(snapshot),
                 emptyList(),
             ),
             listOf(script),
             emptyList(),
         )
-        val contract = ParameterContract(
-            statementId = statementId,
-            requirements = emptyList(),
-            aliases = emptyList(),
-            internalBindings = emptyList(),
-            blockingProblems = emptyList(),
-            sourceRevisions = mapOf(fileId to revision),
-        )
-        val environmentResult = InputEnvironment.validate(contract, emptyList())
-        check(environmentResult is InputEnvironmentResult.Success)
-        val requestResult = MyBatisPreparationRequest.create(
-            PreparationSource.JavaAnnotation(capture),
-            contract,
-            environmentResult.environment,
-        )
-        check(requestResult is PreparationRequestResult.Ready)
-        return requestResult.request
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
+        val environment = InputEnvironment.validate(contract, emptyList())
+        check(environment is InputEnvironmentResult.Success)
+        val request = MyBatisPreparationRequest.create(source, contract, environment.environment)
+        check(request is PreparationRequestResult.Ready)
+        return request.request
     }
 
-    private fun rawRequest(
+    private fun request(
         script: String,
         alias: String,
         value: String,
@@ -137,69 +118,36 @@ class MyBatisIsolationEdgeCaseTest {
             "fixture.IsolationEdgeRawMapper",
             MethodSignature("query", listOf(typeIdentity)),
         )
-        val range = SourceRange(0, snapshot.content.length)
         val capture = JavaAnnotationStatementCapture(
             StatementSourceGraph(
-                CapturedStatement(statementId, StatementKind.SELECT, range),
+                CapturedStatement(
+                    statementId,
+                    StatementKind.SELECT,
+                    SourceRange(0, snapshot.content.length),
+                ),
                 listOf(snapshot),
                 emptyList(),
             ),
             listOf(script),
             listOf(JavaMethodParameterMetadata(0, alias, typeIdentity, alias)),
         )
-        val source = SourceEvidence(fileId, revision, range)
-        val requirementId = InputRequirementId("isolation-edge-raw-param:0")
-        val provenance = InputProvenance(
-            listOf(
-                InputEvidence.MapperMethodParameter(0, alias, typeIdentity, source),
-                InputEvidence.ExplicitParamAlias(0, alias, source),
-                InputEvidence.Placeholder(InputKind.RAW_INTERPOLATION, alias, source),
-            ),
-        )
-        val requirement = InputRequirement(
-            id = requirementId,
-            kind = InputKind.RAW_INTERPOLATION,
-            expectedType = ExpectedInputType(
-                shape = InputShape.RAW_TEXT,
-                scalarType = InputScalarType.STRING,
-                javaTypeIdentity = typeIdentity,
-                nullability = InputNullability.NON_NULL,
-            ),
-            requiredness = InputRequiredness.REQUIRED,
-            provenance = provenance,
-        )
-        val contract = ParameterContract(
-            statementId = statementId,
-            requirements = listOf(requirement),
-            aliases = listOf(
-                InputAlias(
-                    name = alias,
-                    requirementId = requirementId,
-                    kind = InputAliasKind.EXPLICIT_PARAM,
-                    provenance = provenance,
-                ),
-            ),
-            internalBindings = emptyList(),
-            blockingProblems = emptyList(),
-            sourceRevisions = mapOf(fileId to revision),
-        )
-        val environmentResult = InputEnvironment.validate(
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
+        check(!contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        val environment = InputEnvironment.validate(
             contract,
             listOf(
                 ProvidedInput(
-                    requirementId,
-                    InputValue.RawText(value),
+                    requirement.id,
+                    InputValue.Text(value),
                     ExecutionInputOrigin.USER_ENTERED,
                 ),
             ),
         )
-        check(environmentResult is InputEnvironmentResult.Success)
-        val requestResult = MyBatisPreparationRequest.create(
-            PreparationSource.JavaAnnotation(capture),
-            contract,
-            environmentResult.environment,
-        )
-        check(requestResult is PreparationRequestResult.Ready)
-        return requestResult.request
+        check(environment is InputEnvironmentResult.Success)
+        val request = MyBatisPreparationRequest.create(source, contract, environment.environment)
+        check(request is PreparationRequestResult.Ready)
+        return request.request
     }
 }

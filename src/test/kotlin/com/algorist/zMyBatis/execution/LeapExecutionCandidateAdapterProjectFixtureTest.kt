@@ -7,7 +7,6 @@ import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
-import com.algorist.zMyBatis.core.input.JavaAnnotationParameterContractFactory
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.preparation.PreparationSource
 import com.algorist.zMyBatis.core.source.CapturedStatement
@@ -20,6 +19,7 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
+import com.algorist.zMyBatis.mybatis.MyBatisInvocationContractFactory
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.progress.ProgressIndicator
@@ -251,7 +251,7 @@ class LeapExecutionCandidateAdapterProjectFixtureTest : BasePlatformTestCase() {
             parameters = emptyList(),
         )
         val source = PreparationSource.JavaAnnotation(capture)
-        val contract = JavaAnnotationParameterContractFactory.build(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
         val environment = when (val result = InputEnvironment.validate(contract, emptyList())) {
             is InputEnvironmentResult.Success -> result.environment
             is InputEnvironmentResult.Failure ->

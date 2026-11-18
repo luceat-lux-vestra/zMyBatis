@@ -126,12 +126,12 @@ object ContractInputPresentationFactory {
                 expectedType = requirement.expectedType,
                 editorKind = editorKind,
                 provenance = requirement.provenance,
-                retentionPolicy = if (requirement.kind == InputKind.RAW_INTERPOLATION) {
+                retentionPolicy = if (requirement.usesRawInterpolation) {
                     ContractInputRetentionPolicy.NEVER_RETAIN
                 } else {
                     ContractInputRetentionPolicy.RETAINABLE
                 },
-                requiresExplicitRawConfirmation = requirement.kind == InputKind.RAW_INTERPOLATION,
+                requiresExplicitRawConfirmation = requirement.usesRawInterpolation,
                 exampleText = exampleText(requirement),
             )
         }

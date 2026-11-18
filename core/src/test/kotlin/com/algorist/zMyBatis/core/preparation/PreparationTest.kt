@@ -130,7 +130,7 @@ class PreparationTest {
     }
 
     @Test
-    fun preparedExecutionCopiesMutableCollectionsAndRejectsRawBoundConflation() {
+    fun preparedExecutionCopiesMutableCollectionsAndAllowsIndependentRawAndBoundUsage() {
         val capture = capture()
         val contract = JavaAnnotationParameterContractFactory.build(capture)
         val requirement = contract.requirements.single()
@@ -170,23 +170,23 @@ class PreparationTest {
         revisions.clear()
         assertEquals(SourceRevision("revision-1"), execution.sourceRevisions[SourceFileId("mapper.java")])
 
-        assertThrows(IllegalArgumentException::class.java) {
-            PreparedExecution(
-                statementId = capture.sourceGraph.rootStatement.id,
-                statementKind = StatementKind.SELECT,
-                sourceRevisions = execution.sourceRevisions,
-                sqlWithPlaceholders = "select ?",
-                orderedBindings = listOf(binding),
-                rawInterpolations = listOf(
-                    PreparedRawInterpolation(
-                        requirement.id,
-                        requirement.provenance,
-                        ExecutionInputOrigin.USER_ENTERED,
-                    ),
+        val mixedUsageExecution = PreparedExecution(
+            statementId = capture.sourceGraph.rootStatement.id,
+            statementKind = StatementKind.SELECT,
+            sourceRevisions = execution.sourceRevisions,
+            sqlWithPlaceholders = "select ?",
+            orderedBindings = listOf(binding),
+            rawInterpolations = listOf(
+                PreparedRawInterpolation(
+                    requirement.id,
+                    requirement.provenance,
+                    ExecutionInputOrigin.USER_ENTERED,
                 ),
-                preparationMetadata = execution.preparationMetadata,
-            )
-        }
+            ),
+            preparationMetadata = execution.preparationMetadata,
+        )
+        assertEquals(requirement.id, mixedUsageExecution.orderedBindings.single().requirementId)
+        assertEquals(requirement.id, mixedUsageExecution.rawInterpolations.single().requirementId)
     }
 
     private fun environment(contract: ParameterContract): InputEnvironment {

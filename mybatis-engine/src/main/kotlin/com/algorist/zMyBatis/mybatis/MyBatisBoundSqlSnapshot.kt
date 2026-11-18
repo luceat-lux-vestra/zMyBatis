@@ -28,6 +28,7 @@ internal data class MyBatisParameterMappingSnapshot(
     val typeHandlerIdentity: String?,
     val parameterMode: String?,
     val numericScale: Int?,
+    val capturedValue: Boolean = false,
 )
 
 internal data class MyBatisForeachLocalSnapshot(

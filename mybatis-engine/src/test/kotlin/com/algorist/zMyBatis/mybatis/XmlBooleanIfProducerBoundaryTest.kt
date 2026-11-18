@@ -1,12 +1,12 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
+import com.algorist.zMyBatis.core.input.InputAliasKind
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentFailureKind
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.XmlMapperMethodParameterContractFactory
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -31,7 +31,7 @@ import org.junit.Test
 
 class XmlBooleanIfProducerBoundaryTest {
     @Test
-    fun maintainedStockOgnlKeywordsCannotAcquireCallerAuthority() {
+    fun stockOgnlKeywordsDoNotOverrideMapperCallerAuthority() {
         val keywords = OgnlParserConstants.tokenImage
             .map { it.removeSurrounding("\"") }
             .filter { Regex("[a-zA-Z]+").matches(it) }
@@ -51,14 +51,24 @@ class XmlBooleanIfProducerBoundaryTest {
                 SourceRange(0, 100),
                 listOf(JavaMethodParameterMetadata(0, "enabled", JavaTypeIdentity("boolean"), keyword)),
             )
-            val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
-            assertTrue(keyword, contract.isPreparationBlocked)
-            assertTrue(keyword, contract.requirements.isEmpty())
+            val source = XmlMapperPreparationSource(graph, mapperMethod = mapper)
+            val contract = MyBatisInvocationContractFactory.build(source)
+            assertFalse(keyword, contract.isPreparationBlocked)
+            assertEquals(keyword, 1, contract.requirements.size)
+            assertEquals(keyword, "method-param:0", contract.requirements.single().id.value)
+            assertEquals(
+                keyword,
+                listOf(
+                    keyword to InputAliasKind.EXPLICIT_PARAM,
+                    "param1" to InputAliasKind.GENERIC_PARAM,
+                ),
+                contract.aliases.map { it.name to it.kind },
+            )
         }
     }
 
     @Test
-    fun provenConditionDoesNotAuthorizeXmlDynamicRuntimePreparation() {
+    fun mapperAuthorityAllowsStockXmlDynamicRuntimePreparation() {
         val file = SourceFileId("file:///mapper.xml")
         val statement = XmlStatementId(file, "example.Mapper", "find")
         val xml = """
@@ -78,7 +88,8 @@ class XmlBooleanIfProducerBoundaryTest {
             SourceRange(0, 100),
             listOf(JavaMethodParameterMetadata(0, "enabled", JavaTypeIdentity("boolean"), "enabled")),
         )
-        val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
+        val source = XmlMapperPreparationSource(graph, mapperMethod = mapper)
+        val contract = MyBatisInvocationContractFactory.build(source)
         assertFalse(contract.isPreparationBlocked)
         val missing = InputEnvironment.validate(contract, emptyList()) as InputEnvironmentResult.Failure
         assertEquals(InputEnvironmentFailureKind.MISSING_REQUIRED_INPUT, missing.failures.single().kind)
@@ -89,14 +100,19 @@ class XmlBooleanIfProducerBoundaryTest {
                 listOf(ProvidedInput(contract.requirements.single().id, InputValue.BooleanValue(enabled), ExecutionInputOrigin.USER_ENTERED)),
             ) as InputEnvironmentResult.Success).environment
             val request = (MyBatisPreparationRequest.create(
-                XmlMapperPreparationSource(graph, additionalAuthoritySnapshots = listOf(mapper.mapperSource)),
+                source,
                 contract,
                 environment,
             ) as PreparationRequestResult.Ready).request
 
-            val failure = (XmlMapperPreparationEngine.prepare(request) as PreparationResult.Failed).failure
-            assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, failure.kind)
-            assertEquals("xml-preparation-dynamic-sql-unsupported", failure.code)
+            val result = XmlMapperPreparationEngine.prepare(request)
+            assertTrue("expected stock MyBatis success, received $result", result is PreparationResult.Success)
+            val execution = (result as PreparationResult.Success).execution
+            assertEquals(
+                if (enabled) "SELECT 1 WHERE 1 = 1" else "SELECT 1",
+                execution.sqlWithPlaceholders.trim().replace(Regex("\\s+"), " "),
+            )
+            assertTrue(execution.orderedBindings.isEmpty())
         }
     }
 }

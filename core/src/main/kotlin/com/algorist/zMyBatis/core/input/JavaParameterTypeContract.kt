@@ -2,7 +2,7 @@ package com.algorist.zMyBatis.core.input
 
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
 
-internal object JavaParameterTypeContract {
+object JavaParameterTypeContract {
     fun expectedType(
         type: JavaTypeIdentity,
         kind: InputKind,
@@ -67,7 +67,7 @@ internal object JavaParameterTypeContract {
         val shape = when (rawType) {
             "java.util.List", "java.util.Collection" -> InputShape.LIST
             "java.util.Map" -> InputShape.MAP
-            else -> InputShape.UNKNOWN
+            else -> InputShape.OBJECT
         }
         return ExpectedInputType(
             shape = shape,

@@ -1,7 +1,6 @@
 package com.algorist.zMyBatis.input
 
 import com.algorist.zMyBatis.core.input.InputEnvironment
-import com.algorist.zMyBatis.core.input.InputKind
 import com.algorist.zMyBatis.core.input.InputRequiredness
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.ParameterContract
@@ -214,7 +213,7 @@ class ContractParameterInputDialog(
         ui: FieldUi,
     ) {
         val requiredMarker = if (field.requiredness == InputRequiredness.REQUIRED) " *" else ""
-        val kindMarker = if (field.inputKind == InputKind.RAW_INTERPOLATION) " — raw interpolation" else ""
+        val kindMarker = if (field.requiresExplicitRawConfirmation) " — raw interpolation" else ""
         val provenance = ContractInputProvenancePresenter.present(field.provenance)
         panel.add(
             JBLabel("${displayName(field.requirementId)}$requiredMarker$kindMarker").apply {

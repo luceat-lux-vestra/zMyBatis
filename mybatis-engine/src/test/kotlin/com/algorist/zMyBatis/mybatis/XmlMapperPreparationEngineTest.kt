@@ -135,7 +135,7 @@ class XmlMapperPreparationEngineTest {
         assertFailure(
             prepare(single("SELECT * FROM users WHERE id = #{id}")),
             PreparationFailureKind.BINDING_RESOLUTION,
-            "xml-preparation-mapping-alias-unresolved",
+            "mybatis-parameter-mapping-unresolved",
         )
         assertFailure(
             prepare(single("SELECT * FROM " + 36.toChar() + "{table}")),
@@ -145,25 +145,27 @@ class XmlMapperPreparationEngineTest {
     }
 
     @Test
-    fun standardDynamicTagsFailBeforeGetBoundSqlEvaluation() {
-        val bodies = listOf(
-            "<if test=\"true\">WHERE active = 1</if>",
-            "<choose><when test=\"true\">WHERE active = 1</when><otherwise>WHERE active = 0</otherwise></choose>",
-            "<where>active = 1</where>",
-            "<trim prefix=\"WHERE\">active = 1</trim>",
+    fun standardDynamicTagsDelegateToStockMyBatisForZeroInputStatements() {
+        val cases = listOf(
+            "<if test=\"true\">WHERE active = 1</if>" to
+                "SELECT * FROM users WHERE active = 1",
+            "<choose><when test=\"true\">WHERE active = 1</when><otherwise>WHERE active = 0</otherwise></choose>" to
+                "SELECT * FROM users WHERE active = 1",
+            "<where>active = 1</where>" to
+                "SELECT * FROM users WHERE active = 1",
+            "<trim prefix=\"WHERE\">active = 1</trim>" to
+                "SELECT * FROM users WHERE active = 1",
         )
-        bodies.forEach { dynamic ->
+        cases.forEach { (dynamic, expectedSql) ->
             val fixture = fixture(
                 content = mapperDocument(
                     "example.Mapper",
                     "<select id=\"find\">SELECT * FROM users $dynamic</select>",
                 ),
             )
-            assertFailure(
-                prepare(fixture),
-                PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-                "xml-preparation-dynamic-sql-unsupported",
-            )
+            val execution = success(prepare(fixture))
+            assertEquals(expectedSql, normalize(execution.sqlWithPlaceholders))
+            assertEquals(emptyList<Any>(), execution.orderedBindings)
         }
     }
 

@@ -1,26 +1,10 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
-import com.algorist.zMyBatis.core.input.ExpectedInputType
-import com.algorist.zMyBatis.core.input.InputAlias
-import com.algorist.zMyBatis.core.input.InputAliasKind
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
-import com.algorist.zMyBatis.core.input.InputEvidence
-import com.algorist.zMyBatis.core.input.InputKind
-import com.algorist.zMyBatis.core.input.InputNullability
-import com.algorist.zMyBatis.core.input.InputProvenance
-import com.algorist.zMyBatis.core.input.InputRequiredness
-import com.algorist.zMyBatis.core.input.InputRequirement
-import com.algorist.zMyBatis.core.input.InputRequirementId
-import com.algorist.zMyBatis.core.input.InputScalarType
-import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.InternalBinding
-import com.algorist.zMyBatis.core.input.InternalBindingKind
-import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.SourceEvidence
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -84,7 +68,10 @@ class MyBatisGlobalStateIsolationTest {
             assertTrue(dynamic is PreparationResult.Success)
             dynamic as PreparationResult.Success
             assertEquals("select ?", normalizeSql(dynamic.execution.sqlWithPlaceholders))
-            assertEquals(InputValue.IntegerValue(BigInteger.valueOf(7)), dynamic.execution.orderedBindings.single().value)
+            assertEquals(
+                InputValue.IntegerValue(BigInteger.valueOf(7)),
+                dynamic.execution.orderedBindings.single().value,
+            )
             assertSame(poison, getPropertyAccessor.invoke(null, contextMapClass))
 
             val staticBound = prepare(
@@ -96,12 +83,15 @@ class MyBatisGlobalStateIsolationTest {
             assertTrue(staticBound is PreparationResult.Success)
             staticBound as PreparationResult.Success
             assertEquals("select ?", normalizeSql(staticBound.execution.sqlWithPlaceholders))
-            assertEquals(InputValue.IntegerValue(BigInteger.valueOf(8)), staticBound.execution.orderedBindings.single().value)
+            assertEquals(
+                InputValue.IntegerValue(BigInteger.valueOf(8)),
+                staticBound.execution.orderedBindings.single().value,
+            )
             assertSame(poison, getPropertyAccessor.invoke(null, contextMapClass))
 
             val staticRaw = prepare(
                 fixture(
-                    script = "select * from ${'$'}{table}",
+                    script = "select * from " + "$" + "{table}",
                     parameter = Parameter.rawString("table", "users"),
                 ),
             )
@@ -153,7 +143,10 @@ class MyBatisGlobalStateIsolationTest {
             assertTrue(result is PreparationResult.Success)
             result as PreparationResult.Success
             assertEquals("select ?", normalizeSql(result.execution.sqlWithPlaceholders))
-            assertEquals(InputValue.IntegerValue(BigInteger.valueOf(9)), result.execution.orderedBindings.single().value)
+            assertEquals(
+                InputValue.IntegerValue(BigInteger.valueOf(9)),
+                result.execution.orderedBindings.single().value,
+            )
         } finally {
             thaw.invoke(null)
             apply.invoke(null, originalMax)
@@ -163,35 +156,35 @@ class MyBatisGlobalStateIsolationTest {
 
     @Test
     fun reservedBindContextNameFailsBeforeMyBatisEvaluation() {
-        val fixture = fixture(
-            script = "<script><bind name=\"_parameter\" value=\"id\"/>select 1</script>",
-            parameter = Parameter.boundLong("id", 1),
-            internalBindings = listOf(bind("_parameter", "id")),
+        val result = prepare(
+            fixture(
+                script = "<script><bind name=\"_parameter\" value=\"id\"/>select 1</script>",
+                parameter = Parameter.boundLong("id", 1),
+            ),
         )
-
-        val result = prepare(fixture)
 
         assertTrue(result is PreparationResult.Failed)
         result as PreparationResult.Failed
         assertEquals(PreparationFailureKind.UNSUPPORTED_SEMANTIC, result.failure.kind)
-        assertEquals("mybatis-bind-reserved-context-name-unsupported", result.failure.code)
-        assertEquals("_parameter", result.failure.bindingProperty)
+        assertEquals("mybatis-ognl-runtime-capability-unsupported", result.failure.code)
+        assertEquals("Bind[reserved-context]", result.failure.bindingProperty)
     }
 
     private fun prepare(fixture: Fixture): PreparationResult {
-        val requestResult = MyBatisPreparationRequest.create(
-            PreparationSource.JavaAnnotation(fixture.capture),
+        val request = MyBatisPreparationRequest.create(
+            fixture.source,
             fixture.contract,
             fixture.environment,
         )
-        check(requestResult is PreparationRequestResult.Ready) { "fixture request was not ready: $requestResult" }
-        return MyBatisPreparationEngine.prepare(requestResult.request)
+        check(request is PreparationRequestResult.Ready) {
+            "fixture request was not ready: $request"
+        }
+        return MyBatisPreparationEngine.prepare(request.request)
     }
 
     private fun fixture(
         script: String,
         parameter: Parameter,
-        internalBindings: List<InternalSpec> = emptyList(),
     ): Fixture {
         val fileId = SourceFileId("fixture/IsolationMapper.java")
         val revision = SourceRevision("isolation-revision-1")
@@ -202,115 +195,63 @@ class MyBatisGlobalStateIsolationTest {
             "fixture.IsolationMapper",
             MethodSignature("query", listOf(typeIdentity)),
         )
-        val range = SourceRange(0, snapshot.content.length)
-        val graph = StatementSourceGraph(
-            CapturedStatement(statementId, StatementKind.SELECT, range),
-            listOf(snapshot),
-            emptyList(),
-        )
         val capture = JavaAnnotationStatementCapture(
-            graph,
+            StatementSourceGraph(
+                CapturedStatement(
+                    statementId,
+                    StatementKind.SELECT,
+                    SourceRange(0, snapshot.content.length),
+                ),
+                listOf(snapshot),
+                emptyList(),
+            ),
             listOf(script),
             listOf(JavaMethodParameterMetadata(0, parameter.alias, typeIdentity, parameter.alias)),
         )
-        val source = SourceEvidence(fileId, revision, range)
-        val requirementId = InputRequirementId("isolation-param:0")
-        val provenance = InputProvenance(
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
+        check(!contract.isPreparationBlocked)
+        val requirement = contract.requirements.single()
+        val environment = InputEnvironment.validate(
+            contract,
             listOf(
-                InputEvidence.MapperMethodParameter(0, parameter.alias, typeIdentity, source),
-                InputEvidence.ExplicitParamAlias(0, parameter.alias, source),
-                if (parameter.kind == InputKind.RAW_INTERPOLATION) {
-                    InputEvidence.Placeholder(InputKind.RAW_INTERPOLATION, parameter.alias, source)
-                } else {
-                    InputEvidence.OgnlExpression(parameter.alias, source)
-                },
+                ProvidedInput(
+                    requirement.id,
+                    parameter.value,
+                    ExecutionInputOrigin.USER_ENTERED,
+                ),
             ),
         )
-        val requirement = InputRequirement(
-            id = requirementId,
-            kind = parameter.kind,
-            expectedType = parameter.expectedType,
-            requiredness = InputRequiredness.REQUIRED,
-            provenance = provenance,
-        )
-        val alias = InputAlias(
-            name = parameter.alias,
-            requirementId = requirementId,
-            kind = InputAliasKind.EXPLICIT_PARAM,
-            provenance = provenance,
-        )
-        val internals = internalBindings.map { spec ->
-            InternalBinding(
-                name = spec.name,
-                kind = InternalBindingKind.BIND,
-                provenance = InputProvenance(
-                    listOf(InputEvidence.BindLocal(spec.name, spec.expression, source)),
-                ),
-            )
+        check(environment is InputEnvironmentResult.Success) {
+            "fixture environment invalid: $environment"
         }
-        val contract = ParameterContract(
-            statementId = statementId,
-            requirements = listOf(requirement),
-            aliases = listOf(alias),
-            internalBindings = internals,
-            blockingProblems = emptyList(),
-            sourceRevisions = mapOf(fileId to revision),
-        )
-        val environmentResult = InputEnvironment.validate(
-            contract,
-            listOf(ProvidedInput(requirementId, parameter.value, ExecutionInputOrigin.USER_ENTERED)),
-        )
-        check(environmentResult is InputEnvironmentResult.Success) { "fixture environment invalid: $environmentResult" }
-        return Fixture(capture, contract, environmentResult.environment)
+        return Fixture(source, contract, environment.environment)
     }
-
-    private fun bind(name: String, expression: String) = InternalSpec(name, expression)
 
     private fun normalizeSql(sql: String): String = sql.trim().replace(Regex("\\s+"), " ")
 
     private data class Fixture(
-        val capture: JavaAnnotationStatementCapture,
-        val contract: ParameterContract,
+        val source: PreparationSource.JavaAnnotation,
+        val contract: com.algorist.zMyBatis.core.input.ParameterContract,
         val environment: InputEnvironment,
-    )
-
-    private data class InternalSpec(
-        val name: String,
-        val expression: String,
     )
 
     private data class Parameter(
         val javaType: String,
         val alias: String,
-        val expectedType: ExpectedInputType,
         val value: InputValue,
-        val kind: InputKind,
     ) {
         companion object {
             fun boundLong(alias: String, value: Long) = Parameter(
                 javaType = "java.lang.Long",
                 alias = alias,
-                expectedType = ExpectedInputType(
-                    shape = InputShape.SCALAR,
-                    scalarType = InputScalarType.INTEGER,
-                    javaTypeIdentity = JavaTypeIdentity("java.lang.Long"),
-                    nullability = InputNullability.NON_NULL,
-                ),
                 value = InputValue.IntegerValue(BigInteger.valueOf(value)),
-                kind = InputKind.BOUND,
             )
 
             fun rawString(alias: String, value: String) = Parameter(
                 javaType = "java.lang.String",
                 alias = alias,
-                expectedType = ExpectedInputType(
-                    shape = InputShape.RAW_TEXT,
-                    scalarType = InputScalarType.STRING,
-                    javaTypeIdentity = JavaTypeIdentity("java.lang.String"),
-                    nullability = InputNullability.NON_NULL,
-                ),
-                value = InputValue.RawText(value),
-                kind = InputKind.RAW_INTERPOLATION,
+                value = InputValue.Text(value),
             )
         }
     }

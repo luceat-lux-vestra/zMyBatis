@@ -2,7 +2,6 @@ package com.algorist.zMyBatis.execution
 
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
-import com.algorist.zMyBatis.core.input.JavaAnnotationParameterContractFactory
 import com.algorist.zMyBatis.core.preparation.PreparationSource
 import com.algorist.zMyBatis.core.source.CapturedStatement
 import com.algorist.zMyBatis.core.source.JavaAnnotationStatementCapture
@@ -14,6 +13,7 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
+import com.algorist.zMyBatis.mybatis.MyBatisInvocationContractFactory
 import com.algorist.zMyBatis.settings.ConsoleSessionPolicy
 import java.nio.file.Files
 import java.nio.file.Path
@@ -50,7 +50,7 @@ class LeapExecutionInvocationCoordinatorTest {
         val capture = javaCapture("select #{id}")
         val source = PreparationSource.JavaAnnotation(capture)
 
-        val expected = JavaAnnotationParameterContractFactory.build(capture)
+        val expected = MyBatisInvocationContractFactory.build(source)
         val actual = leapExecutionParameterContract(source)
 
         assertEquals(expected.statementId, actual.statementId)
@@ -126,7 +126,8 @@ class LeapExecutionInvocationCoordinatorTest {
 
     private fun emptyEnvironment(): InputEnvironment {
         val capture = javaCapture("select 1")
-        val contract = JavaAnnotationParameterContractFactory.build(capture)
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
         val result = InputEnvironment.validate(contract, emptyList())
         return (result as InputEnvironmentResult.Success).environment
     }

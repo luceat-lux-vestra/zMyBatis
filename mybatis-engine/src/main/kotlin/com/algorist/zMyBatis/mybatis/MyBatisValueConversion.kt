@@ -2,10 +2,8 @@ package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.InputAlias
 import com.algorist.zMyBatis.core.input.InputRequirement
-import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.source.JavaTypeIdentity
@@ -26,7 +24,6 @@ internal object MyBatisValueConversion {
     private const val VALUE_OUT_OF_RANGE = "java-parameter-value-out-of-range"
     private const val VALUE_TYPE_MISMATCH = "java-parameter-value-type-mismatch"
     private const val VALUE_TOO_COMPLEX = "mybatis-binding-value-too-complex"
-    private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
     private const val MAX_INPUT_DEPTH = 128
     private const val MAX_INPUT_NODES = 65_536
     private const val MAX_DECLARED_TYPE_LENGTH = 4_096
@@ -45,12 +42,12 @@ internal object MyBatisValueConversion {
         }
     }
 
-    fun parameterValues(
-        request: MyBatisPreparationRequest,
-        typedStructuredRequirementIds: Set<InputRequirementId> = emptySet(),
-    ): ParameterValuesResult {
-        if (!inputComplexityIsBounded(request.inputEnvironment.values.values.map { it.value })) {
-            return ParameterValuesResult.Failed(
+    fun invocationRuntimeValue(
+        value: InputValue,
+        expectedType: com.algorist.zMyBatis.core.input.ExpectedInputType,
+    ): RuntimeValueResult {
+        if (!inputComplexityIsBounded(listOf(value))) {
+            return RuntimeValueResult.Failed(
                 PreparationFailure(
                     PreparationFailureKind.UNSUPPORTED_BINDING_VALUE,
                     VALUE_TOO_COMPLEX,
@@ -58,53 +55,14 @@ internal object MyBatisValueConversion {
             )
         }
 
-        if (request.inputEnvironment.values.isEmpty()) {
-            return ParameterValuesResult.Ready(linkedMapOf())
+        return if (
+            expectedType.shape in setOf(InputShape.LIST, InputShape.MAP, InputShape.ARRAY) &&
+            expectedType.javaTypeIdentity != null
+        ) {
+            toTypedStructuredRuntimeValue(value, expectedType.javaTypeIdentity)
+        } else {
+            toRuntimeValue(value, expectedType.javaTypeIdentity)
         }
-
-        val values = linkedMapOf<String, Any?>()
-        for ((name, requirementId) in request.inputEnvironment.aliases) {
-            val provided = request.inputEnvironment.value(requirementId) ?: continue
-            val requirement = request.parameterContract.requirement(requirementId)
-                ?: return ParameterValuesResult.Failed(
-                    PreparationFailure(
-                        PreparationFailureKind.PREPARATION_INVARIANT,
-                        INVARIANT_FAILURE,
-                        bindingProperty = name,
-                    ),
-                )
-            val converted = if (requirementId in typedStructuredRequirementIds) {
-                toTypedStructuredRuntimeValue(provided.value, requirement.expectedType.javaTypeIdentity)
-            } else {
-                toRuntimeValue(provided.value, requirement.expectedType.javaTypeIdentity)
-            }
-            if (converted is RuntimeValueResult.Failed) {
-                return ParameterValuesResult.Failed(converted.failure.copy(bindingProperty = name))
-            }
-            values[name] = (converted as RuntimeValueResult.Ready).value
-        }
-        return ParameterValuesResult.Ready(values)
-    }
-
-    fun pathExists(
-        request: MyBatisPreparationRequest,
-        alias: InputAlias,
-        requirement: InputRequirement,
-        property: String,
-    ): Boolean {
-        val provided = request.inputEnvironment.value(alias.requirementId) ?: return false
-        if (requirement.id != provided.requirementId) return false
-        val path = property.split('.')
-        if (path.firstOrNull() != alias.name) return false
-        var current: InputValue = provided.value
-        for (segment in path.drop(1)) {
-            current = when (current) {
-                is InputValue.ObjectValue -> current.entries[segment]
-                is InputValue.MapValue -> current.entries[segment]
-                else -> null
-            } ?: return false
-        }
-        return true
     }
 
     fun toCoreValue(
@@ -317,14 +275,18 @@ internal object MyBatisValueConversion {
         if (value is InputValue.NullValue) return RuntimeValueResult.Ready(null)
         return when (descriptor) {
             is DeclaredType.Simple -> {
-                val canonicalType = JavaTypeIdentity(descriptor.name)
-                if (
-                    descriptor.name in setOf("java.util.List", "java.util.Collection", "java.util.Map") ||
-                    resolveSafeJavaType(canonicalType) == null
-                ) {
-                    unsupportedValue()
+                if (descriptor.name in setOf("java.lang.Object", "Object")) {
+                    RuntimeValueResult.Ready(toUntypedRuntimeValue(value))
                 } else {
-                    toRuntimeValue(value, canonicalType)
+                    val canonicalType = JavaTypeIdentity(descriptor.name)
+                    if (
+                        descriptor.name in setOf("java.util.List", "java.util.Collection", "java.util.Map") ||
+                        resolveSafeJavaType(canonicalType) == null
+                    ) {
+                        unsupportedValue()
+                    } else {
+                        toRuntimeValue(value, canonicalType)
+                    }
                 }
             }
             is DeclaredType.Parameterized -> when (descriptor.rawType) {
@@ -516,16 +478,6 @@ internal object MyBatisValueConversion {
         PreparationFailure(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, UNSUPPORTED_VALUE),
     )
 
-    sealed interface ParameterValuesResult {
-        data class Ready(
-            val values: Map<String, Any?>,
-        ) : ParameterValuesResult
-
-        data class Failed(
-            val failure: PreparationFailure,
-        ) : ParameterValuesResult
-    }
-
     private sealed interface DeclaredType {
         data class Simple(
             val name: String,
@@ -541,7 +493,7 @@ internal object MyBatisValueConversion {
         ) : DeclaredType
     }
 
-    private sealed interface RuntimeValueResult {
+    sealed interface RuntimeValueResult {
         data class Ready(
             val value: Any?,
         ) : RuntimeValueResult

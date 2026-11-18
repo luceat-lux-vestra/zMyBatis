@@ -1,26 +1,10 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
-import com.algorist.zMyBatis.core.input.ExpectedInputType
-import com.algorist.zMyBatis.core.input.InputAlias
-import com.algorist.zMyBatis.core.input.InputAliasKind
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
-import com.algorist.zMyBatis.core.input.InputEvidence
-import com.algorist.zMyBatis.core.input.InputKind
-import com.algorist.zMyBatis.core.input.InputNullability
-import com.algorist.zMyBatis.core.input.InputProvenance
-import com.algorist.zMyBatis.core.input.InputRequiredness
-import com.algorist.zMyBatis.core.input.InputRequirement
-import com.algorist.zMyBatis.core.input.InputRequirementId
-import com.algorist.zMyBatis.core.input.InputScalarType
-import com.algorist.zMyBatis.core.input.InputShape
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.InternalBinding
-import com.algorist.zMyBatis.core.input.InternalBindingKind
-import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.input.SourceEvidence
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -52,14 +36,13 @@ class MyBatisDynamicOgnlAdmissionTest {
         val expression = "@com.algorist.zMyBatis.mybatis.DynamicOgnlLoadProbe@touch()"
         val result = prepare(
             script = "<script><bind name=\"probe\" value=\"$expression\"/>select 1</script>",
-            internalBindings = listOf(InternalSpec("probe", expression)),
         )
 
         assertFailure(
             result,
             PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "java-annotation-dynamic-ognl-node-unsupported",
-            null,
+            "mybatis-ognl-runtime-capability-unsupported",
+            "ASTStaticMethod",
         )
         assertNull(System.getProperty(OGNL_LOAD_PROBE_PROPERTY))
     }
@@ -69,14 +52,13 @@ class MyBatisDynamicOgnlAdmissionTest {
         val result = prepare(
             script = "<script><bind name=\"upper\" value=\"name.toUpperCase()\"/>select 1</script>",
             parameter = Parameter("name", InputValue.Text("Ada")),
-            internalBindings = listOf(InternalSpec("upper", "name.toUpperCase()")),
         )
 
         assertFailure(
             result,
             PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "java-annotation-dynamic-ognl-node-unsupported",
-            null,
+            "mybatis-ognl-runtime-capability-unsupported",
+            "ASTMethod",
         )
     }
 
@@ -85,28 +67,27 @@ class MyBatisDynamicOgnlAdmissionTest {
         val expression = "new java.lang.String('x')"
         val result = prepare(
             script = "<script><bind name=\"value\" value=\"$expression\"/>select 1</script>",
-            internalBindings = listOf(InternalSpec("value", expression)),
         )
 
         assertFailure(
             result,
             PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "java-annotation-dynamic-ognl-node-unsupported",
-            null,
+            "mybatis-ognl-runtime-capability-unsupported",
+            "ASTCtor",
         )
     }
 
     @Test
-    fun implicitMyBatisContextPropertyIsNotCallerAuthority() {
+    fun implicitMyBatisContextPropertyRemainsStockOwned() {
         val result = prepare(
             script = "<script><if test=\"_parameter != null\">select 1</if></script>",
+            parameter = Parameter("name", InputValue.Text("Ada")),
         )
 
-        assertFailure(
-            result,
-            PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "java-annotation-dynamic-ognl-property-unproven",
-            "_parameter",
+        assertTrue(result is PreparationResult.Success)
+        assertEquals(
+            "select 1",
+            (result as PreparationResult.Success).execution.sqlWithPlaceholders.trim(),
         )
     }
 
@@ -120,8 +101,8 @@ class MyBatisDynamicOgnlAdmissionTest {
         assertFailure(
             result,
             PreparationFailureKind.UNSUPPORTED_SEMANTIC,
-            "java-annotation-dynamic-ognl-node-unsupported",
-            null,
+            "mybatis-ognl-runtime-capability-unsupported",
+            "ASTProperty[class]",
         )
     }
 
@@ -135,7 +116,7 @@ class MyBatisDynamicOgnlAdmissionTest {
         assertFailure(
             result,
             PreparationFailureKind.OGNL,
-            "java-annotation-dynamic-ognl-parse-failure",
+            "mybatis-ognl-expression-malformed",
             null,
         )
     }
@@ -143,7 +124,6 @@ class MyBatisDynamicOgnlAdmissionTest {
     private fun prepare(
         script: String,
         parameter: Parameter? = null,
-        internalBindings: List<InternalSpec> = emptyList(),
     ): PreparationResult {
         val fileId = SourceFileId("fixture/DynamicOgnlMapper.java")
         val revision = SourceRevision("revision-dynamic-ognl-1")
@@ -167,64 +147,32 @@ class MyBatisDynamicOgnlAdmissionTest {
                 JavaMethodParameterMetadata(index, current.alias, types[index], current.alias)
             },
         )
-        val source = SourceEvidence(fileId, revision, SourceRange(0, snapshot.content.length))
-        val requirements = parameters.mapIndexed { index, current ->
-            val id = InputRequirementId("dynamic-ognl-param:$index")
-            InputRequirement(
-                id = id,
-                kind = InputKind.BOUND,
-                expectedType = ExpectedInputType(
-                    shape = InputShape.SCALAR,
-                    scalarType = InputScalarType.STRING,
-                    javaTypeIdentity = JavaTypeIdentity("java.lang.String"),
-                    nullability = InputNullability.NON_NULL,
-                ),
-                requiredness = InputRequiredness.REQUIRED,
-                provenance = InputProvenance(
-                    listOf(
-                        InputEvidence.MapperMethodParameter(index, current.alias, types[index], source),
-                        InputEvidence.ExplicitParamAlias(index, current.alias, source),
-                        InputEvidence.OgnlExpression(current.alias, source),
-                    ),
-                ),
-            )
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
+        check(!contract.isPreparationBlocked) {
+            "fixture contract was blocked: ${contract.blockingProblems.map { it.code }}"
         }
-        val aliases = parameters.mapIndexed { index, current ->
-            InputAlias(
-                name = current.alias,
-                requirementId = requirements[index].id,
-                kind = InputAliasKind.EXPLICIT_PARAM,
-                provenance = requirements[index].provenance,
-            )
-        }
-        val internal = internalBindings.map { spec ->
-            InternalBinding(
-                name = spec.name,
-                kind = InternalBindingKind.BIND,
-                provenance = InputProvenance(listOf(InputEvidence.BindLocal(spec.name, spec.expression, source))),
-            )
-        }
-        val contract = ParameterContract(
-            statementId = statementId,
-            requirements = requirements,
-            aliases = aliases,
-            internalBindings = internal,
-            blockingProblems = emptyList(),
-            sourceRevisions = mapOf(fileId to revision),
-        )
         val environmentResult = InputEnvironment.validate(
             contract,
-            requirements.mapIndexed { index, requirement ->
-                ProvidedInput(requirement.id, parameters[index].value, ExecutionInputOrigin.USER_ENTERED)
+            contract.requirements.map { requirement ->
+                ProvidedInput(
+                    requirement.id,
+                    checkNotNull(parameter).value,
+                    ExecutionInputOrigin.USER_ENTERED,
+                )
             },
         )
-        check(environmentResult is InputEnvironmentResult.Success) { "fixture environment invalid: $environmentResult" }
+        check(environmentResult is InputEnvironmentResult.Success) {
+            "fixture environment invalid: $environmentResult"
+        }
         val requestResult = MyBatisPreparationRequest.create(
-            PreparationSource.JavaAnnotation(capture),
+            source,
             contract,
             environmentResult.environment,
         )
-        check(requestResult is PreparationRequestResult.Ready) { "fixture request was not ready: $requestResult" }
+        check(requestResult is PreparationRequestResult.Ready) {
+            "fixture request was not ready: $requestResult"
+        }
         return MyBatisPreparationEngine.prepare(requestResult.request)
     }
 
@@ -246,10 +194,6 @@ class MyBatisDynamicOgnlAdmissionTest {
         val value: InputValue,
     )
 
-    private data class InternalSpec(
-        val name: String,
-        val expression: String,
-    )
 }
 
 class DynamicOgnlLoadProbe {

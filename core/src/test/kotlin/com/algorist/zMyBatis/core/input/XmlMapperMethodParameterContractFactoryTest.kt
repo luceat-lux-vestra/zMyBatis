@@ -249,7 +249,7 @@ class XmlMapperMethodParameterContractFactoryTest {
     }
 
     @Test
-    fun generatedAliasRetainsUnknownShapeSafetyRule() {
+    fun generatedAliasRetainsObjectCallerShape() {
         val graph = graph("select * from users where filter = #{param1}")
         val mapper = mapper(
             graph,
@@ -258,11 +258,10 @@ class XmlMapperMethodParameterContractFactoryTest {
 
         val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
 
-        assertTrue(contract.isPreparationBlocked)
+        assertFalse(contract.isPreparationBlocked)
         assertEquals(InputAliasKind.GENERIC_PARAM, contract.aliases.single().kind)
-        assertEquals(InputShape.UNKNOWN, contract.requirements.single().expectedType.shape)
-        assertEquals("xml-unproven-parameter-shape", contract.blockingProblems.single().code)
-        assertEquals(contract.requirements.single().id, contract.blockingProblems.single().requirementId)
+        assertEquals(InputShape.OBJECT, contract.requirements.single().expectedType.shape)
+        assertTrue(contract.blockingProblems.isEmpty())
     }
 
     @Test
@@ -740,7 +739,7 @@ class XmlMapperMethodParameterContractFactoryTest {
     }
 
     @Test
-    fun unknownJavaObjectShapeRetainsRequirementAndBlocks() {
+    fun javaObjectShapeRetainsObjectCallerAuthority() {
         val graph = graph("select * from users where filter = #{filter}")
         val mapper = mapper(
             graph,
@@ -749,12 +748,11 @@ class XmlMapperMethodParameterContractFactoryTest {
 
         val contract = XmlMapperMethodParameterContractFactory.build(graph, mapper)
 
-        assertTrue(contract.isPreparationBlocked)
+        assertFalse(contract.isPreparationBlocked)
         val requirement = contract.requirements.single()
-        assertEquals(InputShape.UNKNOWN, requirement.expectedType.shape)
+        assertEquals(InputShape.OBJECT, requirement.expectedType.shape)
         assertEquals(JavaTypeIdentity("com.acme.Filter"), requirement.expectedType.javaTypeIdentity)
-        assertEquals("xml-unproven-parameter-shape", contract.blockingProblems.single().code)
-        assertEquals(requirement.id, contract.blockingProblems.single().requirementId)
+        assertTrue(contract.blockingProblems.isEmpty())
     }
 
     @Test

@@ -14,6 +14,7 @@ import com.algorist.zMyBatis.core.input.InputRequirement
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InputScalarType
 import com.algorist.zMyBatis.core.input.InputShape
+import com.algorist.zMyBatis.core.input.InputUsageKind
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.SourceEvidence
@@ -66,6 +67,29 @@ class ContractInputAdapterTest {
         assertEquals(ContractInputRetentionPolicy.NEVER_RETAIN, presentation.fields[2].retentionPolicy)
         assertTrue(presentation.fields[2].requiresExplicitRawConfirmation)
         assertNull(presentation.fields[2].exampleText)
+    }
+
+    @Test
+    fun `bound string with raw usage keeps typed editor while requiring raw confirmation`() {
+        val mixed = requirement(
+            id = "value",
+            kind = InputKind.BOUND,
+            type = ExpectedInputType(
+                shape = InputShape.SCALAR,
+                scalarType = InputScalarType.STRING,
+            ),
+        ).copy(
+            usageKinds = setOf(
+                InputUsageKind.BOUND_PLACEHOLDER,
+                InputUsageKind.RAW_INTERPOLATION,
+            ),
+        )
+
+        val field = ContractInputPresentationFactory.create(contract(mixed)).fields.single()
+
+        assertEquals(ContractInputEditorKind.TEXT, field.editorKind)
+        assertEquals(ContractInputRetentionPolicy.NEVER_RETAIN, field.retentionPolicy)
+        assertTrue(field.requiresExplicitRawConfirmation)
     }
 
     @Test

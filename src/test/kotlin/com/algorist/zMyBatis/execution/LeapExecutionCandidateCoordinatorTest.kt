@@ -9,7 +9,6 @@ import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.JavaAnnotationParameterContractFactory
 import com.algorist.zMyBatis.core.input.ProvidedInput
 import com.algorist.zMyBatis.core.materialization.MaterializationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationSource
@@ -27,6 +26,7 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
+import com.algorist.zMyBatis.mybatis.MyBatisInvocationContractFactory
 import com.intellij.openapi.progress.ProcessCanceledException
 import java.math.BigInteger
 import org.junit.Assert.assertEquals
@@ -136,24 +136,33 @@ class LeapExecutionCandidateCoordinatorTest {
         checkCanceled: () -> Unit = {},
     ): LeapExecutionCandidateResult {
         val capture = capture(sql, parameters)
-        val contract = JavaAnnotationParameterContractFactory.build(capture)
+        val source = PreparationSource.JavaAnnotation(capture)
+        val contract = MyBatisInvocationContractFactory.build(source)
         assertFalse("test fixture unexpectedly produced a blocked contract", contract.isPreparationBlocked)
 
         val provided = contract.requirements.map { requirement ->
-            val index = requirement.id.value.substringAfter("java-param:").toInt()
+            val index = requirement.id.value.substringAfter("method-param:").toInt()
             ProvidedInput(requirement.id, parameters[index].value, ExecutionInputOrigin.USER_ENTERED)
         }
         val environment = InputEnvironment.validate(contract, provided)
         assertTrue(environment is InputEnvironmentResult.Success)
 
-        return LeapExecutionCandidateCoordinator.build(
-            source = PreparationSource.JavaAnnotation(capture),
+        val result = LeapExecutionCandidateCoordinator.build(
+            source = source,
             parameterContract = contract,
             inputEnvironment = (environment as InputEnvironmentResult.Success).environment,
             target = target,
             isInvocationActive = isInvocationActive,
             checkCanceled = checkCanceled,
         )
+        if (result is LeapExecutionCandidateResult.PreparationFailed) {
+            throw AssertionError(
+                "candidate preparation failed: kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+        return result
     }
 
     private fun capture(
