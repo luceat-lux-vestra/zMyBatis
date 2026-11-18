@@ -62,6 +62,16 @@ class MyBatisPreparationEngineAdversarialTest {
         assertEquals("payload.missing", binding.property)
         assertEquals(InputValue.NullValue, binding.value)
         assertEquals(
+            "stock null mapping must retain Object Java authority when the property is absent",
+            "java.lang.Object",
+            binding.metadata.mappingJavaTypeIdentity,
+        )
+        assertEquals(
+            "stock null mapping must retain ObjectTypeHandler identity",
+            "org.apache.ibatis.type.ObjectTypeHandler",
+            binding.metadata.typeHandlerIdentity,
+        )
+        assertEquals(
             "mapping JDBC type must remain distinct from the runtime null fallback",
             null,
             binding.metadata.jdbcTypeIdentity,

@@ -12,6 +12,7 @@ import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationResult
 import com.algorist.zMyBatis.core.preparation.PreparationSource
+import com.algorist.zMyBatis.core.preparation.PreparedBinding
 import com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin
 import com.algorist.zMyBatis.core.preparation.PreparedExecution
 import com.algorist.zMyBatis.core.source.CapturedStatement
@@ -48,6 +49,7 @@ import com.intellij.util.ui.classpath.SimpleClasspathElementFactory
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Proxy
 import java.math.BigDecimal
+import java.math.BigInteger
 import java.nio.file.Path
 import java.sql.PreparedStatement
 import java.sql.Timestamp
@@ -62,6 +64,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import org.apache.ibatis.type.JdbcType
+import org.apache.ibatis.type.ObjectTypeHandler
 import org.apache.ibatis.type.StringTypeHandler
 import org.apache.ibatis.type.TypeHandler
 import org.apache.ibatis.type.TypeHandlerRegistry
@@ -82,6 +85,13 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
 
             val stockFacade = executeRaw(fixture.dataSource, "stock-typehandler-facade") { connection ->
                 provePublicInterfaceStockTypeHandlerFacade(connection)
+            }
+
+            val capturedBindingAdapter = executeRaw(
+                fixture.dataSource,
+                "captured-binding-adapter",
+            ) { connection ->
+                proveCapturedPreparedBindingAdapter(connection)
             }
 
             val functional = executeRaw(fixture.dataSource, "functional") { connection ->
@@ -203,6 +213,12 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             assertEquals(15, stockFacade.bindingCount)
             assertTrue(stockFacade.roundTrip)
             assertTrue(stockFacade.forwardedSetterSignatures.isNotEmpty())
+            assertEquals(17, capturedBindingAdapter.bindingCount)
+            assertEquals(2, capturedBindingAdapter.additionalBindingCount)
+            assertTrue(capturedBindingAdapter.typedNull)
+            assertTrue(capturedBindingAdapter.handlerIdentityMatched)
+            assertTrue(capturedBindingAdapter.customHandlerRejected)
+            assertTrue(capturedBindingAdapter.roundTrip)
             assertTrue(typeHandlerBridge.jdbcFacadeMethods.all { it.isNotBlank() })
             assertEquals("zmybatis", functional.database)
             assertEquals("public", functional.schema)
@@ -416,6 +432,413 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 forwardedSetterSignatures = signatures,
             )
         }
+
+    private fun proveCapturedPreparedBindingAdapter(
+        connection: RemoteConnection,
+    ): CapturedBindingAdapterOutcome {
+        val instant = Instant.parse("2026-11-18T03:00:17Z")
+        val execution = prepareCapturedBindingExecution(
+            byteValue = 7.toByte(),
+            shortValue = 8.toShort(),
+            intValue = 9,
+            longValue = 42L,
+            floatValue = 11.25f,
+            doubleValue = 12.5,
+            decimalValue = BigDecimal("13.75"),
+            flag = true,
+            text = "captured-proof",
+            binary = byteArrayOf(1, 2, 3),
+            date = LocalDate.of(2026, 11, 18),
+            time = LocalTime.of(12, 34, 56),
+            dateTime = LocalDateTime.of(2026, 11, 18, 12, 34, 56),
+            instant = instant,
+            items = listOf("left", "right"),
+        )
+        val bindings = execution.orderedBindings
+        check(bindings.size == 17) { "captured binding proof must produce seventeen ordered bindings" }
+        check(bindings.map { it.index } == bindings.indices.toList()) {
+            "captured bindings must remain contiguous and ordered"
+        }
+        val additional = bindings.filter { it.additionalParameter }
+        check(additional.size == 2) { "foreach must produce two additional bindings" }
+        check(
+            additional.all { binding ->
+                val origin = binding.origin as? PreparedBindingOrigin.MyBatisAdditional
+                origin?.internalBinding?.kind == InternalBindingKind.FOREACH_ITEM
+            },
+        ) {
+            "foreach additional bindings must retain FOREACH_ITEM identity"
+        }
+
+        return withPrepared(connection, execution.sqlWithPlaceholders) { statement ->
+            val forwarded = mutableListOf<String>()
+            val facade = publicPreparedStatementFacade(statement, forwarded)
+            val registry = TypeHandlerRegistry()
+            var typedNullSeen = false
+            var handlerIdentityMatched = true
+
+            for (binding in bindings) {
+                val result = bindCapturedWithStockTypeHandler(
+                    registry = registry,
+                    statement = facade,
+                    binding = binding,
+                )
+                typedNullSeen = typedNullSeen || result.typedNull
+                handlerIdentityMatched = handlerIdentityMatched && result.handlerIdentityMatched
+            }
+
+            val forged = bindings.first().copy(
+                metadata = bindings.first().metadata.copy(
+                    typeHandlerIdentity = "fixture.CustomTypeHandler",
+                ),
+            )
+            val beforeNegativeControl = forwarded.size
+            val customFailure = runCatching {
+                bindCapturedWithStockTypeHandler(
+                    registry = registry,
+                    statement = facade,
+                    binding = forged,
+                )
+            }.exceptionOrNull()
+            check(customFailure is UnsupportedOperationException) {
+                "custom TypeHandler metadata must fail closed before binding"
+            }
+            check(forwarded.size == beforeNegativeControl) {
+                "custom TypeHandler refusal must not call the remote statement"
+            }
+
+            statement.execute()
+            val actual = withResultSet(statement) { resultSet ->
+                check(resultSet.next())
+                (1..16).map { column -> resultSet.getString(column) }
+            }
+            val expected = listOf(
+                "7",
+                "8",
+                "9",
+                "42",
+                "11.25",
+                "12.5",
+                "13.75",
+                "true",
+                "captured-proof",
+                "010203",
+                "2026-11-18",
+                "12:34:56",
+                "2026-11-18 12:34:56",
+                Timestamp.from(instant).toLocalDateTime().toString().replace('T', ' '),
+                "NULL",
+                "left|right",
+            )
+            check(actual == expected) {
+                "captured PreparedBinding adapter PostgreSQL round-trip mismatch"
+            }
+            check(typedNullSeen) { "captured adapter must exercise effective typed-null authority" }
+            check(handlerIdentityMatched) { "resolved stock handler must match captured identity" }
+
+            println(
+                "ZMYBATIS_P3_CAPTURED_BINDINGS " +
+                    "bindingCount=${bindings.size} " +
+                    "additionalBindingCount=${additional.size} " +
+                    "typedNull=true " +
+                    "handlerIdentityMatched=true " +
+                    "customHandlerRejected=true " +
+                    "roundTrip=true " +
+                    "forwardedSetterCount=${forwarded.distinct().size}",
+            )
+            CapturedBindingAdapterOutcome(
+                bindingCount = bindings.size,
+                additionalBindingCount = additional.size,
+                typedNull = true,
+                handlerIdentityMatched = true,
+                customHandlerRejected = true,
+                roundTrip = true,
+            )
+        }
+    }
+
+    private fun bindCapturedWithStockTypeHandler(
+        registry: TypeHandlerRegistry,
+        statement: PreparedStatement,
+        binding: PreparedBinding,
+    ): CapturedBindingResult {
+        check(binding.metadata.parameterMode == "IN") {
+            "captured prepared backend only accepts IN bindings"
+        }
+        if (!binding.metadata.typeHandlerIdentity.startsWith("org.apache.ibatis.type.")) {
+            throw UnsupportedOperationException(
+                "non-stock TypeHandler is outside the P3 captured-binding contract",
+            )
+        }
+
+        val javaType = capturedJavaType(binding)
+        val runtimeValue = capturedRuntimeValue(binding, javaType)
+        val jdbcTypeIdentity = if (runtimeValue == null) {
+            binding.metadata.effectiveJdbcTypeIdentity
+        } else {
+            binding.metadata.jdbcTypeIdentity
+        }
+        val jdbcType = jdbcTypeIdentity?.let(JdbcType::valueOf)
+
+        @Suppress("UNCHECKED_CAST")
+        val typedJavaClass = javaType as Class<Any>
+        val handler: TypeHandler<*> = when {
+            runtimeValue == null &&
+                binding.metadata.typeHandlerIdentity == ObjectTypeHandler::class.java.name ->
+                ObjectTypeHandler.INSTANCE
+            jdbcType == null -> checkNotNull(registry.getTypeHandler(typedJavaClass)) {
+                "stock MyBatis handler missing for captured type ${javaType.name}"
+            }
+            else -> checkNotNull(registry.getTypeHandler(typedJavaClass, jdbcType)) {
+                "stock MyBatis handler missing for captured type ${javaType.name} / $jdbcType"
+            }
+        }
+        check(handler.javaClass.name == binding.metadata.typeHandlerIdentity) {
+            "resolved stock handler identity drifted from captured preparation metadata"
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        val untypedHandler = handler as TypeHandler<Any>
+        untypedHandler.setParameter(
+            statement,
+            binding.index + 1,
+            runtimeValue,
+            jdbcType,
+        )
+        return CapturedBindingResult(
+            typedNull = runtimeValue == null && jdbcType != null,
+            handlerIdentityMatched = true,
+        )
+    }
+
+    private fun capturedJavaType(binding: PreparedBinding): Class<*> =
+        when (binding.metadata.mappingJavaTypeIdentity) {
+            "java.lang.Byte" -> Byte::class.javaObjectType
+            "java.lang.Short" -> Short::class.javaObjectType
+            "java.lang.Integer" -> Int::class.javaObjectType
+            "java.lang.Long" -> Long::class.javaObjectType
+            "java.lang.Float" -> Float::class.javaObjectType
+            "java.lang.Double" -> Double::class.javaObjectType
+            "java.math.BigDecimal" -> BigDecimal::class.java
+            "java.lang.Boolean" -> Boolean::class.javaObjectType
+            "java.lang.String" -> String::class.java
+            "[B", "byte[]" -> ByteArray::class.java
+            "java.time.LocalDate" -> LocalDate::class.java
+            "java.time.LocalTime" -> LocalTime::class.java
+            "java.time.LocalDateTime" -> LocalDateTime::class.java
+            "java.time.Instant" -> Instant::class.java
+            "java.lang.Object" -> {
+                check(binding.value == InputValue.NullValue) {
+                    "Object mapping type is allowed only for captured null authority"
+                }
+                Object::class.java
+            }
+            else -> throw UnsupportedOperationException(
+                "unsupported captured standard Java type: " +
+                    binding.metadata.mappingJavaTypeIdentity,
+            )
+        }
+
+    private fun capturedRuntimeValue(binding: PreparedBinding, javaType: Class<*>): Any? =
+        when (val value = binding.value) {
+            InputValue.NullValue -> null
+            is InputValue.Text -> {
+                check(javaType == String::class.java)
+                value.value
+            }
+            is InputValue.BooleanValue -> {
+                check(javaType == Boolean::class.javaObjectType)
+                value.value
+            }
+            is InputValue.IntegerValue -> when (javaType) {
+                Byte::class.javaObjectType -> value.value.byteValueExact()
+                Short::class.javaObjectType -> value.value.shortValueExact()
+                Int::class.javaObjectType -> value.value.intValueExact()
+                Long::class.javaObjectType -> value.value.longValueExact()
+                else -> error("integer InputValue does not match captured Java type")
+            }
+            is InputValue.DecimalValue -> when (javaType) {
+                Float::class.javaObjectType -> value.value.toFloat().also {
+                    check(it.isFinite()) { "captured float value overflow" }
+                }
+                Double::class.javaObjectType -> value.value.toDouble().also {
+                    check(it.isFinite()) { "captured double value overflow" }
+                }
+                BigDecimal::class.java -> value.value
+                else -> error("decimal InputValue does not match captured Java type")
+            }
+            is InputValue.ArrayValue -> {
+                check(javaType == ByteArray::class.java)
+                value.elements.map { element ->
+                    val integer = element as? InputValue.IntegerValue
+                        ?: error("captured byte[] element must retain integer core value")
+                    integer.value.byteValueExact()
+                }.toByteArray()
+            }
+            is InputValue.DateValue -> {
+                check(javaType == LocalDate::class.java)
+                value.value
+            }
+            is InputValue.TimeValue -> {
+                check(javaType == LocalTime::class.java)
+                value.value
+            }
+            is InputValue.DateTimeValue -> {
+                check(javaType == LocalDateTime::class.java)
+                value.value
+            }
+            is InputValue.InstantValue -> {
+                check(javaType == Instant::class.java)
+                value.value
+            }
+            else -> throw UnsupportedOperationException(
+                "unsupported captured InputValue for P3.7: ${value.javaClass.name}",
+            )
+        }
+
+    private fun prepareCapturedBindingExecution(
+        byteValue: Byte,
+        shortValue: Short,
+        intValue: Int,
+        longValue: Long,
+        floatValue: Float,
+        doubleValue: Double,
+        decimalValue: BigDecimal,
+        flag: Boolean,
+        text: String,
+        binary: ByteArray,
+        date: LocalDate,
+        time: LocalTime,
+        dateTime: LocalDateTime,
+        instant: Instant,
+        items: List<String>,
+    ): PreparedExecution {
+        val fileId = SourceFileId("fixture/P3CapturedBindingRuntimeMapper.java")
+        val revision = SourceRevision("p3-captured-binding-runtime-r1")
+        val sourceSnapshot = SourceSnapshot(
+            fileId,
+            revision,
+            "authoritative-p3-captured-binding-runtime-source",
+        )
+        val parameterDefinitions = listOf(
+            Triple("java.lang.Byte", "byteValue", InputValue.IntegerValue(BigInteger.valueOf(byteValue.toLong()))),
+            Triple("java.lang.Short", "shortValue", InputValue.IntegerValue(BigInteger.valueOf(shortValue.toLong()))),
+            Triple("java.lang.Integer", "intValue", InputValue.IntegerValue(BigInteger.valueOf(intValue.toLong()))),
+            Triple("java.lang.Long", "longValue", InputValue.IntegerValue(BigInteger.valueOf(longValue))),
+            Triple("java.lang.Float", "floatValue", InputValue.DecimalValue(BigDecimal(floatValue.toString()))),
+            Triple("java.lang.Double", "doubleValue", InputValue.DecimalValue(BigDecimal(doubleValue.toString()))),
+            Triple("java.math.BigDecimal", "decimalValue", InputValue.DecimalValue(decimalValue)),
+            Triple("java.lang.Boolean", "flag", InputValue.BooleanValue(flag)),
+            Triple("java.lang.String", "text", InputValue.Text(text)),
+            Triple(
+                "byte[]",
+                "binary",
+                InputValue.ArrayValue(
+                    binary.map { item -> InputValue.IntegerValue(BigInteger.valueOf(item.toLong())) },
+                ),
+            ),
+            Triple("java.time.LocalDate", "date", InputValue.DateValue(date)),
+            Triple("java.time.LocalTime", "time", InputValue.TimeValue(time)),
+            Triple("java.time.LocalDateTime", "dateTime", InputValue.DateTimeValue(dateTime)),
+            Triple("java.time.Instant", "instant", InputValue.InstantValue(instant)),
+            Triple("java.lang.String", "nullableText", InputValue.NullValue),
+            Triple(
+                "java.util.List<java.lang.String>",
+                "items",
+                InputValue.ListValue(items.map { InputValue.Text(it) }),
+            ),
+        )
+        val parameterTypes = parameterDefinitions.map { JavaTypeIdentity(it.first) }
+        val statementId = JavaStatementId(
+            fileId,
+            "fixture.P3CapturedBindingRuntimeMapper",
+            MethodSignature("query", parameterTypes),
+        )
+        val script = """
+            <script>
+              SELECT
+                (#{byteValue,jdbcType=TINYINT}::smallint)::text,
+                (#{shortValue,jdbcType=SMALLINT}::smallint)::text,
+                (#{intValue,jdbcType=INTEGER}::integer)::text,
+                (#{longValue,jdbcType=BIGINT}::bigint)::text,
+                (#{floatValue,jdbcType=REAL}::real)::text,
+                (#{doubleValue,jdbcType=DOUBLE}::double precision)::text,
+                (#{decimalValue,jdbcType=DECIMAL}::numeric)::text,
+                (#{flag,jdbcType=BOOLEAN}::boolean)::text,
+                #{text,jdbcType=VARCHAR}::varchar,
+                encode(#{binary,jdbcType=VARBINARY}::bytea, 'hex'),
+                (#{date,jdbcType=DATE}::date)::text,
+                (#{time,jdbcType=TIME}::time)::text,
+                (#{dateTime,jdbcType=TIMESTAMP}::timestamp)::text,
+                (#{instant,jdbcType=TIMESTAMP}::timestamp)::text,
+                CASE WHEN #{nullableText,jdbcType=VARCHAR}::varchar IS NULL
+                  THEN 'NULL' ELSE 'NON_NULL' END,
+                array_to_string(
+                  ARRAY[
+                    <foreach collection="items" item="item" separator=",">
+                      #{item,jdbcType=VARCHAR}
+                    </foreach>
+                  ]::text[],
+                  '|'
+                )
+            </script>
+        """.trimIndent()
+        val source = PreparationSource.JavaAnnotation(
+            JavaAnnotationStatementCapture(
+                sourceGraph = StatementSourceGraph(
+                    rootStatement = CapturedStatement(
+                        statementId,
+                        StatementKind.SELECT,
+                        SourceRange(0, sourceSnapshot.content.length),
+                    ),
+                    sourceSnapshots = listOf(sourceSnapshot),
+                    dependencies = emptyList(),
+                ),
+                sqlSegments = listOf(script),
+                parameters = parameterDefinitions.mapIndexed { index, parameter ->
+                    JavaMethodParameterMetadata(
+                        index = index,
+                        sourceName = parameter.second,
+                        typeIdentity = JavaTypeIdentity(parameter.first),
+                        myBatisParamAlias = parameter.second,
+                    )
+                },
+            ),
+        )
+        val contract = MyBatisInvocationContractFactory.build(source)
+        check(!contract.isPreparationBlocked) {
+            "P3.7 captured-binding invocation contract must be executable: " +
+                contract.blockingProblems
+        }
+
+        val provided = parameterDefinitions.map { parameter ->
+            val alias = contract.aliases.single { it.name == parameter.second }
+            ProvidedInput(
+                requirementId = alias.requirementId,
+                value = parameter.third,
+                origin = ExecutionInputOrigin.USER_ENTERED,
+            )
+        }
+        val environment = InputEnvironment.validate(contract, provided)
+        check(environment is InputEnvironmentResult.Success) {
+            "P3.7 captured-binding input environment must validate: $environment"
+        }
+        val request = MyBatisPreparationRequest.create(
+            source = source,
+            parameterContract = contract,
+            inputEnvironment = environment.environment,
+        )
+        check(request is PreparationRequestResult.Ready) {
+            "P3.7 captured-binding preparation request must be ready: $request"
+        }
+        return when (val prepared = MyBatisPreparationEngine.prepare(request.request)) {
+            is PreparationResult.Success -> prepared.execution
+            is PreparationResult.Failed -> error(
+                "P3.7 captured-binding preparation failed: " +
+                    "${prepared.failure.kind} / ${prepared.failure.code}",
+            )
+        }
+    }
 
     private fun publicPreparedStatementFacade(
         remote: RemotePreparedStatement,
@@ -713,6 +1136,20 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         val bindingCount: Int,
         val roundTrip: Boolean,
         val forwardedSetterSignatures: List<String>,
+    )
+
+    private data class CapturedBindingResult(
+        val typedNull: Boolean,
+        val handlerIdentityMatched: Boolean,
+    )
+
+    private data class CapturedBindingAdapterOutcome(
+        val bindingCount: Int,
+        val additionalBindingCount: Int,
+        val typedNull: Boolean,
+        val handlerIdentityMatched: Boolean,
+        val customHandlerRejected: Boolean,
+        val roundTrip: Boolean,
     )
 
     private data class FunctionalOutcome(
