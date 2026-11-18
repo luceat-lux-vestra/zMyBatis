@@ -5,7 +5,6 @@ import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.dataSource.DatabaseConnectionCore
 import com.intellij.database.datagrid.DataRequest
-import com.intellij.database.datagrid.DataRequest.Context
 import com.intellij.database.remote.jdbc.RemoteConnection
 import com.intellij.database.remote.jdbc.RemotePreparedStatement
 import com.intellij.database.remote.jdbc.RemoteResultSet
