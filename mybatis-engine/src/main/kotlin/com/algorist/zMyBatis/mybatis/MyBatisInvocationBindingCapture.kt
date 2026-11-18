@@ -1,5 +1,6 @@
 package com.algorist.zMyBatis.mybatis
 
+import com.algorist.zMyBatis.core.input.ForeachLocalRole
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputProvenance
 import com.algorist.zMyBatis.core.input.InternalBinding
@@ -90,10 +91,24 @@ internal object MyBatisInvocationBindingCapture {
 
             val origin = if (generated) {
                 val internalBinding = mapping.foreachLocal?.let { foreachLocal ->
-                    request.parameterContract.internalBindings.singleOrNull { candidate ->
-                        candidate.name == foreachLocal.sourceLocalName &&
-                            candidate.kind == foreachLocal.kind
-                    } ?: return invariant(property)
+                    val role = when (foreachLocal.kind) {
+                        InternalBindingKind.FOREACH_ITEM -> ForeachLocalRole.ITEM
+                        InternalBindingKind.FOREACH_INDEX -> ForeachLocalRole.INDEX
+                        else -> return invariant(property)
+                    }
+                    InternalBinding(
+                        name = foreachLocal.sourceLocalName,
+                        kind = foreachLocal.kind,
+                        provenance = InputProvenance(
+                            listOf(
+                                InputEvidence.ForeachLocal(
+                                    foreachLocal.sourceLocalName,
+                                    role,
+                                    rootSource,
+                                ),
+                            ),
+                        ),
+                    )
                 } ?: InternalBinding(
                     name = rootProperty,
                     kind = InternalBindingKind.ADDITIONAL_PARAMETER,
