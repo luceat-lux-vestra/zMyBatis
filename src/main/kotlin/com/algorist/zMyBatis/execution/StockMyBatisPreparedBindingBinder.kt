@@ -106,14 +106,16 @@ internal object StockMyBatisPreparedBindingBinder {
             )
         }
 
+        @Suppress("UNCHECKED_CAST")
+        val typedJavaClass = runtime.javaType as Class<Any>
         val handler: TypeHandler<*> = when {
             runtime.value == null &&
                 binding.metadata.typeHandlerIdentity == ObjectTypeHandler::class.java.name ->
                 ObjectTypeHandler.INSTANCE
             jdbcType == null ->
-                registry.getTypeHandler(runtime.javaType)
+                registry.getTypeHandler(typedJavaClass)
             else ->
-                registry.getTypeHandler(runtime.javaType, jdbcType)
+                registry.getTypeHandler(typedJavaClass, jdbcType)
         } ?: return failed(
             binding,
             PreparedBindingBindFailureKind.TYPE_HANDLER_MISSING,
