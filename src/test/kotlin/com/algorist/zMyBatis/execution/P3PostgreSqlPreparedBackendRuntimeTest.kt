@@ -55,6 +55,7 @@ import com.intellij.database.dataSource.url.template.UrlTemplate
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.LightVirtualFile
+import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.util.ui.classpath.SimpleClasspathElementFactory
 import java.lang.reflect.InvocationTargetException
@@ -1104,6 +1105,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
 
         val manager = LocalDataSourceManager.getInstance(project)
         manager.addDataSource(dataSource)
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
 
         return Fixture(
             dataSource = dataSource,
@@ -1161,18 +1163,10 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         }
     }
 
-    private fun p4DbDataSource(dataSource: LocalDataSource): DbDataSource {
-        val stableId = dataSource.uniqueId
-            .trim()
-            .takeIf { it.isNotEmpty() }
-            ?: error("P4 runtime fixture datasource must expose stable identity")
-        val matches = DbPsiFacade.getInstance(project).dataSources.filter { candidate ->
-            databaseToolsStableDataSourceId(candidate) == stableId
+    private fun p4DbDataSource(dataSource: LocalDataSource): DbDataSource =
+        checkNotNull(DbPsiFacade.getInstance(project).findDataSource(dataSource.uniqueId)) {
+            "P4 runtime fixture must resolve to DbDataSource after datasource registration events"
         }
-        return checkNotNull(matches.singleOrNull()) {
-            "P4 runtime fixture must resolve to exactly one DbDataSource by stable identity"
-        }
-    }
 
     private fun p4PreparedTarget(dataSource: DbDataSource): ResolvedExecutionTarget =
         ResolvedExecutionTarget(
