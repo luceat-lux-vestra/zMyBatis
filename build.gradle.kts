@@ -38,6 +38,15 @@ val integrationTestRuntimeOnly = configurations.getByName("integrationTestRuntim
     extendsFrom(configurations.testRuntimeOnly.get())
 }
 
+// P3.3 uses an isolated resolvable configuration for the PostgreSQL driver artifact.
+// Do not resolve integrationTestRuntimeClasspath during build configuration: doing so
+// freezes its parent configurations before the IntelliJ Starter task finishes wiring them.
+val p3PostgresDriverClasspath = configurations.create("p3PostgresDriverClasspath") {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    isVisible = false
+}
+
 // Configure project's dependencies
 repositories {
     gradlePluginPortal()
@@ -74,6 +83,7 @@ dependencies {
     testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
     testImplementation(platform("tools.jackson:jackson-bom:3.2.4"))
     testImplementation(platform("io.opentelemetry:opentelemetry-bom:1.67.0"))
+    add(p3PostgresDriverClasspath.name, "org.postgresql:postgresql:42.7.14")
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
     intellijPlatform {
@@ -274,8 +284,7 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
 // configuration. Do not capture a Gradle Configuration/Provider in the TestIdeTask action:
 // Gradle 9 configuration-cache rejects that task graph, while the transformed IDE test
 // process also does not expose external test artifacts through java.class.path.
-val p3PostgresDriverJarPath = configurations
-    .getByName("integrationTestRuntimeClasspath")
+val p3PostgresDriverJarPath: String = p3PostgresDriverClasspath
     .files
     .single { file -> file.name == "postgresql-42.7.14.jar" }
     .absolutePath

@@ -1,6 +1,7 @@
 package com.algorist.zMyBatis.execution
 
 import com.intellij.database.console.JdbcConsole
+import com.intellij.database.dataSource.DatabaseAuthProviderNames
 import com.intellij.database.dataSource.DatabaseConnectionCore
 import com.intellij.database.dataSource.DatabaseDriver
 import com.intellij.database.dataSource.DatabaseDriverImpl
@@ -197,8 +198,12 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             name = "zMyBatis P3 PostgreSQL runtime proof"
             databaseDriver = driver
             driverClass = "org.postgresql.Driver"
-            url = "jdbc:postgresql://127.0.0.1:5432/zmybatis"
+            // Match the packaged PostgreSQL E2E fixture: the user connection property is
+            // part of the configured datasource authority, while Database Tools owns the
+            // connection/session lifecycle. The CI PostgreSQL service uses trust auth.
+            url = "jdbc:postgresql://127.0.0.1:5432/zmybatis?user=zmybatis"
             username = "zmybatis"
+            authProviderId = DatabaseAuthProviderNames.CREDENTIALS_ID
             isAutoSynchronize = false
         }
 
