@@ -132,9 +132,11 @@ internal class DatabaseSessionPreparedBackend(
         plan: PreparedExecutionPlan,
         currentTarget: ResolvedExecutionTarget,
         preExecutionCheck: () -> Boolean,
+        onHandleReady: (PreparedBackendExecutionHandle) -> Unit = {},
         onCompleted: (DatabaseSessionPreparedOutcome) -> Unit,
     ): PreparedBackendExecutionHandle {
         val control = PreparedBackendCancellationControl()
+        onHandleReady(control)
         val completed = AtomicBoolean(false)
         fun complete(outcome: DatabaseSessionPreparedOutcome) {
             if (completed.compareAndSet(false, true)) {
