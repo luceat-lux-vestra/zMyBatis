@@ -30,6 +30,8 @@ internal class PreparedBackendExecutionTaskAdapter(
             private val handle = AtomicReference<PreparedBackendExecutionHandle?>()
             private val completion = CountDownLatch(1)
             private val cancellationRequested = AtomicBoolean(false)
+            private val cancellationDispatched = AtomicBoolean(false)
+            private val cancellationResult = AtomicReference<PreparedBackendCancellationResult?>()
 
             override fun run(indicator: ProgressIndicator) {
                 try {
@@ -40,7 +42,7 @@ internal class PreparedBackendExecutionTaskAdapter(
                     }
                     handle.set(executionHandle)
                     if (cancellationRequested.get()) {
-                        executionHandle.cancel()
+                        dispatchCancellation()
                     }
 
                     while (!completion.await(CANCELLATION_PROBE_MILLIS, TimeUnit.MILLISECONDS)) {
@@ -67,7 +69,16 @@ internal class PreparedBackendExecutionTaskAdapter(
 
             private fun requestCancellation(): PreparedBackendCancellationResult {
                 cancellationRequested.set(true)
-                return handle.get()?.cancel() ?: PreparedBackendCancellationResult.Requested
+                return dispatchCancellation()
+            }
+
+            private fun dispatchCancellation(): PreparedBackendCancellationResult {
+                cancellationResult.get()?.let { return it }
+                val executionHandle = handle.get() ?: return PreparedBackendCancellationResult.Requested
+                if (!cancellationDispatched.compareAndSet(false, true)) {
+                    return cancellationResult.get() ?: PreparedBackendCancellationResult.Requested
+                }
+                return executionHandle.cancel().also(cancellationResult::set)
             }
         }.queue()
     }
