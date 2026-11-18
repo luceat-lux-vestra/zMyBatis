@@ -22,7 +22,10 @@ internal class PreparedBackendExecutionTaskAdapter(
     private val project: Project,
 ) {
     fun execute(
-        executeBackend: ((DatabaseSessionPreparedOutcome) -> Unit) -> PreparedBackendExecutionHandle,
+        executeBackend: (
+            onHandleReady: (PreparedBackendExecutionHandle) -> Unit,
+            onCompleted: (DatabaseSessionPreparedOutcome) -> Unit,
+        ) -> PreparedBackendExecutionHandle,
         onCompleted: (DatabaseSessionPreparedOutcome) -> Unit,
     ) {
         object : Task.Backgroundable(project, "Executing zMyBatis prepared statement", true) {
@@ -35,15 +38,14 @@ internal class PreparedBackendExecutionTaskAdapter(
 
             override fun run(indicator: ProgressIndicator) {
                 try {
-                    val executionHandle = executeBackend { completed ->
+                    val executionHandle = executeBackend(
+                        ::attachHandle,
+                    ) { completed ->
                         if (outcome.compareAndSet(null, completed)) {
                             completion.countDown()
                         }
                     }
-                    handle.set(executionHandle)
-                    if (cancellationRequested.get()) {
-                        dispatchCancellation()
-                    }
+                    attachHandle(executionHandle)
 
                     while (!completion.await(CANCELLATION_PROBE_MILLIS, TimeUnit.MILLISECONDS)) {
                         indicator.checkCanceled()
@@ -69,6 +71,22 @@ internal class PreparedBackendExecutionTaskAdapter(
                     onCompleted(completedOutcome)
                 } else {
                     onCompleted(cancellationOutcome(requestCancellation()))
+                }
+            }
+
+            private fun attachHandle(executionHandle: PreparedBackendExecutionHandle) {
+                val existing = handle.get()
+                if (existing == null) {
+                    check(handle.compareAndSet(null, executionHandle) || handle.get() === executionHandle) {
+                        "prepared backend task received conflicting execution handles"
+                    }
+                } else {
+                    check(existing === executionHandle) {
+                        "prepared backend task received conflicting execution handles"
+                    }
+                }
+                if (cancellationRequested.get()) {
+                    dispatchCancellation()
                 }
             }
 
