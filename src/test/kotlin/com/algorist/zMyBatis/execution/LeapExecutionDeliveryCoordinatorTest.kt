@@ -174,7 +174,7 @@ class LeapExecutionDeliveryCoordinatorTest {
         assertTrue(coordinator.contains("targetResolver.resolve(targetDescriptor)"))
         assertTrue(coordinator.contains("LeapExecutionCandidateResult.InvocationInvalidated"))
         assertTrue(coordinator.contains("planMatchesResolvedTarget(plan, deliveryTarget.resolvedTarget)"))
-        assertTrue(coordinator.contains("executeBackend = { onCompleted ->"))
+        assertTrue(coordinator.contains("executeBackend = { onHandleReady, onCompleted ->"))
         assertTrue(coordinator.contains("PreparedBackendExecutionTaskAdapter(project)"))
         assertFalse(coordinator.contains("MaterializedExecution"))
         assertFalse(coordinator.contains("ExecutionMaterializer"))
