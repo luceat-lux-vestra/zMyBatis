@@ -165,7 +165,7 @@ internal object MyBatisValueConversion {
     private fun isMyBatisSpecialParameter(typeIdentity: JavaTypeIdentity): Boolean =
         typeIdentity.value.substringBefore('<').trim() in setOf(ROW_BOUNDS_TYPE, RESULT_HANDLER_TYPE)
 
-    private fun resolveSafeJavaType(typeIdentity: JavaTypeIdentity): Class<*>? {
+    internal fun resolveSafeJavaType(typeIdentity: JavaTypeIdentity): Class<*>? {
         val canonical = typeIdentity.value.trim()
         if (canonical.endsWith("[]")) {
             val component = resolveSafeJavaType(JavaTypeIdentity(canonical.removeSuffix("[]"))) ?: return null
@@ -203,7 +203,7 @@ internal object MyBatisValueConversion {
         }
     }
 
-    private fun toRuntimeValue(value: InputValue, declaredType: JavaTypeIdentity?): RuntimeValueResult {
+    internal fun toRuntimeValue(value: InputValue, declaredType: JavaTypeIdentity?): RuntimeValueResult {
         if (value is InputValue.NullValue) return RuntimeValueResult.Ready(null)
         val typeName = declaredType?.value?.trim().orEmpty()
         val rawTypeName = typeName.substringBefore('<').trim()
