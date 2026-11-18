@@ -181,6 +181,11 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             provePreparedExecutionForeachBindings(fixture.dataSource)
 
             assertTrue(typeHandlerBridge.runtimeClass.isNotBlank())
+            assertEquals(
+                typeHandlerBridge.directJdbcPreparedStatement,
+                typeHandlerBridge.directStockHandlerRoundTrip,
+            )
+            assertTrue(typeHandlerBridge.jdbcFacadeMethods.all { it.isNotBlank() })
             assertEquals("zmybatis", functional.database)
             assertEquals("public", functional.schema)
             assertEquals(1, functional.dmlUpdateCount)
@@ -255,7 +260,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
     private fun characterizeStockTypeHandlerBridge(connection: DatabaseConnectionCore): TypeHandlerBridgeOutcome =
         withPrepared(connection, "SELECT ?::VARCHAR") { statement ->
             val runtimeClass = statement.javaClass
-            val runtimeInterfaces = runtimeClass.interfaces.map(Class<*>::getName).sorted()
+            val runtimeInterfaces = runtimeClass.interfaces.map { it.name }.sorted()
             val directJdbc = PreparedStatement::class.java.isInstance(statement)
             val jdbcFacadeMethods = runtimeClass.methods
                 .filter { method -> PreparedStatement::class.java.isAssignableFrom(method.returnType) }
