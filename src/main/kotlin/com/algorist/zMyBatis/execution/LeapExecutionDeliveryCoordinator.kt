@@ -21,7 +21,7 @@ import com.intellij.openapi.project.Project
  * Backend selection is explicit and determined only by whether the approved plan still carries
  * JDBC bindings. No materialization/literalization fallback is permitted.
  */
-internal class LeapExecutionDeliveryCoordinator(private val project: Project) {
+internal class LeapExecutionDeliveryCoordinator(project: Project) {
     private val targetResolver = DatabaseToolsTargetResolver(project)
     private val consoleAdapter = DatabaseToolsConsoleAdapter.getInstance(project)
     private val approvalAdapter = LeapExecutionApprovalAdapter(project)
