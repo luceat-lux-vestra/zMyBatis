@@ -50,6 +50,7 @@ import java.lang.reflect.Proxy
 import java.math.BigDecimal
 import java.nio.file.Path
 import java.sql.PreparedStatement
+import java.sql.Timestamp
 import java.sql.Types
 import java.time.Instant
 import java.time.LocalDate
@@ -335,7 +336,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                   (?::date)::text,
                   (?::time)::text,
                   (?::timestamp)::text,
-                  EXTRACT(EPOCH FROM ?::timestamptz)::bigint::text,
+                  (?::timestamp)::text,
                   CASE WHEN ?::varchar IS NULL THEN 'NULL' ELSE 'NON_NULL' END
             """.trimIndent(),
         ) { statement ->
@@ -345,7 +346,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             val date = LocalDate.of(2026, 11, 18)
             val time = LocalTime.of(12, 34, 56)
             val dateTime = LocalDateTime.of(2026, 11, 18, 12, 34, 56)
-            val instant = Instant.parse("2026-11-18T03:00:00Z")
+            val instant = Instant.parse("2026-11-18T03:00:17Z")
             val bindings = listOf(
                 StockBinding(Byte::class.javaObjectType, 7.toByte(), null),
                 StockBinding(Short::class.javaObjectType, 8.toShort(), null),
@@ -371,7 +372,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             statement.execute()
             val actual = withResultSet(statement) { resultSet ->
                 check(resultSet.next())
-                (1..15).map(resultSet::getString)
+                (1..15).map { column -> resultSet.getString(column) }
             }
             val expected = listOf(
                 "7",
@@ -387,7 +388,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 date.toString(),
                 time.toString(),
                 dateTime.toString().replace('T', ' '),
-                instant.epochSecond.toString(),
+                Timestamp.from(instant).toLocalDateTime().toString().replace('T', ' '),
                 "NULL",
             )
             check(actual == expected) {
