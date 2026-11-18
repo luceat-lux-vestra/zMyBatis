@@ -49,6 +49,8 @@ import com.intellij.database.dataSource.LocalDataSourceManager
 import com.intellij.database.datagrid.DataRequest
 import com.intellij.database.remote.jdbc.RemoteConnection
 import com.intellij.database.remote.jdbc.RemotePreparedStatement
+import com.intellij.database.psi.DbPsiFacade
+import com.intellij.database.util.DbImplUtil
 import com.intellij.database.dataSource.url.template.UrlTemplate
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.util.Disposer
@@ -1163,7 +1165,17 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             descriptor = ExecutionTargetDescriptor(
                 targetId = ExecutionTargetId(
                     dataSourceId = StableDataSourceId(
-                        checkNotNull(databaseToolsStableDataSourceId(dataSource)) {
+                        checkNotNull(
+                            databaseToolsStableDataSourceId(
+                                checkNotNull(
+                                    DbPsiFacade.getInstance(project).dataSources.firstOrNull { candidate ->
+                                        DbImplUtil.getMaybeLocalDataSource(candidate) === dataSource
+                                    },
+                                ) {
+                                    "P4 runtime fixture LocalDataSource must resolve to DbDataSource"
+                                },
+                            ),
+                        ) {
                             "P4 runtime fixture datasource must expose stable identity"
                         },
                     ),
