@@ -64,6 +64,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import org.apache.ibatis.type.JdbcType
+import org.apache.ibatis.type.ObjectTypeHandler
 import org.apache.ibatis.type.StringTypeHandler
 import org.apache.ibatis.type.TypeHandler
 import org.apache.ibatis.type.TypeHandlerRegistry
@@ -581,13 +582,16 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
 
         @Suppress("UNCHECKED_CAST")
         val typedJavaClass = javaType as Class<Any>
-        val handler = if (jdbcType == null) {
-            registry.getTypeHandler(typedJavaClass)
-        } else {
-            registry.getTypeHandler(typedJavaClass, jdbcType)
-        }
-        checkNotNull(handler) {
-            "stock MyBatis handler missing for captured type ${javaType.name}"
+        val handler: TypeHandler<*> = when {
+            runtimeValue == null &&
+                binding.metadata.typeHandlerIdentity == ObjectTypeHandler::class.java.name ->
+                ObjectTypeHandler.INSTANCE
+            jdbcType == null -> checkNotNull(registry.getTypeHandler(typedJavaClass)) {
+                "stock MyBatis handler missing for captured type ${javaType.name}"
+            }
+            else -> checkNotNull(registry.getTypeHandler(typedJavaClass, jdbcType)) {
+                "stock MyBatis handler missing for captured type ${javaType.name} / $jdbcType"
+            }
         }
         check(handler.javaClass.name == binding.metadata.typeHandlerIdentity) {
             "resolved stock handler identity drifted from captured preparation metadata"
