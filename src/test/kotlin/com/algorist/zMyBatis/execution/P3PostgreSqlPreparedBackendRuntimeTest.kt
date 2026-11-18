@@ -171,7 +171,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
     private fun registerPostgreSqlDataSource(): Fixture {
         val postgresJar = System.getProperty("java.class.path")
             .split(File.pathSeparator)
-            .map(::Path.of)
+            .map { entry -> Path.of(entry) }
             .singleOrNull { path -> path.fileName.toString() == "postgresql-42.7.14.jar" }
             ?: error("P3 PostgreSQL runtime classpath must contain exactly one pgJDBC 42.7.14 JAR")
         check(postgresJar.toFile().isFile) {
