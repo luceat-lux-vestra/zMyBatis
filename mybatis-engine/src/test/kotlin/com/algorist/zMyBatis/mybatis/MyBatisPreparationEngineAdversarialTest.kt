@@ -61,6 +61,16 @@ class MyBatisPreparationEngineAdversarialTest {
         val binding = (result as PreparationResult.Success).execution.orderedBindings.single()
         assertEquals("payload.missing", binding.property)
         assertEquals(InputValue.NullValue, binding.value)
+        assertEquals(
+            "mapping JDBC type must remain distinct from the runtime null fallback",
+            null,
+            binding.metadata.jdbcTypeIdentity,
+        )
+        assertEquals(
+            "stock MyBatis jdbcTypeForNull must survive preparation for the prepared backend",
+            "OTHER",
+            binding.metadata.effectiveJdbcTypeIdentity,
+        )
     }
 
     @Test

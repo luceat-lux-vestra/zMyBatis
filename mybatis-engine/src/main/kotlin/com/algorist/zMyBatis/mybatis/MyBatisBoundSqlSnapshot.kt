@@ -25,6 +25,7 @@ internal data class MyBatisParameterMappingSnapshot(
     val runtimeValue: MyBatisRuntimeValueSnapshot,
     val mappingJavaTypeIdentity: String?,
     val jdbcTypeIdentity: String?,
+    val effectiveJdbcTypeIdentity: String? = jdbcTypeIdentity,
     val typeHandlerIdentity: String?,
     val parameterMode: String?,
     val numericScale: Int?,
@@ -46,6 +47,7 @@ internal data class MyBatisForeachLocalSnapshot(
 internal data class MyBatisEffectiveMappingMetadata(
     val javaTypeIdentity: String?,
     val jdbcTypeIdentity: String?,
+    val effectiveJdbcTypeIdentity: String? = jdbcTypeIdentity,
     val typeHandlerIdentity: String?,
     val parameterMode: String?,
     val numericScale: Int?,

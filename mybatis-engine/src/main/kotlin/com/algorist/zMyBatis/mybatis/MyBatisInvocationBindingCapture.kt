@@ -146,6 +146,7 @@ internal object MyBatisInvocationBindingCapture {
                     declaredJavaTypeIdentity = callerRequirement?.expectedType?.javaTypeIdentity,
                     mappingJavaTypeIdentity = mapping.mappingJavaTypeIdentity,
                     jdbcTypeIdentity = mapping.jdbcTypeIdentity,
+                    effectiveJdbcTypeIdentity = mapping.effectiveJdbcTypeIdentity,
                     typeHandlerIdentity = typeHandlerName,
                     parameterMode = mapping.parameterMode,
                     numericScale = mapping.numericScale,
