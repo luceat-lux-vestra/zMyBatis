@@ -172,6 +172,8 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 }
             }
 
+            provePreparedExecutionForeachBindings(fixture.dataSource)
+
             assertEquals("zmybatis", functional.database)
             assertEquals("public", functional.schema)
             assertEquals(1, functional.dmlUpdateCount)
@@ -196,7 +198,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         }
     }
 
-    fun testPreparedExecutionForeachBindingsReachRealPostgreSqlInOrder() {
+    private fun provePreparedExecutionForeachBindings(dataSource: LocalDataSource) {
         val execution = prepareForeachTextExecution(listOf("alpha", "beta", "gamma"))
         val bindings = execution.orderedBindings
 
@@ -220,32 +222,27 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             assertEquals("org.apache.ibatis.type.StringTypeHandler", binding.metadata.typeHandlerIdentity)
         }
 
-        val fixture = registerPostgreSqlDataSource()
-        try {
-            val result = executeRaw(fixture.dataSource, "foreach-prepared-execution") { connection ->
-                withPrepared(connection, execution.sqlWithPlaceholders) { statement ->
-                    for (binding in bindings) {
-                        val value = binding.value as? InputValue.Text
-                            ?: error("P3.4 text foreach proof received a non-text binding")
-                        statement.setString(binding.index + 1, value.value)
-                    }
-                    statement.execute()
-                    withResultSet(statement) { resultSet ->
-                        check(resultSet.next())
-                        resultSet.getString(1)
-                    }
+        val result = executeRaw(dataSource, "foreach-prepared-execution") { connection ->
+            withPrepared(connection, execution.sqlWithPlaceholders) { statement ->
+                for (binding in bindings) {
+                    val value = binding.value as? InputValue.Text
+                        ?: error("P3.4 text foreach proof received a non-text binding")
+                    statement.setString(binding.index + 1, value.value)
+                }
+                statement.execute()
+                withResultSet(statement) { resultSet ->
+                    check(resultSet.next())
+                    resultSet.getString(1)
                 }
             }
-
-            assertEquals("alpha|beta|gamma", result)
-            println(
-                "ZMYBATIS_P3_FOREACH " +
-                    "preparedExecution=true bindingCount=${bindings.size} " +
-                    "foreachIdentity=true orderPreserved=true handler=StringTypeHandler",
-            )
-        } finally {
-            fixture.dispose()
         }
+
+        assertEquals("alpha|beta|gamma", result)
+        println(
+            "ZMYBATIS_P3_FOREACH " +
+                "preparedExecution=true bindingCount=${bindings.size} " +
+                "foreachIdentity=true orderPreserved=true handler=StringTypeHandler",
+        )
     }
 
     private fun prepareForeachTextExecution(values: List<String>): PreparedExecution {
