@@ -40,12 +40,15 @@ class DatabaseToolsDiagnosticSeverityContractTest {
         val fatalErrorCalls = Regex("""LOG\.error\("zMyBatis: fatal [^"]+", fatal\)""")
             .findAll(adapter)
             .count()
-        assertEquals(3, fatalErrorCalls)
+        // Opening the editor now has an additional explicit fatal boundary.
+        // All four must log as fatal, never be transformed into a typed ordinary error.
+        assertTrue(adapter.contains("LOG.error(\"zMyBatis: fatal console editor-open failure\", fatal)"))
+        assertEquals(4, fatalErrorCalls)
 
         val fatalRethrows = Regex("""catch \(fatal: Throwable\) \{[\s\S]*?throw fatal""")
             .findAll(adapter)
             .count()
-        assertEquals(3, fatalRethrows)
+        assertEquals(4, fatalRethrows)
     }
 
     @Test

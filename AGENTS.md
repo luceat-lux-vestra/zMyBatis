@@ -118,8 +118,8 @@ zMyBatis must not replace, wrap, unregister, reorder, or intercept DataGrip buil
 The plugin uses `com.intellij.database.*`, including APIs that can move between IDE releases.
 
 - `pluginSinceBuild`, platform type/version, bundled database plugin declarations, and Plugin Verifier configuration form one compatibility contract.
-- The required `Verify plugin` context is authoritative for its configured matrix: IntelliJ IDEA Ultimate 2026.2.3 plus 2026.2, and DataGrip 2026.2.3 plus 2026.2 as a separately maintained host claim.
-- Host evidence remains asymmetric by design. IDEA Ultimate carries the maintained PostgreSQL execution suite; DataGrip separately proves packaged-plugin/service loading and the registered XML action's typed no-datasource refusal. A green verifier or runtime suite on one host must not be generalized into Java-source, native PostgreSQL, or broader Database Tools parity on the other host.
+- The declared minimum is build **263**. The required `Verify plugin` context independently targets IntelliJ IDEA Ultimate 2026.3 and DataGrip 2026.3. Their independent SDK selectors do not create 2026.2 support. A configured host is not PASS without exact-HEAD evidence; the default internal/override-only API failure levels remain enforced.
+- Host evidence remains asymmetric: the **2026.3** IDEA Ultimate Starter/Driver suite must prove PostgreSQL execution, and the **2026.3** DataGrip Starter/Driver suite must separately prove packaged plugin/service loading and the registered XML action's typed no-datasource refusal. These are requirements, not asserted PASS results. DataGrip host proof does not imply Java-source or native PostgreSQL parity. Internal and experimental IntelliJ editor-open API usage is disallowed; the 2026.3 public `OpenFileDescriptor.navigate(true)` path must preserve lease ownership and revalidate the immutable artifact, console and actual editor in the EDT continuation.
 - Raising the minimum IDE build or widening compatibility claims is a product/API decision, not a routine dependency bump.
 
 ## 5. Datasource / schema / session identity — hardened baseline

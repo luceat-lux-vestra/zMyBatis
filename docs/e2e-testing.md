@@ -10,7 +10,7 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
 
 ## Maintained process scenarios
 
-`ZMyBatisStarterDriverE2ETest` maintains focused process-level scenarios against the maintained IntelliJ IDEA Ultimate 2026.2.3 target on JDK 25:
+`ZMyBatisStarterDriverE2ETest` targets the **actual IntelliJ IDEA Ultimate 2026.3** process on JDK 25. The exact packaged plugin must complete these maintained PostgreSQL scenarios before 2026.3 runtime support can be claimed:
 
 1. **Packaged-plugin / production-service happy path**
    - installs the exact `buildPlugin` archive into a separate IDE process;
@@ -48,7 +48,7 @@ No production method exists solely for this harness. The process database stack 
 
 ### Separate DataGrip host scenarios
 
-`ZMyBatisDataGripStarterDriverE2ETest` is a separate host proof against DataGrip 2026.2.3. It never treats the IDEA Ultimate suite as DataGrip evidence.
+`ZMyBatisDataGripStarterDriverE2ETest` is a separate host proof against DataGrip 2026.3. It never treats the IDEA Ultimate suite as DataGrip evidence.
 
 It installs the exact same packaged plugin ZIP and proves two bounded claims:
 
@@ -57,7 +57,7 @@ It installs the exact same packaged plugin ZIP and proves two bounded claims:
 
 Each scenario closes its DataGrip process through `useDriverAndCloseIde` and emits a `ZMYBATIS_HOST_EVIDENCE host=DATAGRIP` record with release, scenario, result, shutdown state and observed duration. These durations are observations, not latency SLAs.
 
-This host smoke deliberately does **not** claim Java-annotation parity or successful native PostgreSQL execution in DataGrip. Java PSI availability is not inferred from IDEA Ultimate, and the maintained IU PostgreSQL golden path remains separate. DataGrip Plugin Verifier evidence for 2026.2.3 plus the 2026.2 minimum line is required alongside this process smoke.
+This host smoke deliberately does **not** claim Java-annotation parity or successful native PostgreSQL execution in DataGrip. Java PSI availability is not inferred from IDEA Ultimate, and the maintained IU PostgreSQL golden path remains separate. DataGrip 2026.3 Plugin Verifier evidence is required alongside this process smoke; the minimum IDE build is 263.
 
 ## Local execution
 
@@ -68,7 +68,7 @@ Run each host suite separately from the normal fixture suite:
 ./gradlew dataGripIntegrationTest
 ```
 
-`integrationTest` is the IntelliJ IDEA Ultimate suite. `dataGripIntegrationTest` targets DataGrip 2026.2.3 and filters to the DataGrip-specific process class.
+`integrationTest` is the IntelliJ IDEA Ultimate suite. `dataGripIntegrationTest` targets DataGrip 2026.3 and filters to the DataGrip-specific process class.
 
 The IntelliJ Platform Gradle Plugin's `testIdeUi` task supplies `path.to.build.plugin` from the `buildPlugin` archive. The test installs that exact archive with Starter before launching the IDE.
 

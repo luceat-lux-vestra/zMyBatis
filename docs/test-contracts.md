@@ -26,7 +26,7 @@ evidence. The old IntelliJ template rename test and evaluator debug/reproduction
 | Registered action boundary | `MyBatisActionUpdateProjectFixtureTest`, `MyBatisActionUpdateBoundaryTest`, `LeapActionContextAdmissionCoordinatorTest` | `MyBatisExecuteAction` keeps update bounded and delegates supported execution only to Leap admission; no low-level Database Tools or alternative execution route is present at the action edge |
 | Target persistence and console lifecycle | `PersistedExecutionTargetSelectionTest`, `ExecutionTargetDescriptorStoreTest`, `MyBatisActionInterceptorActivityLifecycleTest`, `ConsoleCacheServiceLifecycleTest`, `ConsoleCacheOwnedResourceDisposalContractTest`, `DatabaseToolsTargetResolverTest`, `DatabaseToolsConsoleAdapterBoundaryTest` | current v3 source→target persistence is independent of live consoles; exact target identity gates REUSE; matching live consoles are reused under source-key ownership; same-source overlap, shutdown, invalid/disposed resources, and stale targets fail closed |
 | Sensitive production logging | `SensitiveLoggingContractTest`, action/adapter diagnostic contract tests | production logs reject direct interpolation of known sensitive SQL/input/source/target identities and platform exception messages; typed expected failures expose metadata rather than raw payload |
-| Real packaged execution | `ZMyBatisStarterDriverE2ETest` via `E2E / Starter / Driver E2E` | exact packaged plugin executes maintained zero-binding, PostgreSQL BIGINT, XML raw, direct-Java raw, cancellation/history and fail-closed scenarios through the registered action on IDEA Ultimate 2026.2.3 |
+| Real packaged execution | `ZMyBatisStarterDriverE2ETest` via `E2E / Starter / Driver E2E` | exact packaged plugin must execute maintained zero-binding, PostgreSQL BIGINT, XML raw, direct-Java raw, cancellation/history and fail-closed scenarios through the registered action on IDEA Ultimate 2026.3 (exact-HEAD evidence required) |
 
 ## Pre-1.0 parity-recovery evidence
 
@@ -152,7 +152,7 @@ The tests prove project-scoped v3 persistence, stable datasource UUID + explicit
 
 #478 adds DataGrip as an explicit, independently visible host proof rather than reusing IDEA Ultimate evidence.
 
-`verifyPlugin` targets DataGrip 2026.2.3 and the 2026.2 minimum line in addition to the existing IU targets. The process layer uses `ZMyBatisDataGripStarterDriverE2ETest` through the separate `dataGripIntegrationTest` task and `Starter / Driver E2E (DataGrip)` CI job. The exact packaged plugin must load in DataGrip 2026.2.3, expose the shipping settings service, register the XML action, reach the typed no-datasource refusal, remain Driver-responsive, and close cleanly under a strict IDE-failure boundary.
+`verifyPlugin` targets DataGrip 2026.3 independently of IDEA Ultimate 2026.3, with the minimum build raised to 263. The process layer uses `ZMyBatisDataGripStarterDriverE2ETest` through the separate `dataGripIntegrationTest` task and `Starter / Driver E2E (DataGrip)` CI job. The exact packaged plugin must load in DataGrip 2026.3, expose the shipping settings service, register the XML action, reach the typed no-datasource refusal, remain Driver-responsive, and close cleanly under a strict IDE-failure boundary.
 
 DataGrip evidence is deliberately narrower than the IU PostgreSQL golden path. It does not prove Java annotation source behavior, native PostgreSQL result/history parity, every datasource/schema lifecycle case, or wider JetBrains host compatibility. A successful IU run cannot satisfy the DataGrip obligation, and a successful DataGrip smoke cannot widen the Java-source or DBMS capability matrix. Those gaps are explicit so a green `Test` context is not misrepresented as broader platform proof.
 
@@ -201,12 +201,10 @@ masking registered-path drift. Materialization remains intentionally bounded aft
 current zero-binding/raw/PostgreSQL-BIGINT adapters are execution envelopes, not MyBatis semantic
 authorities. P3 is the next hard-stop phase for prepared Database Tools backend evidence.
 
-## IDEA 2026.2.3 compatibility and console lifetime authority
+## IDEA 2026.3 compatibility and console lifetime authority (2026.2.3 historical)
 
-The build and Starter/Driver IDE are pinned to IDEA Ultimate 2026.2.3 on JDK 25.
-Plugin Verifier checks that target plus 2026.2, preserving evidence for the unchanged minimum build 262.
-Historical #251 Database Tools parameterized-execution probes remain evidence from 2026.2;
-this patch-baseline change does not rewrite those experiments or authorize any legacy execution fallback.
+The build and Starter/Driver IDE now target IDEA Ultimate 2026.3 on JDK 25.
+The declared minimum is **263**; independent Plugin Verifier targets are IDEA Ultimate 2026.3 and DataGrip 2026.3. Historical #251 Database Tools parameterized-execution probes and the previous IDEA 2026.2.3 lifetime tests remain historical evidence, **not** a current support promise. The 263 SQL-console editor opening uses the public `OpenFileDescriptor.navigate(true)` entry point; its EDT continuation requires the actual non-disposed editor and exact-source/target and live-console revalidation before native execution. No internal or experimental editor-open APIs are permitted.
 
 `DatabaseToolsConsoleAdapter` uses public `JdbcConsole.isValid()` before resource access, after
 editor-open scheduling and immediately before native query invocation. The maintained API includes
@@ -226,17 +224,21 @@ Those broader lifecycle obligations are covered independently by the completed #
 
 E2E applicability: the maintained packaged-plugin happy path, mandatory-preview cancellation paths
 and no-datasource refusal apply on the exact final HEAD because the platform and production console
-validity checks changed. Their IDE/artifact manifest must name 2026.2.3 and the tested final commit.
+validity checks changed. Their IDE/artifact manifest must name 2026.3 and the tested final commit.
 
 Unit/PSI fixture JVMs explicitly run headless so macOS desktop registration does not
 prevent their execution; Starter/Driver remains a separate real UI process.
-The unit fixture sandbox excludes only the unrelated `com.intellij.modules.ultimate`
-startup wrapper (alongside the already documented Vue exclusion in Java/Kotlin fixtures).
-In 2026.2.3 its `Z.Z.Z.Z.Z` activity collides with a different platform class when
-Gradle flattens the SDK classpath; all 37 Java fixtures otherwise fail before their
-product assertions run. Database Tools and Java remain enabled, every fixture/assertion
-and strict test-logger check remains present. This unit-fixture profile does not prove
-licensed Ultimate activation/startup. Packaged process-level E2E first starts without a
+The IntelliJ 2026.3 unit/PSI test sandbox keeps the genuine Ultimate/DatabaseTools
+plugin graph available, rather than carrying forward the 2026.2.3-only exclusion
+of `com.intellij.modules.ultimate`. That old exclusion addressed an obfuscated
+class-name collision in the flattened 2026.2.3 test loader; on 2026.3 it can
+prevent the required `com.intellij.database.dataSourceManager` and
+`com.algorist.zMyBatis.javaPsiCapability` extension points from registering.
+The Java/Kotlin fixture-specific Vue exclusion remains. Existing project fixtures
+still require real registered extension points, and continue to fail rather than
+silently replacing DatabaseTools or the Java PSI capability with test stubs.
+The separate real Starter/Driver process remains the authority for licensed IDE
+startup and registered-action execution, not these unit fixtures. Packaged process-level E2E first starts without a
 project and completes the normal supplied-license/trial activation before restarting
 that same isolated config with the test project. 2026.2.3 initially disables Ultimate
 without a license and its normal trial activation dynamically
@@ -245,7 +247,7 @@ re-enables it: observed scheme reloads raced project-tree color reads and raised
 before opening the project avoids that overlap; the normal license/trial flow and strict
 exception checks remain active, with no new error exemption or retry. Broader licensing and
 dynamic-plugin behavior remain outside this fixture's claim; DataGrip is maintained separately by its dedicated verifier/runtime evidence.
-The `prepareTestSandbox` Ultimate-wrapper exclusion is retained as a bounded unit-fixture classloader workaround; remove it when the SDK/test loader can preserve the two namespaces without the flattened-classpath collision. The Java annotation and XML mapper-method fixtures permit
+The 2026.2.3 Ultimate-wrapper unit-fixture exclusion is historical and is not applied to the 2026.3 test SDK. Full exact-HEAD fixture validation, not this documentation change, establishes whether the 2026.3 bundled plugin graph is healthy. The Java annotation and XML mapper-method fixtures permit
 VFS access only to their actual MyBatis dependency JAR, scoped to each fixture disposable, so they also work
 when the checkout/sandbox is outside the user's home directory.
 

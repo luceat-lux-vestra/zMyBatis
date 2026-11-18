@@ -296,10 +296,10 @@ Existing privacy hardening remains protected during parity recovery; regaining m
 ## 15. IDE compatibility policy
 
 - IDEA Ultimate and DataGrip are evaluated independently.
-- IDEA Ultimate 2026.2.3 plus the 2026.2 minimum line remain separate Plugin Verifier targets and retain the full maintained Starter/Driver PostgreSQL scenarios.
-- DataGrip 2026.2.3 plus the 2026.2 minimum line are separate Plugin Verifier targets. Its process proof is separately visible and currently bounded to packaged-plugin/service loading plus the registered XML action's typed no-datasource refusal and clean shutdown.
+- The minimum compatible IDE build is **263**. IDEA Ultimate 2026.3 is the compile/test SDK, Plugin Verifier target and real Starter/Driver PostgreSQL execution target under #521. The 2026.2 line is deliberately unsupported: its editor API differs, and supporting it via `@Internal` is not an acceptable product boundary. Only exact-HEAD CI can establish the 2026.3 runtime evidence.
+- DataGrip 2026.3 is independently configured by `dataGripPlatformVersion` and is an independent Plugin Verifier and Starter/Driver target. Its process proof is bounded to packaged-plugin/service loading, the registered XML action's typed no-datasource refusal and clean shutdown. This is a required check, not a claim of a passed result.
 - DataGrip host evidence does not imply Java-annotation parity or native PostgreSQL result/history parity; those claims require explicit host-specific proof before they can be added.
-- Database Tools APIs are isolated behind adapters so platform drift has a bounded replacement surface.
+- Database Tools APIs are isolated behind adapters so platform drift has a bounded replacement surface. The SQL-console editor-open flow uses the 263 public `OpenFileDescriptor.navigate(true)` navigation entry point, then revalidates the immutable SQL artifact, live console and actual editor in its EDT continuation before any injection. This avoids `@Internal` and `@Experimental` editor-open APIs.
 - Public Marketplace/README compatibility claims must match the maintained exact-head verifier/runtime evidence established by #67 and be refreshed whenever the compatibility claim changes.
 
 ## 16. Target product workflow
