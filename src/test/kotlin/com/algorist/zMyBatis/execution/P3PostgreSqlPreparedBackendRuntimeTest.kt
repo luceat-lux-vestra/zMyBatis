@@ -41,7 +41,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                     statement.execute()
                     withResultSet(statement) { result ->
                         check(result.next())
-                        result.getLong(1)
+                        result.getString(1).toLong()
                     }
                 }
                 check(single == 41L) { "single ordered bind did not round-trip" }
@@ -52,17 +52,20 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                     statement.execute()
                     withResultSet(statement) { result ->
                         check(result.next())
-                        result.getLong(1)
+                        result.getString(1).toLong()
                     }
                 }
                 check(multiple == 42L) { "multiple ordered binds did not preserve order" }
 
-                val typedNull = withPrepared(connection, "SELECT ?::VARCHAR IS NULL") { statement ->
+                val typedNull = withPrepared(
+                    connection,
+                    "SELECT CASE WHEN ?::VARCHAR IS NULL THEN 'YES' ELSE 'NO' END",
+                ) { statement ->
                     statement.setNull(1, Types.VARCHAR)
                     statement.execute()
                     withResultSet(statement) { result ->
                         check(result.next())
-                        result.getBoolean(1)
+                        result.getString(1) == "YES"
                     }
                 }
                 check(typedNull) { "typed null did not retain VARCHAR null authority" }
@@ -152,6 +155,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                     "select=${functional.selectResult} " +
                     "dmlUpdateCount=${functional.dmlUpdateCount} " +
                     "databaseError=${databaseError.propagated} " +
+                    "databaseErrorType=${databaseError.diagnosticType.substringAfterLast('.')} " +
                     "cancelled=${cancellation.interrupted} " +
                     "cancelElapsedMs=${cancellation.elapsedMillis}",
             )
@@ -208,34 +212,36 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 ),
             )
             .build()
-        Disposer.register(testRootDisposable, console)
+        try {
+            val outcome = AtomicReference<T?>()
+            val failure = AtomicReference<Throwable?>()
+            val completed = CountDownLatch(1)
 
-        val outcome = AtomicReference<T?>()
-        val failure = AtomicReference<Throwable?>()
-        val completed = CountDownLatch(1)
-
-        val request = object : DataRequest.RawRequest(console) {
-            override fun processRaw(
-                context: DataRequest.Context,
-                connection: DatabaseConnectionCore,
-            ) {
-                try {
-                    outcome.set(block(connection.remoteConnection))
-                } catch (throwable: Throwable) {
-                    failure.set(throwable)
-                } finally {
-                    completed.countDown()
+            val request = object : DataRequest.RawRequest(console) {
+                override fun processRaw(
+                    context: DataRequest.Context,
+                    connection: DatabaseConnectionCore,
+                ) {
+                    try {
+                        outcome.set(block(connection.remoteConnection))
+                    } catch (throwable: Throwable) {
+                        failure.set(throwable)
+                    } finally {
+                        completed.countDown()
+                    }
                 }
             }
-        }
 
-        console.messageBus.dataProducer.processRequest(request)
-        assertTrue(
-            "Database Tools RawRequest must complete against the registered PostgreSQL datasource",
-            completed.await(30, TimeUnit.SECONDS),
-        )
-        failure.get()?.let { throw AssertionError("P3 PostgreSQL RawRequest failed", it) }
-        return checkNotNull(outcome.get()) { "P3 PostgreSQL RawRequest completed without an outcome" }
+            console.messageBus.dataProducer.processRequest(request)
+            assertTrue(
+                "Database Tools RawRequest must complete against the registered PostgreSQL datasource",
+                completed.await(30, TimeUnit.SECONDS),
+            )
+            failure.get()?.let { throw AssertionError("P3 PostgreSQL RawRequest failed", it) }
+            return checkNotNull(outcome.get()) { "P3 PostgreSQL RawRequest completed without an outcome" }
+        } finally {
+            Disposer.dispose(console)
+        }
     }
 
     private fun queryTarget(connection: RemoteConnection): TargetOutcome =
