@@ -69,7 +69,9 @@ class PreparedExecutionPlanTest {
             plan(firstBindingValue = 42L),
             plan(firstBindingHandler = "org.apache.ibatis.type.IntegerTypeHandler"),
             plan(additionalBindingName = "__frch_other_0"),
+            plan(reverseBindingAuthority = true),
             plan(rawOrigin = ExecutionInputOrigin.USER_ACCEPTED_RETAINED),
+            plan(rawExpression = "otherColumn"),
         )
 
         variants.forEach { variant ->
@@ -157,7 +159,9 @@ class PreparedExecutionPlanTest {
         firstBindingJavaType: String = "java.lang.Long",
         firstBindingHandler: String = "org.apache.ibatis.type.LongTypeHandler",
         additionalBindingName: String = "__frch_item_0",
+        reverseBindingAuthority: Boolean = false,
         rawOrigin: ExecutionInputOrigin = ExecutionInputOrigin.USER_ENTERED,
+        rawExpression: String = "column",
     ): PreparedExecutionPlan =
         ready(
             PreparedExecutionPlanner.freeze(
@@ -173,7 +177,9 @@ class PreparedExecutionPlanTest {
                     firstBindingJavaType = firstBindingJavaType,
                     firstBindingHandler = firstBindingHandler,
                     additionalBindingName = additionalBindingName,
+                    reverseBindingAuthority = reverseBindingAuthority,
                     rawOrigin = rawOrigin,
+                    rawExpression = rawExpression,
                 ),
                 target = target(dataSourceId, schema, databaseId),
             ),
@@ -191,7 +197,9 @@ class PreparedExecutionPlanTest {
         firstBindingJavaType: String = "java.lang.Long",
         firstBindingHandler: String = "org.apache.ibatis.type.LongTypeHandler",
         additionalBindingName: String = "__frch_item_0",
+        reverseBindingAuthority: Boolean = false,
         rawOrigin: ExecutionInputOrigin = ExecutionInputOrigin.USER_ENTERED,
+        rawExpression: String = "column",
     ): PreparedExecution {
         val revision = SourceRevision(sourceRevision)
         val source = SourceFileId("fixture/Mapper.java")
@@ -215,54 +223,62 @@ class PreparedExecutionPlanTest {
             ),
         )
 
+        val callerBinding = PreparedBinding(
+            index = 0,
+            property = firstBindingProperty,
+            value = firstBindingValueOverride
+                ?: InputValue.IntegerValue(BigInteger.valueOf(firstBindingValue)),
+            origin = PreparedBindingOrigin.CallerInput(
+                requirementId = InputRequirementId("method-param:0"),
+                provenance = callerProvenance,
+            ),
+            metadata = PreparedBindingMetadata(
+                declaredJavaTypeIdentity = JavaTypeIdentity(firstBindingJavaType),
+                mappingJavaTypeIdentity = firstBindingJavaType,
+                jdbcTypeIdentity = "BIGINT",
+                effectiveJdbcTypeIdentity = "BIGINT",
+                typeHandlerIdentity = firstBindingHandler,
+                parameterMode = "IN",
+                numericScale = null,
+            ),
+        )
+        val additionalBinding = PreparedBinding(
+            index = 1,
+            property = "item",
+            value = InputValue.Text("extra"),
+            origin = PreparedBindingOrigin.MyBatisAdditional(
+                InternalBinding(
+                    name = additionalBindingName,
+                    kind = InternalBindingKind.FOREACH_ITEM,
+                    provenance = additionalProvenance,
+                ),
+            ),
+            metadata = PreparedBindingMetadata(
+                declaredJavaTypeIdentity = null,
+                mappingJavaTypeIdentity = "java.lang.String",
+                jdbcTypeIdentity = "VARCHAR",
+                effectiveJdbcTypeIdentity = "VARCHAR",
+                typeHandlerIdentity = "org.apache.ibatis.type.StringTypeHandler",
+                parameterMode = "IN",
+                numericScale = null,
+            ),
+        )
+        val orderedBindings = if (reverseBindingAuthority) {
+            listOf(
+                additionalBinding.copy(index = 0),
+                callerBinding.copy(index = 1),
+            )
+        } else {
+            listOf(callerBinding, additionalBinding)
+        }
+
         return PreparedExecution(
             statementId = statementId(),
             statementKind = statementKind,
             sourceRevisions = mapOf(source to revision),
             sqlWithPlaceholders = sql,
-            orderedBindings = listOf(
-                PreparedBinding(
-                    index = 0,
-                    property = firstBindingProperty,
-                    value = firstBindingValueOverride
-                        ?: InputValue.IntegerValue(BigInteger.valueOf(firstBindingValue)),
-                    origin = PreparedBindingOrigin.CallerInput(
-                        requirementId = InputRequirementId("method-param:0"),
-                        provenance = callerProvenance,
-                    ),
-                    metadata = PreparedBindingMetadata(
-                        declaredJavaTypeIdentity = JavaTypeIdentity(firstBindingJavaType),
-                        mappingJavaTypeIdentity = firstBindingJavaType,
-                        jdbcTypeIdentity = "BIGINT",
-                        effectiveJdbcTypeIdentity = "BIGINT",
-                        typeHandlerIdentity = firstBindingHandler,
-                        parameterMode = "IN",
-                        numericScale = null,
-                    ),
-                ),
-                PreparedBinding(
-                    index = 1,
-                    property = "item",
-                    value = InputValue.Text("extra"),
-                    origin = PreparedBindingOrigin.MyBatisAdditional(
-                        InternalBinding(
-                            name = additionalBindingName,
-                            kind = InternalBindingKind.FOREACH_ITEM,
-                            provenance = additionalProvenance,
-                        ),
-                    ),
-                    metadata = PreparedBindingMetadata(
-                        declaredJavaTypeIdentity = null,
-                        mappingJavaTypeIdentity = "java.lang.String",
-                        jdbcTypeIdentity = "VARCHAR",
-                        effectiveJdbcTypeIdentity = "VARCHAR",
-                        typeHandlerIdentity = "org.apache.ibatis.type.StringTypeHandler",
-                        parameterMode = "IN",
-                        numericScale = null,
-                    ),
-                ),
-            ),
-            rawInterpolations = listOf(rawInterpolation(rawOrigin, sourceEvidence)),
+            orderedBindings = orderedBindings,
+            rawInterpolations = listOf(rawInterpolation(rawOrigin, sourceEvidence, rawExpression)),
             preparationMetadata = metadata(engineVersion, databaseId),
         )
     }
@@ -300,6 +316,7 @@ class PreparedExecutionPlanTest {
             SourceRevision("revision-1"),
             SourceRange(21, 30),
         ),
+        expression: String = "column",
     ): PreparedRawInterpolation =
         PreparedRawInterpolation(
             requirementId = InputRequirementId("raw:column"),
@@ -307,7 +324,7 @@ class PreparedExecutionPlanTest {
                 listOf(
                     InputEvidence.Placeholder(
                         kind = InputKind.RAW_INTERPOLATION,
-                        expression = "column",
+                        expression = expression,
                         source = sourceEvidence,
                     ),
                 ),
