@@ -104,9 +104,9 @@ class DatabaseToolsExecutionResourceValidityContractTest {
         )
         assertTrue(
             "registered action must preserve typed delivery failure classification",
-            action.contains("is LeapExecutionDeliveryFailure.SqlExecutionFailed"),
+            action.contains("is LeapExecutionDeliveryFailure.NativeExecutionFailed"),
         )
-        assertTrue(action.contains("\"sql-execution-failed:\""))
+        assertTrue(action.contains("\"native-execution-failed:\""))
     }
 
     private fun source(relativePath: String): String =
