@@ -1,7 +1,6 @@
 package com.algorist.zMyBatis.input
 
 import com.algorist.zMyBatis.core.input.InputEnvironment
-import com.algorist.zMyBatis.core.input.InputKind
 import com.algorist.zMyBatis.core.input.InputRequiredness
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.ParameterContract

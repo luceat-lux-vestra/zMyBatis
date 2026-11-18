@@ -4,7 +4,6 @@ import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.preparation.PreparationSource
-import com.algorist.zMyBatis.core.preparation.XmlMapperPreparationSource
 import com.algorist.zMyBatis.mybatis.MyBatisInvocationContractFactory
 import com.algorist.zMyBatis.input.ContractParameterInputDialog
 import com.algorist.zMyBatis.services.ExecutionTargetDescriptorStore

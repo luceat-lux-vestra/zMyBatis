@@ -96,12 +96,12 @@ object MyBatisPreparationEngine {
         }
 
         val rawInterpolations = mutableListOf<PreparedRawInterpolation>()
-        for (requirement in request.parameterContract.requirements.filter { it.usesRawInterpolation }) {
-            val provided = request.inputEnvironment.value(requirement.id)
+        for ((id, _, _, _, provenance) in request.parameterContract.requirements.filter { it.usesRawInterpolation }) {
+            val provided = request.inputEnvironment.value(id)
                 ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, RAW_INPUT_MISSING)
             rawInterpolations += PreparedRawInterpolation(
-                requirementId = requirement.id,
-                provenance = requirement.provenance,
+                requirementId = id,
+                provenance = provenance,
                 origin = provided.origin,
             )
         }

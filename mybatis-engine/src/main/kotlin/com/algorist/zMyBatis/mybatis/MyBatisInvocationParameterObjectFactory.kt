@@ -2,8 +2,6 @@ package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InputShape
-import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
@@ -63,8 +61,7 @@ internal object MyBatisInvocationParameterObjectFactory {
         }
 
         val provided = request.inputEnvironment.value(requirement.id)
-        if (provided == null) {
-            return Result.Success(
+            ?: return Result.Success(
                 Ready(
                     parameterObject = linkedMapOf<String, Any?>(),
                     parameterType = MyBatisParameterType.Single(Map::class.java),
@@ -72,7 +69,6 @@ internal object MyBatisInvocationParameterObjectFactory {
                     directRequirementId = requirement.id,
                 ),
             )
-        }
 
         val converted = MyBatisValueConversion.invocationRuntimeValue(
             provided.value,
@@ -115,8 +111,8 @@ internal object MyBatisInvocationParameterObjectFactory {
         if (requirementsByIndex.size != parameters.size) return invalid()
 
         val values = linkedMapOf<Int, Any?>()
-        for (parameter in parameters) {
-            val requirement = requirementsByIndex[parameter.index] ?: return invalid()
+        for ((index) in parameters) {
+            val requirement = requirementsByIndex[index] ?: return invalid()
             val provided = request.inputEnvironment.value(requirement.id)
                 ?: return failed(VALUE_MISSING)
             when (
@@ -126,7 +122,7 @@ internal object MyBatisInvocationParameterObjectFactory {
                 )
             ) {
                 is MyBatisValueConversion.RuntimeValueResult.Ready ->
-                    values[parameter.index] = converted.value
+                    values[index] = converted.value
                 is MyBatisValueConversion.RuntimeValueResult.Failed ->
                     return Result.Failed(converted.failure)
             }
@@ -143,7 +139,7 @@ internal object MyBatisInvocationParameterObjectFactory {
             val rawType = parameter.typeIdentity.value.substringBefore('<').trim()
             val wrapper = when {
                 parameter.typeIdentity.value.trim().endsWith("[]") ->
-                    linkedMapOf<String, Any?>("array" to value)
+                    linkedMapOf("array" to value)
                 rawType == "java.util.List" ->
                     linkedMapOf("collection" to value, "list" to value)
                 rawType == "java.util.Collection" ->

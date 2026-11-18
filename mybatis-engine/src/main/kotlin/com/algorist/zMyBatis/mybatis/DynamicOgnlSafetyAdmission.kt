@@ -36,9 +36,9 @@ internal object DynamicOgnlSafetyAdmission {
         contents: List<String>,
         databaseIdAvailable: Boolean = true,
     ): PreparationFailure? =
-        contents.asSequence()
-            .mapNotNull { content -> inspectDocuments(listOf(content), "/mapper", databaseIdAvailable) }
-            .firstOrNull()
+        contents.firstNotNullOfOrNull { content ->
+            inspectDocuments(listOf(content), "/mapper", databaseIdAvailable)
+        }
 
     fun failureForExpressions(
         expressions: List<String>,

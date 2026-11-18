@@ -490,21 +490,19 @@ internal object IsolatedDynamicMyBatisPreparation {
         is MyBatisParameterType.Single -> jdkOwned(parameterType.type)
     }
 
-    private fun safeInboundValue(value: Any?): Boolean {
-        if (value == null) return true
-        return when (value) {
-            is Map<*, *> -> value.entries.all { (key, item) ->
-                safeInboundValue(key) && safeInboundValue(item)
-            }
-            is List<*> -> value.all(::safeInboundValue)
-            else -> {
-                if (value.javaClass.isArray) {
-                    (0 until ReflectArray.getLength(value)).all { index ->
-                        safeInboundValue(ReflectArray.get(value, index))
-                    }
-                } else {
-                    jdkOwned(value.javaClass)
+    private fun safeInboundValue(value: Any?): Boolean = when (value) {
+        null -> true
+        is Map<*, *> -> value.entries.all { (key, item) ->
+            safeInboundValue(key) && safeInboundValue(item)
+        }
+        is List<*> -> value.all(::safeInboundValue)
+        else -> {
+            if (value.javaClass.isArray) {
+                (0 until ReflectArray.getLength(value)).all { index ->
+                    safeInboundValue(ReflectArray.get(value, index))
                 }
+            } else {
+                jdkOwned(value.javaClass)
             }
         }
     }

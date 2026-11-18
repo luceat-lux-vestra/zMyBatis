@@ -46,36 +46,7 @@ object XmlMapperPreparationEngine {
     private const val RESOURCES = "org.apache.ibatis.io.Resources"
 
     private const val WRONG_SOURCE = "xml-preparation-source-kind-unsupported"
-    private const val INPUT_CONTRACT_UNSUPPORTED = "xml-preparation-input-contract-unsupported"
     private const val RAW_INPUT_UNSUPPORTED = "xml-preparation-raw-input-unsupported"
-    private const val BOUND_SHAPE_UNSUPPORTED = "xml-preparation-bound-shape-unsupported"
-    private const val ALIAS_KIND_UNSUPPORTED = "xml-preparation-alias-kind-unsupported"
-    private const val PARAMETER_OBJECT_CONTRACT_INVALID =
-        "xml-preparation-parameter-object-contract-invalid"
-    private const val PARAMETER_OBJECT_PROPERTY_MISSING =
-        "xml-preparation-parameter-object-property-missing"
-    private const val NAMED_MAP_CONTRACT_INVALID =
-        "xml-preparation-named-map-contract-invalid"
-    private const val NAMED_MAP_PROPERTY_MISSING =
-        "xml-preparation-named-map-property-missing"
-    private const val PARAMETER_OBJECT_FALLBACK_RULE =
-        "mybatis-default-parameter-handler-type-handler-fallback"
-    private const val RAW_PARAMETER_OBJECT_FALLBACK_RULE =
-        "mybatis-dynamic-context-fallback-parameter-object"
-    private const val PARAMETER_OBJECT_PROPERTY_RULE =
-        "mybatis-default-parameter-handler-meta-object-property"
-    private const val NAMED_MAP_PROPERTY_RULE =
-        "mybatis-default-parameter-handler-named-map-property"
-    private const val GENERIC_ALIAS_RULE =
-        "mybatis-param-name-resolver-generic"
-    private const val MAPPING_PROPERTY_MISSING = "xml-preparation-mapping-property-missing"
-    private const val MAPPING_PROPERTY_NESTED = "xml-preparation-nested-mapping-unsupported"
-    private const val MAPPING_ALIAS_UNRESOLVED = "xml-preparation-mapping-alias-unresolved"
-    private const val MAPPING_CARDINALITY_MISMATCH = "xml-preparation-mapping-cardinality-mismatch"
-    private const val PARAMETER_MODE_UNSUPPORTED = "xml-preparation-parameter-mode-unsupported"
-    private const val TYPE_HANDLER_UNSUPPORTED = "xml-preparation-type-handler-unsupported"
-    private const val BINDING_VALUE_UNSUPPORTED = "xml-preparation-binding-value-unsupported"
-    private const val DYNAMIC_UNSUPPORTED = "xml-preparation-dynamic-sql-unsupported"
     private const val ROOT_STATEMENT_MISSING = "xml-preparation-root-statement-missing"
     private const val ROOT_RESOURCE_MISMATCH = "xml-preparation-root-resource-mismatch"
     private const val STATEMENT_KIND_MISMATCH = "xml-preparation-statement-kind-mismatch"
@@ -88,27 +59,8 @@ object XmlMapperPreparationEngine {
     private const val INVARIANT_FAILURE = "mybatis-preparation-invariant-failure"
     private const val CLASSLOADER_INVARIANT = "mybatis-xml-classloader-isolation-failure"
 
-    private val rawInterpolation = Regex("""\$\{([^}]*)}""")
     private val runtimeDynamicSyntax = Regex(
         """(?is)<\s*(?:if|choose|when|otherwise|foreach|where|set|trim|bind)\b|\$\{""",
-    )
-    private val rawStructuralAttribute = Regex("""(?s)<(?![!?])[^>]*\$\{""")
-    private val simpleIdentifier = Regex("[A-Za-z_][A-Za-z0-9_]*")
-    private val parameterObjectMapValueTypes = setOf(
-        "java.lang.Boolean",
-        "java.lang.Byte",
-        "java.lang.Short",
-        "java.lang.Integer",
-        "java.lang.Long",
-        "java.lang.Float",
-        "java.lang.Double",
-        "java.lang.String",
-        "java.math.BigInteger",
-        "java.math.BigDecimal",
-        "java.time.Instant",
-        "java.time.LocalDate",
-        "java.time.LocalDateTime",
-        "java.time.LocalTime",
     )
     private val platformLoader = ClassLoader.getPlatformClassLoader()
     private val isolatedRuntime: IsolatedRuntime by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -167,9 +119,9 @@ object XmlMapperPreparationEngine {
             } else {
                 BOOLEAN_BOUND_TOKEN_TOPOLOGY_UNSUPPORTED
             }
-            for (document in dynamicDocuments) {
+            for ((_, _, content) in dynamicDocuments) {
                 DynamicBoundTokenTopologyAdmission.failureOrNull(
-                    document.content,
+                    content,
                     rootPath = "/mapper",
                     unsupportedCode = topologyFailureCode,
                     parseFailureCode = PARSE_FAILURE,
@@ -382,12 +334,12 @@ object XmlMapperPreparationEngine {
         }
 
         val rawInterpolations = mutableListOf<PreparedRawInterpolation>()
-        for (requirement in request.parameterContract.requirements.filter { it.usesRawInterpolation }) {
-            val provided = request.inputEnvironment.value(requirement.id)
+        for ((id, _, _, _, provenance) in request.parameterContract.requirements.filter { it.usesRawInterpolation }) {
+            val provided = request.inputEnvironment.value(id)
                 ?: return failed(PreparationFailureKind.PREPARATION_INVARIANT, RAW_INPUT_UNSUPPORTED)
             rawInterpolations += PreparedRawInterpolation(
-                requirementId = requirement.id,
-                provenance = requirement.provenance,
+                requirementId = id,
+                provenance = provenance,
                 origin = provided.origin,
             )
         }

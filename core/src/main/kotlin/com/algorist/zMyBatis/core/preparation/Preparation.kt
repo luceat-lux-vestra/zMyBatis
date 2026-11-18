@@ -3,9 +3,7 @@ package com.algorist.zMyBatis.core.preparation
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
-import com.algorist.zMyBatis.core.input.InputKind
 import com.algorist.zMyBatis.core.input.InputProvenance
-import com.algorist.zMyBatis.core.input.InputRequirement
 import com.algorist.zMyBatis.core.input.InputRequirementId
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.InternalBinding
@@ -325,5 +323,3 @@ sealed interface PreparationResult {
     data class Failed(val failure: PreparationFailure) : PreparationResult
 }
 
-fun ParameterContract.rawRequirements(): List<InputRequirement> =
-    requirements.filter { it.kind == InputKind.RAW_INTERPOLATION }

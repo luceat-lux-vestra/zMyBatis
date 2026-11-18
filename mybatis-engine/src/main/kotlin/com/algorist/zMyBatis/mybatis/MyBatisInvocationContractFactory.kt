@@ -24,7 +24,6 @@ import com.algorist.zMyBatis.core.source.JavaMethodParameterMetadata
 import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.StatementId
-import com.algorist.zMyBatis.core.source.XmlMapperMethodCapture
 import com.algorist.zMyBatis.core.source.XmlStatementId
 import java.io.ByteArrayInputStream
 import java.io.StringReader
@@ -164,7 +163,7 @@ object MyBatisInvocationContractFactory {
                     kind = InputKind.BOUND,
                     expectedType = ExpectedInputType(
                         shape = InputShape.OBJECT,
-                        nullability = com.algorist.zMyBatis.core.input.InputNullability.UNKNOWN,
+                        nullability = InputNullability.UNKNOWN,
                     ),
                     requiredness = InputRequiredness.REQUIRED,
                     provenance = provenance,
@@ -377,7 +376,7 @@ object MyBatisInvocationContractFactory {
         if (rawUses.isEmpty() || parameters.isEmpty()) return emptyMap()
         if (parameters.size == 1) return mapOf(parameters.single().index to rawUses)
 
-        val aliases = buildMap<String, Int> {
+        val aliases = buildMap {
             parameters.forEachIndexed { ordinal, parameter ->
                 parameter.myBatisParamAlias?.let { put(it, parameter.index) }
                 parameter.sourceName?.let { putIfAbsent(it, parameter.index) }
@@ -446,7 +445,7 @@ object MyBatisInvocationContractFactory {
 
         fun scan(projection: XmlMapperPreparationProjection.Result.Ready): Result {
             val documents = projection.documents.map(::parseDocument)
-            val fragments = buildMap<String, FragmentRef> {
+            val fragments = buildMap {
                 documents.forEach { document ->
                     directChildren(document.document.documentElement)
                         .filter { it.tagName == "sql" }
