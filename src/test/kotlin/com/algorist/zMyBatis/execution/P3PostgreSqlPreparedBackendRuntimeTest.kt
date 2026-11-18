@@ -2,18 +2,23 @@ package com.algorist.zMyBatis.execution
 
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.dataSource.DatabaseConnectionCore
-import com.intellij.database.dataSource.DatabaseDriverManagerImpl
+import com.intellij.database.dataSource.DatabaseDriver
+import com.intellij.database.dataSource.DatabaseDriverImpl
+import com.intellij.database.dataSource.DatabaseDriverManager
 import com.intellij.database.dataSource.LocalDataSource
 import com.intellij.database.dataSource.LocalDataSourceManager
 import com.intellij.database.datagrid.DataRequest
 import com.intellij.database.remote.jdbc.RemoteConnection
 import com.intellij.database.remote.jdbc.RemotePreparedStatement
+import com.intellij.database.dataSource.url.template.UrlTemplate
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.LightVirtualFile
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import com.intellij.util.ui.classpath.SingleRootClasspathElement
+import com.intellij.util.ui.classpath.SimpleClasspathElementFactory
+import java.io.File
 import java.nio.file.Path
+import java.util.UUID
 import java.sql.Types
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -164,20 +169,30 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
     }
 
     private fun registerPostgreSqlDataSource(): Fixture {
-        val postgresJar = Path.of(
-            checkNotNull(System.getProperty("zmybatis.p3.postgresql.driverJar")) {
-                "P3 PostgreSQL driver JAR path must be supplied by the dedicated Gradle test task"
-            },
-        )
+        val postgresJar = System.getProperty("java.class.path")
+            .split(File.pathSeparator)
+            .map(::Path.of)
+            .singleOrNull { path -> path.fileName.toString() == "postgresql-42.7.14.jar" }
+            ?: error("P3 PostgreSQL runtime classpath must contain exactly one pgJDBC 42.7.14 JAR")
         check(postgresJar.toFile().isFile) {
             "P3 PostgreSQL driver JAR path must resolve to a local file"
         }
 
-        val driver = checkNotNull(DatabaseDriverManagerImpl.getInstance().getDriver("postgresql")) {
-            "IDEA 263 must expose its PostgreSQL Database Tools driver descriptor"
+        val driverManager = DatabaseDriverManager.getInstance()
+        val driver = driverManager.createDriver(
+            "zmybatis-p3-postgresql-${UUID.randomUUID()}",
+            "zMyBatis P3 PostgreSQL runtime proof",
+            UrlTemplate("default", "jdbc:postgresql://{host::127.0.0.1}:{port::5432}/{database::zmybatis}"),
+        ) as DatabaseDriverImpl
+        driver.apply {
+            setDriverClass("org.postgresql.Driver")
+            setSqlDialect("PostgreSQL")
+            setAdditionalClasspathElements(
+                SimpleClasspathElementFactory.createElements("jar://$postgresJar!/"),
+            )
+            setOption(DatabaseDriver.OPTION_AUTO_COMMIT, true)
         }
-        val classpathElement = SingleRootClasspathElement(postgresJar.toUri().toASCIIString())
-        driver.additionalClasspathElements.add(classpathElement)
+        driverManager.updateDriver(driver)
 
         val dataSource = LocalDataSource().apply {
             name = "zMyBatis P3 PostgreSQL runtime proof"
@@ -187,8 +202,6 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             username = "zmybatis"
             isAutoSynchronize = false
         }
-        dataSource.resolveDriver()
-        dataSource.ensureDriverConfigured()
 
         val manager = LocalDataSourceManager.getInstance(project)
         manager.addDataSource(dataSource)
@@ -197,7 +210,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             dataSource = dataSource,
             dispose = {
                 manager.removeDataSource(dataSource)
-                driver.additionalClasspathElements.remove(classpathElement)
+                driverManager.removeDriver(driver)
             },
         )
     }
