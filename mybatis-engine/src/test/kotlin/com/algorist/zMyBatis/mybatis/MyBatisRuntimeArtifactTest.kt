@@ -94,6 +94,26 @@ class MyBatisRuntimeArtifactTest {
     }
 
     @Test
+    fun definingLoaderFilesAndOwnResourceBytesRecoverLocalArtifact() {
+        val jarPath = Files.createTempFile("mybatis-runtime-defining-files", ".jar")
+        try {
+            writeProbeJar(jarPath)
+            val loaded = DefiningFilesProbeLoader(
+                probeName = probeType.name,
+                probeEntry = probeEntry,
+                probeBytes = probeBytes(),
+                files = listOf(jarPath),
+            ).loadClass(probeType.name)
+            assertNull(loaded.protectionDomain?.codeSource?.location)
+            assertNull(loaded.getResource("/$probeEntry"))
+
+            assertEquals(jarPath.toUri().toURL(), MyBatisRuntimeArtifact.resolve(loaded))
+        } finally {
+            Files.deleteIfExists(jarPath)
+        }
+    }
+
+    @Test
     fun definingLoaderClasspathFallbackFailsClosedWhenByteIdenticalArtifactIsAmbiguous() {
         val first = Files.createTempFile("mybatis-runtime-defining-loader-a", ".jar")
         val second = Files.createTempFile("mybatis-runtime-defining-loader-b", ".jar")
@@ -192,4 +212,33 @@ internal class DefiningClasspathProbeLoader(
         if (name == probeEntry) ByteArrayInputStream(probeBytes) else super.getResourceAsStream(name)
 
     fun getUrls(): List<URL> = urls
+}
+
+
+public class DefiningFilesProbeLoader(
+    private val probeName: String,
+    private val probeEntry: String,
+    private val probeBytes: ByteArray,
+    private val files: List<java.nio.file.Path>,
+) : ClassLoader(ClassLoader.getPlatformClassLoader()) {
+    override fun loadClass(name: String, resolve: Boolean): Class<*> {
+        if (name != probeName) return super.loadClass(name, resolve)
+        synchronized(getClassLoadingLock(name)) {
+            val loaded = findLoadedClass(name) ?: defineClass(name, probeBytes, 0, probeBytes.size)
+            if (resolve) resolveClass(loaded)
+            return loaded
+        }
+    }
+
+    override fun getResource(name: String): URL? =
+        if (name == probeEntry) null else super.getResource(name)
+
+    override fun getResourceAsStream(name: String): InputStream? =
+        if (name == probeEntry) null else super.getResourceAsStream(name)
+
+    fun getFiles(): List<java.nio.file.Path> = files
+
+    @Suppress("UNUSED_PARAMETER")
+    fun getResourceAsBytes(name: String, checkParents: Boolean): ByteArray? =
+        if (name == probeEntry) probeBytes else null
 }

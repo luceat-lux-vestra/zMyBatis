@@ -50,7 +50,7 @@ internal object MyBatisRuntimeArtifact {
     private fun fromDefiningClassLoader(type: Class<*>): URL? {
         val loader = type.classLoader ?: return null
         val resourcePath = type.name.replace('.', '/') + ".class"
-        val expectedBytes = loader.getResourceAsStream(resourcePath)?.use { it.readBytes() }
+        val expectedBytes = definingLoaderResourceBytes(loader, resourcePath)
             ?: return null
         val matches = definingLoaderUrls(loader)
             .asSequence()
@@ -61,23 +61,67 @@ internal object MyBatisRuntimeArtifact {
         return matches.singleOrNull()
     }
 
+    private fun definingLoaderResourceBytes(
+        loader: ClassLoader,
+        resourcePath: String,
+    ): ByteArray? {
+        val ownBytesMethod = loader.javaClass.methods.firstOrNull {
+            it.name == "getResourceAsBytes" &&
+                it.parameterTypes.contentEquals(arrayOf(String::class.java, Boolean::class.javaPrimitiveType))
+        }
+        if (ownBytesMethod != null) {
+            val value = try {
+                ownBytesMethod.invoke(loader, resourcePath, false)
+            } catch (_: ReflectiveOperationException) {
+                null
+            } catch (_: SecurityException) {
+                null
+            }
+            if (value is ByteArray) return value
+        }
+        return loader.getResourceAsStream(resourcePath)?.use { it.readBytes() }
+    }
+
     private fun definingLoaderUrls(loader: ClassLoader): List<URL> {
         if (loader is URLClassLoader) return loader.urLs.toList()
 
-        val method = loader.javaClass.methods.firstOrNull {
-            it.name == "getUrls" && it.parameterCount == 0
-        } ?: return emptyList()
-        val value = try {
-            method.invoke(loader)
-        } catch (_: ReflectiveOperationException) {
-            return emptyList()
-        } catch (_: SecurityException) {
-            return emptyList()
+        reflectLocations(loader, "getFiles")?.let { return it }
+        reflectLocations(loader, "getUrls")?.let { return it }
+
+        val classPath = invokeNoArg(loader, "getClassPath")
+        if (classPath != null) {
+            reflectLocations(classPath, "getFiles")?.let { return it }
+            reflectLocations(classPath, "getBaseUrls")?.let { return it }
         }
-        return when (value) {
-            is Iterable<*> -> value.filterIsInstance<URL>()
-            is Array<*> -> value.filterIsInstance<URL>()
-            else -> emptyList()
+        return emptyList()
+    }
+
+    private fun reflectLocations(target: Any, methodName: String): List<URL>? {
+        val value = invokeNoArg(target, methodName) ?: return null
+        val items = when (value) {
+            is Iterable<*> -> value.toList()
+            is Array<*> -> value.toList()
+            else -> return null
+        }
+        return items.mapNotNull { item ->
+            when (item) {
+                is URL -> item
+                is Path -> runCatching { item.toUri().toURL() }.getOrNull()
+                else -> null
+            }
+        }
+    }
+
+    private fun invokeNoArg(target: Any, methodName: String): Any? {
+        val method = target.javaClass.methods.firstOrNull {
+            it.name == methodName && it.parameterCount == 0
+        } ?: return null
+        return try {
+            method.invoke(target)
+        } catch (_: ReflectiveOperationException) {
+            null
+        } catch (_: SecurityException) {
+            null
         }
     }
 
