@@ -22,15 +22,17 @@ class PreparedBackendExecutionTaskAdapterProjectFixtureTest : BasePlatformTestCa
             val completed = CompletableFuture<DatabaseSessionPreparedOutcome>()
 
             PreparedBackendExecutionTaskAdapter(project).execute(
-                executeBackend = {
-                    indicatorRef.set(ProgressManager.getInstance().progressIndicator)
-                    started.countDown()
-                    object : PreparedBackendExecutionHandle {
+                executeBackend = { onHandleReady, _ ->
+                    val handle = object : PreparedBackendExecutionHandle {
                         override fun cancel(): PreparedBackendCancellationResult {
                             cancelCalls.incrementAndGet()
                             return PreparedBackendCancellationResult.Requested
                         }
                     }
+                    onHandleReady(handle)
+                    indicatorRef.set(ProgressManager.getInstance().progressIndicator)
+                    started.countDown()
+                    handle
                 },
                 onCompleted = { outcome -> completed.complete(outcome) },
             )
@@ -59,14 +61,16 @@ class PreparedBackendExecutionTaskAdapterProjectFixtureTest : BasePlatformTestCa
             val expected = DatabaseSessionPreparedOutcome.Update(3)
 
             PreparedBackendExecutionTaskAdapter(project).execute(
-                executeBackend = { onCompleted ->
-                    onCompleted(expected)
-                    object : PreparedBackendExecutionHandle {
+                executeBackend = { onHandleReady, onCompleted ->
+                    val handle = object : PreparedBackendExecutionHandle {
                         override fun cancel(): PreparedBackendCancellationResult {
                             cancelCalls.incrementAndGet()
                             return PreparedBackendCancellationResult.Requested
                         }
                     }
+                    onHandleReady(handle)
+                    onCompleted(expected)
+                    handle
                 },
                 onCompleted = { outcome -> completed.complete(outcome) },
             )
