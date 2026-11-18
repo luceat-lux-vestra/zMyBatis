@@ -3,13 +3,13 @@ package com.algorist.zMyBatis.execution
 import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
 import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlan
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanResult
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanner
 import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailure
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailureKind
-import com.algorist.zMyBatis.core.materialization.MaterializationResult
-import com.algorist.zMyBatis.core.materialization.MaterializedExecution
-import com.algorist.zMyBatis.core.materialization.TargetBoundZeroBindingExecutionMaterializer
 import com.algorist.zMyBatis.core.preparation.PreparationMetadata
 import com.algorist.zMyBatis.core.preparation.PreparedExecution
 import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
@@ -112,20 +112,20 @@ class LeapExecutionDeliveryCoordinatorTest {
     }
 
     @Test
-    fun artifactMustMatchExactTargetAndTargetDerivedDatabaseIdContext() {
+    fun planMustMatchExactTargetAndTargetDerivedDatabaseIdContext() {
         val target = resolvedTarget("PostgreSQL")
-        val artifact = materialized(target)
+        val plan = plan(target)
 
-        assertTrue(artifactMatchesResolvedTarget(artifact, target))
+        assertTrue(planMatchesResolvedTarget(plan, target))
         assertFalse(
-            artifactMatchesResolvedTarget(
-                artifact,
+            planMatchesResolvedTarget(
+                plan,
                 ResolvedExecutionTarget(target.descriptor, MyBatisDatabaseId("Oracle")),
             ),
         )
         assertFalse(
-            artifactMatchesResolvedTarget(
-                artifact,
+            planMatchesResolvedTarget(
+                plan,
                 ResolvedExecutionTarget(
                     ExecutionTargetDescriptor(
                         ExecutionTargetId(
@@ -153,7 +153,9 @@ class LeapExecutionDeliveryCoordinatorTest {
         val approvedDelivery = coordinator.indexOf("private fun deliverApproved(")
         val secondAdmission = coordinator.indexOf("val deliveryTarget = when (", approvedDelivery)
         val acquire = coordinator.indexOf("consoleAdapter.acquireAndDeliverConsole(", approvedDelivery)
-        val deliver = coordinator.indexOf("consoleAdapter.executeMaterialized(", approvedDelivery)
+        val route = coordinator.indexOf("if (plan.orderedBindings.isEmpty())", approvedDelivery)
+        val native = coordinator.indexOf("nativeBackend.execute(", route)
+        val prepared = coordinator.indexOf("preparedBackend.execute(", route)
 
         assertTrue(firstAdmission >= 0)
         assertTrue(firstAdmission < candidate)
@@ -162,11 +164,20 @@ class LeapExecutionDeliveryCoordinatorTest {
         assertTrue(approval < approvedDelivery)
         assertTrue(approvedDelivery < secondAdmission)
         assertTrue(secondAdmission < acquire)
-        assertTrue(acquire < deliver)
+        assertTrue(acquire < route)
+        assertTrue(route < native)
+        assertTrue(route < prepared)
         assertTrue(coordinator.contains("LeapExecutionApprovalResult.UserCancelled -> onCancelled()"))
         assertTrue(coordinator.contains("StatementSourceGraphRevalidator::revalidateSnapshots"))
         assertTrue(coordinator.contains("targetResolver.resolve(targetDescriptor)"))
         assertTrue(coordinator.contains("LeapExecutionCandidateResult.InvocationInvalidated"))
+        assertTrue(coordinator.contains("planMatchesResolvedTarget(plan, deliveryTarget.resolvedTarget)"))
+        assertFalse(coordinator.contains("MaterializedExecution"))
+        assertFalse(coordinator.contains("ExecutionMaterializer"))
+        assertFalse(coordinator.contains("PostgreSqlBigintExecutionMaterializer"))
+        assertFalse(coordinator.contains("TargetBoundZeroBindingExecutionMaterializer"))
+        assertFalse(coordinator.contains("TargetBoundRawExecutionMaterializer"))
+        assertFalse(coordinator.contains("executeMaterialized("))
         assertFalse(coordinator.contains("LeapExecutionCandidateCoordinator.build("))
     }
 
@@ -190,7 +201,7 @@ class LeapExecutionDeliveryCoordinatorTest {
             MyBatisDatabaseId(databaseId),
         )
 
-    private fun materialized(target: ResolvedExecutionTarget): MaterializedExecution {
+    private fun plan(target: ResolvedExecutionTarget): PreparedExecutionPlan {
         val file = SourceFileId("vfs:/Mapper.xml")
         val prepared = PreparedExecution(
             statementId = XmlStatementId(file, "fixture.Mapper", "find"),
@@ -206,10 +217,11 @@ class LeapExecutionDeliveryCoordinatorTest {
                 databaseId = target.effectiveDatabaseId?.value,
             ),
         )
-        return (
-            TargetBoundZeroBindingExecutionMaterializer(target).materialize(prepared) as
-                MaterializationResult.Success
-            ).execution
+        return when (val result = PreparedExecutionPlanner.freeze(prepared, target)) {
+            is PreparedExecutionPlanResult.Ready -> result.plan
+            is PreparedExecutionPlanResult.Failed ->
+                error("fixture plan failed: ${result.failure.kind} / ${result.failure.code}")
+        }
     }
 
     private fun sourceText(relativePath: String): String =
