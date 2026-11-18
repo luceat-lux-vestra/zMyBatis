@@ -45,15 +45,26 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.LightVirtualFile
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.util.ui.classpath.SimpleClasspathElementFactory
+import java.lang.reflect.InvocationTargetException
+import java.lang.reflect.Proxy
+import java.math.BigDecimal
 import java.nio.file.Path
-import java.util.UUID
 import java.sql.PreparedStatement
+import java.sql.Timestamp
 import java.sql.Types
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import org.apache.ibatis.type.JdbcType
 import org.apache.ibatis.type.StringTypeHandler
+import org.apache.ibatis.type.TypeHandler
+import org.apache.ibatis.type.TypeHandlerRegistry
 
 /**
  * P3.3 stop-gate proof against the real PostgreSQL service started by e2e.yml.
@@ -67,6 +78,10 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         try {
             val typeHandlerBridge = executeRaw(fixture.dataSource, "typehandler-bridge") { connection ->
                 characterizeStockTypeHandlerBridge(connection)
+            }
+
+            val stockFacade = executeRaw(fixture.dataSource, "stock-typehandler-facade") { connection ->
+                provePublicInterfaceStockTypeHandlerFacade(connection)
             }
 
             val functional = executeRaw(fixture.dataSource, "functional") { connection ->
@@ -185,6 +200,9 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 typeHandlerBridge.directJdbcPreparedStatement,
                 typeHandlerBridge.directStockHandlerRoundTrip,
             )
+            assertEquals(15, stockFacade.bindingCount)
+            assertTrue(stockFacade.roundTrip)
+            assertTrue(stockFacade.forwardedSetterSignatures.isNotEmpty())
             assertTrue(typeHandlerBridge.jdbcFacadeMethods.all { it.isNotBlank() })
             assertEquals("zmybatis", functional.database)
             assertEquals("public", functional.schema)
@@ -297,6 +315,161 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 jdbcFacadeMethods = jdbcFacadeMethods,
             )
         }
+
+    private fun provePublicInterfaceStockTypeHandlerFacade(
+        connection: RemoteConnection,
+    ): StockTypeHandlerFacadeOutcome =
+        withPrepared(
+            connection,
+            """
+                SELECT
+                  (?::smallint)::text,
+                  (?::smallint)::text,
+                  (?::integer)::text,
+                  (?::bigint)::text,
+                  (?::real)::text,
+                  (?::double precision)::text,
+                  (?::numeric)::text,
+                  (?::boolean)::text,
+                  ?::varchar,
+                  encode(?::bytea, 'hex'),
+                  (?::date)::text,
+                  (?::time)::text,
+                  (?::timestamp)::text,
+                  (?::timestamp)::text,
+                  CASE WHEN ?::varchar IS NULL THEN 'NULL' ELSE 'NON_NULL' END
+            """.trimIndent(),
+        ) { statement ->
+            val forwarded = mutableListOf<String>()
+            val facade = publicPreparedStatementFacade(statement, forwarded)
+            val registry = TypeHandlerRegistry()
+            val date = LocalDate.of(2026, 11, 18)
+            val time = LocalTime.of(12, 34, 56)
+            val dateTime = LocalDateTime.of(2026, 11, 18, 12, 34, 56)
+            val instant = Instant.parse("2026-11-18T03:00:17Z")
+            val bindings = listOf(
+                StockBinding(Byte::class.javaObjectType, 7.toByte(), null),
+                StockBinding(Short::class.javaObjectType, 8.toShort(), null),
+                StockBinding(Int::class.javaObjectType, 9, null),
+                StockBinding(Long::class.javaObjectType, 10L, null),
+                StockBinding(Float::class.javaObjectType, 11.25f, null),
+                StockBinding(Double::class.javaObjectType, 12.5, null),
+                StockBinding(BigDecimal::class.java, BigDecimal("13.75"), null),
+                StockBinding(Boolean::class.javaObjectType, true, null),
+                StockBinding(String::class.java, "binding-proof", null),
+                StockBinding(ByteArray::class.java, byteArrayOf(1, 2, 3), null),
+                StockBinding(LocalDate::class.java, date, null),
+                StockBinding(LocalTime::class.java, time, null),
+                StockBinding(LocalDateTime::class.java, dateTime, null),
+                StockBinding(Instant::class.java, instant, null),
+                StockBinding(String::class.java, null, JdbcType.VARCHAR),
+            )
+
+            bindings.forEachIndexed { index, binding ->
+                bindWithStockTypeHandler(registry, facade, index + 1, binding)
+            }
+
+            statement.execute()
+            val actual = withResultSet(statement) { resultSet ->
+                check(resultSet.next())
+                (1..15).map { column -> resultSet.getString(column) }
+            }
+            val expected = listOf(
+                "7",
+                "8",
+                "9",
+                "10",
+                "11.25",
+                "12.5",
+                "13.75",
+                "true",
+                "binding-proof",
+                "010203",
+                date.toString(),
+                time.toString(),
+                dateTime.toString().replace('T', ' '),
+                Timestamp.from(instant).toLocalDateTime().toString().replace('T', ' '),
+                "NULL",
+            )
+            check(actual == expected) {
+                "stock TypeHandler facade PostgreSQL round-trip mismatch"
+            }
+            check(forwarded.size == bindings.size) {
+                "every stock binding must produce exactly one prepared-statement setter call"
+            }
+            check(forwarded.all { signature -> signature.startsWith("set") }) {
+                "stock TypeHandler facade must forward only setter calls during binding"
+            }
+
+            val signatures = forwarded.distinct().sorted()
+            println(
+                "ZMYBATIS_P3_TYPEHANDLER_FACADE " +
+                    "publicInterfacesOnly=true " +
+                    "bindingCount=${bindings.size} " +
+                    "roundTrip=true " +
+                    "forwardedSetterCount=${signatures.size} " +
+                    "setters=${signatures.joinToString(";")}",
+            )
+            StockTypeHandlerFacadeOutcome(
+                bindingCount = bindings.size,
+                roundTrip = true,
+                forwardedSetterSignatures = signatures,
+            )
+        }
+
+    private fun publicPreparedStatementFacade(
+        remote: RemotePreparedStatement,
+        forwarded: MutableList<String>,
+    ): PreparedStatement {
+        val remoteType = RemotePreparedStatement::class.java
+        return Proxy.newProxyInstance(
+            PreparedStatement::class.java.classLoader,
+            arrayOf(PreparedStatement::class.java),
+        ) { proxy, method, args ->
+            if (method.declaringClass == Any::class.java) {
+                return@newProxyInstance when (method.name) {
+                    "toString" -> "P3PublicPreparedStatementFacade"
+                    "hashCode" -> System.identityHashCode(proxy)
+                    "equals" -> proxy === args?.singleOrNull()
+                    else -> error("unsupported Object method: ${method.name}")
+                }
+            }
+
+            val target = try {
+                remoteType.getMethod(method.name, *method.parameterTypes)
+            } catch (_: NoSuchMethodException) {
+                throw UnsupportedOperationException(
+                    "RemotePreparedStatement does not expose public exact signature " +
+                        renderMethodSignature(method.name, method.parameterTypes),
+                )
+            }
+            forwarded += renderMethodSignature(method.name, method.parameterTypes)
+            try {
+                target.invoke(remote, *(args ?: emptyArray()))
+            } catch (failure: InvocationTargetException) {
+                throw failure.targetException
+            }
+        } as PreparedStatement
+    }
+
+    private fun bindWithStockTypeHandler(
+        registry: TypeHandlerRegistry,
+        statement: PreparedStatement,
+        index: Int,
+        binding: StockBinding,
+    ) {
+        @Suppress("UNCHECKED_CAST")
+        val javaType = binding.javaType as Class<Any>
+        val handler = checkNotNull(registry.getTypeHandler(javaType)) {
+            "stock MyBatis handler missing for ${binding.javaType.name}"
+        }
+        @Suppress("UNCHECKED_CAST")
+        val untypedHandler = handler as TypeHandler<Any>
+        untypedHandler.setParameter(statement, index, binding.value, binding.jdbcType)
+    }
+
+    private fun renderMethodSignature(name: String, parameterTypes: Array<Class<*>>): String =
+        "$name(${parameterTypes.joinToString(",") { it.name }})"
 
     private fun prepareForeachTextExecution(values: List<String>): PreparedExecution {
         val fileId = SourceFileId("fixture/P3ForeachRuntimeMapper.java")
@@ -528,6 +701,18 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         val directJdbcPreparedStatement: Boolean,
         val directStockHandlerRoundTrip: Boolean,
         val jdbcFacadeMethods: List<String>,
+    )
+
+    private data class StockBinding(
+        val javaType: Class<*>,
+        val value: Any?,
+        val jdbcType: JdbcType?,
+    )
+
+    private data class StockTypeHandlerFacadeOutcome(
+        val bindingCount: Int,
+        val roundTrip: Boolean,
+        val forwardedSetterSignatures: List<String>,
     )
 
     private data class FunctionalOutcome(
