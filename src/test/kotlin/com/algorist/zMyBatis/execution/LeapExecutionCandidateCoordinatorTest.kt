@@ -147,7 +147,7 @@ class LeapExecutionCandidateCoordinatorTest {
         val environment = InputEnvironment.validate(contract, provided)
         assertTrue(environment is InputEnvironmentResult.Success)
 
-        return LeapExecutionCandidateCoordinator.build(
+        val result = LeapExecutionCandidateCoordinator.build(
             source = source,
             parameterContract = contract,
             inputEnvironment = (environment as InputEnvironmentResult.Success).environment,
@@ -155,6 +155,14 @@ class LeapExecutionCandidateCoordinatorTest {
             isInvocationActive = isInvocationActive,
             checkCanceled = checkCanceled,
         )
+        if (result is LeapExecutionCandidateResult.PreparationFailed) {
+            throw AssertionError(
+                "candidate preparation failed: kind=${result.failure.kind}, " +
+                    "code=${result.failure.code}, property=${result.failure.bindingProperty}, " +
+                    "diagnostic=${result.failure.diagnosticType}",
+            )
+        }
+        return result
     }
 
     private fun capture(
