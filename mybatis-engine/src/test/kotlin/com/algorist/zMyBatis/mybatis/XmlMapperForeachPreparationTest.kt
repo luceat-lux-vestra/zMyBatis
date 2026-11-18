@@ -1,6 +1,7 @@
 package com.algorist.zMyBatis.mybatis
 
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
+import com.algorist.zMyBatis.core.input.ForeachLocalRole
 import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputEvidence
@@ -421,7 +422,7 @@ class XmlMapperForeachPreparationTest {
                             assertTrue(execution.rawInterpolations.isEmpty())
                             for (binding in execution.orderedBindings.filter { it.additionalParameter }) {
                                 val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
-                                assertEquals(InternalBindingKind.ADDITIONAL_PARAMETER, origin.internalBinding.kind)
+                                assertEquals(expectedForeachKind(origin), origin.internalBinding.kind)
                                 assertEquals(origin.internalBinding.provenance, binding.provenance)
                             }
                             assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
@@ -507,7 +508,7 @@ class XmlMapperForeachPreparationTest {
                 assertTrue(execution.rawInterpolations.isEmpty())
                 for (binding in execution.orderedBindings.filter { it.additionalParameter }) {
                     val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
-                    assertEquals(InternalBindingKind.ADDITIONAL_PARAMETER, origin.internalBinding.kind)
+                    assertEquals(expectedForeachKind(origin), origin.internalBinding.kind)
                     assertEquals(origin.internalBinding.provenance, binding.provenance)
                 }
                 val refusal = MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed
@@ -602,7 +603,7 @@ class XmlMapperForeachPreparationTest {
                     assertTrue(execution.rawInterpolations.isEmpty())
                     for (binding in execution.orderedBindings.filter { it.additionalParameter }) {
                         val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
-                        assertEquals(InternalBindingKind.ADDITIONAL_PARAMETER, origin.internalBinding.kind)
+                        assertEquals(expectedForeachKind(origin), origin.internalBinding.kind)
                         assertEquals(origin.internalBinding.provenance, binding.provenance)
                     }
                     assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
@@ -723,7 +724,7 @@ class XmlMapperForeachPreparationTest {
         )
         for (binding in execution.orderedBindings) {
             val origin = binding.origin as PreparedBindingOrigin.MyBatisAdditional
-            assertEquals(InternalBindingKind.ADDITIONAL_PARAMETER, origin.internalBinding.kind)
+            assertEquals(expectedForeachKind(origin), origin.internalBinding.kind)
             assertEquals(origin.internalBinding.provenance, binding.provenance)
             assertEquals(null, binding.requirementId)
         }
@@ -778,10 +779,8 @@ class XmlMapperForeachPreparationTest {
         assertEquals(listOf(InputValue.Text("a"), InputValue.DateValue(date)), execution.orderedBindings.map { it.value })
         assertEquals("org.apache.ibatis.type.StringTypeHandler", execution.orderedBindings[0].metadata.typeHandlerIdentity)
         assertEquals("org.apache.ibatis.type.LocalDateTypeHandler", execution.orderedBindings[1].metadata.typeHandlerIdentity)
-        assertEquals(
-            InternalBindingKind.ADDITIONAL_PARAMETER,
-            (execution.orderedBindings[0].origin as PreparedBindingOrigin.MyBatisAdditional).internalBinding.kind,
-        )
+        val firstOrigin = execution.orderedBindings[0].origin as PreparedBindingOrigin.MyBatisAdditional
+        assertEquals(expectedForeachKind(firstOrigin), firstOrigin.internalBinding.kind)
     }
 
     @Test
@@ -958,6 +957,17 @@ class XmlMapperForeachPreparationTest {
                 else -> throw AssertionError("Unexpected stock oracle value type")
             }
             assertEquals(value, binding.value)
+        }
+    }
+
+    private fun expectedForeachKind(origin: PreparedBindingOrigin.MyBatisAdditional): InternalBindingKind {
+        val local = origin.internalBinding.provenance.evidence
+            .filterIsInstance<InputEvidence.ForeachLocal>()
+            .single()
+        assertEquals(local.name, origin.internalBinding.name)
+        return when (local.role) {
+            ForeachLocalRole.ITEM -> InternalBindingKind.FOREACH_ITEM
+            ForeachLocalRole.INDEX -> InternalBindingKind.FOREACH_INDEX
         }
     }
 

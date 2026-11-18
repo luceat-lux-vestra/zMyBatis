@@ -89,15 +89,19 @@ internal object MyBatisInvocationBindingCapture {
             }
 
             val origin = if (generated) {
-                PreparedBindingOrigin.MyBatisAdditional(
-                    InternalBinding(
-                        name = rootProperty,
-                        kind = InternalBindingKind.ADDITIONAL_PARAMETER,
-                        provenance = InputProvenance(
-                            listOf(InputEvidence.RuntimeGeneratedBinding(property, rootSource)),
-                        ),
+                val internalBinding = mapping.foreachLocal?.let { foreachLocal ->
+                    request.parameterContract.internalBindings.singleOrNull { candidate ->
+                        candidate.name == foreachLocal.sourceLocalName &&
+                            candidate.kind == foreachLocal.kind
+                    } ?: return invariant(property)
+                } ?: InternalBinding(
+                    name = rootProperty,
+                    kind = InternalBindingKind.ADDITIONAL_PARAMETER,
+                    provenance = InputProvenance(
+                        listOf(InputEvidence.RuntimeGeneratedBinding(property, rootSource)),
                     ),
                 )
+                PreparedBindingOrigin.MyBatisAdditional(internalBinding)
             } else {
                 PreparedBindingOrigin.CallerInput(
                     requireNotNull(callerRequirement).id,
