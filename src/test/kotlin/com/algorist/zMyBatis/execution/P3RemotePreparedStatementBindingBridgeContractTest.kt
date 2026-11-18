@@ -91,6 +91,33 @@ class P3RemotePreparedStatementBindingBridgeContractTest {
     }
 
     @Test
+    fun `RemotePreparedStatement static surface exposes any maintained JDBC facade explicitly`() {
+        val remoteType = RemotePreparedStatement::class.java
+        val directJdbc = PreparedStatement::class.java.isAssignableFrom(remoteType)
+        val jdbcReturnMethods = remoteType.methods
+            .filter { method -> PreparedStatement::class.java.isAssignableFrom(method.returnType) }
+            .map(Method::getName)
+            .sorted()
+        val bridgeNamedMethods = remoteType.methods
+            .filter { method ->
+                method.name.contains("unwrap", ignoreCase = true) ||
+                    method.name.contains("delegate", ignoreCase = true) ||
+                    method.name.contains("jdbc", ignoreCase = true) ||
+                    method.name.contains("local", ignoreCase = true)
+            }
+            .map { method -> method.name }
+            .distinct()
+            .sorted()
+
+        println(
+            "ZMYBATIS_P3_TYPEHANDLER_API " +
+                "declaredDirectJdbcPreparedStatement=$directJdbc " +
+                "jdbcFacadeMethods=${jdbcReturnMethods.joinToString(",").ifEmpty { "none" }} " +
+                "bridgeNamedMethods=${bridgeNamedMethods.joinToString(",").ifEmpty { "none" }}",
+        )
+    }
+
+    @Test
     fun `RemotePreparedStatement carries generic JDBC type-code binding authority`() {
         val methods = RemotePreparedStatement::class.java.methods
 
