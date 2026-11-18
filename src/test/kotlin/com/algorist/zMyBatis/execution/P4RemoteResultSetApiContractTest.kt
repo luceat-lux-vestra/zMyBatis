@@ -43,6 +43,11 @@ class P4RemoteResultSetApiContractTest {
         val metadataType = metadataGetter!!.returnType
         val metadataMethods = metadataType.methods.toList()
         assertTrue(
+            "result metadata type must be a public non-implementation contract",
+            java.lang.reflect.Modifier.isPublic(metadataType.modifiers) &&
+                !metadataType.name.contains(".impl."),
+        )
+        assertTrue(
             "result metadata must expose a public column-count contract",
             metadataMethods.any { method ->
                 method.name == "getColumnCount" && method.parameterCount == 0
