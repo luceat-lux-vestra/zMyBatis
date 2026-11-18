@@ -12,6 +12,7 @@ import com.intellij.database.model.DasNamespace
 import com.intellij.database.psi.DbDataSource
 import com.intellij.database.settings.DatabaseSettings
 import com.intellij.database.util.DasUtil
+import com.intellij.database.util.DbImplUtil
 import com.intellij.database.util.ObjectPath
 import com.intellij.database.util.SearchPath
 import com.intellij.openapi.application.ApplicationManager
@@ -118,8 +119,14 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             val consoleName = resourceKey.substringAfterLast('/').substringAfterLast('\\') + " - zMyBatis"
             val lightFile = LightVirtualFile(consoleName, sqlFileType, "")
 
+            val sessionDataSource = DbImplUtil.getMaybeLocalDataSource(dataSource)
+            if (sessionDataSource == null) {
+                releaseReuseLease()
+                onFailure(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
+                return
+            }
             console = JdbcConsole.newConsole(project)
-                .fromDataSource(dataSource)
+                .fromDataSource(sessionDataSource)
                 .forFile(lightFile)
                 .build()
             // Keep disposal authority with this resource, independently of Disposer diagnostics.
