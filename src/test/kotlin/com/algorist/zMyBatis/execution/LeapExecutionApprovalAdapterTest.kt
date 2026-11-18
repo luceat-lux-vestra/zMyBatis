@@ -165,7 +165,19 @@ class LeapExecutionApprovalAdapterTest {
                     value = com.algorist.zMyBatis.core.input.InputValue.Text("Ada"),
                     origin = com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin.CallerInput(
                         com.algorist.zMyBatis.core.input.InputRequirementId("method-param:0"),
-                        com.algorist.zMyBatis.core.input.InputProvenance(emptyList()),
+                        com.algorist.zMyBatis.core.input.InputProvenance(
+                            listOf(
+                                com.algorist.zMyBatis.core.input.InputEvidence.Placeholder(
+                                    kind = com.algorist.zMyBatis.core.input.InputKind.BOUND,
+                                    expression = "name",
+                                    source = com.algorist.zMyBatis.core.input.SourceEvidence(
+                                        sourceFileId = file,
+                                        sourceRevision = SourceRevision("vfs:1"),
+                                        sourceRange = null,
+                                    ),
+                                ),
+                            ),
+                        ),
                     ),
                     metadata = com.algorist.zMyBatis.core.preparation.PreparedBindingMetadata(
                         declaredJavaTypeIdentity = null,
