@@ -412,7 +412,8 @@ tasks {
                 .filter {
                     it.startsWith("ZMYBATIS_XML_SCALE ") ||
                         it.startsWith("ZMYBATIS_INPUT_SCALE ") ||
-                        it.startsWith("ZMYBATIS_RESOURCE_LIFECYCLE ")
+                        it.startsWith("ZMYBATIS_RESOURCE_LIFECYCLE ") ||
+                        it.startsWith("ZMYBATIS_P3_API ")
                 }
                 .forEach { logger.lifecycle(it) }
         }
