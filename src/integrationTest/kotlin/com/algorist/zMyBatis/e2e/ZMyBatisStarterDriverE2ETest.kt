@@ -1,32 +1,5 @@
 package com.algorist.zMyBatis.e2e
 
-import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
-import com.algorist.zMyBatis.core.execution.ExecutionTargetId
-import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
-import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
-import com.algorist.zMyBatis.core.execution.StableDataSourceId
-import com.algorist.zMyBatis.core.input.InputEvidence
-import com.algorist.zMyBatis.core.input.InputKind
-import com.algorist.zMyBatis.core.input.InputProvenance
-import com.algorist.zMyBatis.core.input.InputRequirementId
-import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.SourceEvidence
-import com.algorist.zMyBatis.core.materialization.MaterializationResult
-import com.algorist.zMyBatis.core.materialization.MaterializedExecution
-import com.algorist.zMyBatis.core.materialization.PostgreSqlBigintExecutionMaterializer
-import com.algorist.zMyBatis.core.preparation.PreparationMetadata
-import com.algorist.zMyBatis.core.preparation.PreparedBinding
-import com.algorist.zMyBatis.core.preparation.PreparedBindingMetadata
-import com.algorist.zMyBatis.core.preparation.PreparedBindingOrigin
-import com.algorist.zMyBatis.core.preparation.PreparedExecution
-import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
-import com.algorist.zMyBatis.core.source.JavaTypeIdentity
-import com.algorist.zMyBatis.core.source.MyBatisDatabaseId
-import com.algorist.zMyBatis.core.source.SourceFileId
-import com.algorist.zMyBatis.core.source.SourceRange
-import com.algorist.zMyBatis.core.source.SourceRevision
-import com.algorist.zMyBatis.core.source.StatementKind
-import com.algorist.zMyBatis.core.source.XmlStatementId
 import com.intellij.driver.client.Driver
 import com.intellij.driver.client.Remote
 import com.intellij.driver.sdk.arePluginsInitialized
@@ -77,18 +50,11 @@ import org.junit.jupiter.api.TestInfo
 import org.junit.jupiter.api.fail
 import org.junit.jupiter.api.io.TempDir
 import org.postgresql.Driver as PostgreSqlDriver
-import org.apache.ibatis.builder.xml.XMLMapperBuilder
-import org.apache.ibatis.session.Configuration
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
-import java.io.ByteArrayInputStream
-import java.math.BigInteger
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.security.MessageDigest
-import java.util.HexFormat
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.io.path.Path as pathOf
 import kotlin.time.Duration.Companion.minutes
@@ -296,23 +262,20 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     @Test
-    fun registeredActionExecutesExactStockMaterializedPostgreSqlArtifactWithNativeHistory(@TempDir tempDir: Path) {
-        val projectDir = copySampleProject(tempDir.resolve("action-postgresql-project"))
-        val dynamicMapper = """
+    fun registeredActionExecutesMultiBindingPlanThroughPreparedResultPresentation(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-postgresql-prepared-project"))
+        val mapper = """
             <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
             <mapper namespace="fixture.QueryMapper">
-            <select id="ping">SELECT #{value,jdbcType=BIGINT}::BIGINT AS RESULT_VALUE<if test="value > 0">, 1::BIGINT AS POSITIVE_MARKER</if></select>
+            <select id="ping">SELECT #{value,jdbcType=BIGINT}::BIGINT AS RESULT_VALUE, #{value,jdbcType=BIGINT}::BIGINT + 1 AS SECOND_VALUE</select>
             </mapper>
         """.trimIndent()
-        Files.writeString(projectDir.resolve("PostgreSqlQuery.xml"), dynamicMapper)
+        Files.writeString(projectDir.resolve("PostgreSqlQuery.xml"), mapper)
         writeMapperInterface(projectDir, "long")
 
         val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
-        val context = starterContext("action-postgresql-bigint", projectDir)
+        val context = starterContext("action-postgresql-prepared-multi-binding", projectDir)
         writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
-
-        var positiveHistorySql: String? = null
-        var negativeHistorySql: String? = null
 
         context
             .runIdeWithDriver()
@@ -324,73 +287,91 @@ class ZMyBatisStarterDriverE2ETest {
                     setSqlPreview(true)
                 }
 
-                val dataSourceId = createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
 
-                // Build both proof artifacts through stock MyBatis after Database Tools has
-                // persisted the real datasource identity. This binds the independently
-                // materialized artifact to the exact target selected by the shipping chooser.
-                val positiveArtifact = stockPostgreSqlBigintArtifact(dynamicMapper, 7, dataSourceId)
-                val negativeArtifact = stockPostgreSqlBigintArtifact(dynamicMapper, -7, dataSourceId)
-                assertEquals(
-                    "SELECT 7::BIGINT AS RESULT_VALUE , 1::BIGINT AS POSITIVE_MARKER",
-                    positiveArtifact.executionSql,
-                )
-                assertEquals("SELECT -7::BIGINT AS RESULT_VALUE", negativeArtifact.executionSql)
-                assertEquals(positiveArtifact.executionTargetId, negativeArtifact.executionTargetId)
-                assertEquals(positiveArtifact.executionDialectId, negativeArtifact.executionDialectId)
-                positiveHistorySql = positiveArtifact.executionSql
-                negativeHistorySql = negativeArtifact.executionSql
+                openFile("PostgreSqlQuery.xml")
+                ui.codeEditorForFile("PostgreSqlQuery.xml").clickOnPosition(3, 20)
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
 
-                executePostgreSqlMapperCase(
-                    fileName = "PostgreSqlQuery.xml",
-                    input = "7",
-                    expectedPreview = positiveArtifact.executionSql,
-                    expectedCells = setOf("7", "1"),
-                    chooseTarget = true,
-                )
-                executePostgreSqlMapperCase(
-                    fileName = "PostgreSqlQuery.xml",
-                    input = "-7",
-                    expectedPreview = negativeArtifact.executionSql,
-                    expectedCells = setOf("-7"),
-                    chooseTarget = false,
-                )
+                waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("PostgreSQL explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
 
+                ui.dialog(title = "Enter MyBatis Parameters") {
+                    textField().text = "7"
+                    button("OK").click()
+                }
+
+                ui.dialog(title = "zMyBatis — SQL Preview") {
+                    val preview = textArea().text.trim()
+                    val preparedSql = preview.substringBefore("\n\nBindings (values hidden):")
+                    assertEquals(
+                        2,
+                        preparedSql.count { it == '?' },
+                        "registered multi-binding execution must preview two JDBC placeholders",
+                    )
+                    assertTrue(preparedSql.contains("RESULT_VALUE"))
+                    assertTrue(preparedSql.contains("SECOND_VALUE"))
+                    assertEquals(
+                        2,
+                        Regex("""#\d+ property=value""").findAll(preview).count(),
+                        "prepared preview must expose both ordered bindings without their values",
+                    )
+                    assertTrue(preview.contains("jdbcType=BIGINT"))
+                    assertTrue(preview.contains("handler=org.apache.ibatis.type.LongTypeHandler"))
+                    assertFalse(
+                        preview.contains("SELECT 7::BIGINT"),
+                        "prepared approval must not literalize the bound value",
+                    )
+                    button("Execute").click()
+                }
+
+                waitFor(
+                    message = "zMyBatis prepared-result table contains both multi-binding values",
+                    timeout = 2.minutes,
+                ) {
+                    try {
+                        if (!ui.isDialogOpened("//div[@title='zMyBatis: Query Result']")) {
+                            false
+                        } else {
+                            val values = ui.accessibleTable {
+                                byType("com.intellij.ui.table.JBTable")
+                            }.content().values.flatMap { row -> row.values }.map { it.trim() }.toSet()
+                            setOf("7", "8").all { it in values }
+                        }
+                    } catch (_: com.intellij.driver.sdk.WaitForException) {
+                        false
+                    }
+                }
+
+                ui.dialog(title = "zMyBatis: Query Result") {
+                    button("Close").click()
+                }
+                ui.waitForNoOpenedDialogs()
+
+                val nativeGridOpened = try {
+                    ui.accessibleTable {
+                        byType("com.intellij.database.run.ui.table.TableResultView")
+                    }.content()
+                    true
+                } catch (_: com.intellij.driver.sdk.WaitForException) {
+                    false
+                }
+                assertFalse(
+                    nativeGridOpened,
+                    "bound registered execution must use zMyBatis prepared-result presentation, not native SQL-text result delivery",
+                )
             }
-
-        assertNativePostgreSqlHistoryPersisted(
-            configDir = context.paths.configDir,
-            positiveSql = checkNotNull(positiveHistorySql),
-            negativeSql = checkNotNull(negativeHistorySql),
-        )
-    }
-
-    private fun assertNativePostgreSqlHistoryPersisted(
-        configDir: Path,
-        positiveSql: String,
-        negativeSql: String,
-    ) {
-        // ConsoleHistoryController persists native console history under the hidden
-        // HistoryRootType rooted at <config>/consoles/.history when the console/IDE is disposed.
-        val historyRoot = configDir.resolve("consoles/.history")
-        assertTrue(
-            Files.isDirectory(historyRoot),
-            "Database Tools native history root must exist after IDE close: $historyRoot",
-        )
-        val historyFiles = Files.walk(historyRoot).use { paths ->
-            paths.filter { Files.isRegularFile(it) }.toList()
-        }
-        val matchingFile = historyFiles.firstOrNull { file ->
-            runCatching { Files.readString(file) }
-                .getOrNull()
-                ?.let { content -> positiveSql in content && negativeSql in content }
-                ?: false
-        }
-        assertTrue(
-            matchingFile != null,
-            "Database Tools native query history must persist both exact PostgreSQL executions; " +
-                "historyFiles=$historyFiles",
-        )
     }
 
     private fun assertNativePostgreSqlHistoryContainsAndExcludes(
@@ -533,65 +514,6 @@ class ZMyBatisStarterDriverE2ETest {
             }
         }
         error("Database Tools-created PostgreSQL datasource '$POSTGRES_E2E_DATA_SOURCE_NAME' was not persisted")
-    }
-
-    private fun Driver.executePostgreSqlMapperCase(
-        fileName: String,
-        input: String,
-        expectedPreview: String,
-        expectedCells: Set<String>,
-        chooseTarget: Boolean,
-    ) {
-        openFile(fileName)
-        // Database Explorer refresh can retain focus after openFile selects the editor tab.
-        // Click the statement itself so the action captures this editor and its caret.
-        ui.codeEditorForFile(fileName).clickOnPosition(3, 20)
-        ideFrame {
-            invokeAction("zMyBatis.Execute", now = false)
-        }
-
-        if (chooseTarget) {
-            waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
-                ui.popups().list().isNotEmpty()
-            }
-            val dataSourceList = ui.popup().list()
-            dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
-            dataSourceList.setFocus()
-            dataSourceList.keyboard { right() }
-            waitFor("PostgreSQL explicit public schema submenu", timeout = 3.minutes) {
-                ui.popups().list().last().hasText("public")
-            }
-            ui.popups().list().last().waitOneText("public").click()
-        }
-
-        ui.dialog(title = "Enter MyBatis Parameters") {
-            textField().text = input
-            button("OK").click()
-        }
-
-        ui.dialog(title = "zMyBatis — SQL Preview") {
-            assertEquals(
-                expectedPreview,
-                textArea().text.trim(),
-                "preview must equal the exact SQL text submitted to Database Tools",
-            )
-            button("Execute").click()
-        }
-
-        waitFor(
-            message = "PostgreSQL Database Tools result grid contains the expected value",
-            timeout = 2.minutes,
-        ) {
-            try {
-                val values = ui.accessibleTable {
-                    byType("com.intellij.database.run.ui.table.TableResultView")
-                }.content().values.flatMap { row -> row.values }.map { it.trim() }.toSet()
-                expectedCells.all { it in values }
-            } catch (_: com.intellij.driver.sdk.WaitForException) {
-                false
-            }
-        }
-        ui.waitForNoOpenedDialogs()
     }
 
     @Test
@@ -913,103 +835,6 @@ class ZMyBatisStarterDriverE2ETest {
         println(
             "ZMYBATIS_E2E_ACTIVATION config=${context.paths.configDir.fileName} duration_ms=$durationMs",
         )
-    }
-
-    private fun stockPostgreSqlBigintArtifact(
-        mapperSource: String,
-        input: Long,
-        dataSourceId: String,
-    ): MaterializedExecution {
-        val configuration = Configuration().apply {
-            databaseId = ConventionalMyBatisDatabaseIds.POSTGRESQL
-        }
-        val resource = "zmybatis-e2e-postgresql.xml"
-        ByteArrayInputStream(mapperSource.toByteArray(StandardCharsets.UTF_8)).use { stream ->
-            XMLMapperBuilder(stream, configuration, resource, configuration.sqlFragments).parse()
-        }
-
-        val statement = configuration.getMappedStatement("fixture.QueryMapper.ping")
-        val boundSql = statement.getBoundSql(mapOf("value" to input))
-        val mapping = boundSql.parameterMappings.single()
-        assertEquals("value", mapping.property)
-        assertEquals("BIGINT", mapping.jdbcType?.name)
-        assertEquals("java.lang.Object", mapping.javaType?.name)
-        assertEquals(null, mapping.typeHandler)
-        val effectiveTypeHandler = checkNotNull(
-            configuration.typeHandlerRegistry.getTypeHandler(Long::class.javaObjectType, mapping.jdbcType),
-        )
-        assertEquals("org.apache.ibatis.type.LongTypeHandler", effectiveTypeHandler.javaClass.name)
-
-        val fileId = SourceFileId("vfs:/PostgreSqlQuery.xml")
-        val revision = SourceRevision(
-            HexFormat.of().formatHex(
-                MessageDigest.getInstance("SHA-256").digest(mapperSource.toByteArray(StandardCharsets.UTF_8)),
-            ),
-        )
-        val token = "#{value,jdbcType=BIGINT}"
-        val tokenStart = mapperSource.indexOf(token)
-        check(tokenStart >= 0)
-        val provenance = InputProvenance(
-            listOf(
-                InputEvidence.Placeholder(
-                    kind = InputKind.BOUND,
-                    expression = "value",
-                    source = SourceEvidence(
-                        fileId,
-                        revision,
-                        SourceRange(tokenStart, tokenStart + token.length),
-                    ),
-                ),
-            ),
-        )
-        val prepared = PreparedExecution(
-            statementId = XmlStatementId(fileId, "fixture.QueryMapper", "ping"),
-            statementKind = StatementKind.SELECT,
-            sourceRevisions = mapOf(fileId to revision),
-            sqlWithPlaceholders = boundSql.sql,
-            orderedBindings = listOf(
-                PreparedBinding(
-                    index = 0,
-                    property = mapping.property,
-                    value = InputValue.IntegerValue(BigInteger.valueOf(input)),
-                    origin = PreparedBindingOrigin.CallerInput(
-                        InputRequirementId("e2e-postgresql:value"),
-                        provenance,
-                    ),
-                    metadata = PreparedBindingMetadata(
-                        declaredJavaTypeIdentity = JavaTypeIdentity("long"),
-                        mappingJavaTypeIdentity = Long::class.javaObjectType.name,
-                        jdbcTypeIdentity = mapping.jdbcType?.name,
-                        typeHandlerIdentity = effectiveTypeHandler.javaClass.name,
-                        parameterMode = mapping.mode.name,
-                        numericScale = mapping.numericScale,
-                    ),
-                ),
-            ),
-            rawInterpolations = emptyList(),
-            preparationMetadata = PreparationMetadata(
-                engineIdentity = "org.mybatis:mybatis",
-                engineVersion = "3.6.0",
-                languageDriverIdentity = statement.lang.javaClass.name,
-                databaseId = configuration.databaseId,
-            ),
-        )
-        val targetId = ExecutionTargetId(
-            StableDataSourceId(dataSourceId),
-            ExplicitSchemaIdentity("public"),
-        )
-        val target = ResolvedExecutionTarget(
-            ExecutionTargetDescriptor(targetId, POSTGRES_E2E_DATA_SOURCE_NAME),
-            MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
-        )
-
-        return when (val result = PostgreSqlBigintExecutionMaterializer(target).materialize(prepared)) {
-            is MaterializationResult.Success -> result.execution
-            is MaterializationResult.Failed -> fail {
-                "stock PostgreSQL BIGINT proof must materialize, got " +
-                    result.failure.kind + " / " + result.failure.code
-            }
-        }
     }
 
     private fun writeDirectJavaRawMapper(projectDir: Path) {

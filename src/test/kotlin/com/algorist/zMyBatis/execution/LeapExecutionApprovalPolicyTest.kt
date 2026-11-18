@@ -1,6 +1,6 @@
 package com.algorist.zMyBatis.execution
 
-import com.algorist.zMyBatis.core.materialization.MaterializationSafetyFlags
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanSafetyFlags
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -86,7 +86,7 @@ class LeapExecutionApprovalPolicyTest {
     ): LeapExecutionApprovalDecision =
         leapExecutionApprovalDecision(
             showSqlPreview = showSqlPreview,
-            safetyFlags = MaterializationSafetyFlags(
+            safetyFlags = PreparedExecutionPlanSafetyFlags(
                 declaredMutation = declaredMutation,
                 containsRawInterpolation = containsRawInterpolation,
             ),

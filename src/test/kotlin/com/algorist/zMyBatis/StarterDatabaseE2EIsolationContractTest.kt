@@ -49,8 +49,9 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("connectAndPrimeH2DatabaseToolsSchemaMetadata"),
         )
         assertTrue(
-            "zero-binding and BIGINT proofs must reuse the maintained PostgreSQL datasource creation path",
+            "zero-binding native and multi-binding prepared proofs must reuse the maintained PostgreSQL datasource creation path",
             e2e.contains("registeredActionExecutesZeroBindingQueryThroughRealDatabaseTools") &&
+                e2e.contains("registeredActionExecutesMultiBindingPlanThroughPreparedResultPresentation") &&
                 e2e.contains("createPostgreSqlDataSourceThroughDatabaseTools(projectDir)") &&
                 e2e.contains("POSTGRES_E2E_DATA_SOURCE_NAME") &&
                 e2e.contains("waitOneText(\"public\")"),
@@ -95,11 +96,21 @@ class StarterDatabaseE2EIsolationContractTest {
             e2e.contains("registeredMutationDeclarationForcesPreviewWhenSettingDisabled"),
         )
         assertTrue(
-            "PostgreSQL BIGINT proof must execute both stock-MyBatis if branches and verify persisted native query history",
-            e2e.contains("positiveArtifact.executionSql") &&
-                e2e.contains("negativeArtifact.executionSql") &&
-                e2e.contains("assertNativePostgreSqlHistoryPersisted") &&
-                e2e.contains("consoles/.history"),
+            "bound PostgreSQL proof must require multiple JDBC bindings and zMyBatis prepared-result presentation",
+            e2e.contains("registeredActionExecutesMultiBindingPlanThroughPreparedResultPresentation") &&
+                e2e.contains("preparedSql.count { it == '?' }") &&
+                e2e.contains("Regex(\"\"\"#\\d+ property=value\"\"\")") &&
+                e2e.contains("zMyBatis: Query Result") &&
+                e2e.contains("com.intellij.ui.table.JBTable") &&
+                e2e.contains("prepared approval must not literalize the bound value") &&
+                e2e.contains("bound registered execution must use zMyBatis prepared-result presentation"),
+        )
+        assertFalse(
+            "prepared registered-action proof must not reconstruct the retired BIGINT materialized artifact",
+            e2e.contains("stockPostgreSqlBigintArtifact") ||
+                e2e.contains("PostgreSqlBigintExecutionMaterializer") ||
+                e2e.contains("positiveArtifact.executionSql") ||
+                e2e.contains("negativeArtifact.executionSql"),
         )
     }
 

@@ -10,7 +10,6 @@ import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.materialization.MaterializationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationSource
 import com.algorist.zMyBatis.core.source.CapturedStatement
 import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
@@ -43,14 +42,15 @@ class LeapExecutionCandidateCoordinatorTest {
         val result = candidate("select 1", emptyList(), target)
 
         assertTrue(result is LeapExecutionCandidateResult.Ready)
-        val execution = (result as LeapExecutionCandidateResult.Ready).execution
-        assertEquals("select 1", execution.executionSql)
-        assertEquals(target.targetId, execution.executionTargetId)
-        assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, execution.executionDialectId)
+        val plan = (result as LeapExecutionCandidateResult.Ready).plan
+        assertEquals("select 1", plan.sqlWithPlaceholders)
+        assertEquals(target.targetId, plan.executionTargetId)
+        assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, plan.databaseId)
+        assertTrue(plan.orderedBindings.isEmpty())
     }
 
     @Test
-    fun postgresqlBigintCandidateUsesProvenBoundedMaterializer() {
+    fun boundCandidatePreservesPreparedSqlAndBindingAuthority() {
         val target = postgresTarget()
 
         val result = candidate(
@@ -60,23 +60,27 @@ class LeapExecutionCandidateCoordinatorTest {
         )
 
         assertTrue(result is LeapExecutionCandidateResult.Ready)
-        val execution = (result as LeapExecutionCandidateResult.Ready).execution
-        assertEquals("select 41", execution.executionSql)
-        assertEquals(target.targetId, execution.executionTargetId)
-        assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, execution.executionDialectId)
+        val plan = (result as LeapExecutionCandidateResult.Ready).plan
+        assertEquals("select ?", plan.sqlWithPlaceholders)
+        assertEquals(target.targetId, plan.executionTargetId)
+        assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, plan.databaseId)
+        assertEquals(1, plan.orderedBindings.size)
+        assertEquals("id", plan.orderedBindings.single().property)
     }
 
     @Test
-    fun unsupportedBoundTypeFailsWithoutLegacyFallback() {
+    fun standardBoundTypeNoLongerDependsOnLegacyMaterializerEnvelope() {
         val result = candidate(
             "select #{name}",
             listOf(Parameter("java.lang.String", "name", InputValue.Text("Ada"))),
             postgresTarget(),
         )
 
-        assertTrue(result is LeapExecutionCandidateResult.MaterializationFailed)
-        val failure = (result as LeapExecutionCandidateResult.MaterializationFailed).failure
-        assertEquals(MaterializationFailureKind.BINDING_METADATA_UNSUPPORTED, failure.kind)
+        assertTrue(result is LeapExecutionCandidateResult.Ready)
+        val plan = (result as LeapExecutionCandidateResult.Ready).plan
+        assertEquals("select ?", plan.sqlWithPlaceholders)
+        assertEquals(1, plan.orderedBindings.size)
+        assertEquals(InputValue.Text("Ada"), plan.orderedBindings.single().value)
     }
 
 

@@ -92,18 +92,24 @@ private fun leapDeliveryFailureDiagnosticCode(
                 failure.failure.kind.name.lowercase().replace('_', '-') +
                 ":" +
                 failure.failure.code
-        is LeapExecutionDeliveryFailure.MaterializationFailed ->
-            "materialization-failed:" + failure.failure.javaClass.simpleName
-        is LeapExecutionDeliveryFailure.CandidateTargetIdentityMismatch ->
-            "candidate-target-identity-mismatch"
-        LeapExecutionDeliveryFailure.ArtifactSourceAuthorityMismatch ->
-            "artifact-source-authority-mismatch"
+        is LeapExecutionDeliveryFailure.PlanFailed ->
+            "plan-failed:" +
+                failure.failure.kind.name.lowercase().replace('_', '-') +
+                ":" +
+                failure.failure.code
+        LeapExecutionDeliveryFailure.PlanSourceAuthorityMismatch ->
+            "plan-source-authority-mismatch"
         LeapExecutionDeliveryFailure.TargetSemanticDrift ->
             "target-semantic-drift"
         is LeapExecutionDeliveryFailure.ConsoleAcquisitionFailed ->
             "console-acquisition-failed:" + failure.failure.javaClass.simpleName
-        is LeapExecutionDeliveryFailure.SqlExecutionFailed ->
-            "sql-execution-failed:" + failure.failure.javaClass.simpleName
+        is LeapExecutionDeliveryFailure.NativeExecutionFailed ->
+            "native-execution-failed:" + failure.failure.javaClass.simpleName
+        is LeapExecutionDeliveryFailure.PreparedExecutionFailed ->
+            "prepared-execution-failed:" +
+                failure.failure.kind.name.lowercase().replace('_', '-') +
+                ":" +
+                failure.failure.code
     }
 
 private object LeapActionFailurePresenter {
@@ -124,6 +130,15 @@ private object LeapActionFailurePresenter {
         project: Project,
         failure: LeapActionContextAdmissionFailure,
     ) {
+        val preparedAlreadyPresented =
+            (failure as? LeapActionContextAdmissionFailure.InvocationFailed)
+                ?.failure
+                ?.let { it as? LeapExecutionInvocationFailure.DeliveryFailed }
+                ?.failure is LeapExecutionDeliveryFailure.PreparedExecutionFailed
+        if (preparedAlreadyPresented) {
+            return
+        }
+
         val presentation = when (failure) {
             LeapActionContextAdmissionFailure.ProjectMismatch,
             LeapActionContextAdmissionFailure.InvocationInvalidated,
