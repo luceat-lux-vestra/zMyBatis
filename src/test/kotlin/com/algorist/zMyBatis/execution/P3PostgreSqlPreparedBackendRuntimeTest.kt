@@ -212,7 +212,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             assertEquals(15, stockFacade.bindingCount)
             assertTrue(stockFacade.roundTrip)
             assertTrue(stockFacade.forwardedSetterSignatures.isNotEmpty())
-            assertEquals(11, capturedBindingAdapter.bindingCount)
+            assertEquals(17, capturedBindingAdapter.bindingCount)
             assertEquals(2, capturedBindingAdapter.additionalBindingCount)
             assertTrue(capturedBindingAdapter.typedNull)
             assertTrue(capturedBindingAdapter.handlerIdentityMatched)
@@ -437,10 +437,16 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
     ): CapturedBindingAdapterOutcome {
         val instant = Instant.parse("2026-11-18T03:00:17Z")
         val execution = prepareCapturedBindingExecution(
+            byteValue = 7.toByte(),
+            shortValue = 8.toShort(),
+            intValue = 9,
             longValue = 42L,
+            floatValue = 11.25f,
+            doubleValue = 12.5,
             decimalValue = BigDecimal("13.75"),
             flag = true,
             text = "captured-proof",
+            binary = byteArrayOf(1, 2, 3),
             date = LocalDate.of(2026, 11, 18),
             time = LocalTime.of(12, 34, 56),
             dateTime = LocalDateTime.of(2026, 11, 18, 12, 34, 56),
@@ -448,7 +454,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             items = listOf("left", "right"),
         )
         val bindings = execution.orderedBindings
-        check(bindings.size == 11) { "captured binding proof must produce eleven ordered bindings" }
+        check(bindings.size == 17) { "captured binding proof must produce seventeen ordered bindings" }
         check(bindings.map { it.index } == bindings.indices.toList()) {
             "captured bindings must remain contiguous and ordered"
         }
@@ -503,13 +509,19 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             statement.execute()
             val actual = withResultSet(statement) { resultSet ->
                 check(resultSet.next())
-                (1..10).map { column -> resultSet.getString(column) }
+                (1..16).map { column -> resultSet.getString(column) }
             }
             val expected = listOf(
+                "7",
+                "8",
+                "9",
                 "42",
+                "11.25",
+                "12.5",
                 "13.75",
                 "true",
                 "captured-proof",
+                "010203",
                 "2026-11-18",
                 "12:34:56",
                 "2026-11-18 12:34:56",
@@ -597,10 +609,16 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
 
     private fun capturedJavaType(binding: PreparedBinding): Class<*> =
         when (binding.metadata.mappingJavaTypeIdentity) {
+            "java.lang.Byte" -> Byte::class.javaObjectType
+            "java.lang.Short" -> Short::class.javaObjectType
+            "java.lang.Integer" -> Int::class.javaObjectType
             "java.lang.Long" -> Long::class.javaObjectType
+            "java.lang.Float" -> Float::class.javaObjectType
+            "java.lang.Double" -> Double::class.javaObjectType
             "java.math.BigDecimal" -> BigDecimal::class.java
             "java.lang.Boolean" -> Boolean::class.javaObjectType
             "java.lang.String" -> String::class.java
+            "[B", "byte[]" -> ByteArray::class.java
             "java.time.LocalDate" -> LocalDate::class.java
             "java.time.LocalTime" -> LocalTime::class.java
             "java.time.LocalDateTime" -> LocalDateTime::class.java
@@ -622,13 +640,30 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 check(javaType == Boolean::class.javaObjectType)
                 value.value
             }
-            is InputValue.IntegerValue -> {
-                check(javaType == Long::class.javaObjectType)
-                value.value.longValueExact()
+            is InputValue.IntegerValue -> when (javaType) {
+                Byte::class.javaObjectType -> value.value.byteValueExact()
+                Short::class.javaObjectType -> value.value.shortValueExact()
+                Int::class.javaObjectType -> value.value.intValueExact()
+                Long::class.javaObjectType -> value.value.longValueExact()
+                else -> error("integer InputValue does not match captured Java type")
             }
-            is InputValue.DecimalValue -> {
-                check(javaType == BigDecimal::class.java)
-                value.value
+            is InputValue.DecimalValue -> when (javaType) {
+                Float::class.javaObjectType -> value.value.toFloat().also {
+                    check(it.isFinite()) { "captured float value overflow" }
+                }
+                Double::class.javaObjectType -> value.value.toDouble().also {
+                    check(it.isFinite()) { "captured double value overflow" }
+                }
+                BigDecimal::class.java -> value.value
+                else -> error("decimal InputValue does not match captured Java type")
+            }
+            is InputValue.ArrayValue -> {
+                check(javaType == ByteArray::class.java)
+                value.elements.map { element ->
+                    val integer = element as? InputValue.IntegerValue
+                        ?: error("captured byte[] element must retain integer core value")
+                    integer.value.byteValueExact()
+                }.toByteArray()
             }
             is InputValue.DateValue -> {
                 check(javaType == LocalDate::class.java)
@@ -652,10 +687,16 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         }
 
     private fun prepareCapturedBindingExecution(
+        byteValue: Byte,
+        shortValue: Short,
+        intValue: Int,
         longValue: Long,
+        floatValue: Float,
+        doubleValue: Double,
         decimalValue: BigDecimal,
         flag: Boolean,
         text: String,
+        binary: ByteArray,
         date: LocalDate,
         time: LocalTime,
         dateTime: LocalDateTime,
@@ -670,10 +711,22 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             "authoritative-p3-captured-binding-runtime-source",
         )
         val parameterDefinitions = listOf(
+            Triple("java.lang.Byte", "byteValue", InputValue.IntegerValue(BigInteger.valueOf(byteValue.toLong()))),
+            Triple("java.lang.Short", "shortValue", InputValue.IntegerValue(BigInteger.valueOf(shortValue.toLong()))),
+            Triple("java.lang.Integer", "intValue", InputValue.IntegerValue(BigInteger.valueOf(intValue.toLong()))),
             Triple("java.lang.Long", "longValue", InputValue.IntegerValue(BigInteger.valueOf(longValue))),
+            Triple("java.lang.Float", "floatValue", InputValue.DecimalValue(BigDecimal(floatValue.toString()))),
+            Triple("java.lang.Double", "doubleValue", InputValue.DecimalValue(BigDecimal(doubleValue.toString()))),
             Triple("java.math.BigDecimal", "decimalValue", InputValue.DecimalValue(decimalValue)),
             Triple("java.lang.Boolean", "flag", InputValue.BooleanValue(flag)),
             Triple("java.lang.String", "text", InputValue.Text(text)),
+            Triple(
+                "byte[]",
+                "binary",
+                InputValue.ArrayValue(
+                    binary.map { item -> InputValue.IntegerValue(BigInteger.valueOf(item.toLong())) },
+                ),
+            ),
             Triple("java.time.LocalDate", "date", InputValue.DateValue(date)),
             Triple("java.time.LocalTime", "time", InputValue.TimeValue(time)),
             Triple("java.time.LocalDateTime", "dateTime", InputValue.DateTimeValue(dateTime)),
@@ -694,10 +747,16 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         val script = """
             <script>
               SELECT
+                (#{byteValue,jdbcType=TINYINT}::smallint)::text,
+                (#{shortValue,jdbcType=SMALLINT}::smallint)::text,
+                (#{intValue,jdbcType=INTEGER}::integer)::text,
                 (#{longValue,jdbcType=BIGINT}::bigint)::text,
+                (#{floatValue,jdbcType=REAL}::real)::text,
+                (#{doubleValue,jdbcType=DOUBLE}::double precision)::text,
                 (#{decimalValue,jdbcType=DECIMAL}::numeric)::text,
                 (#{flag,jdbcType=BOOLEAN}::boolean)::text,
                 #{text,jdbcType=VARCHAR}::varchar,
+                encode(#{binary,jdbcType=VARBINARY}::bytea, 'hex'),
                 (#{date,jdbcType=DATE}::date)::text,
                 (#{time,jdbcType=TIME}::time)::text,
                 (#{dateTime,jdbcType=TIMESTAMP}::timestamp)::text,
