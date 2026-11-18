@@ -162,7 +162,7 @@ class MyBatisForeachTypeFidelityTest {
         assertTrue(result is PreparationResult.Failed)
         result as PreparationResult.Failed
         assertEquals(PreparationFailureKind.UNSUPPORTED_BINDING_VALUE, result.failure.kind)
-        assertEquals("java-parameter-value-unsupported", result.failure.code)
+        assertEquals("mybatis-binding-value-unsupported", result.failure.code)
         assertNull(result.failure.bindingProperty)
     }
 
