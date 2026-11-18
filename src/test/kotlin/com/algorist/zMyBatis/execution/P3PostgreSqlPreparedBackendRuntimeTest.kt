@@ -257,7 +257,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         )
     }
 
-    private fun characterizeStockTypeHandlerBridge(connection: DatabaseConnectionCore): TypeHandlerBridgeOutcome =
+    private fun characterizeStockTypeHandlerBridge(connection: RemoteConnection): TypeHandlerBridgeOutcome =
         withPrepared(connection, "SELECT ?::VARCHAR") { statement ->
             val runtimeClass = statement.javaClass
             val runtimeInterfaces = runtimeClass.interfaces.map { it.name }.sorted()
