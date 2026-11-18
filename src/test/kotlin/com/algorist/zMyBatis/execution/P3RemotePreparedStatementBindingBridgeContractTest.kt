@@ -30,7 +30,7 @@ class P3RemotePreparedStatementBindingBridgeContractTest {
     @Test
     fun `RemotePreparedStatement covers the setter surface selected by required stock handlers`() {
         val registry = TypeHandlerRegistry()
-        val requiredValues = listOf(
+        val requiredValues: List<Pair<Class<*>, Any>> = listOf(
             Byte::class.javaObjectType to 7.toByte(),
             Short::class.javaObjectType to 8.toShort(),
             Int::class.javaObjectType to 9,
@@ -60,14 +60,15 @@ class P3RemotePreparedStatementBindingBridgeContractTest {
 
         for ((javaType, value) in requiredValues) {
             @Suppress("UNCHECKED_CAST")
-            val handler = registry.getTypeHandler(javaType) as? TypeHandler<Any?>
+            val typedClass = javaType as Class<Any>
+            val handler = registry.getTypeHandler(typedClass)
             assertNotNull("stock MyBatis handler missing for ${javaType.name}", handler)
             handler!!.setParameter(recorder, 1, value, null)
         }
 
-        @Suppress("UNCHECKED_CAST")
-        val stringHandler = registry.getTypeHandler(String::class.java) as TypeHandler<Any?>
-        stringHandler.setParameter(recorder, 1, null, JdbcType.OTHER)
+        val stringHandler = registry.getTypeHandler(String::class.java)
+        assertNotNull("stock MyBatis StringTypeHandler must be registered", stringHandler)
+        stringHandler!!.setParameter(recorder, 1, null, JdbcType.OTHER)
 
         val remoteMethods = RemotePreparedStatement::class.java.methods
             .map { method -> MethodSignature(method.name, method.parameterTypes.toList()) }
