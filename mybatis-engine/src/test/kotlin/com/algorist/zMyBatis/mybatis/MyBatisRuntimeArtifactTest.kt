@@ -1,5 +1,7 @@
 package com.algorist.zMyBatis.mybatis
 
+import java.io.ByteArrayInputStream
+import java.io.InputStream
 import java.net.URL
 import java.net.URLClassLoader
 import java.nio.file.Files
@@ -72,6 +74,47 @@ class MyBatisRuntimeArtifactTest {
     }
 
     @Test
+    fun definingLoaderClasspathRecoversByteIdenticalLocalJarWhenResourceUrlIsUnavailable() {
+        val jarPath = Files.createTempFile("mybatis-runtime-defining-loader", ".jar")
+        try {
+            writeProbeJar(jarPath)
+            val loaded = DefiningClasspathProbeLoader(
+                probeName = probeType.name,
+                probeEntry = probeEntry,
+                probeBytes = probeBytes(),
+                urls = listOf(jarPath.toUri().toURL()),
+            ).loadClass(probeType.name)
+            assertNull(loaded.protectionDomain?.codeSource?.location)
+            assertNull(loaded.getResource("/$probeEntry"))
+
+            assertEquals(jarPath.toUri().toURL(), MyBatisRuntimeArtifact.resolve(loaded))
+        } finally {
+            Files.deleteIfExists(jarPath)
+        }
+    }
+
+    @Test
+    fun definingLoaderClasspathFallbackFailsClosedWhenByteIdenticalArtifactIsAmbiguous() {
+        val first = Files.createTempFile("mybatis-runtime-defining-loader-a", ".jar")
+        val second = Files.createTempFile("mybatis-runtime-defining-loader-b", ".jar")
+        try {
+            writeProbeJar(first)
+            writeProbeJar(second)
+            val loaded = DefiningClasspathProbeLoader(
+                probeName = probeType.name,
+                probeEntry = probeEntry,
+                probeBytes = probeBytes(),
+                urls = listOf(first.toUri().toURL(), second.toUri().toURL()),
+            ).loadClass(probeType.name)
+
+            assertNull(MyBatisRuntimeArtifact.resolve(loaded))
+        } finally {
+            Files.deleteIfExists(first)
+            Files.deleteIfExists(second)
+        }
+    }
+
+    @Test
     fun remoteClassResourceIsNotAnArtifactAuthority() {
         val remoteClass = defineWithoutCodeSource(URL("https://example.invalid/" + probeEntry))
         assertNull(remoteClass.protectionDomain?.codeSource?.location)
@@ -97,6 +140,14 @@ class MyBatisRuntimeArtifactTest {
     private fun probeBytes(): ByteArray =
         requireNotNull(probeType.getResourceAsStream("/" + probeEntry)).use { it.readBytes() }
 
+    private fun writeProbeJar(path: java.nio.file.Path) {
+        JarOutputStream(Files.newOutputStream(path)).use { jar ->
+            jar.putNextEntry(JarEntry(probeEntry))
+            jar.write(probeBytes())
+            jar.closeEntry()
+        }
+    }
+
     private fun defineWithoutCodeSource(resource: URL): Class<*> {
         val bytes = probeBytes()
         val loader = object : ClassLoader(ClassLoader.getPlatformClassLoader()) {
@@ -117,3 +168,28 @@ class MyBatisRuntimeArtifactTest {
 }
 
 internal class MyBatisRuntimeArtifactProbe
+
+
+internal class DefiningClasspathProbeLoader(
+    private val probeName: String,
+    private val probeEntry: String,
+    private val probeBytes: ByteArray,
+    private val urls: List<URL>,
+) : ClassLoader(ClassLoader.getPlatformClassLoader()) {
+    override fun loadClass(name: String, resolve: Boolean): Class<*> {
+        if (name != probeName) return super.loadClass(name, resolve)
+        synchronized(getClassLoadingLock(name)) {
+            val loaded = findLoadedClass(name) ?: defineClass(name, probeBytes, 0, probeBytes.size)
+            if (resolve) resolveClass(loaded)
+            return loaded
+        }
+    }
+
+    override fun getResource(name: String): URL? =
+        if (name == probeEntry) null else super.getResource(name)
+
+    override fun getResourceAsStream(name: String): InputStream? =
+        if (name == probeEntry) ByteArrayInputStream(probeBytes) else super.getResourceAsStream(name)
+
+    fun getUrls(): List<URL> = urls
+}
