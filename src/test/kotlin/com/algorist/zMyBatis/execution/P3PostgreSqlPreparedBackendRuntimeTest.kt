@@ -47,11 +47,13 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.util.ui.classpath.SimpleClasspathElementFactory
 import java.nio.file.Path
 import java.util.UUID
+import java.sql.PreparedStatement
 import java.sql.Types
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import org.apache.ibatis.type.StringTypeHandler
 
 /**
  * P3.3 stop-gate proof against the real PostgreSQL service started by e2e.yml.
@@ -63,6 +65,10 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
     fun testRealPostgreSqlPreparedExecutionThroughDatabaseToolsOwnedSession() {
         val fixture = registerPostgreSqlDataSource()
         try {
+            val typeHandlerBridge = executeRaw(fixture.dataSource, "typehandler-bridge") { connection ->
+                characterizeStockTypeHandlerBridge(connection)
+            }
+
             val functional = executeRaw(fixture.dataSource, "functional") { connection ->
                 val target = queryTarget(connection)
                 check(target.database == "zmybatis") { "unexpected PostgreSQL database authority" }
@@ -174,6 +180,12 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
 
             provePreparedExecutionForeachBindings(fixture.dataSource)
 
+            assertTrue(typeHandlerBridge.runtimeClass.isNotBlank())
+            assertEquals(
+                typeHandlerBridge.directJdbcPreparedStatement,
+                typeHandlerBridge.directStockHandlerRoundTrip,
+            )
+            assertTrue(typeHandlerBridge.jdbcFacadeMethods.all { it.isNotBlank() })
             assertEquals("zmybatis", functional.database)
             assertEquals("public", functional.schema)
             assertEquals(1, functional.dmlUpdateCount)
@@ -244,6 +256,47 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 "foreachIdentity=true orderPreserved=true handler=StringTypeHandler",
         )
     }
+
+    private fun characterizeStockTypeHandlerBridge(connection: RemoteConnection): TypeHandlerBridgeOutcome =
+        withPrepared(connection, "SELECT ?::VARCHAR") { statement ->
+            val runtimeClass = statement.javaClass
+            val runtimeInterfaces = runtimeClass.interfaces.map { it.name }.sorted()
+            val directJdbc = PreparedStatement::class.java.isInstance(statement)
+            val jdbcFacadeMethods = runtimeClass.methods
+                .filter { method -> PreparedStatement::class.java.isAssignableFrom(method.returnType) }
+                .map { method -> method.name }
+                .distinct()
+                .sorted()
+
+            var directRoundTrip = false
+            if (directJdbc) {
+                val jdbc = statement as PreparedStatement
+                StringTypeHandler().setParameter(jdbc, 1, "stock-handler-direct-proof", null)
+                statement.execute()
+                directRoundTrip = withResultSet(statement) { resultSet ->
+                    check(resultSet.next())
+                    resultSet.getString(1) == "stock-handler-direct-proof"
+                }
+                check(directRoundTrip) {
+                    "stock MyBatis StringTypeHandler direct PreparedStatement round-trip must succeed"
+                }
+            }
+
+            println(
+                "ZMYBATIS_P3_TYPEHANDLER_RUNTIME " +
+                    "runtimeClass=${runtimeClass.name} " +
+                    "interfaces=${runtimeInterfaces.joinToString(",").ifEmpty { "none" }} " +
+                    "directJdbcPreparedStatement=$directJdbc " +
+                    "jdbcFacadeMethods=${jdbcFacadeMethods.joinToString(",").ifEmpty { "none" }} " +
+                    "directStockHandlerRoundTrip=$directRoundTrip",
+            )
+            TypeHandlerBridgeOutcome(
+                runtimeClass = runtimeClass.name,
+                directJdbcPreparedStatement = directJdbc,
+                directStockHandlerRoundTrip = directRoundTrip,
+                jdbcFacadeMethods = jdbcFacadeMethods,
+            )
+        }
 
     private fun prepareForeachTextExecution(values: List<String>): PreparedExecution {
         val fileId = SourceFileId("fixture/P3ForeachRuntimeMapper.java")
@@ -468,6 +521,13 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
     private data class TargetOutcome(
         val database: String,
         val schema: String,
+    )
+
+    private data class TypeHandlerBridgeOutcome(
+        val runtimeClass: String,
+        val directJdbcPreparedStatement: Boolean,
+        val directStockHandlerRoundTrip: Boolean,
+        val jdbcFacadeMethods: List<String>,
     )
 
     private data class FunctionalOutcome(
