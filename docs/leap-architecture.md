@@ -361,7 +361,7 @@ Execution behavior:
 7. route nonzero bindings through the Database Tools session-backed prepared backend, or zero bindings through the explicit native text backend;
 8. preserve prepared cancellation ownership and native console document/editor state according to the adapter contract.
 
-`REUSE` and `NEW_EACH` are resource policies, not target identities.
+Shipping execution has one console policy: borrow an existing Database Tools console/session client. Creating a new console is not execution authority and is not a user-facing option.
 
 ## 10. Application orchestration
 
