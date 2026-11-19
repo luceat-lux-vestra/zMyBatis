@@ -114,6 +114,10 @@ class MyBatisActionUpdateBoundaryTest {
         )
         assertTrue(action.contains("LeapActionFailurePresenter.present(project, failure)"))
         assertTrue(action.contains("title = \"zMyBatis: Execution Refused\""))
+        assertTrue(action.contains("title = \"zMyBatis: Existing Database Console Required\""))
+        assertTrue(action.contains("title = \"zMyBatis: Database Console Ambiguous\""))
+        assertTrue(action.contains("DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleUnavailable"))
+        assertTrue(action.contains("DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleAmbiguous"))
     }
 
     @Test
