@@ -374,6 +374,115 @@ class ZMyBatisStarterDriverE2ETest {
             }
     }
 
+    @Test
+    fun registeredActionExecutesBuiltInParameterTypeThroughPreparedRoute(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-postgresql-parameter-type-project"))
+        val mapper = """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.QueryMapper">
+            <select id="ping" parameterType="long">SELECT #{value,jdbcType=BIGINT}::BIGINT AS RESULT_VALUE</select>
+            </mapper>
+        """.trimIndent()
+        Files.writeString(projectDir.resolve("PostgreSqlParameterTypeQuery.xml"), mapper)
+        writeMapperInterface(projectDir, "long")
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-postgresql-parameter-type", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(true)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("PostgreSqlParameterTypeQuery.xml")
+                ui.codeEditorForFile("PostgreSqlParameterTypeQuery.xml").clickOnPosition(3, 20)
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("PostgreSQL explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                ui.dialog(title = "Enter MyBatis Parameters") {
+                    textField().text = "41"
+                    button("OK").click()
+                }
+
+                ui.dialog(title = "zMyBatis — SQL Preview") {
+                    val preview = textArea().text.trim()
+                    val preparedSql = preview.substringBefore("\n\nBindings (values hidden):")
+                    assertEquals(
+                        "SELECT ?::BIGINT AS RESULT_VALUE",
+                        preparedSql,
+                        "built-in parameterType metadata must not change the prepared SQL identity",
+                    )
+                    assertTrue(preview.contains("#1 property=value"))
+                    assertTrue(preview.contains("javaType=java.lang.Long"))
+                    assertTrue(preview.contains("jdbcType=BIGINT"))
+                    assertTrue(preview.contains("handler=org.apache.ibatis.type.LongTypeHandler"))
+                    assertFalse(
+                        preview.contains("SELECT 41::BIGINT"),
+                        "parameterType parity must not reintroduce literalized bound SQL",
+                    )
+                    button("Execute").click()
+                }
+
+                waitFor(
+                    message = "zMyBatis prepared-result table contains parameterType-backed value",
+                    timeout = 2.minutes,
+                ) {
+                    try {
+                        if (!ui.isDialogOpened("//div[@title='zMyBatis: Query Result']")) {
+                            false
+                        } else {
+                            ui.accessibleTable {
+                                byType("com.intellij.ui.table.JBTable")
+                            }.content().values.any { row ->
+                                row.values.any { cell -> cell.trim() == "41" }
+                            }
+                        }
+                    } catch (_: com.intellij.driver.sdk.WaitForException) {
+                        false
+                    }
+                }
+
+                ui.dialog(title = "zMyBatis: Query Result") {
+                    button("Close").click()
+                }
+                ui.waitForNoOpenedDialogs()
+
+                val nativeGridOpened = try {
+                    ui.accessibleTable {
+                        byType("com.intellij.database.run.ui.table.TableResultView")
+                    }.content()
+                    true
+                } catch (_: com.intellij.driver.sdk.WaitForException) {
+                    false
+                }
+                assertFalse(
+                    nativeGridOpened,
+                    "parameterType-backed bound execution must remain on the prepared-result route",
+                )
+            }
+    }
+
     private fun assertNativePostgreSqlHistoryContainsAndExcludes(
         configDir: Path,
         requiredSql: String,
