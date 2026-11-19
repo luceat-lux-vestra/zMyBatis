@@ -2,6 +2,7 @@ package com.algorist.zMyBatis.services
 
 import java.nio.file.Files
 import java.nio.file.Path
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -44,7 +45,7 @@ class ConsoleCacheOwnedResourceDisposalContractTest {
     }
 
     @Test
-    fun `REUSE checks matching cache under a keyed lease before constructing a replacement`() {
+    fun `shipping acquisition borrows a Database Tools client and never owns its console`() {
         val adapter = Files.readString(
             repositoryRoot().resolve(
                 "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt",
@@ -55,17 +56,25 @@ class ConsoleCacheOwnedResourceDisposalContractTest {
             .substringBefore("private fun switchSchemaOnConsole")
 
         val lease = acquisition.indexOf("cache.beginReuseLease(resourceKey)")
-        val cached = acquisition.indexOf("cache.get(resourceKey, targetId)")
-        val schemaRecheck = acquisition.indexOf("switchSchemaOnConsole(cached, schema)")
-        val reuse = acquisition.indexOf("onConsoleReady(cached, releaseReuseLease)")
-        val construct = acquisition.indexOf("JdbcConsole.newConsole(project)")
+        val sessions = acquisition.indexOf("DatabaseSessionManager.getSessions(project, sessionDataSource)")
+        val clients = acquisition.indexOf("session.clientsWithFile")
+        val consoles = acquisition.indexOf(".filterIsInstance<JdbcConsole>()")
+        val schemaRecheck = acquisition.indexOf("switchSchemaOnConsole(console, schema)")
+        val handoff = acquisition.indexOf("onConsoleReady(console, releaseLease)")
 
-        assertTrue("REUSE must acquire same-source ownership before cache access", lease >= 0)
-        assertTrue("matching cache lookup must occur after keyed ownership", cached > lease)
-        assertTrue("cached explicit schema must be re-applied before handoff", schemaRecheck > cached)
-        assertTrue("a matching live console must be handed off directly", reuse > schemaRecheck)
-        assertTrue("cache reuse must be attempted before constructing a replacement", construct > reuse)
+        assertTrue("same-source ownership must be acquired before session discovery", lease >= 0)
+        assertTrue("Database Tools sessions must be discovered after keyed ownership", sessions > lease)
+        assertTrue("session clients must be enumerated from the existing session", clients > sessions)
+        assertTrue("only existing JdbcConsole clients may be considered", consoles > clients)
+        assertTrue("explicit schema must be re-applied before handoff", schemaRecheck > consoles)
+        assertTrue("the borrowed console must be handed off only after target checks", handoff > schemaRecheck)
+
+        assertFalse("shipping acquisition must not create a second console", acquisition.contains("JdbcConsole.newConsole"))
+        assertFalse("borrowed consoles must not enter the zMyBatis ownership cache", acquisition.contains("putEphemeral("))
+        assertFalse("zMyBatis must not dispose a Database Tools-owned console", acquisition.contains("Disposer.dispose("))
         assertTrue(adapter.contains("data object ReuseBusy : DatabaseToolsConsoleAcquisitionFailure"))
+        assertTrue(adapter.contains("data object ExistingConsoleUnavailable : DatabaseToolsConsoleAcquisitionFailure"))
+        assertTrue(adapter.contains("data object ExistingConsoleAmbiguous : DatabaseToolsConsoleAcquisitionFailure"))
     }
 
     @Test
