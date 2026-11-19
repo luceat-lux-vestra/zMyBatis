@@ -123,6 +123,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         fun deliver(
             console: JdbcConsole,
             remember: Boolean = true,
+            createdByZMyBatis: Boolean = false,
         ) {
             if (isProjectUnavailable() || !console.isValid) {
                 releaseSourceLease()
@@ -144,10 +145,27 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
 
             if (schema != null && !switchSchemaOnConsole(console, schema)) {
                 releaseAll()
+                if (createdByZMyBatis && console.isValid) {
+                    Disposer.dispose(console)
+                }
                 if (!isProjectUnavailable()) {
                     onFailure(DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed)
                 }
                 return
+            }
+
+            if (createdByZMyBatis) {
+                val ownershipKey = "created-console:" + consoleLeaseKey(console)
+                if (!cache.putEphemeral(ownershipKey, console, targetId)) {
+                    releaseAll()
+                    if (console.isValid) {
+                        Disposer.dispose(console)
+                    }
+                    if (!isProjectUnavailable()) {
+                        onFailure(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
+                    }
+                    return
+                }
             }
 
             if (remember) {
@@ -167,22 +185,10 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 return
             }
 
-            if (schema != null && !switchSchemaOnConsole(console, schema)) {
-                Disposer.dispose(console)
-                fail(DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed)
-                return
-            }
-
-            val ownershipKey = "created-console:" + consoleLeaseKey(console)
-            if (!cache.putEphemeral(ownershipKey, console, targetId)) {
-                if (console.isValid) {
-                    Disposer.dispose(console)
-                }
-                fail(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
-                return
-            }
-
-            deliver(console)
+            deliver(
+                console = console,
+                createdByZMyBatis = true,
+            )
             LOG.info("zMyBatis: Database Tools console created for mapper execution")
         }
 
