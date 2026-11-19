@@ -494,7 +494,6 @@ class ZMyBatisStarterDriverE2ETest {
             </mapper>
         """.trimIndent()
         Files.writeString(projectDir.resolve("PostgreSqlDatabaseIdQuery.xml"), mapper)
-        writeMapperInterface(projectDir, "long")
 
         val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
         val context = starterContext("action-postgresql-database-id", projectDir)
@@ -566,7 +565,6 @@ class ZMyBatisStarterDriverE2ETest {
             </mapper>
         """.trimIndent()
         Files.writeString(projectDir.resolve("PostgreSqlMutationQuery.xml"), mapper)
-        writeMapperInterface(projectDir, "long")
 
         val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
         val context = starterContext("action-postgresql-mutation-approval", projectDir)
@@ -638,7 +636,7 @@ class ZMyBatisStarterDriverE2ETest {
                 waitForIndicators(5.minutes)
 
                 openFile("JavaProviderMapper.java")
-                ui.codeEditorForFile("JavaProviderMapper.java").clickOnPosition(8, 20)
+                ui.codeEditorForFile("JavaProviderMapper.java").clickOnPosition(7, 20)
                 ideFrame {
                     invokeAction("zMyBatis.Execute", now = false)
                 }
