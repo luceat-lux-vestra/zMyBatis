@@ -186,9 +186,8 @@ Two explicit backends sit below one orchestration/approval authority:
   It reuses the configured Database Tools datasource/session, executes a true prepared statement,
   preserves ordered/additional bindings, and presents structured rows/update counts/errors through a
   bounded zMyBatis result adapter.
-- **NativeConsoleSqlTextBackend** — retained for zero-binding/exact-text statements and optionally
-  separately proven materialized compatibility slices, preserving Database Tools native
-  result/history.
+- **NativeConsoleSqlTextBackend** — retained for zero-binding/exact-text statements, preserving
+  Database Tools native result/history. Historical materializer slices are not registered fallback routes.
 
 The prepared backend should use stock MyBatis standard ParameterMapping/TypeHandler/JDBC semantics
 where safely available rather than introducing another home-grown scalar binder matrix. Application
@@ -199,10 +198,9 @@ while the investigated 2026.2 surface lacked a proven maintained bridge back int
 result/history. Native result/history parity is therefore not a correctness prerequisite for the
 prepared backend.
 
-**P3 stop gate:** the prepared backend is a target hypothesis until maintained APIs prove reliable
-session/connection ownership, prepared execution, cancellation, disposal and datasource/schema
-correctness. If that proof fails, stop and reconsider the execution target before expanding more
-syntax islands.
+**P3 stop gate — passed:** maintained APIs now have production evidence for Database Tools-owned
+session/connection use, prepared execution, cancellation, disposal and datasource/schema correctness.
+Those guarantees remain hard constraints for subsequent phases.
 
 The registered action now implements the planned split:
 - ordered bindings execute through `DatabaseSessionPreparedBackend`;
@@ -320,7 +318,7 @@ Existing privacy hardening remains protected during parity recovery; regaining m
 6. let stock MyBatis produce BoundSql, ordered mappings, additional values and relevant binding metadata;
 7. freeze one immutable PreparedExecutionPlan bound to source revisions and exact target identity;
 8. require raw/mutation approval and revalidate source, target, cancellation and lifecycle authority;
-9. route bound statements to the prepared backend when the P3 maintained-API gate is proven;
+9. route bound statements to the prepared backend through the proven P3 maintained-API boundary;
 10. route zero-binding/exact-text statements to the native-console backend;
 11. present structured result/failure with redacted diagnostics.
 
@@ -352,8 +350,9 @@ Active parity ownership:
 - #508/#511 — repository-owned manual release-validation harness;
 - #513 — D0 documentation recording of the target architecture.
 
-After D0, the next work unit is D1 stock-MyBatis parity oracle. Do not reopen #61-#67 semantics by
-incrementally extending their old bounded admission islands.
+D0-D1 and P1-P4 are complete. P5 owns packaged/manual acceptance and #509/#510 evidence
+reconciliation; P6 follows with deletion/cleanup. Do not reopen #61-#67 semantics by incrementally
+restoring their old bounded admission/materializer islands.
 
 ## 19. Non-goals for zMyBatis 1.0
 
@@ -367,5 +366,5 @@ incrementally extending their old bounded admission islands.
 - preserving current Leap admission/materializer class structure merely because it already exists;
 - restoring a deleted legacy execution fallback.
 
-A true prepared backend **is** part of the target architecture for ordinary bound statements, subject
-to the explicit P3 maintained-API stop gate.
+A true prepared backend **is** the registered execution backend for ordinary bound statements; the
+P3 maintained-API stop gate has passed and remains a regression constraint.
