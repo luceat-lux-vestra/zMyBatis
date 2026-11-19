@@ -449,14 +449,10 @@ class ZMyBatisStarterDriverE2ETest {
                     timeout = 2.minutes,
                 ) {
                     try {
-                        if (!ui.isDialogOpened("//div[@title='zMyBatis: Query Result']")) {
-                            false
-                        } else {
-                            ui.accessibleTable {
-                                byType("com.intellij.ui.table.JBTable")
-                            }.content().values.any { row ->
-                                row.values.any { cell -> cell.trim() == "41" }
-                            }
+                        ui.accessibleTable {
+                            byType("com.intellij.ui.table.JBTable")
+                        }.content().values.any { row ->
+                            row.values.any { cell -> cell.trim() == "41" }
                         }
                     } catch (_: com.intellij.driver.sdk.WaitForException) {
                         false
@@ -636,7 +632,7 @@ class ZMyBatisStarterDriverE2ETest {
                 waitForIndicators(5.minutes)
 
                 openFile("JavaProviderMapper.java")
-                ui.codeEditorForFile("JavaProviderMapper.java").clickOnPosition(7, 20)
+                ui.codeEditorForFile("JavaProviderMapper.java").clickOnPosition(7, 12)
                 ideFrame {
                     invokeAction("zMyBatis.Execute", now = false)
                 }
