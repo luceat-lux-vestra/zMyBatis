@@ -23,8 +23,14 @@ class DataGripStarterDriverE2EContractTest {
         assertTrue(e2e.contains("jdbcType=BIGINT"))
         assertTrue(e2e.contains("zMyBatis: Query Result"))
         assertTrue(e2e.contains("com.intellij.ui.table.JBTable"))
-        assertTrue(e2e.contains("ui.dialog(title = \"Enter MyBatis Parameters\")"))
-        assertTrue(e2e.contains("dataGripTextArea().text = \"\"\"{\"value\":999}\"\"\""))
+        assertFalse(
+            "static XML bind literal must not open the caller-parameter dialog",
+            e2e.contains("ui.dialog(title = \"Enter MyBatis Parameters\")"),
+        )
+        assertFalse(
+            "static XML bind literal must not submit a synthetic caller object",
+            e2e.contains("dataGripTextArea().text = \"\"\"{\"value\":999}\"\"\""),
+        )
         assertTrue(e2e.contains("DataGrip prepared acceptance must not literalize the bound value"))
         assertTrue(
             e2e.contains(
