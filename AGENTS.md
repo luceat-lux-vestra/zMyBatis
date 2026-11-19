@@ -144,7 +144,7 @@ Hardening #57 established the stable datasource/schema safety baseline, and #260
 - startup only prunes stale current-v3 source associations and creates no `JdbcConsole`;
 - datasource/schema resources are resolved exactly when an explicit action needs database execution;
 - shipping execution reuses an existing Database Tools session/client; it must not create, cache, replace, or dispose a user console;
-- `ConsoleCacheService` supplies only the keyed same-source invocation lease on the shipping path, so overlapping executions cannot concurrently mutate the shared console document; unrelated source keys remain independent;
+- `ConsoleCacheService` supplies two non-owning shipping leases: one by source identity and one by the selected existing console identity. Same-source overlap and cross-source overlap on the same console both fail closed before schema/document mutation; unrelated sources on unrelated consoles remain independent;
 - cancellation, terminal execution callbacks, lookup failure, and shutdown release or clear that lease fail-closed.
 
 Development-only v2 persistence was never distributed and has no runtime reader or migration path. Legacy console-cache ownership helpers may remain only until bounded cleanup; they are not shipping acquisition authority.
