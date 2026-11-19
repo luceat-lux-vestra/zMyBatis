@@ -45,7 +45,7 @@ class ConsoleCacheOwnedResourceDisposalContractTest {
     }
 
     @Test
-    fun `shipping acquisition borrows a Database Tools client and never owns its console`() {
+    fun `shipping acquisition reuses first and owns only consoles it creates`() {
         val adapter = Files.readString(
             repositoryRoot().resolve(
                 "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt",
@@ -57,24 +57,28 @@ class ConsoleCacheOwnedResourceDisposalContractTest {
 
         val lease = acquisition.indexOf("cache.beginReuseLease(resourceKey)")
         val sessions = acquisition.indexOf("DatabaseSessionManager.getSessions(project, sessionDataSource)")
-        val clients = acquisition.indexOf("session.clientsWithFile")
-        val consoles = acquisition.indexOf(".filterIsInstance<JdbcConsole>()")
-        val schemaRecheck = acquisition.indexOf("switchSchemaOnConsole(console, schema)")
-        val handoff = acquisition.indexOf("onConsoleReady(console, releaseLease)")
+        val remembered = acquisition.indexOf("cache.rememberedConsole(resourceKey, it, consoles)")
+        val mapperMatch = acquisition.indexOf("console.file.virtualFile?.name == mapperName")
+        val chooser = acquisition.indexOf("requestConsoleChoice(")
+        val create = acquisition.indexOf("createAndDeliver(consoles)")
 
-        assertTrue("same-source ownership must be acquired before session discovery", lease >= 0)
+        assertTrue("same-source ownership must precede candidate discovery", lease >= 0)
         assertTrue("Database Tools sessions must be discovered after keyed ownership", sessions > lease)
-        assertTrue("session clients must be enumerated from the existing session", clients > sessions)
-        assertTrue("only existing JdbcConsole clients may be considered", consoles > clients)
-        assertTrue("explicit schema must be re-applied before handoff", schemaRecheck > consoles)
-        assertTrue("the borrowed console must be handed off only after target checks", handoff > schemaRecheck)
+        assertTrue("remembered source+target association must precede filename heuristics", remembered > sessions)
+        assertTrue("dynamic mapper-name matching must remain only a reuse heuristic", mapperMatch > remembered)
+        assertTrue("ambiguous candidates must route to an explicit chooser", chooser > mapperMatch)
+        assertTrue("no-candidate flow must create a console instead of failing", create > mapperMatch)
 
-        assertFalse("shipping acquisition must not create a second console", acquisition.contains("JdbcConsole.newConsole"))
-        assertFalse("borrowed consoles must not enter the zMyBatis ownership cache", acquisition.contains("putEphemeral("))
-        assertFalse("zMyBatis must not dispose a Database Tools-owned console", acquisition.contains("Disposer.dispose("))
+        assertTrue(adapter.contains("JdbcConsole.newConsole(project)"))
+        assertTrue(adapter.contains("cache.putEphemeral(ownershipKey, console, targetId)"))
+        assertTrue(adapter.contains("cache.rememberConsole(resourceKey, targetId, console)"))
+        assertTrue(adapter.contains("\"Create New Console\""))
         assertTrue(adapter.contains("data object ReuseBusy : DatabaseToolsConsoleAcquisitionFailure"))
-        assertTrue(adapter.contains("data object ExistingConsoleUnavailable : DatabaseToolsConsoleAcquisitionFailure"))
-        assertTrue(adapter.contains("data object ExistingConsoleAmbiguous : DatabaseToolsConsoleAcquisitionFailure"))
+        assertTrue(adapter.contains("data object ConsoleCreationFailed : DatabaseToolsConsoleAcquisitionFailure"))
+        assertTrue(adapter.contains("data object ConsoleSelectionUnavailable : DatabaseToolsConsoleAcquisitionFailure"))
+
+        assertFalse("existing-console reuse must not open a console tab", adapter.contains("OpenFileDescriptor"))
+        assertFalse("existing-console reuse must not request editor focus", adapter.contains("requestFocusInWindow"))
     }
 
     @Test
