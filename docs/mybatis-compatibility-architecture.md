@@ -302,21 +302,26 @@ The former PostgreSQL BIGINT single-binding materializer is not registered execu
 must not be reintroduced as a fallback. Historical tests may remain until P6 where they still
 characterize migration evidence.
 
-## 10. Result presentation
+## 10. Result presentation and UX parity
 
-Native Database Tools result/history parity is not a correctness gate for the bound prepared backend.
+True prepared binding semantics are a correctness gate, but the 1.0 product UX must also preserve the
+pre-Leap interaction: executing from a mapper should surface database results through the ordinary
+Database Tools workflow without introducing a separate zMyBatis result workflow merely because the
+backend uses prepared execution.
 
-A bounded zMyBatis result adapter may own:
+Therefore:
 
-- column metadata;
-- rows;
-- update counts;
-- database error presentation;
-- cancellation state.
+- zero-binding/exact-text execution continues to use native Database Tools result/history;
+- bound prepared execution must prefer a maintained Database Tools result/output bridge when one is
+  available without weakening ordered JDBC/TypeHandler semantics;
+- the current bounded `zMyBatis: Query Result` adapter is migration evidence and a P5 UX gap, not
+  the desired 1.0 presentation contract;
+- generic SQL literalization, undocumented/internal APIs, or a second parameter prompt are not
+  acceptable ways to recover native presentation;
+- if the maintained platform API cannot provide native prepared-result integration, that limitation
+  requires an explicit product decision before 1.0 rather than silently redefining UX parity.
 
-It must not recreate ORM/application result mapping.
-
-Exact-text/native-console execution continues to use Database Tools result/history.
+zMyBatis must not recreate ORM/application result mapping.
 
 ## 11. Approval and revalidation
 
