@@ -30,34 +30,29 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
     }
 
     @Test
-    fun `adapter owns console mechanics but no target persistence`() {
+    fun `adapter borrows an existing Database Tools console and never opens a console tab`() {
         val adapter = source(
             "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"
         )
 
-        assertTrue(adapter.contains("JdbcConsole.newConsole"))
+        assertTrue(adapter.contains("DatabaseSessionManager.getSessions(project, sessionDataSource)"))
+        assertTrue(adapter.contains("session.clientsWithFile"))
+        assertTrue(adapter.contains(".filterIsInstance<JdbcConsole>()"))
+        assertTrue(adapter.contains("console.file.virtualFile?.name == mapperFileName"))
         assertTrue(adapter.contains(".switchSchema("))
         assertTrue(adapter.contains("JdbcConsoleProvider.findScriptModelNoInject"))
         assertTrue(adapter.contains("JdbcConsoleProvider.doRunQueryInConsole"))
         assertTrue(adapter.contains("WriteCommandAction.runWriteCommandAction"))
-        // IDEA 263: use the stable, public navigation entry point, not either
-        // the internal editor options API or the experimental file-open request.
-        // The internal console must open without stealing focus from the mapper.
-        // The EDT continuation must recheck the immutable execution authority
-        // and the actual SQL editor before any native query is issued.
-        assertTrue(adapter.contains("OpenFileDescriptor(project, vFile).navigate(false)"))
-        assertFalse(adapter.contains("OpenFileDescriptor(project, vFile).navigate(true)"))
-        assertFalse(adapter.contains("consoleEditor.contentComponent.requestFocusInWindow()"))
-        assertTrue(
-            adapter.contains(
-                "val consoleName = resourceKey.substringAfterLast('/').substringAfterLast('\\\\')"
-            )
-        )
-        assertFalse(adapter.contains("+ \" - zMyBatis\""))
-        assertTrue(adapter.contains("ApplicationManager.getApplication().invokeLater({"))
-        assertTrue(adapter.contains("if (!preExecutionCheck())"))
-        assertTrue(adapter.contains("if (!console.isValid)"))
-        assertTrue(adapter.contains("onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)"))
+        assertTrue(adapter.contains("editorFactory.createEditor(consoleDoc, project)"))
+        assertTrue(adapter.contains("editorFactory.releaseEditor(transientEditor)"))
+
+        assertFalse(adapter.contains("JdbcConsole.newConsole"))
+        assertFalse(adapter.contains("LightVirtualFile"))
+        assertFalse(adapter.contains("OpenFileDescriptor"))
+        assertFalse(adapter.contains(".navigate("))
+        assertFalse(adapter.contains("requestFocusInWindow"))
+        assertFalse(adapter.contains("putEphemeral("))
+        assertFalse(adapter.contains("Disposer.dispose("))
         assertFalse(adapter.contains("FileEditorManagerEx"))
         assertFalse(adapter.contains("FileEditorOpenOptions"))
         assertFalse(adapter.contains("FileEditorOpenRequest"))
@@ -72,7 +67,7 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
     }
 
     @Test
-    fun `model-changing continuations use write-safe modality`() {
+    fun `adapter does not schedule editor-tab navigation continuations`() {
         val adapter = source(
             "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"
         )
@@ -80,9 +75,10 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionApprovalAdapter.kt"
         )
 
-        assertFalse(adapter.contains("ModalityState.any()"))
+        assertFalse(adapter.contains("OpenFileDescriptor"))
+        assertFalse(adapter.contains("ModalityState"))
+        assertFalse(adapter.contains("ApplicationManager.getApplication().invokeLater"))
         assertFalse(approval.contains("ModalityState.any()"))
-        assertTrue(adapter.contains("ModalityState.defaultModalityState()"))
         assertTrue(approval.contains("ModalityState.defaultModalityState()"))
     }
 
