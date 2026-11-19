@@ -69,14 +69,15 @@ No production method exists solely for this harness. The process database stack 
 
 `ZMyBatisDataGripStarterDriverE2ETest` is a separate host proof against DataGrip 2026.3. It never treats the IDEA Ultimate suite as DataGrip evidence.
 
-It installs the exact same packaged plugin ZIP and proves two bounded claims:
+It installs the exact same packaged plugin ZIP and proves three bounded claims:
 
 1. **Packaged plugin/service smoke** — DataGrip starts under a strict Starter `CIServer` failure boundary with no IDEA-only exception exemption, the zMyBatis plugin loads, and the shipping `ZMyBatisSettings` service is callable.
 2. **Registered XML action fail-closed path** — a real XML mapper is opened in DataGrip, the registered `zMyBatis.Execute` action is invoked, and with no datasource configured the shipping path reaches the typed `zMyBatis: Execution Target Unavailable` refusal without an IDE fatal error or stale dialog.
+3. **Bounded XML prepared PostgreSQL path** — the DataGrip job starts the same pinned PostgreSQL image, registers a pinned local pgJDBC driver through Database Tools, selects the explicit `public` schema, and executes an XML-only `<bind>`-generated BIGINT binding through `DatabaseSessionPreparedBackend`. The preview must keep `?`, the zMyBatis prepared-result dialog must contain `41`, and the bound path must not surface as native `TableResultView` delivery.
 
 Each scenario closes its DataGrip process through `useDriverAndCloseIde` and emits a `ZMYBATIS_HOST_EVIDENCE host=DATAGRIP` record with release, scenario, result, shutdown state and observed duration. These durations are observations, not latency SLAs.
 
-This host smoke deliberately does **not** claim Java-annotation parity or successful native PostgreSQL execution in DataGrip. Java PSI availability is not inferred from IDEA Ultimate, and the maintained IU PostgreSQL golden path remains separate. DataGrip 2026.3 Plugin Verifier evidence is required alongside this process smoke; the minimum IDE build is 263.
+This host proof deliberately does **not** claim Java-annotation parity, native Database Tools result/history parity, every DBMS/dialect, or IDEA's broader PostgreSQL scenario matrix. The prepared case is XML-only and uses zMyBatis result presentation. Java PSI availability is not inferred from IDEA Ultimate, and the maintained IU PostgreSQL golden path remains the full host authority. DataGrip 2026.3 Plugin Verifier evidence is required alongside this process proof; the minimum IDE build is 263.
 
 ## Local execution
 
