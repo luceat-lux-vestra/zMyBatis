@@ -208,7 +208,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 .toList()
 
             targetId
-                ?.let { cache.rememberedConsole(resourceKey, it, consoles) }
+                ?.let { cache.rememberedConsole(resourceKey, it) }
                 ?.let { remembered ->
                     deliver(remembered)
                     LOG.info("zMyBatis: remembered Database Tools console reused")
