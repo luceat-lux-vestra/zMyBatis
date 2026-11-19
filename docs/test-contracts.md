@@ -26,7 +26,7 @@ evidence. The old IntelliJ template rename test and evaluator debug/reproduction
 | Registered action boundary | `MyBatisActionUpdateProjectFixtureTest`, `MyBatisActionUpdateBoundaryTest`, `LeapActionContextAdmissionCoordinatorTest` | `MyBatisExecuteAction` keeps update bounded and delegates supported execution only to Leap admission; no low-level Database Tools or alternative execution route is present at the action edge |
 | Target persistence and console lifecycle | `PersistedExecutionTargetSelectionTest`, `ExecutionTargetDescriptorStoreTest`, `MyBatisActionInterceptorActivityLifecycleTest`, `ConsoleCacheServiceLifecycleTest`, `ConsoleCacheOwnedResourceDisposalContractTest`, `DatabaseToolsTargetResolverTest`, `DatabaseToolsConsoleAdapterBoundaryTest` | current v3 source→target persistence is independent of live consoles; exact target identity gates REUSE; matching live consoles are reused under source-key ownership; same-source overlap, shutdown, invalid/disposed resources, and stale targets fail closed |
 | Sensitive production logging | `SensitiveLoggingContractTest`, action/adapter diagnostic contract tests | production logs reject direct interpolation of known sensitive SQL/input/source/target identities and platform exception messages; typed expected failures expose metadata rather than raw payload |
-| Real packaged execution | `ZMyBatisStarterDriverE2ETest` via `E2E / Starter / Driver E2E` | exact packaged plugin must execute maintained zero-binding, PostgreSQL BIGINT, XML raw, direct-Java raw, cancellation/history and fail-closed scenarios through the registered action on IDEA Ultimate 2026.3 (exact-HEAD evidence required) |
+| Real packaged execution | `ZMyBatisStarterDriverE2ETest` via `E2E / Starter / Driver E2E` | exact packaged plugin must execute the registered zero-binding native route, multi-binding prepared route + prepared-result presentation, XML/direct-Java raw approval behavior, and maintained fail-closed/lifecycle scenarios on IDEA Ultimate 2026.3; P5 adds representative promoted parity acceptance before release sign-off (exact-HEAD evidence required) |
 
 ## Pre-1.0 parity-recovery evidence
 
@@ -478,26 +478,20 @@ limit, or REUSE/NEW_EACH policy redesign is introduced by this measurement slice
 
 
 
-## Preparation/materialization scale disposition
+## Preparation scale and retired materializer characterization
 
-The registered materialization envelope is intentionally cardinality-bounded rather than a generic
-large-binding renderer: zero ordered bindings use the target-bound zero-binding/raw routes, and the
-only maintained non-zero execution slice accepts exactly one proven PostgreSQL BIGINT binding.
-Accordingly, a separate "large materialization cardinality" benchmark would measure unsupported
-behavior rather than a shipping execution capability.
+Large-collection preparation remains a relevant stock-MyBatis responsiveness boundary even though
+the former single-BIGINT SQL-text materializer is no longer shipping execution authority.
+`MyBatisValueConversion` currently bounds structured conversion at 65,536 input nodes, while #470
+measures source-graph scale and #472/#474 measure many UI requirements/drafts rather than one large
+runtime collection flowing through isolated MyBatis preparation.
 
-Preparation is different because it runs **before** materialization. A source-authorized foreach
-LIST/ARRAY/MAP can expand through stock MyBatis into many parameter mappings before the later
-materializer rejects an unsupported multi-binding result. `MyBatisValueConversion` currently bounds
-structured conversion at 65,536 input nodes, while #470 measures source-graph scale and #472/#474
-measure many UI requirements/drafts rather than one large runtime collection flowing through
-isolated MyBatis preparation.
-
-#494 closed this production responsiveness envelope by measuring representative large-collection
-preparation through the stock-MyBatis boundary used by the registered candidate path, composing that
-measurement with the separately maintained off-EDT/cancellation authority, and proving the resulting
-unsupported multi-binding artifact still fails closed. Timings remain comparison observations, not
-product SLAs; any future concrete defect must be split into its own bounded fix.
+#494 measured representative large-collection preparation through the same stock-MyBatis boundary
+used by the registered candidate path and then characterized the **then-shipping** materializer's
+multi-binding refusal. That terminal refusal is retained as historical migration evidence only.
+Current P4 execution instead freezes the resulting mappings into `PreparedExecutionPlan` and routes
+nonzero ordered bindings to `DatabaseSessionPreparedBackend`. Timings remain comparison
+observations, not product SLAs; any future concrete defect must be split into its own bounded fix.
 
 
 `MyBatisPreparationScaleTest` makes that scale obligation executable in
@@ -512,9 +506,11 @@ count, emitted ordered-binding/placeholder cardinality, SQL character count, pre
 materialization elapsed and combined pipeline elapsed under the `ZMYBATIS_PREPARATION_SCALE`
 prefix. Exact linear mapping growth is required.
 
-The prepared artifact is then passed to the shipping `PostgreSqlBigintExecutionMaterializer`.
-Because every measured case has more than one ordered binding, materialization must fail with
-`BINDING_COUNT_UNSUPPORTED`; no executable artifact or support expansion is admitted.
+The historical fixture then passes the prepared artifact to
+`PostgreSqlBigintExecutionMaterializer` and records its former
+`BINDING_COUNT_UNSUPPORTED` behavior. That assertion characterizes the retired compatibility
+boundary; it does **not** describe current registered execution, where those mappings are ordinary
+prepared bindings.
 
 The root IntelliJ unit harness is deliberately not used as authority for the dynamic-MyBatis scale
 measurement. Its flattened IntelliJ test classloader can load MyBatis without a recoverable local
