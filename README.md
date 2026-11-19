@@ -33,10 +33,10 @@
 
 <p>MyBatis is the semantic authority for admitted dynamic-SQL behavior. Source graphs, including supported <code>&lt;sql&gt;</code>/<code>&lt;include&gt;</code> dependencies, are captured and revalidated before execution. Missing, ambiguous, cyclic, stale, or otherwise unsupported authority is a typed refusal.</p>
 
-<h2>Execution artifacts and Database Tools</h2>
-<p>A prepared statement is executable only when zMyBatis has a proven SQL-text materializer for that shape. The DB-neutral zero-binding path and the maintained PostgreSQL BIGINT path have native Database Tools execution evidence; other nonzero dialect/type shapes remain fail-closed until separately proven.</p>
+<h2>Execution plans and Database Tools</h2>
+<p>Stock MyBatis preparation is frozen into one immutable <code>PreparedExecutionPlan</code>. Plans with ordered JDBC bindings execute through the Database Tools session-backed prepared backend using maintained stock TypeHandler metadata; zero-binding/exact-text plans execute through the explicit native Database Tools backend.</p>
 
-<p>Preview and native execution use the same immutable SQL artifact. Formatting is presentation-only and cannot modify the payload sent to Database Tools.</p>
+<p>Preview and execution refer to the same immutable plan identity. For prepared execution, preview shows placeholder SQL plus value-hidden binding metadata; formatting is presentation-only. For native execution, the exact SQL text remains the payload sent to Database Tools.</p>
 
 <h2>Datasource and schema identity</h2>
 <p>Restart persistence stores only current v3 source-to-target descriptors: canonical source identity, stable datasource UUID, and explicit named schema. Live consoles are ephemeral resources. Startup may prune stale v3 source associations but never recreates a console or executes SQL.</p>
@@ -81,9 +81,9 @@ For development/testing, a locally built distribution can also be installed thro
 2. Invoke **Execute (zMyBatis)**.
 3. zMyBatis captures and revalidates the source/statement authority and exact datasource/schema target.
 4. The contract-driven input UI collects required values; cancellation terminates the invocation.
-5. Isolated MyBatis preparation produces structured SQL/mapping evidence.
-6. A supported materializer freezes one target-bound SQL artifact; unsupported shapes fail closed.
-7. Required approval is shown for raw interpolation/mutations, then the exact approved artifact is executed through Database Tools.
+5. Isolated stock MyBatis preparation produces structured SQL/mapping evidence.
+6. zMyBatis freezes one target-bound `PreparedExecutionPlan` with ordered bindings and safety metadata.
+7. Required approval is shown for raw interpolation/mutations; after immediate source/target/lifecycle revalidation, bound plans execute prepared and zero-binding/exact-text plans execute through the native Database Tools backend.
 
 ## Engineering documentation
 
