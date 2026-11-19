@@ -515,7 +515,7 @@ D0  record the parity architecture in authoritative docs
   -> P2  mapper-method/XML-only invocation contract replacement
   -> P3  prepared-backend spike + hard stop gate
   -> P4  unified execution-plan cutover
-  -> P5  packaged/manual parity
+  -> P5  packaged parity + minimal human UX smoke
   -> P6  superseded admission/preflight/materializer cleanup
 ```
 
