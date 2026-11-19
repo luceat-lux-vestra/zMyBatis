@@ -90,7 +90,7 @@ class ManualReleaseValidationSampleContractTest {
     }
 
     @Test
-    fun `manual checklist pins all maintained release acceptance families`() {
+    fun `acceptance inventory pins all families while human smoke stays minimal`() {
         val readme = source("README.md")
         val requiredIds = buildList {
             addAll((1..17).map { "M%02d".format(it) })
@@ -106,9 +106,12 @@ class ManualReleaseValidationSampleContractTest {
 
         assertTrue(readme.contains("#509 disposition:  RESOLVED / BLOCKED"))
         assertTrue(readme.contains("#510 disposition:  RESOLVED / BLOCKED"))
-        assertTrue(readme.contains("Release decision:  GO / NO-GO"))
-        assertTrue(readme.contains("Wrong-datasource or wrong-schema execution is a **release blocker**"))
-        assertTrue(readme.contains("stable UUID keeps the same target valid"))
+        assertTrue(readme.contains("They are not a mandatory maintainer-run checklist."))
+        assertTrue(readme.contains("H01 install/settings/action: PASS / FAIL"))
+        assertTrue(readme.contains("H02 native/prepared visual: PASS / FAIL"))
+        assertTrue(readme.contains("H03 restart/target UX:      PASS / FAIL"))
+        assertTrue(readme.contains("Human smoke:       GO / NO-GO"))
+        assertTrue(readme.contains("DataGrip requires no separate manual smoke"))
         assertTrue(readme.contains("exact final P5 candidate ZIP"))
     }
 
