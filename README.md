@@ -1,5 +1,6 @@
 # zMyBatis — Contract-driven MyBatis SQL execution for JetBrains IDEs
 
+[![GitHub Stars](https://img.shields.io/github/stars/luceat-lux-vestra/zMyBatis?style=flat&label=Stars)](https://www.star-history.com/?repos=luceat-lux-vestra%2FzMyBatis&type=date)
 [![Build](https://github.com/luceat-lux-vestra/zMyBatis/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/luceat-lux-vestra/zMyBatis/actions/workflows/build.yml)
 [![Marketplace Version](https://img.shields.io/jetbrains/plugin/v/com.algorist.zMyBatis)](https://plugins.jetbrains.com/plugin/index?xmlId=com.algorist.zMyBatis)
 [![Downloads](https://img.shields.io/jetbrains/plugin/d/com.algorist.zMyBatis)](https://plugins.jetbrains.com/plugin/index?xmlId=com.algorist.zMyBatis)
