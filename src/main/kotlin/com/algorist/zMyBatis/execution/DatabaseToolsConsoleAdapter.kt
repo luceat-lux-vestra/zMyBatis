@@ -8,6 +8,7 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.services.ConsoleCacheService
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.console.JdbcConsoleProvider
+import com.intellij.database.console.session.DatabaseSessionManager
 import com.intellij.database.model.DasNamespace
 import com.intellij.database.psi.DbDataSource
 import com.intellij.database.settings.DatabaseSettings
@@ -15,28 +16,23 @@ import com.intellij.database.util.DasUtil
 import com.intellij.database.util.DbImplUtil
 import com.intellij.database.util.ObjectPath
 import com.intellij.database.util.SearchPath
-import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.ex.EditorEx
-import com.intellij.openapi.fileEditor.OpenFileDescriptor
-import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
-import com.intellij.testFramework.LightVirtualFile
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal sealed interface DatabaseToolsConsoleAcquisitionFailure {
     data object ReuseBusy : DatabaseToolsConsoleAcquisitionFailure
     data object SchemaSwitchFailed : DatabaseToolsConsoleAcquisitionFailure
-    data object ConsoleCreationFailed : DatabaseToolsConsoleAcquisitionFailure
+    data object ExistingConsoleUnavailable : DatabaseToolsConsoleAcquisitionFailure
+    data object ExistingConsoleAmbiguous : DatabaseToolsConsoleAcquisitionFailure
 }
 
 internal sealed interface DatabaseToolsSqlExecutionFailure {
@@ -70,133 +66,100 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         dataSource: DbDataSource,
         schema: DasNamespace?,
         resourceKey: String,
-        forceNew: Boolean,
+        @Suppress("UNUSED_PARAMETER") forceNew: Boolean,
         onConsoleReady: (JdbcConsole, () -> Unit) -> Unit,
         onFailure: (DatabaseToolsConsoleAcquisitionFailure) -> Unit,
     ) {
         if (isProjectUnavailable()) return
 
         val cache = ConsoleCacheService.getInstance(project)
-        val reuseLeaseHeld = !forceNew && cache.beginReuseLease(resourceKey)
-        if (!forceNew && !reuseLeaseHeld) {
+        if (!cache.beginReuseLease(resourceKey)) {
             if (!isProjectUnavailable()) {
                 onFailure(DatabaseToolsConsoleAcquisitionFailure.ReuseBusy)
             }
             return
         }
 
-        val reuseLeaseReleased = AtomicBoolean(false)
-        val releaseReuseLease = {
-            if (reuseLeaseHeld && reuseLeaseReleased.compareAndSet(false, true)) {
+        val leaseReleased = AtomicBoolean(false)
+        val releaseLease = {
+            if (leaseReleased.compareAndSet(false, true)) {
                 cache.endReuseLease(resourceKey)
             }
         }
 
-        var console: JdbcConsole? = null
         try {
             if (isProjectUnavailable()) {
-                releaseReuseLease()
+                releaseLease()
                 return
             }
 
-            val targetId = databaseToolsExecutionTargetId(dataSource, schema)
-            if (!forceNew) {
-                val cached = cache.get(resourceKey, targetId)
-                if (cached != null) {
-                    if (schema != null && !switchSchemaOnConsole(cached, schema)) {
-                        cache.evict(resourceKey)
-                        releaseReuseLease()
-                        onFailure(DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed)
-                        return
-                    }
-                    onConsoleReady(cached, releaseReuseLease)
-                    LOG.info("zMyBatis: matching live console reused")
+            val sessionDataSource = DbImplUtil.getMaybeLocalDataSource(dataSource)
+            if (sessionDataSource == null) {
+                releaseLease()
+                onFailure(DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleUnavailable)
+                return
+            }
+
+            val mapperFileName = resourceKey
+                .removePrefix("vfs:")
+                .substringAfterLast('/')
+                .substringAfterLast('\\')
+            val allConsoles = DatabaseSessionManager.getSessions(project, sessionDataSource)
+                .asSequence()
+                .flatMap { session -> session.clientsWithFile.asSequence() }
+                .filterIsInstance<JdbcConsole>()
+                .filter { console -> console.isValid }
+                .distinct()
+                .toList()
+            val namedConsoles = allConsoles.filter { console ->
+                console.file.virtualFile?.name == mapperFileName
+            }
+
+            val console = when {
+                namedConsoles.size == 1 -> namedConsoles.single()
+                namedConsoles.size > 1 -> {
+                    releaseLease()
+                    onFailure(DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleAmbiguous)
+                    return
+                }
+                allConsoles.size == 1 -> allConsoles.single()
+                allConsoles.isEmpty() -> {
+                    releaseLease()
+                    onFailure(DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleUnavailable)
+                    return
+                }
+                else -> {
+                    releaseLease()
+                    onFailure(DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleAmbiguous)
                     return
                 }
             }
 
-            val sqlFileType = FileTypeManager.getInstance().getFileTypeByExtension("sql")
-            // Preserve the legacy product-facing console identity. The console is an internal
-            // Database Tools resource; branding it as a second zMyBatis surface makes one mapper
-            // appear as two unrelated sessions in Services.
-            val consoleName = resourceKey.substringAfterLast('/').substringAfterLast('\\')
-            val lightFile = LightVirtualFile(consoleName, sqlFileType, "")
-
-            val sessionDataSource = DbImplUtil.getMaybeLocalDataSource(dataSource)
-            if (sessionDataSource == null) {
-                releaseReuseLease()
-                onFailure(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
-                return
-            }
-            console = JdbcConsole.newConsole(project)
-                .fromDataSource(sessionDataSource)
-                .forFile(lightFile)
-                .build()
-            // Keep disposal authority with this resource, independently of Disposer diagnostics.
-            val consoleLifetime = Disposer.newCheckedDisposable(console)
-            LOG.info("zMyBatis: console created")
-
             if (schema != null && !switchSchemaOnConsole(console, schema)) {
-                Disposer.dispose(console)
-                console = null
-                releaseReuseLease()
+                releaseLease()
                 onFailure(DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed)
                 return
             }
 
-            if (!forceNew) {
-                if (!cache.putEphemeral(
-                        mapperKey = resourceKey,
-                        console = console,
-                        targetId = targetId,
-                    )
-                ) {
-                    if (!consoleLifetime.isDisposed) {
-                        Disposer.dispose(console)
-                    }
-                    console = null
-                    releaseReuseLease()
-                    if (!isProjectUnavailable()) {
-                        onFailure(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
-                    }
-                    return
-                }
-                if (cache.get(resourceKey, targetId) !== console) {
-                    LOG.warn("zMyBatis: console was not live after cache registration — skipping query")
-                    if (!consoleLifetime.isDisposed) {
-                        Disposer.dispose(console)
-                    }
-                    console = null
-                    releaseReuseLease()
-                    return
-                }
-            }
-
-            if (isProjectUnavailable()) {
-                Disposer.dispose(console)
-                console = null
-                releaseReuseLease()
+            if (isProjectUnavailable() || !console.isValid) {
+                releaseLease()
                 return
             }
 
-            onConsoleReady(console, releaseReuseLease)
-            console = null
-            LOG.info("zMyBatis: session prepared")
+            onConsoleReady(console, releaseLease)
+            LOG.info("zMyBatis: existing Database Tools console reused")
         } catch (ex: ProcessCanceledException) {
-            console?.let { Disposer.dispose(it) }
-            releaseReuseLease()
+            releaseLease()
             throw ex
         } catch (ex: Exception) {
-            console?.let { Disposer.dispose(it) }
-            releaseReuseLease()
-            LOG.warn("zMyBatis: console creation failed (type=${ex.javaClass.name})")
+            releaseLease()
+            LOG.warn("zMyBatis: existing console lookup failed (type=${ex.javaClass.name})")
             if (!isProjectUnavailable()) {
-                onFailure(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
+                onFailure(DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleUnavailable)
             }
         } catch (fatal: Throwable) {
-            console?.let { Disposer.dispose(it) }
-            releaseReuseLease()
-            LOG.error("zMyBatis: fatal console creation failure", fatal)
+            releaseLease()
+            LOG.error("zMyBatis: fatal existing-console lookup failure", fatal)
             throw fatal
         }
     }
@@ -320,71 +283,11 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         }
 
         val consoleDoc = console.document
-        val consolePsiFile = console.file
-        val existingEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
+        val editorFactory = EditorFactory.getInstance()
+        val existingEditor = editorFactory.getEditors(consoleDoc, project)
             .firstOrNull { it is EditorEx && !it.isDisposed } as? EditorEx
 
-        if (existingEditor == null) {
-            LOG.info("zMyBatis: no existing console editor, attempting to open one")
-            val vFile = consolePsiFile.virtualFile
-            if (vFile != null) {
-                // OpenFileDescriptor.navigate uses the platform's public navigatable
-                // path. Under IDEA 263 FileNavigatorImpl opens the file editor before
-                // returning; the EDT continuation checks the actual live SQL editor.
-                // This stable navigation entry point avoids experimental APIs.
-                // Never inject SQL if the editor did not open.
-                try {
-                    // Native execution still needs a live SQL editor, but opening that
-                    // internal console must not steal focus from the mapper the user executed.
-                    OpenFileDescriptor(project, vFile).navigate(false)
-                    ApplicationManager.getApplication().invokeLater({
-                        try {
-                            if (isProjectUnavailable()) return@invokeLater
-                            if (!preExecutionCheck()) {
-                                onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
-                                return@invokeLater
-                            }
-                            if (!console.isValid) {
-                                LOG.warn("zMyBatis: console unavailable after editor-open scheduling")
-                                onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
-                                return@invokeLater
-                            }
-                            val retryEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
-                                .firstOrNull { it is EditorEx && !it.isDisposed } as? EditorEx
-                            if (retryEditor != null) {
-                                performExecution(
-                                    console,
-                                    sql,
-                                    retryEditor,
-                                    preExecutionCheck,
-                                    onExecuted,
-                                    onFailure,
-                                    finish,
-                                )
-                            } else {
-                                LOG.warn("zMyBatis: console editor still unavailable after opening")
-                                onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
-                            }
-                        } finally {
-                            finish()
-                        }
-                    }, ModalityState.defaultModalityState())
-                } catch (canceled: ProcessCanceledException) {
-                    finish()
-                    throw canceled
-                } catch (ex: Exception) {
-                    LOG.warn("zMyBatis: could not open console editor (type=${ex.javaClass.name})")
-                    fail(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
-                } catch (fatal: Throwable) {
-                    LOG.error("zMyBatis: fatal console editor-open failure", fatal)
-                    finish()
-                    throw fatal
-                }
-            } else {
-                LOG.warn("zMyBatis: console virtual file is null")
-                finish()
-            }
-        } else {
+        if (existingEditor != null) {
             performExecution(
                 console,
                 sql,
@@ -394,6 +297,37 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 onFailure,
                 finish,
             )
+            return
+        }
+
+        // Native Database Tools execution needs an Editor, but it does not need an editor tab.
+        // Use a temporary off-screen editor over the existing console document and release it
+        // immediately after the native request has been dispatched. The mapper remains active.
+        val transientEditor = try {
+            editorFactory.createEditor(consoleDoc, project) as? EditorEx
+        } catch (canceled: ProcessCanceledException) {
+            finish()
+            throw canceled
+        } catch (ex: Exception) {
+            LOG.warn("zMyBatis: could not create transient console editor (type=${ex.javaClass.name})")
+            null
+        }
+        if (transientEditor == null) {
+            fail(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
+            return
+        }
+        try {
+            performExecution(
+                console,
+                sql,
+                transientEditor,
+                preExecutionCheck,
+                onExecuted,
+                onFailure,
+                finish,
+            )
+        } finally {
+            editorFactory.releaseEditor(transientEditor)
         }
     }
 
