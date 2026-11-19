@@ -116,22 +116,6 @@ internal fun databaseToolsStableDataSourceId(dataSource: DbDataSource): String? 
     null
 }
 
-internal fun databaseToolsExecutionTargetId(
-    dataSource: DbDataSource,
-    schema: DasNamespace?,
-): ExecutionTargetId? {
-    val dataSourceId = databaseToolsStableDataSourceId(dataSource) ?: return null
-    val schemaName = schema?.name?.takeIf { it.isNotBlank() } ?: return null
-    return try {
-        ExecutionTargetId(
-            dataSourceId = StableDataSourceId(dataSourceId),
-            schema = ExplicitSchemaIdentity(schemaName),
-        )
-    } catch (_: IllegalArgumentException) {
-        null
-    }
-}
-
 /**
  * Database Tools DBMS identity is semantic input for MyBatis databaseId only.
  *
