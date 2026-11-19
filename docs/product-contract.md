@@ -351,7 +351,7 @@ Active parity ownership:
 - #508/#511 — repository-owned manual release-validation harness;
 - #513 — D0 documentation recording of the target architecture.
 
-D0-D1 and P1-P4 are complete. P5 owns packaged/manual acceptance and #509/#510 evidence
+D0-D1 and P1-P4 are complete. P5 owns packaged automated acceptance, minimal human UX smoke and #509/#510 evidence
 reconciliation; P6 follows with deletion/cleanup. Do not reopen #61-#67 semantics by incrementally
 restoring their old bounded admission/materializer islands.
 
