@@ -16,15 +16,15 @@ evidence. The old IntelliJ template rename test and evaluator debug/reproduction
 | Correctness boundary | Authoritative evidence | What it proves |
 | --- | --- | --- |
 | Caller-authority parameter/input boundary | `P2CallerAuthorityParityTest`, `P2RegisteredPathParityTest`, `LeapExecutionInvocationCoordinatorTest`, `LeapExecutionCandidateCoordinatorTest`, `ContractInputAdapterTest`, `ContractInputSubmissionPolicyTest`, `ContractInputSwingRendererProjectFixtureTest`, `ContractInputHistoryPolicyTest` | mapper method metadata or the explicit XML-only parameter object owns caller requirements; stock-compatible aliases/parameter objects are built independently of dynamic SQL syntax; bound/raw usage is separate from caller value type; raw-used input remains non-retainable |
-| Java direct-annotation source authority | `JavaAnnotationSourceCaptureAdapterProjectFixtureTest`, `JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest`, `LeapActionContextAdmissionCoordinatorTest` | immutable Java method identity, ordered signature, explicit `@Param`, constants/dependencies, databaseId variants, source revision authority, and typed unsupported cases feed the registered action |
+| Java direct-annotation source authority | `JavaAnnotationSourceCaptureAdapterProjectFixtureTest`, `JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest`, `LeapActionContextAdmissionCoordinatorTest`, `ZMyBatisStarterDriverE2ETest` | immutable Java method identity, ordered signature, explicit `@Param`, constants/dependencies and databaseId variants feed the registered action; Provider annotations remain explicitly unsupported and the packaged action presents that refusal |
 | XML source/dependency authority | `XmlMapperSourceDiscoveryTest`, `XmlStatementSourceGraphResolverTest`, adversarial source-graph tests, `LeapActionContextAdmissionCoordinatorTest` | canonical XML statement identity and reachable `<sql>/<include>` dependencies are complete, source-backed, target-selected where applicable, and fail typed on missing/ambiguous/cyclic/stale authority |
 | Isolated MyBatis preparation | `P2RegisteredPathParityTest`, `P2OgnlSafetyAdmissionTest`, `MyBatisPreparationEngineTest`, `XmlMapperPreparationEngineTest`, `XmlMapperPreparationProjectionParityTest`, `XmlSiblingBooleanIfPreparationTest`, `XmlMapperForeachPreparationTest` | selected Java/XML statements prepare through stock MyBatis after caller authority and capability-only safety checks; standard if/choose/foreach/where/set/trim/bind semantics are not gated by syntax-specific admission owners; source projection, topology, runtime isolation and typed capability failures remain enforced |
 | Stock MyBatis parity oracle and registered P2 parity | `StockMyBatisParityOracleTest`, `P2CallerAuthorityParityTest`, `P2RegisteredPathParityTest` + `mybatis-engine/src/test/resources/parity/**` | the frozen stock oracle defines expected MyBatis 3.6.0 semantics, while P2 registered-path tests prove caller-object construction and standard dynamic-tag execution now reach the maintained Java/XML preparation paths without a second zMyBatis semantic grammar |
 | Raw-interpolation confirmation | `LeapExecutionApprovalPolicyTest`, `LeapExecutionApprovalAdapterTest`, `LeapExecutionDeliveryCoordinatorTest`, `ZMyBatisStarterDriverE2ETest` | raw provenance forces final-artifact approval even when ordinary preview is off; cancellation is fail-closed; packaged XML and direct-Java raw composition is exercised |
 | Direct Java annotation raw composition | `P2CallerAuthorityParityTest`, `MyBatisPreparationEngineTest`, `LeapExecutionInvocationCoordinatorTest`, `ContractInputSwingRendererProjectFixtureTest`, `StarterDatabaseE2EIsolationContractTest`, `ZMyBatisStarterDriverE2ETest` | direct Java `@Select` / dynamic `<script>` uses mapper-signature caller authority; one String value may participate in both bound and raw usage; raw use remains non-retained and approval-gated before Database Tools delivery |
-| Mutation-declaration confirmation | `LeapExecutionApprovalPolicyTest`, `LeapExecutionApprovalAdapterTest`, `LeapExecutionDeliveryCoordinatorTest` | mutation declaration forces approval but is not SQL authorization |
+| Mutation-declaration confirmation | `LeapExecutionApprovalPolicyTest`, `LeapExecutionApprovalAdapterTest`, `LeapExecutionDeliveryCoordinatorTest`, `ZMyBatisStarterDriverE2ETest` | mutation declaration forces approval but is not SQL authorization; packaged IDEA proves SQL Preview OFF cannot bypass final-plan confirmation and cancellation prevents execution |
 | Registered action boundary | `MyBatisActionUpdateProjectFixtureTest`, `MyBatisActionUpdateBoundaryTest`, `LeapActionContextAdmissionCoordinatorTest` | `MyBatisExecuteAction` keeps update bounded and delegates supported execution only to Leap admission; no low-level Database Tools or alternative execution route is present at the action edge |
-| Target persistence and console lifecycle | `PersistedExecutionTargetSelectionTest`, `ExecutionTargetDescriptorStoreTest`, `MyBatisActionInterceptorActivityLifecycleTest`, `ConsoleCacheServiceLifecycleTest`, `ConsoleCacheOwnedResourceDisposalContractTest`, `DatabaseToolsTargetResolverTest`, `DatabaseToolsConsoleAdapterBoundaryTest` | current v3 source→target persistence is independent of live consoles; exact target identity gates REUSE; matching live consoles are reused under source-key ownership; same-source overlap, shutdown, invalid/disposed resources, and stale targets fail closed |
+| Target persistence, databaseId and console lifecycle | `PersistedExecutionTargetSelectionTest`, `ExecutionTargetDescriptorStoreTest`, `MyBatisActionInterceptorActivityLifecycleTest`, `ConsoleCacheServiceLifecycleTest`, `ConsoleCacheOwnedResourceDisposalContractTest`, `DatabaseToolsTargetResolverTest`, `DatabaseToolsConsoleAdapterBoundaryTest`, `ZMyBatisStarterDriverE2ETest` | current v3 source→target persistence is independent of live consoles; exact target identity gates REUSE; packaged PostgreSQL selection derives the PostgreSQL databaseId variant rather than the default; same-source overlap, shutdown, invalid/disposed resources, and stale targets fail closed |
 | Sensitive production logging | `SensitiveLoggingContractTest`, action/adapter diagnostic contract tests | production logs reject direct interpolation of known sensitive SQL/input/source/target identities and platform exception messages; typed expected failures expose metadata rather than raw payload |
 | Real packaged execution | `ZMyBatisStarterDriverE2ETest` via `E2E / Starter / Driver E2E` | exact packaged plugin must execute the registered zero-binding native route, multi-binding prepared route + prepared-result presentation, XML/direct-Java raw approval behavior, and maintained fail-closed/lifecycle scenarios on IDEA Ultimate 2026.3; P5 adds representative promoted parity acceptance before release sign-off (exact-HEAD evidence required) |
 
@@ -57,8 +57,9 @@ The oracle deliberately does **not** encode historical Leap refusal as target tr
 `XmlMapperPreparationProjectionParityTest` for structural selected-statement/reachable-fragment
 projection. P2 now extends that frozen oracle into the registered invocation/input authority:
 `P2CallerAuthorityParityTest`, `P2RegisteredPathParityTest` and the Java/XML engine suites prove
-mapper-signature / explicit XML-object caller authority and stock dynamic-SQL execution. P3 is the
-next hard-stop phase and extends this evidence into the prepared Database Tools backend.
+mapper-signature / explicit XML-object caller authority and stock dynamic-SQL execution. P3/P4 then
+promoted the maintained prepared Database Tools backend and immutable execution-plan routing into the
+registered path.
 
 Historical Boolean-if/foreach syntax-admission owners are no longer registered semantic authorities.
 Their retained successor tests exercise stock behavior plus provenance/topology/security invariants,
@@ -142,12 +143,20 @@ The exact approved plan is immediately revalidated before explicit backend dispa
 - bindings > 0 -> `DatabaseSessionPreparedBackend`;
 - bindings == 0 -> `NativeConsoleSqlTextBackend`.
 
-The maintained Starter/Driver E2E currently supplies representative full click-throughs for
-zero-binding native execution, multi-binding prepared execution + zMyBatis result presentation,
-promoted built-in `parameterType="long"` metadata through the registered prepared route, XML raw
-cancellation, and direct-Java raw cancel/reinvoke/execute. The parameterType scenario is P5 packaged
-acceptance for historical #510/R05; these representative scenarios still do not replace the
-lower-layer stock MyBatis oracle.
+The maintained Starter/Driver E2E currently supplies representative full click-throughs for:
+- zero-binding native execution;
+- multi-binding prepared execution + zMyBatis result presentation;
+- promoted built-in `parameterType="long"` metadata through the registered prepared route;
+- target-derived PostgreSQL `databaseId` selection over the default variant;
+- mutation-declaration approval with ordinary preview disabled and cancellation before execution;
+- explicit packaged `@SelectProvider` refusal;
+- XML raw cancellation;
+- direct-Java raw cancel/reinvoke/execute;
+- typed no-datasource refusal.
+
+The parameterType scenario is P5 packaged acceptance for historical #510/R05. These representative
+scenarios still do not replace the lower-layer stock MyBatis oracle or project-fixture lifecycle/
+prepared-cancellation evidence.
 
 ## Session and datasource platform gaps
 
