@@ -58,20 +58,24 @@ The registered product currently uses one contract-driven Leap execution authori
 action, heuristic SQL/parameter extractors, compatibility evaluator, legacy parameter dialog/history,
 and development-only v2 persistence migration are not production fallbacks.
 
-This section describes **current behavior only**. Its bounded dynamic-admission and SQL-text
-materialization restrictions must not be promoted back into the 1.0 target contract.
+This section describes **current behavior only** after the P4 unified execution-plan cutover.
 
 Current ownership is:
 
 - action/context presentation: `MyBatisExecuteAction` + bounded `MyBatisContextAnalyzer`;
 - authoritative source/statement capture: Leap Java/XML source adapters and source graphs;
-- parameter/input authority: typed contracts, codecs, contract UI and canonical-identity retention;
+- caller input authority: typed invocation contracts, codecs, contract UI and canonical-identity retention;
 - preparation: isolated stock MyBatis in `:mybatis-engine`;
-- execution representation: structured prepared evidence followed by an explicitly proven target-bound SQL-text materializer;
+- execution authority: one immutable `PreparedExecutionPlan` approved and revalidated as an exact identity;
+- bound execution: `DatabaseSessionPreparedBackend` with stock MyBatis TypeHandler/JDBC metadata;
+- zero-binding/exact-text execution: `NativeConsoleSqlTextBackend`;
+- prepared result presentation: bounded zMyBatis result adapter;
 - target persistence: v3 `ExecutionTargetDescriptorStore`;
 - live Database Tools resources: `ConsoleCacheService` + `DatabaseToolsConsoleAdapter`.
 
-Safety is not configurable through compatibility evaluator switches, and unsupported behavior does not degrade to an older path.
+Prepared/native backends are explicit capability routes, not fallbacks. Safety is not configurable
+through compatibility evaluator switches, and unsupported behavior does not degrade to an older
+evaluator/materializer path.
 
 ## 4. Source authority and canonical identity
 
@@ -200,8 +204,11 @@ session/connection ownership, prepared execution, cancellation, disposal and dat
 correctness. If that proof fails, stop and reconsider the execution target before expanding more
 syntax islands.
 
-The current registered action still uses DB-neutral zero-binding and the proven PostgreSQL BIGINT
-SQL-text materializer. That is **CURRENTLY-BOUNDED migration behavior**, not the 1.0 target.
+The registered action now implements the planned split:
+- ordered bindings execute through `DatabaseSessionPreparedBackend`;
+- zero-binding/exact-text plans execute through `NativeConsoleSqlTextBackend`.
+
+The former PostgreSQL BIGINT SQL-text materializer is migration history, not current execution authority.
 
 ## 10. Preview, formatting, and execution identity
 
@@ -317,8 +324,9 @@ Existing privacy hardening remains protected during parity recovery; regaining m
 10. route zero-binding/exact-text statements to the native-console backend;
 11. present structured result/failure with redacted diagnostics.
 
-Until P4 cutover, the current registered action continues its bounded SQL-text materialization behavior
-and fails closed outside that current envelope.
+P4 cutover is complete. The registered action executes only the exact approved
+`PreparedExecutionPlan` through its selected explicit backend and fails closed rather than
+switching to an alternate backend or legacy materializer.
 
 ## 17. Current settings disposition
 
