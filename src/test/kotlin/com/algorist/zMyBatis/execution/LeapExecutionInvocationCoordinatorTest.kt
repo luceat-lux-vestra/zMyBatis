@@ -106,6 +106,7 @@ class LeapExecutionInvocationCoordinatorTest {
         assertTrue(coordinator.contains("LeapExecutionInvocationFailure.MissingPersistedTarget"))
         assertTrue(coordinator.contains("LeapExecutionInvocationFailure.PersistedTargetChanged"))
         assertTrue(coordinator.contains("LeapExecutionInputResult.UserCancelled -> onCancelled()"))
+        assertTrue(coordinator.contains("dataContext = dataContext"))
         assertFalse(coordinator.contains("MyBatisEvaluator"))
         assertFalse(coordinator.contains(" ParameterInputDialog("))
         assertFalse(coordinator.contains("DbPsiFacade"))
