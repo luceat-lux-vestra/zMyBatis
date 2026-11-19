@@ -107,6 +107,36 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
     }
 
     @Test
+    fun `263 still has no typed QueryRequest binding port for native result UX`() {
+        val processRaw = DataRequest.RawRequest::class.java.declaredMethods
+            .singleOrNull { method ->
+                method.name == "processRaw" &&
+                    method.parameterTypes.any { type -> type == DatabaseConnectionCore::class.java }
+            }
+        assertNotNull(processRaw)
+        assertTrue(
+            "RawRequest remains a side-effect request and exposes no result value to the native query-result pipeline",
+            processRaw!!.returnType == Void.TYPE,
+        )
+
+        val constructors = DataRequest.QueryRequest::class.java.declaredConstructors.toList()
+        assertTrue("QueryRequest constructors must remain observable", constructors.isNotEmpty())
+        assertTrue(
+            "IDEA 263 still exposes the query parameter slot only as opaque Object; " +
+                "if this fails, reopen the native prepared-result bridge investigation. " +
+                "Observed: " + constructors.joinToString { constructor ->
+                    constructor.parameterTypes.joinToString(
+                        prefix = "(",
+                        postfix = ")",
+                    ) { it.name }
+                },
+            constructors.any { constructor ->
+                constructor.parameterTypes.lastOrNull() == Any::class.java
+            },
+        )
+    }
+
+    @Test
     fun `263 keeps the Database Tools parameterized statement factory directly linkable`() {
         val poweredBy = SmartStatementFactoryService::class.java.methods
             .singleOrNull { method ->
