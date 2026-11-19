@@ -63,7 +63,7 @@ The registered action has no retained legacy execution fallback. Removed proxy/e
 ## 1.1 Pre-1.0 parity recovery — mandatory order
 
 The P1-P4 compatibility architecture is now the registered shipping implementation. P5 validates
-packaged/manual parity against it; P6 owns deletion of superseded migration islands.
+packaged parity plus minimal human UX smoke against it; P6 owns deletion of superseded migration islands.
 
 Mandatory work-unit order:
 
@@ -74,7 +74,7 @@ D0  record the target architecture in authoritative docs
   -> P2  mapper-method/XML-only invocation contract replacement
   -> P3  Database Tools session prepared-backend spike + hard stop gate
   -> P4  unified PreparedExecutionPlan cutover
-  -> P5  packaged + manual parity
+  -> P5  packaged parity + minimal human UX smoke
   -> P6  delete superseded admission/preflight/materializer islands
 ```
 
@@ -275,7 +275,7 @@ The completed #67 readiness baseline remains a maintenance contract for:
 It does **not** freeze superseded dynamic-admission or PostgreSQL BIGINT materializer restrictions as
 the 1.0 product contract.
 
-P1-P4 replacement support is now shipping authority. P5 validates packaged/manual parity against
+P1-P4 replacement support is now shipping authority. P5 validates packaged parity plus minimal human UX smoke against
 that authority; P6 may delete superseded historical implementation/tests/docs only after P5 evidence
 is complete. No old-path fallback is allowed.
 
