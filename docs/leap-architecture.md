@@ -195,20 +195,22 @@ PreparedExecution(
 
 Each ordered binding records enough metadata to let the execution adapter preserve and supply it safely without guessing, including property provenance and relevant Java/JDBC/type-handler identity where available.
 
-### Current execution artifact boundary
+### Current execution-plan boundary
 
-The current registered Leap implementation converts structured `PreparedExecution` into an exact
-target-bound SQL-text artifact only for proven materialization shapes. Zero-binding is DB-neutral and
-the maintained nonzero slice is PostgreSQL BIGINT. Unsupported nonzero shapes fail typed.
+The registered path now freezes structured stock-MyBatis preparation into one immutable
+`PreparedExecutionPlan`. Approval, source revisions, target identity, databaseId, statement kind,
+raw-risk evidence and ordered typed bindings belong to that exact plan.
 
-This remains valid **current behavior** and useful safety evidence, but it is no longer the 1.0 target.
-The pre-1.0 architecture freezes an immutable `PreparedExecutionPlan` and routes bound statements to
-a true prepared backend if the P3 platform proof succeeds. See
-[MyBatis-compatibility architecture](mybatis-compatibility-architecture.md).
+Routing is explicit:
+
+- ordered bindings > 0 -> `DatabaseSessionPreparedBackend` -> bounded zMyBatis result presentation;
+- ordered bindings == 0 -> `NativeConsoleSqlTextBackend` -> Database Tools native result/history.
+
+There is no prepared-to-native or native-to-prepared correctness fallback, and the historical
+PostgreSQL BIGINT materializer is not registered execution authority.
 
 #251 remains historical evidence about the investigated 2026.2 Database Tools APIs. #391 remains
 historical evidence explaining why SQL-text materialization was selected for the first Leap cutover.
-Neither requires 1.0 to preserve single-binding literalization as the general execution model.
 
 ### Execution target
 
@@ -321,24 +323,16 @@ It never returns diagnostic comments as SQL.
 
 Current shipping behavior:
 
-1. stock MyBatis produces structured prepared evidence;
-2. a bounded materializer creates an exact SQL-text artifact only for a proven shape;
-3. approval and source/target/cancellation checks apply to that artifact;
-4. Database Tools native console executes the exact text.
-
-The registered action currently admits DB-neutral zero-binding and the proven PostgreSQL BIGINT
-nonzero slice. Other nonzero shapes fail closed and do not route to legacy execution.
-
-This current boundary is protected from unsafe fallback, but its materializer restriction is not the
-1.0 target. The target defined in
-[MyBatis-compatibility architecture](mybatis-compatibility-architecture.md) uses one immutable
-execution-plan authority with explicit backends:
-
-- bound statements -> `DatabaseSessionPreparedBackend` after the P3 maintained-API stop gate;
-- zero-binding/exact-text statements -> `NativeConsoleSqlTextBackend`.
+1. stock MyBatis produces `PreparedExecution` with ordered mappings/values;
+2. `PreparedExecutionPlanner` freezes the exact target-bound `PreparedExecutionPlan`;
+3. approval and immediate source/target/lifecycle checks apply to that exact plan;
+4. bound plans execute through `DatabaseSessionPreparedBackend`;
+5. zero-binding/exact-text plans execute through `NativeConsoleSqlTextBackend`;
+6. prepared outcomes use the bounded zMyBatis result adapter while native text retains Database Tools result/history.
 
 Native Database Tools result/history parity is not a correctness requirement for the prepared
-backend. Source/target/lifecycle/approval invariants remain unchanged in strength.
+backend. Source/target/lifecycle/approval invariants remain unchanged in strength, and no alternate
+backend is used after a selected backend fails.
 
 ## 9. Target/session and Database Tools adapter
 
@@ -358,9 +352,9 @@ Execution behavior:
 3. re-check target validity after user/modality/background boundaries;
 4. acquire/reuse a console as an ephemeral resource according to policy;
 5. apply schema and verify success;
-6. submit the single immutable proven SQL-text artifact; unproven nonzero shapes fail typed;
-7. invoke the native Database Tools path without a zMyBatis DBMS target allowlist;
-8. preserve/restore console document/editor state according to the adapter contract.
+6. freeze and revalidate the immutable `PreparedExecutionPlan`;
+7. route nonzero bindings through the Database Tools session-backed prepared backend, or zero bindings through the explicit native text backend;
+8. preserve prepared cancellation ownership and native console document/editor state according to the adapter contract.
 
 `REUSE` and `NEW_EACH` are resource policies, not target identities.
 
