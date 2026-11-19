@@ -224,13 +224,6 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         consoleAssociations[AssociationKey(resourceKey, targetId)] = WeakReference(console)
     }
 
-    internal fun forgetConsoleAssociation(
-        resourceKey: String,
-        targetId: ExecutionTargetId,
-    ) {
-        consoleAssociations.remove(AssociationKey(resourceKey, targetId))
-    }
-
     /**
      * Registers a live console only as an in-memory REUSE optimization.
      *
