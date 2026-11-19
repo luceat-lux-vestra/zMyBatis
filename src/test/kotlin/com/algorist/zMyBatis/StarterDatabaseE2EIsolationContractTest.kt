@@ -91,9 +91,26 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("raw Java input must never be retained across registered-action invocations") &&
                 e2e.contains("assertNativePostgreSqlHistoryContainsAndExcludes"),
         )
-        assertFalse(
-            "mutation confirmation belongs to lower-level Leap approval evidence rather than a duplicate process datasource scenario",
-            e2e.contains("registeredMutationDeclarationForcesPreviewWhenSettingDisabled"),
+        assertTrue(
+            "P5 packaged acceptance must prove mutation declaration forces approval even when ordinary preview is disabled",
+            e2e.contains("registeredMutationDeclarationForcesPreviewWhenSettingDisabled") &&
+                e2e.contains("mutation declaration must force final-plan approval when sqlPreview=false") &&
+                e2e.contains("cancelling mandatory mutation approval must not execute the declared mutation"),
+        )
+        assertTrue(
+            "P5 packaged acceptance must prove target-derived databaseId selects the PostgreSQL variant",
+            e2e.contains("registeredActionSelectsTargetDatabaseIdVariant") &&
+                e2e.contains("databaseId=\"PostgreSQL\"") &&
+                e2e.contains("SELECT 2620 AS RESULT_VALUE") &&
+                e2e.contains("SELECT 2600 AS RESULT_VALUE") &&
+                e2e.contains("target-derived PostgreSQL databaseId variant must win over the default variant"),
+        )
+        assertTrue(
+            "P5 packaged acceptance must keep Provider annotations explicitly fail-closed at the action edge",
+            e2e.contains("registeredProviderAnnotationFailsClosedWithExplicitNotice") &&
+                e2e.contains("writeDirectJavaProviderMapper(projectDir)") &&
+                e2e.contains("@SelectProvider(type = SqlProvider.class, method = \"sql\")") &&
+                e2e.contains("zMyBatis: Provider Not Supported"),
         )
         assertTrue(
             "bound PostgreSQL proof must require multiple JDBC bindings and zMyBatis prepared-result presentation",
