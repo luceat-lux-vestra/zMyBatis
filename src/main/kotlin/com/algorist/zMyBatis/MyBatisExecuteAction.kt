@@ -2,6 +2,7 @@
 
 package com.algorist.zMyBatis
 
+import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAcquisitionFailure
 import com.algorist.zMyBatis.execution.LeapActionContextAdmissionCoordinator
 import com.algorist.zMyBatis.execution.LeapActionContextAdmissionFailure
 import com.algorist.zMyBatis.execution.LeapExecutionDeliveryFailure
