@@ -7,24 +7,24 @@
 
 > **Distribution status:** zMyBatis is published on [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30447-zmybatis--mybatis-dynamic-sql-runner-with-parameters-mybatis). This GitHub repository is the canonical public source repository. No public GitHub Release artifact is currently published.
 
-> **Pre-1.0 development baseline:** the current registered Leap path remains intentionally bounded
-> (including zero-binding and the proven PostgreSQL BIGINT SQL-text slice), but that bounded
-> materializer/admission model is **not** the 1.0 target. The target design is
+> **Pre-1.0 development baseline:** the registered execution path now uses the
 > [zMyBatis 1.0 MyBatis-compatibility architecture](docs/mybatis-compatibility-architecture.md):
-> ordinary mapper parity is recovered against stock MyBatis before 1.0, with bound execution moving
-> toward a true prepared backend if the maintained Database Tools API proof succeeds.
+> stock MyBatis owns preparation semantics, one immutable `PreparedExecutionPlan` is approved and
+> revalidated, bound statements execute through the Database Tools session-backed prepared backend,
+> and zero-binding/exact-text statements use the explicit native Database Tools backend. The former
+> PostgreSQL BIGINT SQL-text materializer is historical migration evidence, not shipping authority.
 
 <!-- Plugin description -->
 <p><b>zMyBatis</b> is a JetBrains IDE plugin for executing supported MyBatis mapper statements directly from XML mapper files and direct Java statement annotations.</p>
 
-<p>The registered action captures authoritative mapper source, derives a provenanced input contract, prepares supported dynamic SQL through isolated stock MyBatis semantics, creates one immutable SQL-text execution artifact only for explicitly proven materialization shapes, and dispatches that exact artifact through JetBrains Database Tools.</p>
+<p>The registered action captures authoritative mapper source, derives caller-authoritative input, prepares dynamic SQL through isolated stock MyBatis semantics, freezes one immutable <code>PreparedExecutionPlan</code>, approves and revalidates that exact plan, then explicitly routes bound statements to a Database Tools session-backed prepared backend and zero-binding/exact-text statements to the native Database Tools backend.</p>
 
 <h2>Execution model</h2>
 <ul>
   <li>Supported XML mapper statements and direct Java <code>@Select</code> / <code>@Insert</code> / <code>@Update</code> / <code>@Delete</code> annotations use one Leap execution authority.</li>
   <li><code>#{}</code> bound inputs and <code>${}</code> raw interpolation remain distinct end-to-end.</li>
   <li>Raw interpolation and mutation declarations require explicit final-artifact confirmation.</li>
-  <li>Unsupported or ambiguous source, input, MyBatis, materialization, target, or execution cases fail closed instead of falling back to a legacy evaluator.</li>
+  <li>Unsupported or ambiguous source, input, MyBatis runtime capability, target, binding, or execution cases fail closed; prepared/native backends never silently fall back to each other or to a legacy evaluator/materializer.</li>
   <li>Kotlin direct-annotation execution and Provider annotations are currently unsupported.</li>
 </ul>
 
