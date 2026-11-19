@@ -367,7 +367,7 @@ D0  record this baseline in authoritative repository docs
   -> P2  invocation/input contract replacement
   -> P3  prepared-backend spike and hard stop gate
   -> P4  unified execution-plan cutover
-  -> P5  packaged + manual parity
+  -> P5  packaged parity + minimal human UX smoke
   -> P6  superseded admission/preflight/materializer cleanup
 ```
 
