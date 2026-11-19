@@ -30,7 +30,7 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
     }
 
     @Test
-    fun `adapter borrows an existing Database Tools console and never opens a console tab`() {
+    fun `adapter reuses chooses or creates a console without opening a console tab`() {
         val adapter = source(
             "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"
         )
@@ -38,24 +38,25 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         assertTrue(adapter.contains("DatabaseSessionManager.getSessions(project, sessionDataSource)"))
         assertTrue(adapter.contains("session.clientsWithFile"))
         assertTrue(adapter.contains(".filterIsInstance<JdbcConsole>()"))
-        assertTrue(adapter.contains("val selectedConsoleLeaseKey ="))
-        assertTrue(adapter.contains("cache.beginReuseLease(selectedConsoleLeaseKey)"))
-        assertTrue(adapter.contains("consoleLeaseKey?.let(cache::endReuseLease)"))
-        assertTrue(adapter.contains("console.file.virtualFile?.name == mapperFileName"))
+        assertTrue(adapter.contains("cache.rememberedConsole(resourceKey, targetId, consoles)"))
+        assertTrue(adapter.contains("cache.rememberConsole(resourceKey, targetId, console)"))
+        assertTrue(adapter.contains("console.file.virtualFile?.name == mapperName"))
+        assertTrue(adapter.contains("JBPopupFactory.getInstance().createActionGroupPopup("))
+        assertTrue(adapter.contains("\"Choose Database Console\""))
+        assertTrue(adapter.contains("\"Create New Console\""))
+        assertTrue(adapter.contains("JdbcConsole.newConsole(project)"))
+        assertTrue(adapter.contains("nextConsoleName("))
+        assertTrue(adapter.contains("cache.putEphemeral(ownershipKey, console, targetId)"))
         assertTrue(adapter.contains(".switchSchema("))
         assertTrue(adapter.contains("JdbcConsoleProvider.findScriptModelNoInject"))
         assertTrue(adapter.contains("JdbcConsoleProvider.doRunQueryInConsole"))
-        assertTrue(adapter.contains("WriteCommandAction.runWriteCommandAction"))
         assertTrue(adapter.contains("editorFactory.createEditor(consoleDoc, project)"))
         assertTrue(adapter.contains("editorFactory.releaseEditor(transientEditor)"))
 
-        assertFalse(adapter.contains("JdbcConsole.newConsole"))
-        assertFalse(adapter.contains("LightVirtualFile"))
+        assertFalse(adapter.contains("CustomerMapper.xml"))
         assertFalse(adapter.contains("OpenFileDescriptor"))
         assertFalse(adapter.contains(".navigate("))
         assertFalse(adapter.contains("requestFocusInWindow"))
-        assertFalse(adapter.contains("putEphemeral("))
-        assertFalse(adapter.contains("Disposer.dispose("))
         assertFalse(adapter.contains("FileEditorManagerEx"))
         assertFalse(adapter.contains("FileEditorOpenOptions"))
         assertFalse(adapter.contains("FileEditorOpenRequest"))
@@ -70,7 +71,7 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
     }
 
     @Test
-    fun `adapter does not schedule editor-tab navigation continuations`() {
+    fun `adapter chooser scheduling never becomes editor-tab navigation`() {
         val adapter = source(
             "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"
         )
@@ -78,9 +79,10 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionApprovalAdapter.kt"
         )
 
+        assertTrue(adapter.contains("ApplicationManager.getApplication().invokeLater"))
+        assertTrue(adapter.contains("ModalityState.any()"))
         assertFalse(adapter.contains("OpenFileDescriptor"))
-        assertFalse(adapter.contains("ModalityState"))
-        assertFalse(adapter.contains("ApplicationManager.getApplication().invokeLater"))
+        assertFalse(adapter.contains(".navigate("))
         assertFalse(approval.contains("ModalityState.any()"))
         assertTrue(approval.contains("ModalityState.defaultModalityState()"))
     }
