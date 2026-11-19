@@ -36,11 +36,11 @@ On an explicit zMyBatis execution action:
 - otherwise the v3 descriptor resolves to exactly one live datasource and one named schema through `DatabaseToolsTargetResolver`;
 - missing/ambiguous datasource or schema invalidates the stored selection and requires explicit re-selection;
 - target validity is rechecked after modal/background boundaries and before native query dispatch;
-- only after exact resolution does zMyBatis acquire a console and apply the proven schema;
-- `NEW_EACH` acquires a fresh console but uses the same target authority;
-- explicit named datasource/schema selection updates v3 independently of live-console registration.
+- only after exact resolution does zMyBatis discover an existing Database Tools session/client and re-apply the proven schema before execution;
+- zMyBatis never creates a fresh console as a shipping policy;
+- explicit named datasource/schema selection updates v3 independently of console/session lifetime.
 
-Live console caching is an ephemeral optimization. A matching live REUSE console has its explicit schema re-applied before handoff and is used before any replacement is constructed; disposed/invalid, schema-switch-failed, or target-mismatched entries are evicted. Cancellation/failure releases the keyed REUSE lease, while shutdown clears acquisition ownership and rejects new leases. Closing/disposal does not delete persisted v3 target identity, and service disposal releases owned console resources without mutating persistence.
+Shipping console acquisition is borrow-only. zMyBatis enumerates existing Database Tools session clients, prefers the single console whose file identity matches the mapper-facing console name, and fails closed when no console exists or the match is ambiguous. The source-key lease prevents overlapping invocations from concurrently mutating the shared console document. zMyBatis does not register borrowed consoles in its ownership cache and does not dispose them. Closing/disposal does not delete persisted v3 target identity.
 
 ## Unsupported historical state
 
