@@ -125,7 +125,7 @@ The plugin uses `com.intellij.database.*`, including APIs that can move between 
 
 - `pluginSinceBuild`, platform type/version, bundled database plugin declarations, and Plugin Verifier configuration form one compatibility contract.
 - The declared minimum is build **263**. The required `Verify plugin` context independently targets IntelliJ IDEA Ultimate 2026.3 and DataGrip 2026.3. Their independent SDK selectors do not create 2026.2 support. A configured host is not PASS without exact-HEAD evidence; the default internal/override-only API failure levels remain enforced.
-- Host evidence remains asymmetric: the **2026.3** IDEA Ultimate Starter/Driver suite owns the full PostgreSQL execution matrix, while the **2026.3** DataGrip suite independently owns packaged plugin/service loading, typed XML no-datasource refusal, and one bounded XML prepared-PostgreSQL route through the Database Tools session backend. These are requirements, not asserted PASS results. DataGrip proof does not imply Java-source parity or native Database Tools result/history parity. Internal and experimental IntelliJ editor-open API usage is disallowed; the 2026.3 public `OpenFileDescriptor.navigate(false)` path must preserve lease ownership and revalidate the immutable artifact, console and actual editor in the EDT continuation without stealing focus from the mapper.
+- Host evidence remains asymmetric: the **2026.3** IDEA Ultimate Starter/Driver suite owns the full PostgreSQL execution matrix, while the **2026.3** DataGrip suite independently owns packaged plugin/service loading, typed XML no-datasource refusal, and one bounded XML prepared-PostgreSQL route through the Database Tools session backend. These are requirements, not asserted PASS results. DataGrip proof does not imply Java-source parity or native Database Tools result/history parity. Internal and experimental IntelliJ editor-open API usage is disallowed. Shipping execution borrows an existing Database Tools `JdbcConsole` client from the resolved datasource session; if no persistent editor exists, it uses a transient off-screen editor over that console document and releases it after dispatch. Mapper execution must not open or focus a console editor tab.
 - Raising the minimum IDE build or widening compatibility claims is a product/API decision, not a routine dependency bump.
 
 ## 5. Datasource / schema / session identity — hardened baseline
@@ -142,11 +142,12 @@ Hardening #57 established the stable datasource/schema safety baseline, and #260
 - legacy application-global hash/name records remain deliberately unread because their original ownership cannot be proven safely;
 - development-only v2 project-scoped records were never distributed and are not read or migrated;
 - startup only prunes stale current-v3 source associations and creates no `JdbcConsole`;
-- datasource/schema resources are resolved exactly when an explicit action needs a console;
-- `REUSE`/`NEW_EACH` are ephemeral resource policies; live console registration/disposal is not v3 target-persistence authority. REUSE first checks the matching live console under a project-scoped source-key lease, so same-source invocations cannot concurrently mutate or replace one console; unrelated source keys remain independent. The cache owns retained live consoles and must dispose stale/superseded entries and all remaining cached consoles when the service is disposed.
-- cancellation, terminal execution callbacks, and shutdown release or clear REUSE ownership fail-closed across target resolution/resource acquisition.
+- datasource/schema resources are resolved exactly when an explicit action needs database execution;
+- shipping execution reuses an existing Database Tools session/client; it must not create, cache, replace, or dispose a user console;
+- `ConsoleCacheService` supplies only the keyed same-source invocation lease on the shipping path, so overlapping executions cannot concurrently mutate the shared console document; unrelated source keys remain independent;
+- cancellation, terminal execution callbacks, lookup failure, and shutdown release or clear that lease fail-closed.
 
-Development-only v2 persistence was never distributed and has no runtime reader or migration path. `ConsoleCacheService` owns live resource/selection/shutdown lifecycle only and has no persistence storage surface.
+Development-only v2 persistence was never distributed and has no runtime reader or migration path. Legacy console-cache ownership helpers may remain only until bounded cleanup; they are not shipping acquisition authority.
 
 See [docs/session-persistence.md](docs/session-persistence.md) for the current persistence contract and [docs/test-contracts.md](docs/test-contracts.md) for automated versus platform-dependent evidence.
 
@@ -320,8 +321,8 @@ Checkpoint updates must not move the production PR HEAD. Any actual HEAD movemen
 
 P5 human smoke treats the pre-Leap product workflow as the UX baseline while allowing presentation/UI improvements. Internal architecture may change, but it must not introduce user-visible execution surfaces merely to expose implementation details.
 
-- mapper execution keeps the mapper editor focused while an internal Database Tools console editor is prepared in the background;
-- the internal console keeps the legacy mapper filename as its product-facing identity; do not append a second `- zMyBatis` session identity;
+- mapper execution reuses an already-existing Database Tools console/session client; zMyBatis must not create a duplicate console with the same name or a `- zMyBatis` suffix;
+- executing from a mapper must not open or focus another console editor tab; a transient off-screen editor may be used only as an implementation detail when native dispatch needs an `Editor`;
 - parameter input may improve labels, validation, accessibility, and structured editing without changing caller authority;
 - zero-binding/exact-text execution continues to use native Database Tools result/history surfaces;
 - bound prepared execution must not be moved back to unsafe universal SQL literalization merely for UI parity. If maintained public Database Tools APIs cannot surface prepared results natively, treat result presentation as an explicit UX gap to resolve, not as permission to weaken binding semantics.
