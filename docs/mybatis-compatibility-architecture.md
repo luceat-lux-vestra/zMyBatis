@@ -6,10 +6,11 @@ Authority: issue #512 and documentation work unit #513.
 
 Baseline recorded from protected `main` `402ee67d48123235828a2ef2bc1642c7000e53a2`.
 
-This document defines the target architecture that must be proven before zMyBatis 1.0.
-It supersedes the bounded SQL-text/materializer target from the 2026-10 Leap rebaseline wherever
-the two conflict. It does **not** claim that the current registered action already implements this
-target.
+This document defines the pre-1.0 compatibility architecture. P1-P4 have now implemented its core
+registered execution path: statement-scoped projection, caller-authority invocation, prepared
+Database Tools execution, immutable `PreparedExecutionPlan`, and explicit prepared/native routing.
+P5 is validating packaged/manual acceptance and P6 owns deletion/cleanup of superseded migration
+architecture.
 
 Historical documents such as [Leap execution rebaseline](leap-execution-rebaseline.md) and the
 Database Tools parameterized-execution investigation remain evidence about decisions and observed
@@ -295,9 +296,9 @@ Keep the current Database Tools console path for:
 
 This is an explicit backend, not a silent fallback.
 
-The current PostgreSQL BIGINT single-binding materializer is not the universal target architecture.
-It may survive only as an optional bounded native-console compatibility path if still useful after
-prepared execution exists.
+The former PostgreSQL BIGINT single-binding materializer is not registered execution authority and
+must not be reintroduced as a fallback. Historical tests may remain until P6 where they still
+characterize migration evidence.
 
 ## 10. Result presentation
 
