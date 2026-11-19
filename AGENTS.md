@@ -323,8 +323,9 @@ Checkpoint updates must not move the production PR HEAD. Any actual HEAD movemen
 
 P5 human smoke treats the pre-Leap product workflow as the UX baseline while allowing presentation/UI improvements. Internal architecture may change, but it must not introduce user-visible execution surfaces merely to expose implementation details.
 
-- mapper execution reuses an already-existing Database Tools console/session client; zMyBatis must not create a duplicate console with the same name or a `- zMyBatis` suffix;
-- executing from a mapper must not open or focus another console editor tab; a transient off-screen editor may be used only as an implementation detail when native dispatch needs an `Editor`;
+- mapper execution preferentially reuses the remembered/eligible Database Tools console; if none exists, zMyBatis may create one console for that mapper/target, and ambiguous candidates are resolved by an explicit console chooser rather than arbitrary selection;
+- newly created console names are derived from the current mapper filename and made collision-safe; no concrete mapper name or `- zMyBatis` branding is hardcoded;
+- executing from a mapper must not open or focus another console editor tab; a transient off-screen editor may be used only as an implementation detail when native dispatch needs an `Editor`, and it is created/released per dispatch rather than retained as a hidden editor pool unless measured evidence later justifies a lifecycle-safe cache;
 - parameter input may improve labels, validation, accessibility, and structured editing without changing caller authority;
 - zero-binding/exact-text execution continues to use native Database Tools result/history surfaces;
 - bound prepared execution must not be moved back to unsafe universal SQL literalization merely for UI parity. If maintained public Database Tools APIs cannot surface prepared results natively, treat result presentation as an explicit UX gap to resolve, not as permission to weaken binding semantics.
