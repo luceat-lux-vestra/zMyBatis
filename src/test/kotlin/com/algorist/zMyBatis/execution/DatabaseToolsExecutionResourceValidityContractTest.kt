@@ -25,7 +25,7 @@ class DatabaseToolsExecutionResourceValidityContractTest {
         assertTrue("editor lookup must happen only after validated document access", editorLookup > documentAccess)
         assertTrue(
             "disposed console must become a typed execution failure",
-            executeSql.contains("onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)"),
+            executeSql.contains("fail(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)"),
         )
     }
 
