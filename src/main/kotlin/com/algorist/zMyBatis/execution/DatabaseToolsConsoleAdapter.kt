@@ -82,10 +82,10 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
     fun acquireAndDeliverConsole(
         dataSource: DbDataSource,
         schema: DasNamespace?,
-        targetId: ExecutionTargetId,
+        targetId: ExecutionTargetId? = null,
         resourceKey: String,
-        dataContext: DataContext?,
-        onCancelled: () -> Unit,
+        dataContext: DataContext? = null,
+        onCancelled: () -> Unit = {},
         onConsoleReady: (JdbcConsole, () -> Unit) -> Unit,
         onFailure: (DatabaseToolsConsoleAcquisitionFailure) -> Unit,
     ) {
@@ -168,7 +168,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 }
             }
 
-            if (remember) {
+            if (remember && targetId != null) {
                 cache.rememberConsole(resourceKey, targetId, console)
             }
             onConsoleReady(console, releaseAll)
@@ -207,11 +207,13 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 .distinct()
                 .toList()
 
-            cache.rememberedConsole(resourceKey, targetId, consoles)?.let { remembered ->
-                deliver(remembered)
-                LOG.info("zMyBatis: remembered Database Tools console reused")
-                return
-            }
+            targetId
+                ?.let { cache.rememberedConsole(resourceKey, it, consoles) }
+                ?.let { remembered ->
+                    deliver(remembered)
+                    LOG.info("zMyBatis: remembered Database Tools console reused")
+                    return
+                }
 
             val mapperName = mapperDisplayName(resourceKey)
             val mapperMatches = consoles.filter { console ->
