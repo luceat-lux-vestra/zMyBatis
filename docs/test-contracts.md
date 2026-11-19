@@ -444,51 +444,41 @@ Retained-resource/lifecycle evidence beyond this dialog callback ownership is co
 by #476, while separate DataGrip host evidence is covered by #478/#480/#481; this dialog fixture
 does not subsume either boundary.
 
-## Repeated console resource lifecycle and retention evidence
+## Repeated borrowed-console lifecycle evidence
 
-`ConsoleResourceLifecycleScaleProjectFixtureTest` measures the repeated resource envelope of the
-shipping Database Tools acquisition boundary using real IntelliJ `JdbcConsole` instances.
+`ConsoleResourceLifecycleScaleProjectFixtureTest` measures the shipping Database Tools boundary
+using real IntelliJ `JdbcConsole` instances that are created by the fixture as platform-owned
+preconditions, not by zMyBatis acquisition.
 
-The REUSE case performs **32 same-source/same-target completed acquisitions** through
-`DatabaseToolsConsoleAdapter`. Every terminal callback releases keyed ownership before the next
-iteration. The fixture records the number of distinct console identities, verifies that the cache
-retains exactly the single matching console, proves the lease can be reacquired after every
-completion, then evicts that bounded owner and requires the console lifetime to be disposed.
+The shipping adapter performs **borrow-only** acquisition. It enumerates the resolved datasource's
+existing Database Tools session clients, prefers a unique mapper-name match, and fails closed when
+no console exists or the match is ambiguous. It never calls `JdbcConsole.newConsole`, never places
+a borrowed console in the zMyBatis ownership cache, and never disposes that console.
 
-Fresh-console acquisition is no longer a shipping capability. Scale evidence repeatedly borrows one
-Database Tools-owned console, requires zero zMyBatis cache retention, and verifies no source-key lease is stranded.
-The real console lifetimes are deliberately left untouched by fixture cleanup so the platform test
-project teardown can establish the actual post-terminal lifetime boundary. The fixture records how
-many NEW_EACH consoles remain live immediately after terminal handoff and, from `tearDown()`, how
-many are disposed when the owning IntelliJ test project is torn down. A live NEW_EACH console after
-terminal handoff is therefore recorded as outside zMyBatis cache ownership rather than being
-silently classified as a leak.
+The repeated-completion case performs **48** same-source acquisitions and requires every handoff to
+return the same existing console identity. Each terminal callback releases the source-key lease,
+the zMyBatis console cache stays empty, and the Database Tools-owned console remains live.
 
-Terminal cleanup evidence separately injects `ProcessCanceledException` and an ordinary delivery
-failure from the real acquisition callback. Both paths must remove any newly registered REUSE
-console and release keyed ownership so the same key can be acquired again. An isolated real-console
-service fixture additionally owns **8 REUSE resources** and requires explicit
-`ConsoleCacheService` disposal to dispose all eight.
+The materialized-delivery characterization performs **12** repeated terminal cycles through the
+native SQL-text boundary. When no persistent console editor exists, the adapter creates one
+off-screen transient `Editor` over the existing console document, dispatches through the same
+native Database Tools boundary, and releases that editor immediately. The test requires zero
+persistent-editor cardinality growth, document restoration on late invalidation, no native
+invocation after invalidation, no stranded lease, and no disposal of the borrowed console.
 
-Successful runs emit `ZMYBATIS_RESOURCE_LIFECYCLE` records for repeated completion, terminal
-ownership, cleanup, service disposal, and project disposal. The root test task surfaces this prefix
-alongside the existing XML/input measurement prefixes without enabling arbitrary test stdout.
+Terminal cleanup separately injects `ProcessCanceledException` and a missing-console condition.
+Both paths must release source-key ownership. Missing and ambiguous consoles are typed refusals;
+they must never trigger implicit console creation.
 
-The retained materialized-delivery fixture predates P4 and still runs repeated cycles through the
-former `acquireAndDeliverConsole -> executeMaterialized -> onFinished` boundary. It remains useful
-only as historical console/editor cleanup characterization and is **not** a source contract for the
-registered shipping path. Current shipping routing is covered separately by
-`LeapExecutionDeliveryCoordinatorTest`, prepared cancellation ownership tests, and packaged
-Starter/Driver E2E.
+Successful runs emit `ZMYBATIS_RESOURCE_LIFECYCLE` records for repeated borrowed-console completion,
+materialized delivery with zero persistent-editor delta, and terminal cleanup. The root test task
+surfaces this prefix alongside the XML/input measurement prefixes without enabling arbitrary test
+stdout.
 
-That historical repeated fixture deliberately records `native_invocations=0`; it must not be cited
-as proof of current native or prepared execution success.
-
-These fixtures measure zMyBatis cache/lease ownership plus real console lifetime convergence; they
-do not claim every native Database Tools result/editor/history object is owned by zMyBatis. Native
-visible-console/history behavior remains platform-owned evidence; the separate DataGrip host claim is maintained by #478 and does not widen this resource fixture. No forced GC, heap-size threshold, arbitrary console-count
-limit, or REUSE/NEW_EACH policy redesign is introduced by this measurement slice.
-
+These fixtures characterize zMyBatis lease/transient-editor ownership only. Database Tools owns the
+borrowed console, connection session, visible Services nodes, result tabs, and history. No forced
+GC, heap threshold, arbitrary console-count limit, or fresh-console execution policy is part of the
+shipping contract.
 
 
 ## Preparation scale and retired materializer characterization
