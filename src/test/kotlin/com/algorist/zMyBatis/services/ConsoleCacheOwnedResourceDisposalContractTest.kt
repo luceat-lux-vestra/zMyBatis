@@ -57,7 +57,7 @@ class ConsoleCacheOwnedResourceDisposalContractTest {
 
         val lease = acquisition.indexOf("cache.beginReuseLease(resourceKey)")
         val sessions = acquisition.indexOf("DatabaseSessionManager.getSessions(project, sessionDataSource)")
-        val remembered = acquisition.indexOf("cache.rememberedConsole(resourceKey, it, consoles)")
+        val remembered = acquisition.indexOf("cache.rememberedConsole(resourceKey, it)")
         val mapperMatch = acquisition.indexOf("console.file.virtualFile?.name == mapperName")
         val chooser = acquisition.indexOf("requestConsoleChoice(")
         val create = acquisition.indexOf("createAndDeliver(consoles)")
