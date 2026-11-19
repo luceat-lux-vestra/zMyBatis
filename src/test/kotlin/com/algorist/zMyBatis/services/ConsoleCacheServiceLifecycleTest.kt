@@ -315,6 +315,69 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         }
     }
 
+    fun testDifferentMapperSourcesCannotConcurrentlyBorrowTheSameDatabaseToolsConsole() {
+        val dataSource = registeredDbDataSource(
+            name = "zMyBatis shared-console fixture",
+            url = "jdbc:h2:mem:zmybatis_shared_console",
+        )
+        val existing = newConsole(dataSource, "SharedConsole.sql")
+        val lifetime = Disposer.newCheckedDisposable(existing)
+        val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
+        val firstKey = "vfs:file:///tmp/zmybatis/FirstMapper.xml"
+        val secondKey = "vfs:file:///tmp/zmybatis/SecondMapper.xml"
+        var firstRelease: (() -> Unit)? = null
+        var failure: DatabaseToolsConsoleAcquisitionFailure? = null
+
+        try {
+            adapter.acquireAndDeliverConsole(
+                dataSource = dataSource,
+                schema = null,
+                resourceKey = firstKey,
+                onConsoleReady = { console, release ->
+                    assertSame(existing, console)
+                    firstRelease = release
+                },
+                onFailure = { failure = it },
+            )
+            assertNull(failure)
+
+            var secondDelivered = false
+            adapter.acquireAndDeliverConsole(
+                dataSource = dataSource,
+                schema = null,
+                resourceKey = secondKey,
+                onConsoleReady = { _, release ->
+                    secondDelivered = true
+                    release()
+                },
+                onFailure = { failure = it },
+            )
+
+            assertFalse("one console document must never be mutated by two mapper invocations", secondDelivered)
+            assertSame(DatabaseToolsConsoleAcquisitionFailure.ReuseBusy, failure)
+
+            firstRelease!!.invoke()
+            firstRelease = null
+            failure = null
+
+            adapter.acquireAndDeliverConsole(
+                dataSource = dataSource,
+                schema = null,
+                resourceKey = secondKey,
+                onConsoleReady = { console, release ->
+                    assertSame(existing, console)
+                    release()
+                },
+                onFailure = { failure = it },
+            )
+            assertNull("console identity lease must become reusable after terminal release", failure)
+            assertFalse(lifetime.isDisposed)
+        } finally {
+            firstRelease?.invoke()
+            if (!lifetime.isDisposed) Disposer.dispose(existing)
+        }
+    }
+
     fun testAdapterDoesNotCreateConsoleWhenNoExistingDatabaseToolsClientExists() {
         val cache = ConsoleCacheService.getInstance(project)
         val dataSource = registeredDbDataSource(
