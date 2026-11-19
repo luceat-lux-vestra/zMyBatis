@@ -206,11 +206,11 @@ DataGrip acceptance remains XML-focused.
 | U04 | Remember Last Inputs | execute M03 twice | eligible BIGINT input may be restored for the same statement |
 | U05 | Raw non-retention | execute/cancel M07 twice | previous raw value remains blank |
 | U06 | Statement isolation | enter M03 value, then M14 | values do not bleed across canonical statements |
-| U07 | REUSE | execute M01 twice | matching live native console may be reused; result stays correct |
-| U08 | NEW_EACH | execute M01 twice | separate live console resources; result stays correct |
+| U07 | existing console reuse | execute M01 twice from the mapper | the same existing Database Tools console/session client is reused; no duplicate console appears in Services |
+| U08 | mapper focus | execute M01 from the XML mapper while its console editor is closed | execution must not open or focus another console editor tab; mapper remains the active editor |
 
-Prepared result presentation is zMyBatis-owned and is not required to recreate native Database Tools
-query history.
+Prepared bound-result presentation remains a separate P5 UX gap until maintained Database Tools APIs
+can preserve true prepared binding semantics and native result/history without unsafe literalization.
 
 ## 8. Target / lifecycle inventory
 
