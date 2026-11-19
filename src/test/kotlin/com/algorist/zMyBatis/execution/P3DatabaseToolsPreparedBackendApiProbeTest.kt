@@ -137,6 +137,49 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
     }
 
     @Test
+    fun `263 characterizes public result bridge candidates for prepared native UX`() {
+        fun methods(type: Class<*>): String =
+            (type.methods.toList() + type.declaredMethods.toList())
+                .distinctBy { method ->
+                    method.name + method.parameterTypes.joinToString { it.name } + method.returnType.name
+                }
+                .filter { method ->
+                    val name = method.name.lowercase()
+                    name.contains("result") ||
+                        name.contains("response") ||
+                        name.contains("consumer") ||
+                        name.contains("process") ||
+                        name.contains("produce")
+                }
+                .sortedBy { it.name }
+                .joinToString(";") { method ->
+                    method.name +
+                        method.parameterTypes.joinToString(prefix = "(", postfix = ")") { it.name } +
+                        ":" + method.returnType.name +
+                        ":" + Modifier.toString(method.modifiers)
+                }
+
+        val optionalCandidates = listOf(
+            "com.intellij.database.datagrid.ResultsProducer",
+            "com.intellij.database.datagrid.StandardResultsProcessors",
+            "com.intellij.database.datagrid.DataConsumer",
+            "com.intellij.database.datagrid.DatabaseTopics",
+        ).joinToString("|") { className ->
+            runCatching {
+                val type = Class.forName(className)
+                "$className={${methods(type)}}"
+            }.getOrElse { "$className=<absent>" }
+        }
+
+        println(
+            "ZMYBATIS_P3_API resultBridge " +
+                "context={${methods(DataRequest.Context::class.java)}} " +
+                "rawRequest={${methods(DataRequest.RawRequest::class.java)}} " +
+                "candidates=$optionalCandidates",
+        )
+    }
+
+    @Test
     fun `263 keeps the Database Tools parameterized statement factory directly linkable`() {
         val poweredBy = SmartStatementFactoryService::class.java.methods
             .singleOrNull { method ->
