@@ -456,6 +456,38 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         assertTrue("wrong-target cache entry must be disposed after eviction", lifetime.isDisposed)
     }
 
+    fun testRuntimeConsoleAssociationPrefersRememberedSourceTargetAndDropsStaleConsole() {
+        val cache = newIsolatedCache()
+        val dataSource = registeredDbDataSource(
+            name = "zMyBatis remembered-console fixture",
+            url = "jdbc:h2:mem:zmybatis_remembered_console",
+        )
+        val first = newConsole(dataSource, "First.sql")
+        val second = newConsole(dataSource, "Second.sql")
+        val secondLifetime = Disposer.newCheckedDisposable(second)
+        val key = "vfs:file:///tmp/zmybatis/Mapper.xml"
+        val target = targetId("remembered-ds", "public")
+
+        try {
+            cache.rememberConsole(key, target, second)
+            assertSame(
+                "explicit source+target association must outrank filename/order heuristics",
+                second,
+                cache.rememberedConsole(key, target, listOf(first, second)),
+            )
+
+            Disposer.dispose(second)
+            assertTrue(secondLifetime.isDisposed)
+            assertNull(
+                "disposed remembered console must invalidate the runtime association",
+                cache.rememberedConsole(key, target, listOf(first, second)),
+            )
+        } finally {
+            if (first.isValid) Disposer.dispose(first)
+            if (!secondLifetime.isDisposed) Disposer.dispose(second)
+        }
+    }
+
     fun testReuseLeaseIsKeyScopedAndReleasable() {
         val cache = ConsoleCacheService.getInstance(project)
         val mapperKey = "file:///tmp/zmybatis/Mapper.xml"
