@@ -81,9 +81,11 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             return
         }
 
+        var consoleLeaseKey: String? = null
         val leaseReleased = AtomicBoolean(false)
         val releaseLease = {
             if (leaseReleased.compareAndSet(false, true)) {
+                consoleLeaseKey?.let(cache::endReuseLease)
                 cache.endReuseLease(resourceKey)
             }
         }
@@ -135,6 +137,16 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                     return
                 }
             }
+
+            val selectedConsoleLeaseKey =
+                console.file.virtualFile?.url?.let { "database-console:$it" }
+                    ?: "database-console-identity:${System.identityHashCode(console)}"
+            if (!cache.beginReuseLease(selectedConsoleLeaseKey)) {
+                releaseLease()
+                onFailure(DatabaseToolsConsoleAcquisitionFailure.ReuseBusy)
+                return
+            }
+            consoleLeaseKey = selectedConsoleLeaseKey
 
             if (schema != null && !switchSchemaOnConsole(console, schema)) {
                 releaseLease()
