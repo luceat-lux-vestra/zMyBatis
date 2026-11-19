@@ -433,6 +433,10 @@ object MyBatisInvocationContractFactory {
     )
 
     internal object XmlInvocationUsageScanner {
+        private val bindLiteral = Regex(
+            """(?:null|true|false|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?[lLfFdD]?|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*")""",
+        )
+
         data class Result(
             val requiresCallerObject: Boolean,
             val rawUses: List<RawUse>,
@@ -545,6 +549,7 @@ object MyBatisInvocationContractFactory {
                                 ?.let(scan.internalNames::add)
                             node.getAttribute("value").trim()
                                 .takeIf(String::isNotEmpty)
+                                ?.takeUnless(::isSelfContainedBindLiteral)
                                 ?.let { expression ->
                                     scan.requiresCallerObject = true
                                     scan.objectEvidence += InputEvidence.OgnlExpression(
@@ -610,6 +615,9 @@ object MyBatisInvocationContractFactory {
                 )
             }
         }
+
+        private fun isSelfContainedBindLiteral(expression: String): Boolean =
+            bindLiteral.matches(expression)
 
         private fun parseDocument(
             projected: XmlMapperPreparationProjection.ProjectedDocument,
