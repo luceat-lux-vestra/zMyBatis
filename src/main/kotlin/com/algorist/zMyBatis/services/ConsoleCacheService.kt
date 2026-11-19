@@ -87,7 +87,13 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         val targetId: ExecutionTargetId?,
     )
 
+    private data class AssociationKey(
+        val resourceKey: String,
+        val targetId: ExecutionTargetId,
+    )
+
     private val cache = ConcurrentHashMap<String, Entry>()
+    private val consoleAssociations = ConcurrentHashMap<AssociationKey, String>()
     private val activeReuseLeases = ConcurrentHashMap.newKeySet<String>()
     private val lifecycleLock = Any()
 
@@ -188,6 +194,48 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         }
     }
 
+
+    /**
+     * Returns the remembered console for one source+target pair only when that exact console is
+     * still among the current Database Tools candidates. Associations are runtime hints only:
+     * they never become persisted execution-target authority and never imply console ownership.
+     */
+    internal fun rememberedConsole(
+        resourceKey: String,
+        targetId: ExecutionTargetId,
+        candidates: List<JdbcConsole>,
+    ): JdbcConsole? {
+        val key = AssociationKey(resourceKey, targetId)
+        val rememberedId = consoleAssociations[key] ?: return null
+        val match = candidates.singleOrNull { console ->
+            console.isValid && consoleIdentity(console) == rememberedId
+        }
+        if (match == null) {
+            consoleAssociations.remove(key, rememberedId)
+        }
+        return match
+    }
+
+    internal fun rememberConsole(
+        resourceKey: String,
+        targetId: ExecutionTargetId,
+        console: JdbcConsole,
+    ) {
+        if (shuttingDown || !console.isValid) return
+        consoleIdentity(console)?.let { identity ->
+            consoleAssociations[AssociationKey(resourceKey, targetId)] = identity
+        }
+    }
+
+    internal fun forgetConsoleAssociation(
+        resourceKey: String,
+        targetId: ExecutionTargetId,
+    ) {
+        consoleAssociations.remove(AssociationKey(resourceKey, targetId))
+    }
+
+    private fun consoleIdentity(console: JdbcConsole): String? =
+        console.file.virtualFile?.url
 
     /**
      * Registers a live console only as an in-memory REUSE optimization.
@@ -311,6 +359,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         synchronized(lifecycleLock) {
             shuttingDown = true
             activeReuseLeases.clear()
+            consoleAssociations.clear()
         }
         LOG.info("zMyBatis: markShuttingDown — console acquisition disabled")
     }
@@ -327,6 +376,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         val detachedEntries = synchronized(lifecycleLock) {
             shuttingDown = true
             activeReuseLeases.clear()
+            consoleAssociations.clear()
             val entries = cache.values.toList()
             cache.clear()
             entries
