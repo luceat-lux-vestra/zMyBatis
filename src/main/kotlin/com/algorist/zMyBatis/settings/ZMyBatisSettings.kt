@@ -48,6 +48,11 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
         get() = myState.autoFormatSql
         set(value) { myState.autoFormatSql = value }
 
+    /**
+     * Legacy serialized field retained only so existing settings files continue to deserialize.
+     * Shipping execution always reuses an existing Database Tools console/session client.
+     */
+    @Deprecated("Fresh zMyBatis console creation is no longer a shipping UX option")
     var consoleSessionPolicy: ConsoleSessionPolicy
         get() = myState.consoleSessionPolicy
         set(value) { myState.consoleSessionPolicy = value }
@@ -59,10 +64,8 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
 }
 
 /**
- * Policy for DB console resource management.
- *
- * - [REUSE]     : reuse an existing live console when its target identity still matches.
- * - [NEW_EACH]  : acquire a fresh console resource for every execution.
+ * Legacy persisted enum retained for settings-file compatibility only.
+ * Runtime execution no longer branches on this value.
  */
 enum class ConsoleSessionPolicy {
     REUSE,
