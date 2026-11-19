@@ -114,7 +114,7 @@ internal object XmlParameterObjectInputSupport {
             .mapNotNull { match ->
                 val raw = match.value
                 if (raw in reservedTokens) return@mapNotNull null
-                val next = withoutQuotedText.getOrNull(match.range.last + 1)
+                val next = withoutLiterals.getOrNull(match.range.last + 1)
                 if (next == '(') return@mapNotNull null
 
                 if (raw.endsWith(".size")) {
