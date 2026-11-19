@@ -37,7 +37,7 @@ On an explicit zMyBatis execution action:
 - missing/ambiguous datasource or schema invalidates the stored selection and requires explicit re-selection;
 - target validity is rechecked after modal/background boundaries and before native query dispatch;
 - only after exact resolution does zMyBatis discover an existing Database Tools session/client and re-apply the proven schema before execution;
-- zMyBatis never creates a fresh console as a shipping policy;
+- console resource selection is reuse-first: existing/remembered consoles are preferred, but no-candidate execution may create one mapper-derived console and ambiguous candidates are resolved explicitly;
 - explicit named datasource/schema selection updates v3 independently of console/session lifetime.
 
 Shipping console acquisition is reuse-first, not borrow-only. zMyBatis first checks an in-memory source+target→console association, then a unique dynamically derived mapper-filename match, then a sole eligible console. Multiple remaining candidates trigger a user chooser with an explicit Create New Console action; no candidate triggers automatic creation. Runtime console association is never persisted as target authority. Borrowed consoles remain Database Tools-owned; consoles created by zMyBatis are lifecycle-owned only as resources. Source and selected-console leases prevent overlapping invocations from mutating one shared console document. Closing/disposal does not delete persisted v3 target identity.
