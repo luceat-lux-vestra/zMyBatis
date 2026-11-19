@@ -19,6 +19,7 @@ import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAcquisitionFailure
 import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAdapter
 import com.algorist.zMyBatis.execution.DatabaseToolsSqlExecutionFailure
 import com.intellij.database.console.JdbcConsole
+import com.intellij.database.console.session.DatabaseSessionManager
 import com.intellij.database.dataSource.LocalDataSource
 import com.intellij.database.dataSource.LocalDataSourceManager
 import com.intellij.database.psi.DbDataSource
@@ -384,6 +385,8 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
             url = "jdbc:h2:mem:zmybatis_no_existing_console",
         )
         val key = "vfs:file:///tmp/zmybatis/MissingMapper.xml"
+        val sessionDataSource = requireNotNull(DbImplUtil.getMaybeLocalDataSource(dataSource))
+        val expectedSession = DatabaseSessionManager.getSession(project, sessionDataSource)
         val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
         var delivered: JdbcConsole? = null
         var failure: DatabaseToolsConsoleAcquisitionFailure? = null
@@ -403,6 +406,11 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         assertNotNull("no-candidate flow must create a usable Database Tools console", delivered)
         assertTrue(delivered!!.isValid)
         assertEquals("MissingMapper.xml", delivered!!.file.virtualFile?.name)
+        assertSame(
+            "created console must attach to the existing Database Tools datasource session",
+            expectedSession,
+            delivered!!.session,
+        )
         assertTrue("terminal completion must release the source lease", ConsoleCacheService.getInstance(project).beginReuseLease(key))
         ConsoleCacheService.getInstance(project).endReuseLease(key)
     }
