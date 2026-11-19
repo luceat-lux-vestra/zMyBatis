@@ -6,7 +6,7 @@
 
 ### Changed
 - **Execute (zMyBatis)** now has one registered Leap execution authority: authoritative Java/XML source capture → typed/provenanced input contract → isolated stock-MyBatis preparation → explicitly supported SQL-text materialization → final-artifact approval → exact JetBrains Database Tools delivery. Unsupported or ambiguous stages fail closed; there is no legacy evaluator/action fallback.
-- **Session persistence** now stores only current v3 project-scoped source→target descriptors using a stable datasource UUID plus an explicit named schema. Startup prunes stale v3 source associations without recreating consoles or executing SQL; live console resources remain ephemeral and independent from persisted target identity.
+- **Session persistence** stores only current v3 project-scoped source→target descriptors using a stable datasource UUID plus an explicit named schema. Startup prunes stale v3 source associations without creating consoles or executing SQL; shipping execution borrows Database Tools-owned console/session clients and never persists or owns them.
 - **Legacy execution compatibility state removed** — the old proxy/evaluator/extractor/dialog/history path, development-only v2 persistence migration path, and obsolete compatibility settings were deleted after the Leap cutover.
 
 ### Added
@@ -28,5 +28,5 @@
 #### Settings (`Settings → Tools → zMyBatis`)
 - **Show SQL preview before execution** — optional for ordinary supported paths; mandatory raw/mutation approval overrides this setting.
 - **Auto-format SQL preview** — formats presentation text only and never mutates the immutable execution artifact.
-- **Console Session Policy** — `REUSE` reuses a matching live console resource; `NEW_EACH` acquires a fresh resource per execution. Neither policy is persisted target identity.
+- **Database Tools console reuse** — mapper execution borrows an existing datasource-session console and no longer creates a duplicate console or opens a console editor tab as part of zMyBatis dispatch.
 - **Remember last parameter inputs per Mapper statement** — enables opt-in contract-driven retention; raw-interpolation values are never retained.
