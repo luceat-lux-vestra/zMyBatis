@@ -180,6 +180,49 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
     }
 
     @Test
+    fun `263 characterizes console session attach surface`() {
+        fun signature(type: Class<*>): String =
+            (type.methods.toList() + type.declaredMethods.toList())
+                .distinctBy { method ->
+                    method.name +
+                        method.parameterTypes.joinToString { it.name } +
+                        method.returnType.name
+                }
+                .filter { method ->
+                    val name = method.name.lowercase()
+                    name.contains("client") ||
+                        name.contains("attach") ||
+                        name.contains("detach") ||
+                        name.contains("session") ||
+                        name.contains("console")
+                }
+                .sortedBy { it.name }
+                .joinToString(";") { method ->
+                    method.name +
+                        method.parameterTypes.joinToString(prefix = "(", postfix = ")") { it.name } +
+                        ":" + method.returnType.name +
+                        ":" + Modifier.toString(method.modifiers)
+                }
+
+        val classes = listOf(
+            "com.intellij.database.console.session.DatabaseSession",
+            "com.intellij.database.console.session.DatabaseSessionManager",
+            "com.intellij.database.console.JdbcConsole",
+        ).joinToString("|") { className ->
+            runCatching {
+                val type = Class.forName(className)
+                "$className={${signature(type)}} constructors={" +
+                    type.declaredConstructors.joinToString(";") { constructor ->
+                        constructor.parameterTypes.joinToString(prefix = "(", postfix = ")") { it.name }
+                    } +
+                    "}"
+            }.getOrElse { "$className=<absent>" }
+        }
+
+        println("ZMYBATIS_P5_API consoleSession=$classes")
+    }
+
+    @Test
     fun `263 keeps the Database Tools parameterized statement factory directly linkable`() {
         val poweredBy = SmartStatementFactoryService::class.java.methods
             .singleOrNull { method ->
