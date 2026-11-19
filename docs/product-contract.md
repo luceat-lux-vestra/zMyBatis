@@ -246,7 +246,8 @@ Statement kind is UX evidence, not authorization. If execution meaning is unknow
 
 ### Failure
 
-Source, dependency, input, MyBatis, mapping, materialization, target, console, cancellation, and database failures are typed outcomes. No failure string can flow into the execution API as SQL.
+Source, dependency, input, MyBatis, plan, binding, target, backend, cancellation, and database failures
+are typed outcomes. No failure string can flow into the execution API as SQL.
 
 ### Side effects
 
@@ -363,7 +364,7 @@ restoring their old bounded admission/materializer islands.
 - generic SQL authorization/classification;
 - ORM/application result mapping in the prepared-backend result adapter;
 - native Database Tools result/history parity for the prepared backend;
-- preserving current Leap admission/materializer class structure merely because it already exists;
+- preserving superseded Leap admission/materializer class structure merely because it still exists;
 - restoring a deleted legacy execution fallback.
 
 A true prepared backend **is** the registered execution backend for ordinary bound statements; the
