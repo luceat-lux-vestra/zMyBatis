@@ -427,9 +427,10 @@ class ContractParameterInputDialog(
         suppressDocumentTracking = true
         try {
             retainedDrafts.keys.toList().forEach { id ->
-                if (id !in editedRequirementIds) {
-                    fields[id]?.clearValue?.invoke()
-                    fields[id]?.optionalSupply?.isSelected = false
+                val ui = fields[id]
+                if (ui?.isExplicitlyEdited() != true) {
+                    ui?.clearValue?.invoke()
+                    ui?.optionalSupply?.isSelected = false
                 }
                 fields[id]?.retainSelection?.isSelected = false
             }
