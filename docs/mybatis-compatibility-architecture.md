@@ -278,21 +278,23 @@ architecture.
 Custom/application TypeHandlers remain outside the positive envelope unless their runtime authority is
 safely available.
 
-#### P3 stop gate
+#### P3 stop gate — passed
 
-This backend remains a design hypothesis until proven against maintained IntelliJ/Database Tools APIs.
+P3 proved this backend against maintained IntelliJ/Database Tools APIs and promoted it to production.
+The maintained evidence covers session/connection ownership, true prepared execution, stock-style
+binding, cancellation, disposal and exact datasource/schema correctness without an unstable
+reflection fallback.
 
-If reliable session/connection ownership, prepared execution, cancellation, disposal and target
-correctness cannot be achieved without unstable internal/reflection contracts, stop the migration and
-reconsider the execution target before implementing more parity syntax.
+Those properties remain regression constraints. If a future platform baseline can no longer satisfy
+them through maintained APIs, fail closed and revisit the execution target rather than silently
+falling back to SQL literalization.
 
 ### NativeConsoleSqlTextBackend
 
 Keep the current Database Tools console path for:
 
 - zero-binding statements;
-- exact raw/text statements with no remaining JDBC bindings;
-- optionally, separately proven materialized compatibility slices.
+- exact raw/text statements with no remaining JDBC bindings.
 
 This is an explicit backend, not a silent fallback.
 
@@ -384,7 +386,8 @@ Do not pre-create all phase PRs. Activate one bounded work unit only after the p
 
 ## 15. Architecture-ready definition
 
-Runtime implementation may begin only after:
+The following definition governed entry into runtime implementation and remains the architecture
+regression checklist:
 
 1. this target is represented without contradiction in product, architecture, test and engineering
    documentation;
@@ -397,4 +400,5 @@ Runtime implementation may begin only after:
 8. the P3 prepared-backend stop gate remains explicit;
 9. superseded Leap admission/preflight/materializer deletion targets are explicit.
 
-After D0, D1 adds the parity oracle. D1 still makes no production runtime change.
+D0-D1 and P1-P4 are complete. P5 now validates packaged/manual parity; P6 follows with cleanup of
+superseded migration architecture.
