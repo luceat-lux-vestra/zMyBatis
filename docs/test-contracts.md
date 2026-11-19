@@ -68,15 +68,18 @@ not a second dynamic-language permission table.
 ## Manual release acceptance boundary
 
 The repository-owned [manual release validation sample](../samples/manual-release-validation/README.md)
-is supplemental maintainer evidence for an exact packaged release candidate. Its current matrix is
-written against the P1-P4 shipping architecture: zero-binding/exact-text native execution, bound
-prepared execution, stock dynamic SQL, ordinary result metadata, raw/mutation approval, target
-identity, settings/lifecycle behavior, and bounded DataGrip smoke.
+is the shared acceptance fixture for an exact packaged release candidate. Its M/J/R/U/T matrix maps
+current P1-P4 behavior to explicit automated owners; it is **not** a mandate to replay the full
+semantic/routing matrix manually.
 
-Manual acceptance does **not** replace automated evidence and does not define target semantics merely
-because a fixture can be written. Historical #509/#510 reproductions are promoted to normal
-`Parity*` acceptance fixtures only because P1/P2 already provide registered-path semantic evidence.
-P5 still requires packaged evidence and an exact-candidate manual GO before final disposition.
+Manual acceptance is restricted to three residual IDEA UX checks that automation does not judge
+well: exact-ZIP install/settings/action visibility, one native + one prepared result visual sanity
+check, and restart/persisted-target UX. DataGrip has no separate manual requirement because its exact
+packaged service/refusal/prepared route is already exercised independently by Starter/Driver.
+
+Historical #509/#510 reproductions are promoted to normal `Parity*` acceptance fixtures only
+because P1/P2 and packaged evidence own the underlying behavior. Human smoke never substitutes for
+those automated contracts.
 
 ## Sensitive logging evidence boundary
 
