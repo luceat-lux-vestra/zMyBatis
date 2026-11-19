@@ -43,16 +43,29 @@ with those contracts.
 
 ## 1. Record the exact candidate
 
-From the zMyBatis repository root:
+From the zMyBatis repository root, validate the **exact candidate commit** recorded in the P5
+checkpoint. Do not switch to `main` while the candidate PR is still open.
 
 ```bash
-git switch main
-git pull --ff-only
+candidate_sha=<exact-P5-candidate-SHA>
+candidate_version=<validation-SemVer>
+
+git fetch origin
 git status --short
-git rev-parse HEAD
-./gradlew clean buildPlugin -PpluginVersion=<candidate-version>
-shasum -a 256 build/distributions/*.zip
+test -z "$(git status --porcelain)" || { echo "working tree must be clean" >&2; exit 1; }
+git switch --detach "$candidate_sha"
+test "$(git rev-parse HEAD)" = "$candidate_sha"
+
+./gradlew clean buildPlugin -PpluginVersion="$candidate_version"
+
+mapfile -t archives < <(find build/distributions -maxdepth 1 -type f -name '*.zip' -print)
+test "${#archives[@]}" -eq 1
+shasum -a 256 "${archives[0]}"
 ```
+
+The candidate version is validation-only metadata; use a SemVer that cannot be confused with a
+published release. The SHA is authoritative. If any source change lands after this build, discard the
+ZIP and rebuild from the new exact HEAD.
 
 Record:
 
