@@ -450,12 +450,15 @@ does not subsume either boundary.
 using real IntelliJ `JdbcConsole` instances that are created by the fixture as platform-owned
 preconditions, not by zMyBatis acquisition.
 
-The shipping adapter performs **borrow-only** acquisition. It enumerates the resolved datasource's
-existing Database Tools session clients, prefers a unique mapper-name match, and fails closed when
-no console exists or the match is ambiguous. It never calls `JdbcConsole.newConsole`, never places
-a borrowed console in the zMyBatis ownership cache, and never disposes that console. A source lease
-prevents duplicate invocation for one mapper, while a second lease keyed by the selected console
-prevents different mapper sources from concurrently mutating the same console document.
+The shipping adapter performs **reuse / choose / create** acquisition. It enumerates the resolved
+datasource's existing Database Tools session clients, first honors one live runtime association for
+the exact source+target, then prefers one unique dynamically derived mapper-filename match, then the
+sole eligible console. Multiple remaining candidates require an explicit chooser and include a
+Create New Console action; zero candidates create one automatically. Borrowed consoles are never
+owned or disposed by zMyBatis. Consoles created by zMyBatis are resource-owned and cleaned through
+the existing console lifecycle service. A source lease prevents duplicate invocation for one mapper,
+while a second lease keyed by the selected console prevents different mapper sources from
+concurrently mutating the same console document.
 
 The repeated-completion case performs **48** same-source acquisitions and requires every handoff to
 return the same existing console identity. Each terminal callback releases the source-key lease,
@@ -468,19 +471,21 @@ native Database Tools boundary, and releases that editor immediately. The test r
 persistent-editor cardinality growth, document restoration on late invalidation, no native
 invocation after invalidation, no stranded lease, and no disposal of the borrowed console.
 
-Terminal cleanup separately injects `ProcessCanceledException` and a missing-console condition.
-Both paths must release source-key ownership. Missing and ambiguous consoles are typed refusals;
-they must never trigger implicit console creation.
+Terminal cleanup separately injects `ProcessCanceledException` and a no-existing-console condition.
+Both paths must release source-key ownership. The no-console path must create exactly one usable
+console without opening a persistent editor tab. Ambiguity is covered structurally by the chooser
+contract and packaged human smoke rather than by arbitrary automatic selection.
 
 Successful runs emit `ZMYBATIS_RESOURCE_LIFECYCLE` records for repeated borrowed-console completion,
 materialized delivery with zero persistent-editor delta, and terminal cleanup. The root test task
 surfaces this prefix alongside the XML/input measurement prefixes without enabling arbitrary test
 stdout.
 
-These fixtures characterize zMyBatis lease/transient-editor ownership only. Database Tools owns the
-borrowed console, connection session, visible Services nodes, result tabs, and history. No forced
-GC, heap threshold, arbitrary console-count limit, or fresh-console execution policy is part of the
-shipping contract.
+These fixtures characterize lease/transient-editor ownership plus bounded ownership of consoles
+created by zMyBatis. Database Tools continues to own borrowed consoles, connection sessions, visible
+Services nodes, result tabs, and history. Transient editors are intentionally created/released per
+dispatch; no hidden editor pool is retained without measured performance evidence and an explicit
+lifecycle contract.
 
 
 ## Preparation scale and retired materializer characterization
