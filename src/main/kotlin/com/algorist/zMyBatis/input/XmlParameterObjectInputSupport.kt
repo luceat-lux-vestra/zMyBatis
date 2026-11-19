@@ -54,10 +54,15 @@ internal object XmlParameterObjectInputSupport {
                 is InputEvidence.Placeholder -> add(evidence.expression)
                 is InputEvidence.OgnlExpression -> {
                     comparison.findAll(evidence.expression).forEach { match ->
-                        add(
-                            path = match.groupValues[1],
-                            exampleJson = literalAsJson(match.groupValues[2]),
-                        )
+                        val path = match.groupValues[1]
+                        if (path.endsWith(".size")) {
+                            add(path.removeSuffix(".size"), "[1]")
+                        } else {
+                            add(
+                                path = path,
+                                exampleJson = literalAsJson(match.groupValues[2]),
+                            )
+                        }
                     }
                     ognlPaths(evidence.expression).forEach { add(it.first, it.second) }
                 }
@@ -183,8 +188,9 @@ internal object XmlParameterObjectInputSupport {
 
     private fun render(node: JsonNode, depth: Int): String = when (node) {
         is ValueNode -> node.json
-        is ObjectNode -> {
-            if (node.children.isEmpty()) return "{}"
+        is ObjectNode -> if (node.children.isEmpty()) {
+            "{}"
+        } else {
             val indent = "  ".repeat(depth)
             val childIndent = "  ".repeat(depth + 1)
             node.children.entries.joinToString(
