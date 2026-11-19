@@ -230,11 +230,6 @@ class ZMyBatisDataGripStarterDriverE2ETest {
                 }
                 ui.popups().list().last().waitOneText("public").click()
 
-                ui.dialog(title = "Enter MyBatis Parameters") {
-                    dataGripTextArea().text = """{"value":999}"""
-                    button("OK").click()
-                }
-
                 ui.dialog(title = "zMyBatis — SQL Preview") {
                     val preview = dataGripTextArea().text.trim()
                     val preparedSql = preview.substringBefore("\n\nBindings (values hidden):")
