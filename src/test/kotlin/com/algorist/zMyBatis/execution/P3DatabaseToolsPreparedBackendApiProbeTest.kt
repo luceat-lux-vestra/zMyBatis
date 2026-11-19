@@ -220,7 +220,7 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
             }.getOrElse { "$className=<absent>" }
         }
 
-        println("ZMYBATIS_P5_API consoleSession=$classes")
+        println("ZMYBATIS_P3_API consoleSession=$classes")
     }
 
     @Test
