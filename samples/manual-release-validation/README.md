@@ -1,9 +1,10 @@
 # zMyBatis manual release validation
 
-This project is the maintainer-run acceptance fixture for an exact packaged zMyBatis 1.0 candidate.
-It is intentionally small: no Spring Boot application and no application runtime is started. The
-Java/MyBatis dependency exists so IntelliJ IDEA can resolve mapper methods and direct MyBatis
-annotations while the plugin executes through JetBrains Database Tools.
+This project is the repository-owned acceptance fixture for an exact packaged zMyBatis 1.0 candidate.
+Its detailed M/J/R/U/T matrix is primarily an **automated evidence inventory**, not a requirement for a
+maintainer to replay every case by hand. Human release validation is deliberately limited to the
+small visual/UX smoke in section 11. The fixture remains intentionally small: no Spring Boot
+application and no application runtime is started.
 
 The current shipping execution authority is:
 
@@ -26,15 +27,17 @@ evaluated by stock MyBatis; ordinary result metadata must not block SQL preparat
 TypeHandlers own prepared binding. Application-runtime-dependent constructs remain explicit typed
 boundaries.
 
-This fixture is **not** a replacement for automated tests. Detailed MyBatis semantic matrices stay in
-the lowest reliable automated layer. Manual validation checks the installed ZIP, visible IDE flow,
-Database Tools integration, settings/lifecycle behavior, and the release candidate as a user
-experiences it.
+This fixture is **not** a replacement for automated tests. Detailed MyBatis semantics, routing,
+approval, target identity, cancellation/lifecycle, and packaged host behavior stay in the lowest
+reliable automated layer. Manual validation exists only for residual human-visible UX that the
+Driver/fixture layers do not judge well.
 
 ## Release stop condition
 
-Do not sign off a release while a case marked **BLOCKER** fails, a case reaches the wrong backend, the
-wrong datasource/schema is used, or the exact candidate record is incomplete.
+Do not sign off a release while an automated acceptance owner is red, a human smoke item fails, the
+wrong datasource/schema is observed, or the exact candidate record is incomplete. A semantic case
+that already has deterministic automated ownership is not re-run manually merely to duplicate that
+evidence.
 
 #509 and #510 are no longer treated here as pending semantic contradictions. P1/P2 established the
 production preparation/invocation contracts for standard dynamic tags and ordinary result/parameter
@@ -123,7 +126,11 @@ For prepared execution, preview identity is SQL with placeholders plus ordered t
 Do not expect a literalized final SQL string. Bound values must not appear in normal diagnostics or
 the binding metadata preview.
 
-## 4. Core XML execution checklist
+## 4. Core XML acceptance inventory
+
+These cases remain checked in so product behavior, lower-layer parity, packaged evidence and manual
+reproduction all refer to the same fixture. **They are not a mandatory maintainer-run checklist.**
+Run one manually only when investigating a failure or when its automated owner is unavailable.
 
 Use `src/main/resources/mappers/XmlReleaseValidationMapper.xml` unless another mapper is named.
 
@@ -156,7 +163,7 @@ The historical method names `unsupportedVarchar` and `unsupportedTwoBigints` are
 make regression from the old materializer envelope obvious. A refusal solely because the value is
 VARCHAR or because there is more than one binding is a **BLOCKER**.
 
-## 5. Promoted 1.0 parity cases
+## 5. Promoted 1.0 parity inventory
 
 These were the historical R01-R05 reconciliation fixtures. They are now normal supported acceptance
 cases and are named `Parity*Mapper`.
@@ -172,7 +179,7 @@ cases and are named `Parity*Mapper`.
 R03/R04 do not assert MyBatis application result-object mapping. zMyBatis presents database rows; the
 acceptance claim is that SQL-generation-irrelevant result metadata does not block preparation.
 
-## 6. Direct Java annotation checklist
+## 6. Direct Java annotation inventory
 
 Open `src/main/java/fixture/AnnotationReleaseValidationMapper.java`.
 
@@ -189,7 +196,7 @@ Open `src/main/java/fixture/AnnotationReleaseValidationMapper.java`.
 Kotlin direct annotations and Provider execution remain outside the current 1.0 capability boundary.
 DataGrip acceptance remains XML-focused.
 
-## 7. Settings / retention / console checklist
+## 7. Settings / retention / console inventory
 
 | ID | Manual case | Procedure | Expected |
 | --- | --- | --- | --- |
@@ -205,7 +212,7 @@ DataGrip acceptance remains XML-focused.
 Prepared result presentation is zMyBatis-owned and is not required to recreate native Database Tools
 query history.
 
-## 8. Target / lifecycle checklist
+## 8. Target / lifecycle inventory
 
 | ID | Manual case | Procedure | Expected |
 | --- | --- | --- | --- |
@@ -219,29 +226,23 @@ query history.
 
 Wrong-datasource or wrong-schema execution is a **release blocker**.
 
-## 9. Host acceptance
+## 9. Packaged host acceptance ownership
 
 ### IntelliJ IDEA Ultimate
 
-Run the full M/J/R/U/T checklist against the exact candidate ZIP. IDEA is the full packaged acceptance
-host for the prepared backend, zMyBatis prepared-result presentation, and native Database Tools
-zero-binding/raw routes.
+The exact packaged IDEA Starter/Driver suite is the primary executable host authority. It already
+installs the built plugin archive and covers native/prepared routing, prepared-result presentation,
+raw/mutation approval, databaseId/target behavior, Provider refusal and no-datasource failure.
+Lower-level fixtures own detailed lifecycle/cancellation and semantic matrices.
 
 ### DataGrip
 
-Install the same ZIP and run only the maintained bounded host claim:
+The exact packaged DataGrip Starter/Driver suite is the host authority. It covers plugin/service
+loading, XML action refusal, one XML-only prepared PostgreSQL route and clean shutdown.
 
-- plugin loads without fatal IDE error;
-- settings/configurable is reachable;
-- Execute (zMyBatis) appears inside supported XML;
-- the maintained XML execution/refusal smoke succeeds;
-- IDE closes cleanly.
-
-P5 automation owns one stable XML-only prepared PostgreSQL case on the maintained DataGrip host:
-stock MyBatis creates one internal BIGINT binding, the registered action selects explicit `public`,
-and the result is presented through the zMyBatis prepared-result dialog. Do not infer Java annotation
-support, native Database Tools result/history parity, every DBMS/dialect, or IDEA-only UX from that
-bounded case.
+No separate DataGrip maintainer-run checklist is required for P5. Do not infer Java annotation
+support, native Database Tools result/history parity, every DBMS/dialect, or IDEA-only UX from the
+bounded automated DataGrip evidence.
 
 ## 10. Explicit unsupported boundaries
 
@@ -256,30 +257,40 @@ The following are not converted into approximate execution:
 
 Refusal must be typed and must not fall back to another execution backend.
 
-## 11. GO / NO-GO record
+## 11. Minimal human UX smoke / GO-NO-GO record
 
-Fill this only after installing and running the **exact final P5 candidate ZIP**.
+Run this only against the **exact final P5 candidate ZIP**. The automated M/J/R/U/T inventory above is
+not replayed manually.
+
+### Human smoke
+
+| ID | Human-only check | Expected |
+| --- | --- | --- |
+| H01 | Install the exact ZIP in IDEA Ultimate 2026.3; open zMyBatis settings and a supported XML mapper | plugin is enabled, settings render normally, Execute (zMyBatis) is visible in the supported statement context |
+| H02 | Run M01 once and M03 once | native Database Tools result visibly shows `7`; zMyBatis prepared-result UI visibly shows `42`; dialogs/tables are readable and not visibly broken |
+| H03 | Restart IDEA/project after H02 and invoke the same source again | persisted exact datasource UUID + `public` target restores/reuses without silently switching target; visible flow remains usable |
+
+These three checks deliberately cover only human-visible installation/presentation/restart UX.
+Semantic correctness remains owned by automated tests. DataGrip requires no separate manual smoke
+because its exact packaged host path is already exercised by the independent Starter/Driver job.
 
 ```text
 Candidate version: ____________________
 Candidate SHA:     ____________________
 ZIP SHA-256:       ____________________
 IDEA version:      ____________________
-DataGrip version:  ____________________
 Validator/date:    ____________________
 
-M01-M17:           PASS / FAIL / NA   notes: ____________________
-J01-J07:           PASS / FAIL / NA   notes: ____________________
-R01-R05:           PASS / FAIL / NA   notes: ____________________
-U01-U08:           PASS / FAIL / NA   notes: ____________________
-T01-T07:           PASS / FAIL / NA   notes: ____________________
+H01 install/settings/action: PASS / FAIL   notes: ____________________
+H02 native/prepared visual: PASS / FAIL   notes: ____________________
+H03 restart/target UX:      PASS / FAIL   notes: ____________________
 
 #509 disposition:  RESOLVED / BLOCKED  notes: ____________________
 #510 disposition:  RESOLVED / BLOCKED  notes: ____________________
 
-Blockers:          NONE / ______________________________________
-Release decision:  GO / NO-GO
+Human blockers:    NONE / ______________________________________
+Human smoke:       GO / NO-GO
 ```
 
-A GO requires no unresolved blocker. Automated CI is necessary but does not itself fill this manual
-record.
+A human-smoke GO requires H01-H03 PASS and no unresolved human blocker. It does **not** replace the
+exact-head automated IDEA/DataGrip evidence or Merge Gate, which remain separate P5 exit conditions.
