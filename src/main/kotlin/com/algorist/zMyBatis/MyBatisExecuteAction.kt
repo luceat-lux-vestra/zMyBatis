@@ -172,17 +172,17 @@ private object LeapActionFailurePresenter {
                         ?.let { it as? LeapExecutionDeliveryFailure.ConsoleAcquisitionFailed }
                         ?.failure
                 when (consoleFailure) {
-                    DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleUnavailable ->
+                    DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed ->
                         FailurePresentation(
-                            title = "zMyBatis: Existing Database Console Required",
-                            message = "No existing Database Tools query console is available for the selected datasource. " +
-                                "Open or create a query console in Database Tools, then run zMyBatis again from the mapper.",
+                            title = "zMyBatis: Database Console Unavailable",
+                            message = "zMyBatis could not create a Database Tools console for the selected datasource. " +
+                                "Check the datasource/session state and run the mapper again.",
                         )
-                    DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleAmbiguous ->
+                    DatabaseToolsConsoleAcquisitionFailure.ConsoleSelectionUnavailable ->
                         FailurePresentation(
-                            title = "zMyBatis: Database Console Ambiguous",
-                            message = "More than one existing Database Tools console can serve this mapper and no unique mapper-matching console was found. " +
-                                "Keep one matching console for this mapper/session, then run zMyBatis again.",
+                            title = "zMyBatis: Database Console Selection Unavailable",
+                            message = "zMyBatis could not present the Database Tools console chooser for this execution. " +
+                                "Run the mapper again from an active editor.",
                         )
                     else ->
                         FailurePresentation(
