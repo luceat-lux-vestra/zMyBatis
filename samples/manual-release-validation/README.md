@@ -123,12 +123,12 @@ Use `src/main/resources/mappers/XmlReleaseValidationMapper.xml` unless another m
 | M05 | `<where><if>` | `enabled=true,id=1`, then `enabled=false,id=1` | true branch keeps one prepared binding and returns `1`; false branch emits no binding and may route native, returning `1,2,3` | P2 registered parity + explicit backend routing |
 | M06 | `<foreach>` additional bindings | `foreachIds`: `[1]`, then `[1,2]` | both execute prepared; ordered additional-parameter bindings return `1`, then `1,2` | P2 foreach parity + P3/P4 multi-binding backend |
 | M07 | XML raw `${}` | `rawEcho`, cancel `45001`, then approve `45002` with SQL Preview OFF | raw acknowledgement + forced final preview; cancelled value does not execute/retain; approved exact text returns `45002` through native route | packaged XML-raw E2E |
-| M08 | target-derived `databaseId` | `databaseIdEcho` | PostgreSQL variant returns `2620`, not default `2600` | databaseId oracle/source/preparation |
+| M08 | target-derived `databaseId` | `databaseIdEcho` | PostgreSQL variant returns `2620`, not default `2600` | databaseId oracle/source/preparation + packaged databaseId E2E |
 | M09 | VARCHAR prepared binding | `unsupportedVarchar`, `abc` | despite historical method name, this is now supported: placeholder + String/VARCHAR metadata; prepared result contains `abc` | stock TypeHandler bridge |
 | M10 | two BIGINT bindings | `unsupportedTwoBigints`, `1`, `2` | despite historical method name, two ordered bindings execute prepared; result is `3` | packaged multi-binding E2E envelope |
-| M11 | XML INSERT approval | `insertNoop`, SQL Preview OFF | mutation approval mandatory; cancel does not execute; approved zero-binding statement changes 0 rows | mutation approval + native backend |
-| M12 | XML UPDATE approval | `updateNoop`, SQL Preview OFF | mutation approval mandatory; approved statement changes 0 rows | mutation approval + native backend |
-| M13 | XML DELETE approval | `deleteNoop`, SQL Preview OFF | mutation approval mandatory; approved statement changes 0 rows | mutation approval + native backend |
+| M11 | XML INSERT approval | `insertNoop`, SQL Preview OFF | mutation approval mandatory; cancel does not execute; approved zero-binding statement changes 0 rows | mutation policy + packaged mutation-approval envelope |
+| M12 | XML UPDATE approval | `updateNoop`, SQL Preview OFF | mutation approval mandatory; approved statement changes 0 rows | mutation policy + packaged mutation-approval E2E |
+| M13 | XML DELETE approval | `deleteNoop`, SQL Preview OFF | mutation approval mandatory; approved statement changes 0 rows | mutation policy + packaged mutation-approval envelope |
 | M14 | realistic bound Product lookup | `ProductMapper.findProductById`, `2` | prepared result row contains `2 / pro / true` | projection/include + prepared backend |
 | M15 | `<set>` + `<trim>` safe UPDATE | `setTrimNoop`, `name=ignored`, `id=1` | stock MyBatis emits SET/WHERE from dynamic tags; two prepared bindings are shown; mutation approval is mandatory; `AND FALSE` keeps update count at 0 | P2 set/trim registered parity + P4 prepared mutation route |
 | M16 | nested Map property | `nestedMapEcho`, JSON Map `{"tenantId":2}` | input uses JSON Map editor; `filter.tenantId` resolves to one BIGINT prepared binding; result is `2` | P2 caller-authority nested Map parity + prepared backend |
@@ -171,7 +171,7 @@ Open `src/main/java/fixture/AnnotationReleaseValidationMapper.java`.
 | J04 | `@Insert` safe no-op | mutation approval mandatory; 0 rows | Java statement kind + approval |
 | J05 | `@Update` safe no-op | mutation approval mandatory; 0 rows | Java statement kind + approval |
 | J06 | `@Delete` safe no-op | mutation approval mandatory; 0 rows | Java statement kind + approval |
-| J07 | `@SelectProvider` | typed provider-not-supported refusal; no execution | explicit application-runtime boundary |
+| J07 | `@SelectProvider` | typed provider-not-supported refusal; no execution | source/action boundary + packaged Provider refusal E2E |
 
 Kotlin direct annotations and Provider execution remain outside the current 1.0 capability boundary.
 DataGrip acceptance remains XML-focused.
