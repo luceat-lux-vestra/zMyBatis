@@ -130,6 +130,13 @@ Use `src/main/resources/mappers/XmlReleaseValidationMapper.xml` unless another m
 | M12 | XML UPDATE approval | `updateNoop`, SQL Preview OFF | mutation approval mandatory; approved statement changes 0 rows | mutation approval + native backend |
 | M13 | XML DELETE approval | `deleteNoop`, SQL Preview OFF | mutation approval mandatory; approved statement changes 0 rows | mutation approval + native backend |
 | M14 | realistic bound Product lookup | `ProductMapper.findProductById`, `2` | prepared result row contains `2 / pro / true` | projection/include + prepared backend |
+| M15 | `<set>` + `<trim>` safe UPDATE | `setTrimNoop`, `name=ignored`, `id=1` | stock MyBatis emits SET/WHERE from dynamic tags; two prepared bindings are shown; mutation approval is mandatory; `AND FALSE` keeps update count at 0 | P2 set/trim registered parity + P4 prepared mutation route |
+| M16 | nested Map property | `nestedMapEcho`, JSON Map `{"tenantId":2}` | input uses JSON Map editor; `filter.tenantId` resolves to one BIGINT prepared binding; result is `2` | P2 caller-authority nested Map parity + prepared backend |
+
+M10 is the manual representative for mapper-method multi-`@Param`; M06 is the manual representative for
+List/foreach additional bindings. P2 lower-layer parity separately owns equivalent Collection and
+array alias/wrapper behavior, so the maintainer checklist does not duplicate those shapes merely to
+make the manual matrix combinatorial.
 
 The historical method names `unsupportedVarchar` and `unsupportedTwoBigints` are retained only to
 make regression from the old materializer envelope obvious. A refusal solely because the value is
@@ -245,7 +252,7 @@ IDEA version:      ____________________
 DataGrip version:  ____________________
 Validator/date:    ____________________
 
-M01-M14:           PASS / FAIL / NA   notes: ____________________
+M01-M16:           PASS / FAIL / NA   notes: ____________________
 J01-J07:           PASS / FAIL / NA   notes: ____________________
 R01-R05:           PASS / FAIL / NA   notes: ____________________
 U01-U08:           PASS / FAIL / NA   notes: ____________________
