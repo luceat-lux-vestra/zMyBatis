@@ -42,9 +42,17 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         assertTrue(adapter.contains("WriteCommandAction.runWriteCommandAction"))
         // IDEA 263: use the stable, public navigation entry point, not either
         // the internal editor options API or the experimental file-open request.
+        // The internal console must open without stealing focus from the mapper.
         // The EDT continuation must recheck the immutable execution authority
         // and the actual SQL editor before any native query is issued.
-        assertTrue(adapter.contains("OpenFileDescriptor(project, vFile).navigate(true)"))
+        assertTrue(adapter.contains("OpenFileDescriptor(project, vFile).navigate(false)"))
+        assertFalse(adapter.contains("OpenFileDescriptor(project, vFile).navigate(true)"))
+        assertTrue(
+            adapter.contains(
+                "val consoleName = resourceKey.substringAfterLast('/').substringAfterLast('\\\\')"
+            )
+        )
+        assertFalse(adapter.contains("+ \" - zMyBatis\""))
         assertTrue(adapter.contains("ApplicationManager.getApplication().invokeLater({"))
         assertTrue(adapter.contains("if (!preExecutionCheck())"))
         assertTrue(adapter.contains("if (!console.isValid)"))
