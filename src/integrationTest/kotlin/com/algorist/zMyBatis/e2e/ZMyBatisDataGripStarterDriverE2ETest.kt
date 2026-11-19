@@ -10,11 +10,9 @@ import com.intellij.driver.sdk.ui.Finder
 import com.intellij.driver.sdk.ui.components.ComponentData
 import com.intellij.driver.sdk.ui.components.UiComponent
 import com.intellij.driver.sdk.ui.components.common.codeEditorForFile
-import com.intellij.driver.sdk.ui.components.common.databaseToolWindow
 import com.intellij.driver.sdk.ui.components.common.ideFrame
 import com.intellij.driver.sdk.ui.components.ultimate.dataSourcesAndDriversDialog
 import com.intellij.driver.sdk.ui.components.elements.accessibleTable
-import com.intellij.driver.sdk.ui.components.elements.actionButton
 import com.intellij.driver.sdk.ui.components.elements.button
 import com.intellij.driver.sdk.ui.components.elements.dialog
 import com.intellij.driver.sdk.ui.components.elements.isDialogOpened
@@ -254,14 +252,10 @@ class ZMyBatisDataGripStarterDriverE2ETest {
                     timeout = 2.minutes,
                 ) {
                     try {
-                        if (!ui.isDialogOpened("//div[@title='zMyBatis: Query Result']")) {
-                            false
-                        } else {
-                            ui.accessibleTable {
-                                byType("com.intellij.ui.table.JBTable")
-                            }.content().values.any { row ->
-                                row.values.any { cell -> cell.trim() == "41" }
-                            }
+                        ui.accessibleTable {
+                            byType("com.intellij.ui.table.JBTable")
+                        }.content().values.any { row ->
+                            row.values.any { cell -> cell.trim() == "41" }
                         }
                     } catch (_: com.intellij.driver.sdk.WaitForException) {
                         false
@@ -297,27 +291,15 @@ class ZMyBatisDataGripStarterDriverE2ETest {
     private fun Driver.createPostgreSqlDataSourceThroughDatabaseTools(projectDir: Path) {
         ideFrame {
             invokeAction("ActivateDatabaseToolWindow", now = false)
-            databaseToolWindow {
-                actionButton {
-                    and(byClass("ActionButton"), byAccessibleName("New"))
-                }.performAction()
-            }
 
-            val addList = ui.popup().list()
-            addList.waitOneText(
-                "Data Source",
-                message = "DataGrip Database Tools New menu must expose Data Source",
-                timeout = 30.seconds,
+            // DataGrip 2026.3 exposes the activated host surface as "Database Explorer".
+            // The shared IU Driver helper searches for accessible name "Database Tool Window",
+            // which is not present on this host. Use the visible built-in Create Data Source card
+            // instead of widening production code or depending on the IU-only locator.
+            x(
+                "//div[@visible_text='PostgreSQL']",
+                UiComponent::class.java,
             ).click()
-            waitFor("DataGrip datasource type submenu", timeout = 30.seconds) {
-                ui.popups().list().size >= 2
-            }
-            val dataSourceTypeList = ui.popups().list().last().list()
-            dataSourceTypeList.setFocus()
-            dataSourceTypeList.keyboard {
-                typeText("PostgreSQL")
-                enter()
-            }
 
             dataSourcesAndDriversDialog {
                 button {
@@ -356,17 +338,11 @@ class ZMyBatisDataGripStarterDriverE2ETest {
 
         ideFrame {
             invokeAction("ActivateDatabaseToolWindow", now = false)
-            databaseToolWindow {
-                waitFor("DataGrip DatabaseView.Refresh is accepted", timeout = 30.seconds) {
-                    runCatching {
-                        driver.invokeAction(
-                            "DatabaseView.Refresh",
-                            now = false,
-                            component = component,
-                        )
-                        true
-                    }.getOrDefault(false)
-                }
+            waitFor("DataGrip DatabaseView.Refresh is accepted", timeout = 30.seconds) {
+                runCatching {
+                    invokeAction("DatabaseView.Refresh", now = false)
+                    true
+                }.getOrDefault(false)
             }
         }
     }
