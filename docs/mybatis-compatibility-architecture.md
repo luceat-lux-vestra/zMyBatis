@@ -400,5 +400,5 @@ regression checklist:
 8. the P3 prepared-backend stop gate remains explicit;
 9. superseded Leap admission/preflight/materializer deletion targets are explicit.
 
-D0-D1 and P1-P4 are complete. P5 now validates packaged/manual parity; P6 follows with cleanup of
+D0-D1 and P1-P4 are complete. P5 now validates packaged parity plus minimal human UX smoke; P6 follows with cleanup of
 superseded migration architecture.
