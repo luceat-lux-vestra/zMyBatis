@@ -25,7 +25,6 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
         var rememberLastInputs: Boolean = false,
         var sqlPreview: Boolean = false,
         var autoFormatSql: Boolean = true,
-        var consoleSessionPolicy: ConsoleSessionPolicy = ConsoleSessionPolicy.REUSE,
     )
 
     private var myState = State()
@@ -48,26 +47,9 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
         get() = myState.autoFormatSql
         set(value) { myState.autoFormatSql = value }
 
-    /**
-     * Legacy serialized field retained only so existing settings files continue to deserialize.
-     * Shipping execution always reuses an existing Database Tools console/session client.
-     */
-    @Deprecated("Fresh zMyBatis console creation is no longer a shipping UX option")
-    var consoleSessionPolicy: ConsoleSessionPolicy
-        get() = myState.consoleSessionPolicy
-        set(value) { myState.consoleSessionPolicy = value }
 
     companion object {
         fun getInstance(): ZMyBatisSettings =
             ApplicationManager.getApplication().getService(ZMyBatisSettings::class.java)
     }
-}
-
-/**
- * Legacy persisted enum retained for settings-file compatibility only.
- * Runtime execution no longer branches on this value.
- */
-enum class ConsoleSessionPolicy {
-    REUSE,
-    NEW_EACH,
 }
