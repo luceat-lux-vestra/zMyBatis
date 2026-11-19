@@ -32,9 +32,9 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 /**
  * Scale evidence for the shipping console boundary after P5 UX parity recovery.
  *
- * zMyBatis no longer creates, caches, replaces, or disposes a console during shipping execution.
- * These fixtures pre-create a Database Tools-owned console and prove repeated invocations borrow the
- * same client, release only the source-key lease, and create no persistent editor/tab resource.
+ * zMyBatis reuses Database Tools-owned consoles when available and creates one only for a
+ * no-candidate flow or explicit user choice. These fixtures prove repeated borrowing, bounded
+ * ownership of created consoles, lease cleanup, and zero persistent editor/tab growth.
  */
 class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
 
@@ -170,7 +170,7 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
         }
     }
 
-    fun testCancellationAndMissingConsoleDoNotStrandBorrowOwnership() {
+    fun testCancellationAndCreatedConsoleDoNotStrandOwnership() {
         val cache = ConsoleCacheService.getInstance(project)
         val dataSource = registeredDbDataSource(
             name = "zMyBatis borrowed-console terminal paths",
@@ -205,25 +205,31 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
             )
             val missingKey = "vfs:file:///tmp/zmybatis/NoConsoleMapper.xml"
             var failure: DatabaseToolsConsoleAcquisitionFailure? = null
+            var created: JdbcConsole? = null
             adapter.acquireAndDeliverConsole(
                 dataSource = missingDataSource,
                 schema = null,
                 resourceKey = missingKey,
-                onConsoleReady = { _, release ->
+                onConsoleReady = { console, release ->
+                    created = console
                     release()
-                    fail("no platform console exists for the missing-console datasource")
                 },
                 onFailure = { failure = it },
             )
 
-            assertSame(DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleUnavailable, failure)
+            assertNull(failure)
+            assertNotNull("no-candidate flow must create a console", created)
+            assertEquals("NoConsoleMapper.xml", created!!.file.virtualFile?.name)
             assertTrue(cache.beginReuseLease(missingKey))
             cache.endReuseLease(missingKey)
+            if (created!!.isValid) {
+                Disposer.dispose(created!!)
+            }
 
             println(
                 "ZMYBATIS_RESOURCE_LIFECYCLE phase=terminal-cleanup " +
-                    "policy=BORROW_EXISTING cancellation_disposed=false " +
-                    "missing_console_fail_closed=true lease_stranded=false",
+                    "policy=REUSE_CHOOSE_CREATE cancellation_disposed=false " +
+                    "missing_console_created=true lease_stranded=false",
             )
         } finally {
             if (!lifetime.isDisposed) Disposer.dispose(console)
