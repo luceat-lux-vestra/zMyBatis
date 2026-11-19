@@ -50,7 +50,6 @@
   <tr><th>Category</th><th>Option</th><th>Description</th></tr>
   <tr><td><b>Execution &amp; Output</b></td><td>SQL Preview</td><td>Optional preview for safe paths; mandatory mutation/raw confirmation overrides this setting.</td></tr>
   <tr><td></td><td>Auto-format SQL Preview</td><td>Formatting affects presentation only, never the immutable execution artifact.</td></tr>
-  <tr><td></td><td>Console Session Policy</td><td>REUSE a matching live console or acquire NEW_EACH; this is a resource policy, not persisted target identity.</td></tr>
   <tr><td><b>Parameter Dialog</b></td><td>XML-only input</td><td>When no mapper method authority is available, source-proven dotted paths are offered as convenient Fields alongside an editable generated JSON object; both submit the same XML parameter object.</td></tr>
   <tr><td><b>Parameter Dialog</b></td><td>Remember Last Inputs</td><td>Opt-in retention for eligible contract inputs keyed by canonical statement identity; raw values are excluded.</td></tr>
 </table>
