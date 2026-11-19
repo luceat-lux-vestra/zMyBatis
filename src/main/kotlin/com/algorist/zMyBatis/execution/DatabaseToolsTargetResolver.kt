@@ -1,10 +1,7 @@
 package com.algorist.zMyBatis.execution
 
 import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
-import com.algorist.zMyBatis.core.execution.ExecutionTargetId
-import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
 import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
-import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailure
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailureKind
 import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
