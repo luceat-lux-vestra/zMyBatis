@@ -15,9 +15,9 @@ For pre-1.0 work:
   obligations.
 
 #251 and #391 remain historical evidence, but #391's bounded SQL-text/materializer target is
-superseded for pre-1.0 parity recovery where it conflicts with the new architecture. The current
-registered action still uses the single Leap authority with zero-binding and PostgreSQL BIGINT
-materialization; unsupported current shapes remain fail-closed until replacement evidence exists.
+superseded by the implemented pre-1.0 architecture. The registered action now executes the exact
+approved `PreparedExecutionPlan` through explicit prepared/native backends. Unsupported
+application-runtime semantics and unsafe/ambiguous authority still fail closed.
 
 The deleted legacy action/evaluator/extractor/dialog/history architecture must not be reintroduced as
 fallback, compatibility routing, or test-only semantic authority.
@@ -34,12 +34,17 @@ The current registered execution path is broadly:
 
 1. capture one immutable supported Java/XML mapper source graph from the active editor;
 2. resolve one exact stable datasource UUID + explicit named schema and derive target database-id context;
-3. derive the source-bound `ParameterContract` and collect a validated `InputEnvironment`;
-4. prepare through isolated stock MyBatis and materialize only a proven executable SQL-text shape;
-5. approve the immutable artifact, then revalidate source/target/lifecycle authority;
-6. submit exactly `MaterializedExecution.executionSql` through the maintained Database Tools console adapter.
+3. derive caller-authoritative input requirements and collect a validated `InputEnvironment`;
+4. prepare through isolated stock MyBatis and freeze one immutable `PreparedExecutionPlan`;
+5. approve that exact plan, then immediately revalidate source/target/lifecycle authority;
+6. route explicitly by binding cardinality:
+   - ordered bindings > 0 -> `DatabaseSessionPreparedBackend` -> bounded zMyBatis prepared-result presentation;
+   - ordered bindings == 0 -> `NativeConsoleSqlTextBackend` -> Database Tools native result/history.
 
-The production contract is an explicitly bounded SQL-text compatibility envelope, **not** JDBC/TypeHandler equivalence. Zero-binding execution is target-bound and DB-neutral; the named nonzero production slice is the proven PostgreSQL BIGINT materializer. Other nonzero dialect/type shapes fail closed; the deleted legacy evaluator is not a routing option.
+The production contract is stock-MyBatis preparation plus explicit prepared/native execution, not a
+SQL literalization envelope. Common stock TypeHandlers own bound execution; zero-binding/exact-text
+execution remains native. Prepared/native backends do not fall back to each other, and the deleted
+legacy evaluator/materializer is not a routing option.
 
 Key current ownership areas:
 
@@ -268,9 +273,9 @@ The completed #67 readiness baseline remains a maintenance contract for:
 It does **not** freeze the current dynamic-admission or PostgreSQL BIGINT materializer restrictions as
 the 1.0 product target.
 
-Until P4 cutover, every current unsupported DBMS/type/input shape remains fail-closed in the shipping
-path. During P1-P4, replacement support becomes authoritative only after its phase oracle/backend
-evidence is green; no old-path fallback is allowed.
+P1-P4 replacement support is now shipping authority. P5 validates packaged/manual parity against
+that authority; P6 may delete superseded historical implementation/tests/docs only after P5 evidence
+is complete. No old-path fallback is allowed.
 
 Public wording must distinguish current shipping evidence from the pre-1.0 target. Do not advertise
 planned parity as already shipped, and do not advertise temporary current restrictions as permanent
