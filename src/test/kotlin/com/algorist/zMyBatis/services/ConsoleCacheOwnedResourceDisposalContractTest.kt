@@ -60,7 +60,7 @@ class ConsoleCacheOwnedResourceDisposalContractTest {
         val remembered = acquisition.indexOf("cache.rememberedConsole(resourceKey, it)")
         val mapperMatch = acquisition.indexOf("console.file.virtualFile?.name == mapperName")
         val chooser = acquisition.indexOf("requestConsoleChoice(")
-        val create = acquisition.indexOf("createAndDeliver(consoles)")
+        val create = acquisition.indexOf("createAndDeliver(sessionDataSource, consoles)")
 
         assertTrue("same-source ownership must precede candidate discovery", lease >= 0)
         assertTrue("Database Tools sessions must be discovered after keyed ownership", sessions > lease)
