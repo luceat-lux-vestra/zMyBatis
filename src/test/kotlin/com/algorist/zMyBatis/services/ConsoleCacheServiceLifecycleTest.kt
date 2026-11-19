@@ -403,13 +403,28 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         )
 
         assertNull(failure)
-        assertNotNull("no-candidate flow must create a usable Database Tools console", delivered)
-        assertTrue(delivered!!.isValid)
-        assertEquals("MissingMapper.xml", delivered!!.file.virtualFile?.name)
+        val createdConsole = requireNotNull(delivered) {
+            "no-candidate flow must create a usable Database Tools console"
+        }
+        assertTrue(createdConsole.isValid)
+        assertEquals("MissingMapper.xml", createdConsole.file.virtualFile?.name)
+        assertTrue(
+            "created console must be a client of the Database Tools-selected datasource session",
+            expectedSession.clientsWithFile.any { client -> client === createdConsole },
+        )
+        val attachedSessions = DatabaseSessionManager.getSessions(project, sessionDataSource)
+            .filter { session ->
+                session.clientsWithFile.any { client -> client === createdConsole }
+            }
+        assertEquals(
+            "created console must be attached to exactly one Database Tools session",
+            1,
+            attachedSessions.size,
+        )
         assertSame(
-            "created console must attach to the existing Database Tools datasource session",
+            "the sole attached session must be the Database Tools-selected datasource session",
             expectedSession,
-            delivered!!.session,
+            attachedSessions.single(),
         )
         assertTrue("terminal completion must release the source lease", ConsoleCacheService.getInstance(project).beginReuseLease(key))
         ConsoleCacheService.getInstance(project).endReuseLease(key)
