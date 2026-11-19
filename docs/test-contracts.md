@@ -67,16 +67,15 @@ not a second dynamic-language permission table.
 ## Manual release acceptance boundary
 
 The repository-owned [manual release validation sample](../samples/manual-release-validation/README.md)
-is supplemental maintainer evidence for an exact packaged release candidate. It intentionally reuses
-the maintained zero-binding, PostgreSQL BIGINT + Boolean-if, XML raw and direct-Java raw shapes while
-adding safe manual probes for mutation confirmation, qualified includes, databaseId selection,
-unsupported materialization, settings, target persistence, console policy and DataGrip smoke.
+is supplemental maintainer evidence for an exact packaged release candidate. Its current matrix is
+written against the P1-P4 shipping architecture: zero-binding/exact-text native execution, bound
+prepared execution, stock dynamic SQL, ordinary result metadata, raw/mutation approval, target
+identity, settings/lifecycle behavior, and bounded DataGrip smoke.
 
 Manual acceptance does **not** replace automated evidence and does not define target semantics merely
-because a fixture can be written. #509 and #510 are parity-regression evidence under #512. Their
-pending reproductions intentionally remain outside the current PASS set until the new preparation/
-invocation/backend architecture makes them real supported cases. The goal is to promote those
-fixtures to PASS before 1.0, not to document them permanently as product exclusions.
+because a fixture can be written. Historical #509/#510 reproductions are promoted to normal
+`Parity*` acceptance fixtures only because P1/P2 already provide registered-path semantic evidence.
+P5 still requires packaged evidence and an exact-candidate manual GO before final disposition.
 
 ## Sensitive logging evidence boundary
 
@@ -119,28 +118,35 @@ The remaining preflight logic is capability/safety-only: unsafe executable OGNL/
 custom application TypeHandler/LanguageDriver boundaries, resource budgets, raw non-retention/
 approval provenance, source revision identity and bound-token topology remain fail closed.
 
-There is no compatibility evaluator, unknown-tag stripping mode, OGNL source rewrite, error-as-SQL path, or evaluator-owned generic literalization in the registered execution architecture. Unsupported preparation/materialization returns typed failure before approval or Database Tools delivery.
+There is no compatibility evaluator, unknown-tag stripping mode, OGNL source rewrite, error-as-SQL
+path, or evaluator-owned generic literalization in the registered execution architecture.
+Unsupported preparation, plan freezing, binding, target, or backend execution returns typed failure
+without switching to a legacy/materializer route.
 
 ## Mutation and raw interpolation safety evidence boundary
 
 Raw interpolation is represented explicitly in the parameter contract and `PreparedExecution`; it is never treated as a normal bound value. `LeapExecutionApprovalPolicyTest` and adapter/delivery tests prove that any raw interpolation or INSERT/UPDATE/DELETE declaration forces final-artifact confirmation even when ordinary `sqlPreview` is disabled.
 
-Statement kind remains confirmation evidence, not SQL authorization. The immutable materialized artifact is the only executable payload, cancellation terminates the invocation, and packaged Starter/Driver scenarios prove XML and direct-Java raw confirmation/cancellation behavior against the maintained PostgreSQL Database Tools path.
+Statement kind remains confirmation evidence, not SQL authorization. The immutable approved
+`PreparedExecutionPlan` is the execution authority; cancellation terminates the invocation, and
+packaged Starter/Driver scenarios prove XML/direct-Java raw confirmation behavior without weakening
+the prepared/native routing boundary.
 
 ## Preview and execution boundary
 
-Current shipping preview/approval receives the immutable materialized SQL-text artifact. Formatting
-may derive presentation text but cannot mutate `executionSql`; the Database Tools adapter receives
-the exact frozen artifact after source/target/lifecycle revalidation.
+Current shipping preview/approval receives the immutable `PreparedExecutionPlan`: placeholder SQL,
+ordered typed bindings, raw interpolation provenance/result, source revisions, target/databaseId and
+statement kind. Formatting derives presentation text only and cannot mutate the approved plan.
 
-The 1.0 target generalizes that identity to an immutable `PreparedExecutionPlan`: SQL with
-placeholders plus ordered typed bindings, raw interpolation provenance/result, source revisions,
-target and statement kind. P3/P4 must add backend/plan evidence before this target becomes current
-product evidence.
+The exact approved plan is immediately revalidated before explicit backend dispatch:
+- bindings > 0 -> `DatabaseSessionPreparedBackend`;
+- bindings == 0 -> `NativeConsoleSqlTextBackend`.
 
 The maintained Starter/Driver E2E currently supplies representative full click-throughs for
-DB-neutral zero-binding, PostgreSQL BIGINT input/materialization/native history, XML raw cancellation,
-and direct-Java raw cancel/reinvoke/execute. These do not imply broader 1.0 parity.
+zero-binding native execution, multi-binding prepared execution + zMyBatis result presentation, XML
+raw cancellation, and direct-Java raw cancel/reinvoke/execute. P5 adds promoted dynamic/ordinary
+mapper parity acceptance; these representative scenarios still do not replace the lower-layer stock
+MyBatis oracle.
 
 ## Session and datasource platform gaps
 
@@ -197,9 +203,9 @@ authority.
 The root execution tests (`LeapExecutionInvocationCoordinatorTest`,
 `LeapExecutionCandidateCoordinatorTest`, and the project-fixture handoff tests) use the same
 `MyBatisInvocationContractFactory` as production. This prevents test-only legacy contracts from
-masking registered-path drift. Materialization remains intentionally bounded after preparation:
-current zero-binding/raw/PostgreSQL-BIGINT adapters are execution envelopes, not MyBatis semantic
-authorities. P3 is the next hard-stop phase for prepared Database Tools backend evidence.
+masking registered-path drift. P3/P4 are complete: nonzero ordered bindings are ordinary prepared
+backend input, while zero-binding/exact-text plans use the explicit native backend. Historical
+materializer tests are no longer execution-authority evidence.
 
 ## IDEA 2026.3 compatibility and console lifetime authority (2026.2.3 historical)
 
@@ -451,25 +457,19 @@ console and release keyed ownership so the same key can be acquired again. An is
 service fixture additionally owns **8 REUSE resources** and requires explicit
 `ConsoleCacheService` disposal to dispose all eight.
 
-Successful runs emit `ZMYBATIS_RESOURCE_LIFECYCLE` records for repeated completion, materialized
-delivery terminal ownership, terminal cleanup, service disposal, and project disposal. The root test
-task surfaces this prefix alongside the existing XML/input measurement prefixes without enabling
-arbitrary test stdout.
+Successful runs emit `ZMYBATIS_RESOURCE_LIFECYCLE` records for repeated completion, terminal
+ownership, cleanup, service disposal, and project disposal. The root test task surfaces this prefix
+alongside the existing XML/input measurement prefixes without enabling arbitrary test stdout.
 
-The materialized-delivery fixture adds **8 repeated cycles per policy** through the real
-`acquireAndDeliverConsole -> executeMaterialized -> onFinished` shipping chain. It provides one real
-editor for each delivered console, lets the adapter inject/commit the exact artifact SQL and build
-the Database Tools script model, then deterministically invalidates the invocation at the final
-pre-native revalidation boundary. That forces document restoration and the real `onFinished`
-callback without turning an asynchronous database query into a timing oracle. REUSE must release
-its keyed lease on every cycle and retain only one console; NEW_EACH must remain uncached and live
-until its explicit/platform owner disposes it. Editor cardinality is observed at the execution
-boundary and fixture-created editors are explicitly released.
+The retained materialized-delivery fixture predates P4 and still runs repeated cycles through the
+former `acquireAndDeliverConsole -> executeMaterialized -> onFinished` boundary. It remains useful
+only as historical console/editor cleanup characterization and is **not** a source contract for the
+registered shipping path. Current shipping routing is covered separately by
+`LeapExecutionDeliveryCoordinatorTest`, prepared cancellation ownership tests, and packaged
+Starter/Driver E2E.
 
-This repeated fixture deliberately records `native_invocations=0`: it is resource-lifecycle
-evidence, not a substitute for the maintained Starter/Driver E2E that proves successful native
-Database Tools query invocation from the packaged plugin. The separation keeps lifecycle assertions
-deterministic while still exercising the shipping document/editor/script-model terminal path.
+That historical repeated fixture deliberately records `native_invocations=0`; it must not be cited
+as proof of current native or prepared execution success.
 
 These fixtures measure zMyBatis cache/lease ownership plus real console lifetime convergence; they
 do not claim every native Database Tools result/editor/history object is owned by zMyBatis. Native
