@@ -50,9 +50,11 @@ Key current ownership areas:
 
 - cheap action presentation: `MyBatisExecuteAction` + bounded `MyBatisContextAnalyzer`;
 - source admission: `LeapActionContextAdmissionCoordinator` plus Java/XML #62 adapters and source-graph revalidation;
-- input: source-derived `ParameterContract`, `ContractParameterInputDialog`, typed `InputEnvironment`, and contract-keyed retention;
-- preparation/materialization: `:mybatis-engine` `MyBatisPreparationBoundary` plus bounded execution materializers;
-- approval/delivery: `LeapExecutionApprovalAdapter`, `LeapExecutionDeliveryCoordinator`, and `DatabaseToolsConsoleAdapter`;
+- input: caller-authoritative `ParameterContract`, `ContractParameterInputDialog`, typed `InputEnvironment`, and contract-keyed retention;
+- preparation/plan: `:mybatis-engine` `MyBatisPreparationBoundary` plus `PreparedExecutionPlanner`;
+- bound execution: `DatabaseSessionPreparedBackend` + `PreparedResultPresentationAdapter`;
+- zero-binding/exact-text execution: `NativeConsoleSqlTextBackend` + `DatabaseToolsConsoleAdapter`;
+- approval/delivery: `LeapExecutionApprovalAdapter` + `LeapExecutionDeliveryCoordinator`;
 - target persistence/resource lifecycle: `ExecutionTargetDescriptorStore`, exact Database Tools resolution, v3 stale-source pruning, and persistence-neutral `ConsoleCacheService`;
 - settings: `ZMyBatisSettings`, configurable UI.
 
@@ -60,8 +62,8 @@ The registered action has no retained legacy execution fallback. Removed proxy/e
 
 ## 1.1 Pre-1.0 parity recovery — mandatory order
 
-The current bounded Leap input/preparation/materialization behavior is **migration implementation**,
-not the 1.0 target.
+The P1-P4 compatibility architecture is now the registered shipping implementation. P5 validates
+packaged/manual parity against it; P6 owns deletion of superseded migration islands.
 
 Mandatory work-unit order:
 
@@ -81,13 +83,12 @@ Rules:
 - do not patch #509/#510 independently before D1;
 - do not encode current Leap refusal as desired oracle behavior;
 - stock MyBatis owns standard dynamic SQL semantics for the 1.0 target;
-- the target must not preserve `DynamicOgnlAdmission`, `ForeachProvenanceAdmission`, Boolean/
-  foreach/trim syntax islands, whole-document result/parameter metadata refusal, or PostgreSQL BIGINT
-  single-binding materialization merely because current tests cover them;
+- do not reintroduce `DynamicOgnlAdmission`, `ForeachProvenanceAdmission`, Boolean/foreach/trim
+  syntax islands, whole-document result/parameter metadata refusal, or PostgreSQL BIGINT
+  single-binding materialization as registered authority merely because historical tests cover them;
 - source/target/lifecycle/privacy/approval protections remain non-negotiable during parity recovery;
-- P3 is a real stop gate. If maintained Database Tools APIs cannot support reliable prepared
-  execution/cancellation/target correctness, stop and revisit the execution target before more
-  syntax expansion;
+- P3 was a real stop gate and passed with maintained Database Tools session/prepared execution,
+  cancellation, disposal and target correctness evidence; do not weaken those guarantees in later phases;
 - one bounded child work unit at a time; do not pre-create all phase PRs.
 
 The D1 oracle is green stock-MyBatis evidence with no production runtime change. Subsequent phases
@@ -96,8 +97,8 @@ must add zMyBatis-vs-oracle parity for the slice they replace.
 ## 2. Mapper, parameter, and SQL fidelity
 
 - `#{...}` and `${...}` are distinct semantics. Never silently convert a bound placeholder into raw interpolation or vice versa.
-- Materialized SQL text is a bounded zMyBatis compatibility representation; do not describe it as JDBC/TypeHandler-equivalent without dedicated evidence.
-- **Current shipping:** only source/input/dialect/type shapes admitted by the registered Leap path may execute. **1.0 target:** this bounded admission is not a preservation constraint; replacement support is governed by the stock-MyBatis parity architecture and its phase gates.
+- Historical materialized SQL text is a compatibility representation, not JDBC/TypeHandler equivalence and not current bound-execution authority.
+- **Current shipping:** stock MyBatis preparation + immutable `PreparedExecutionPlan` + explicit prepared/native backend routing. Unsupported application-runtime semantics and ambiguous source/input/target authority still fail closed.
 - Internal MyBatis variables such as `<bind>` names and `foreach` item/index must not be invented as caller inputs.
 - Unsupported or ambiguous source/input/evaluation behavior must not silently become plausible executable SQL. The stronger typed-failure architecture is defined by Leap #60/#64; #67 supplied its final quality/readiness evidence.
 - Preview and execution must not silently diverge. Full Database Tools click-through fidelity remains a platform/integration evidence gap documented in `docs/test-contracts.md`.
@@ -253,10 +254,11 @@ JetBrains Marketplace `Source Code` and `License` are Marketplace-admin metadata
 
 > Governance-stable heading: this section now distinguishes the current Leap implementation from the superseding zMyBatis 1.0 target under #512.
 
-Epic #60 remains provenance for the current single-path Leap baseline: registered action →
-authoritative source/input contracts → isolated MyBatis preparation → bounded materialization →
-exact target → Database Tools native delivery. The former legacy execution/evaluator/input
-architecture and undistributed v2 persistence remain deleted.
+Epic #60 remains provenance for the single registered Leap authority, while #512 now defines the
+shipping middle path: registered action → authoritative source/caller input → stock MyBatis
+preparation → immutable `PreparedExecutionPlan` → exact target → explicit prepared/native backend.
+The former legacy execution/evaluator/input architecture and undistributed v2 persistence remain
+deleted.
 
 The physical dependency graph remains enforced: root IntelliJ plugin → `:core` and
 `:mybatis-engine`; `:mybatis-engine` → `:core` and MyBatis; `:core` remains free of IntelliJ,
@@ -270,8 +272,8 @@ The completed #67 readiness baseline remains a maintenance contract for:
 - source/target/lifecycle correctness;
 - exact-head validation discipline.
 
-It does **not** freeze the current dynamic-admission or PostgreSQL BIGINT materializer restrictions as
-the 1.0 product target.
+It does **not** freeze superseded dynamic-admission or PostgreSQL BIGINT materializer restrictions as
+the 1.0 product contract.
 
 P1-P4 replacement support is now shipping authority. P5 validates packaged/manual parity against
 that authority; P6 may delete superseded historical implementation/tests/docs only after P5 evidence
