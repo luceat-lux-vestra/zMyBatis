@@ -143,10 +143,11 @@ The exact approved plan is immediately revalidated before explicit backend dispa
 - bindings == 0 -> `NativeConsoleSqlTextBackend`.
 
 The maintained Starter/Driver E2E currently supplies representative full click-throughs for
-zero-binding native execution, multi-binding prepared execution + zMyBatis result presentation, XML
-raw cancellation, and direct-Java raw cancel/reinvoke/execute. P5 adds promoted dynamic/ordinary
-mapper parity acceptance; these representative scenarios still do not replace the lower-layer stock
-MyBatis oracle.
+zero-binding native execution, multi-binding prepared execution + zMyBatis result presentation,
+promoted built-in `parameterType="long"` metadata through the registered prepared route, XML raw
+cancellation, and direct-Java raw cancel/reinvoke/execute. The parameterType scenario is P5 packaged
+acceptance for historical #510/R05; these representative scenarios still do not replace the
+lower-layer stock MyBatis oracle.
 
 ## Session and datasource platform gaps
 
