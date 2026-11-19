@@ -7,7 +7,6 @@ import com.algorist.zMyBatis.core.preparation.PreparationSource
 import com.algorist.zMyBatis.mybatis.MyBatisInvocationContractFactory
 import com.algorist.zMyBatis.input.ContractParameterInputDialog
 import com.algorist.zMyBatis.services.ExecutionTargetDescriptorStore
-import com.algorist.zMyBatis.settings.ConsoleSessionPolicy
 import com.algorist.zMyBatis.settings.ZMyBatisSettings
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
@@ -20,20 +19,17 @@ import com.intellij.openapi.project.Project
  */
 internal data class LeapExecutionInvocationPolicy(
     val approvalOptions: LeapExecutionApprovalOptions,
-    val forceNewConsole: Boolean,
 )
 
 internal fun leapExecutionInvocationPolicy(
     showSqlPreview: Boolean,
     formatPreviewSql: Boolean,
-    consoleSessionPolicy: ConsoleSessionPolicy,
 ): LeapExecutionInvocationPolicy =
     LeapExecutionInvocationPolicy(
         approvalOptions = LeapExecutionApprovalOptions(
             showSqlPreview = showSqlPreview,
             formatPreviewSql = formatPreviewSql,
         ),
-        forceNewConsole = consoleSessionPolicy == ConsoleSessionPolicy.NEW_EACH,
     )
 
 /**
@@ -158,7 +154,6 @@ internal class LeapExecutionInvocationCoordinator(private val project: Project) 
         val policy = leapExecutionInvocationPolicy(
             showSqlPreview = settings.sqlPreview,
             formatPreviewSql = settings.autoFormatSql,
-            consoleSessionPolicy = settings.consoleSessionPolicy,
         )
 
         fun continueWithInput(environment: InputEnvironment) {
@@ -179,7 +174,6 @@ internal class LeapExecutionInvocationCoordinator(private val project: Project) 
                 inputEnvironment = environment,
                 targetDescriptor = targetDescriptor,
                 resourceKey = sourceFileId.value,
-                forceNewConsole = policy.forceNewConsole,
                 approvalOptions = policy.approvalOptions,
                 isInvocationActive = liveInvocation,
                 onExecuted = onExecuted,
