@@ -208,6 +208,7 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
             "com.intellij.database.console.session.DatabaseSession",
             "com.intellij.database.console.session.DatabaseSessionManager",
             "com.intellij.database.console.JdbcConsole",
+            "com.intellij.database.console.JdbcConsole\$Builder",
         ).joinToString("|") { className ->
             runCatching {
                 val type = Class.forName(className)
