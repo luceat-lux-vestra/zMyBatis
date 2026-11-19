@@ -443,8 +443,8 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         val originalText = consoleDoc.text
 
         try {
-            consoleEditor.contentComponent.requestFocusInWindow()
-
+            // The console editor is an internal execution surface. Do not request focus here:
+            // the mapper that initiated zMyBatis remains the user's active editing context.
             WriteCommandAction.runWriteCommandAction(project, "zMyBatis: Inject SQL", null, {
                 consoleDoc.setText(sql)
                 consoleEditor.selectionModel.setSelection(0, sql.length)
