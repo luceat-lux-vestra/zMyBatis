@@ -434,7 +434,7 @@ object MyBatisInvocationContractFactory {
 
     internal object XmlInvocationUsageScanner {
         private val bindLiteral = Regex(
-            """(?:null|true|false|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?[lLfFdD]?|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*")""",
+            """null|true|false|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?[lLfFdD]?|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"""",
         )
 
         data class Result(
