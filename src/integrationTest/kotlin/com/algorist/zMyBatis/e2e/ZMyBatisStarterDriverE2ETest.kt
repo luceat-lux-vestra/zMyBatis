@@ -483,6 +483,173 @@ class ZMyBatisStarterDriverE2ETest {
             }
     }
 
+    @Test
+    fun registeredActionSelectsTargetDatabaseIdVariant(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-postgresql-database-id-project"))
+        val mapper = """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.QueryMapper">
+            <select id="ping" databaseId="PostgreSQL">SELECT 2620 AS RESULT_VALUE</select>
+            <select id="ping">SELECT 2600 AS RESULT_VALUE</select>
+            </mapper>
+        """.trimIndent()
+        Files.writeString(projectDir.resolve("PostgreSqlDatabaseIdQuery.xml"), mapper)
+        writeMapperInterface(projectDir, "long")
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-postgresql-database-id", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(true)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("PostgreSqlDatabaseIdQuery.xml")
+                ui.codeEditorForFile("PostgreSqlDatabaseIdQuery.xml").clickOnPosition(3, 20)
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("PostgreSQL explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                ui.dialog(title = "zMyBatis — SQL Preview") {
+                    assertEquals(
+                        "SELECT 2620 AS RESULT_VALUE",
+                        textArea().text.trim(),
+                        "target-derived PostgreSQL databaseId variant must win over the default variant",
+                    )
+                    button("Execute").click()
+                }
+
+                waitFor(
+                    message = "PostgreSQL Database Tools result grid contains databaseId-selected value",
+                    timeout = 2.minutes,
+                ) {
+                    try {
+                        val values = ui.accessibleTable {
+                            byType("com.intellij.database.run.ui.table.TableResultView")
+                        }.content().values.flatMap { row -> row.values }.map { it.trim() }.toSet()
+                        "2620" in values && "2600" !in values
+                    } catch (_: com.intellij.driver.sdk.WaitForException) {
+                        false
+                    }
+                }
+                ui.waitForNoOpenedDialogs()
+            }
+    }
+
+    @Test
+    fun registeredMutationDeclarationForcesPreviewWhenSettingDisabled(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-postgresql-mutation-approval-project"))
+        val mapper = """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.QueryMapper">
+            <update id="ping">SELECT 0 AS RESULT_VALUE</update>
+            </mapper>
+        """.trimIndent()
+        Files.writeString(projectDir.resolve("PostgreSqlMutationQuery.xml"), mapper)
+        writeMapperInterface(projectDir, "long")
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-postgresql-mutation-approval", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("PostgreSqlMutationQuery.xml")
+                ui.codeEditorForFile("PostgreSqlMutationQuery.xml").clickOnPosition(3, 20)
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("PostgreSQL explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                ui.dialog(title = "zMyBatis — SQL Preview") {
+                    assertEquals(
+                        "SELECT 0 AS RESULT_VALUE",
+                        textArea().text.trim(),
+                        "mutation declaration must force final-plan approval when sqlPreview=false",
+                    )
+                    button("Cancel").click()
+                }
+                ui.waitForNoOpenedDialogs()
+
+                val resultGridOpened = try {
+                    ui.accessibleTable {
+                        byType("com.intellij.database.run.ui.table.TableResultView")
+                    }.content()
+                    true
+                } catch (_: com.intellij.driver.sdk.WaitForException) {
+                    false
+                }
+                assertFalse(
+                    resultGridOpened,
+                    "cancelling mandatory mutation approval must not execute the declared mutation",
+                )
+            }
+    }
+
+    @Test
+    fun registeredProviderAnnotationFailsClosedWithExplicitNotice(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-provider-unsupported-project"))
+        writeDirectJavaProviderMapper(projectDir)
+
+        starterContext("action-provider-unsupported", projectDir)
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                openFile("JavaProviderMapper.java")
+                ui.codeEditorForFile("JavaProviderMapper.java").clickOnPosition(8, 20)
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                ui.dialog(title = "zMyBatis: Provider Not Supported") {
+                    button("OK").click()
+                }
+                ui.waitForNoOpenedDialogs()
+            }
+    }
+
     private fun assertNativePostgreSqlHistoryContainsAndExcludes(
         configDir: Path,
         requiredSql: String,
@@ -943,6 +1110,49 @@ class ZMyBatisStarterDriverE2ETest {
         val durationMs = (System.nanoTime() - activationStartedAtNanos) / 1_000_000
         println(
             "ZMYBATIS_E2E_ACTIVATION config=${context.paths.configDir.fileName} duration_ms=$durationMs",
+        )
+    }
+
+    private fun writeDirectJavaProviderMapper(projectDir: Path) {
+        val annotationDir = Files.createDirectories(
+            projectDir.resolve("org/apache/ibatis/annotations"),
+        )
+        Files.writeString(
+            annotationDir.resolve("SelectProvider.java"),
+            """
+            package org.apache.ibatis.annotations;
+
+            public @interface SelectProvider {
+                Class<?> type();
+                String method();
+            }
+            """.trimIndent(),
+        )
+
+        Files.writeString(
+            projectDir.resolve("SqlProvider.java"),
+            """
+            package fixture;
+
+            public final class SqlProvider {
+                public static String sql() {
+                    return "SELECT 1";
+                }
+            }
+            """.trimIndent(),
+        )
+        Files.writeString(
+            projectDir.resolve("JavaProviderMapper.java"),
+            """
+            package fixture;
+
+            import org.apache.ibatis.annotations.SelectProvider;
+
+            public interface JavaProviderMapper {
+                @SelectProvider(type = SqlProvider.class, method = "sql")
+                Object ping();
+            }
+            """.trimIndent(),
         )
     }
 
