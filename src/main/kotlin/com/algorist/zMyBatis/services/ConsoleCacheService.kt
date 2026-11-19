@@ -12,6 +12,7 @@ import com.intellij.openapi.project.ProjectManagerListener
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.util.CheckedDisposable
 import com.intellij.openapi.util.Disposer
+import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -93,7 +94,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     )
 
     private val cache = ConcurrentHashMap<String, Entry>()
-    private val consoleAssociations = ConcurrentHashMap<AssociationKey, String>()
+    private val consoleAssociations = ConcurrentHashMap<AssociationKey, WeakReference<JdbcConsole>>()
     private val activeReuseLeases = ConcurrentHashMap.newKeySet<String>()
     private val lifecycleLock = Any()
 
@@ -203,17 +204,15 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     internal fun rememberedConsole(
         resourceKey: String,
         targetId: ExecutionTargetId,
-        candidates: List<JdbcConsole>,
     ): JdbcConsole? {
         val key = AssociationKey(resourceKey, targetId)
-        val rememberedId = consoleAssociations[key] ?: return null
-        val match = candidates.singleOrNull { console ->
-            console.isValid && consoleIdentity(console) == rememberedId
+        val reference = consoleAssociations[key] ?: return null
+        val console = reference.get()
+        if (console == null || !console.isValid) {
+            consoleAssociations.remove(key, reference)
+            return null
         }
-        if (match == null) {
-            consoleAssociations.remove(key, rememberedId)
-        }
-        return match
+        return console
     }
 
     internal fun rememberConsole(
@@ -222,9 +221,7 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
         console: JdbcConsole,
     ) {
         if (shuttingDown || !console.isValid) return
-        consoleIdentity(console)?.let { identity ->
-            consoleAssociations[AssociationKey(resourceKey, targetId)] = identity
-        }
+        consoleAssociations[AssociationKey(resourceKey, targetId)] = WeakReference(console)
     }
 
     internal fun forgetConsoleAssociation(
@@ -233,9 +230,6 @@ class ConsoleCacheService(private val project: Project) : com.intellij.openapi.D
     ) {
         consoleAssociations.remove(AssociationKey(resourceKey, targetId))
     }
-
-    private fun consoleIdentity(console: JdbcConsole): String? =
-        console.file.virtualFile?.url
 
     /**
      * Registers a live console only as an in-memory REUSE optimization.
