@@ -40,7 +40,7 @@ On an explicit zMyBatis execution action:
 - zMyBatis never creates a fresh console as a shipping policy;
 - explicit named datasource/schema selection updates v3 independently of console/session lifetime.
 
-Shipping console acquisition is borrow-only. zMyBatis enumerates existing Database Tools session clients, prefers the single console whose file identity matches the mapper-facing console name, and fails closed when no console exists or the match is ambiguous. The source-key lease prevents overlapping invocations from concurrently mutating the shared console document. zMyBatis does not register borrowed consoles in its ownership cache and does not dispose them. Closing/disposal does not delete persisted v3 target identity.
+Shipping console acquisition is reuse-first, not borrow-only. zMyBatis first checks an in-memory source+target→console association, then a unique dynamically derived mapper-filename match, then a sole eligible console. Multiple remaining candidates trigger a user chooser with an explicit Create New Console action; no candidate triggers automatic creation. Runtime console association is never persisted as target authority. Borrowed consoles remain Database Tools-owned; consoles created by zMyBatis are lifecycle-owned only as resources. Source and selected-console leases prevent overlapping invocations from mutating one shared console document. Closing/disposal does not delete persisted v3 target identity.
 
 ## Unsupported historical state
 
