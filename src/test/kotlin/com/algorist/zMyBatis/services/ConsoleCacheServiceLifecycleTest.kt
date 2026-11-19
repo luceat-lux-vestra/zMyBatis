@@ -473,14 +473,14 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
             assertSame(
                 "explicit source+target association must outrank filename/order heuristics",
                 second,
-                cache.rememberedConsole(key, target, listOf(first, second)),
+                cache.rememberedConsole(key, target),
             )
 
             Disposer.dispose(second)
             assertTrue(secondLifetime.isDisposed)
             assertNull(
                 "disposed remembered console must invalidate the runtime association",
-                cache.rememberedConsole(key, target, listOf(first, second)),
+                cache.rememberedConsole(key, target),
             )
         } finally {
             if (first.isValid) Disposer.dispose(first)
