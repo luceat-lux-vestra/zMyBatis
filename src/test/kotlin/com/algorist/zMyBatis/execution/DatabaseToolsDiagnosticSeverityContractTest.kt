@@ -19,14 +19,14 @@ class DatabaseToolsDiagnosticSeverityContractTest {
         assertTrue(adapter.contains("catch (ex: Exception)"))
         assertTrue(adapter.contains("catch (fatal: Throwable)"))
 
-        assertTrue(adapter.contains("zMyBatis: existing console lookup failed"))
+        assertTrue(adapter.contains("zMyBatis: console acquisition failed"))
         assertTrue(adapter.contains("zMyBatis: schema switch failed"))
         assertTrue(adapter.contains("zMyBatis: SQL execution failed"))
 
         listOf(
             "data object SchemaSwitchFailed",
-            "data object ExistingConsoleUnavailable",
-            "data object ExistingConsoleAmbiguous",
+            "data object ConsoleCreationFailed",
+            "data object ConsoleSelectionUnavailable",
             "data object EditorUnavailable",
             "data object ExecutionFailed",
         ).forEach { payloadFreeFailure ->
@@ -42,7 +42,7 @@ class DatabaseToolsDiagnosticSeverityContractTest {
         val fatalErrorCalls = Regex("""LOG\.error\("zMyBatis: fatal [^"]+", fatal\)""")
             .findAll(adapter)
             .count()
-        // Existing-console lookup, schema switch and SQL dispatch keep fatal Throwable semantics.
+        // Console acquisition, schema switch and SQL dispatch keep fatal Throwable semantics.
         assertEquals(3, fatalErrorCalls)
 
         val fatalRethrows = Regex("""catch \(fatal: Throwable\) \{[\s\S]*?throw fatal""")
