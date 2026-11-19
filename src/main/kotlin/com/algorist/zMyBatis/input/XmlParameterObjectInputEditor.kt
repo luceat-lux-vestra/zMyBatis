@@ -50,10 +50,20 @@ internal class XmlParameterObjectInputEditor(
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             border = BorderFactory.createEmptyBorder(8, 8, 8, 8)
         }
+        fieldsPanel.add(
+            JBLabel("Enter every required value. Gray 'Example:' text is a hint and is not submitted.").apply {
+                alignmentX = java.awt.Component.LEFT_ALIGNMENT
+            },
+        )
+        fieldsPanel.add(Box.createVerticalStrut(8))
         hints.forEach { hint ->
             val field = JBTextField(36).apply {
-                emptyText.text = XmlParameterObjectInputSupport.scalarPlaceholder(hint)
+                val placeholder = XmlParameterObjectInputSupport.scalarPlaceholder(hint)
+                emptyText.text = placeholder
                 maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+                accessibleContext.accessibleName = hint.path
+                accessibleContext.accessibleDescription =
+                    "Required XML parameter path. $placeholder"
             }
             pathFields[hint.path] = field
             fieldsPanel.add(
@@ -117,7 +127,8 @@ internal class XmlParameterObjectInputEditor(
         return if (missing.isEmpty()) {
             null
         } else {
-            "Enter values for ${missing.joinToString()} or use the JSON tab."
+            "Required XML values are missing: ${missing.joinToString()}. " +
+                "Gray 'Example:' text is only a hint; enter a value or use the JSON tab."
         }
     }
 
