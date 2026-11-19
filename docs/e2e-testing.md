@@ -23,11 +23,13 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
    - selects the exact datasource plus explicit `public` schema through the shipping chooser;
    - observes the real `SqlPreviewDialog` and requires its SQL to equal the exact DB-neutral zero-binding artifact text;
    - clicks `Execute` and waits for a real Database Tools `TableResultView` cell containing the expected value.
-3. **Registered-action / PostgreSQL BIGINT nonzero golden path**
+3. **Registered-action / multi-binding prepared golden path**
    - reuses the same maintained PostgreSQL datasource creation boundary;
-   - invokes the same registered `zMyBatis.Execute` action for a mapper with one `#{value,jdbcType=BIGINT}` binding and stock-MyBatis dynamic `<if>`;
-   - selects the exact datasource + `public` schema, enters the scalar through `ContractParameterInputDialog`, and requires preview text to equal the independently materialized artifact;
-   - executes positive and negative cases, observes native result-grid values, and verifies both exact SQL texts persist in native Database Tools history.
+   - invokes the registered `zMyBatis.Execute` action for a mapper whose one caller input expands to two ordered BIGINT JDBC bindings;
+   - selects the exact datasource + `public` schema and requires approval preview to retain two `?` placeholders plus value-hidden binding metadata;
+   - explicitly rejects literalized bound SQL;
+   - executes through `DatabaseSessionPreparedBackend` and requires the bounded `zMyBatis: Query Result` presentation to contain both result values;
+   - proves the bound path does not surface through the native Database Tools `TableResultView`.
 4. **Registered XML raw-interpolation confirmation path**
    - declares `${}` in the XML mapper while using a real Java mapper method for caller-input authority;
    - reuses the maintained PostgreSQL datasource/explicit-schema path;
@@ -121,4 +123,14 @@ Pure value objects, deterministic source-graph algorithms, isolated parser seman
 
 Do not move stable semantic matrices into this suite merely to label them E2E. Prefer Driver API/service interaction to Swing traversal. UI interaction is used only when registration or visible product behavior is itself the claim.
 
-The maintained IU registered-action suite uses one PostgreSQL Database Tools stack for complementary production paths through the same Leap authority: the DB-neutral zero-binding artifact executes against an explicit PostgreSQL target, the named BIGINT nonzero slice proves contract input/materialization/native results/history, and the raw-interpolation scenario proves mandatory preview cancellation without native execution. That IU proof does not generalize to DataGrip. The separate DataGrip suite proves packaged-plugin/service loading and the registered XML action's typed no-datasource refusal only; it does not claim Java-source parity, successful native PostgreSQL execution, every DBMS/dialect, or every datasource/schema lifecycle case. Those broader claims require their own evidence.
+The maintained IU registered-action suite uses one PostgreSQL Database Tools stack for complementary
+production paths through the same execution-plan authority: the DB-neutral zero-binding plan executes
+through the explicit native text backend, the multi-binding case proves prepared execution plus
+zMyBatis result presentation, and raw-interpolation scenarios prove mandatory approval/non-retention
+without weakening exact-text safety. P5 adds representative promoted parity acceptance on top of
+those routing proofs.
+
+That IU proof does not automatically generalize to DataGrip. The separate DataGrip suite currently
+owns packaged-plugin/service loading and its explicitly maintained XML action boundary. P5 decides
+whether one prepared XML case can be kept reliable on the maintained DataGrip host; Java-source
+parity, every DBMS/dialect, and IDEA-only UX are not inferred from that host.
