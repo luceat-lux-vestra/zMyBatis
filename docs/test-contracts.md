@@ -223,7 +223,7 @@ materializer tests are no longer execution-authority evidence.
 ## IDEA 2026.3 compatibility and console lifetime authority (2026.2.3 historical)
 
 The build and Starter/Driver IDE now target IDEA Ultimate 2026.3 on JDK 25.
-The declared minimum is **263**; independent Plugin Verifier targets are IDEA Ultimate 2026.3 and DataGrip 2026.3. Historical #251 Database Tools parameterized-execution probes and the previous IDEA 2026.2.3 lifetime tests remain historical evidence, **not** a current support promise. The 263 SQL-console editor opening uses the public `OpenFileDescriptor.navigate(false)` entry point; its EDT continuation requires the actual non-disposed editor and exact-source/target and live-console revalidation before native execution, while the mapper retains user focus. No internal or experimental editor-open APIs are permitted.
+The declared minimum is **263**; independent Plugin Verifier targets are IDEA Ultimate 2026.3 and DataGrip 2026.3. Historical #251 Database Tools parameterized-execution probes and the previous IDEA 2026.2.3 lifetime tests remain historical evidence, **not** a current support promise. The 263 shipping console boundary does not open an editor tab. It borrows an existing Database Tools console/session client and uses a transient off-screen editor only when native SQL parsing requires an `Editor`; exact source/target and console validity are still revalidated before native execution. No internal or experimental editor-open APIs are permitted.
 
 `DatabaseToolsConsoleAdapter` uses public `JdbcConsole.isValid()` before resource access, after
 editor-open scheduling and immediately before native query invocation. The maintained API includes
@@ -455,8 +455,8 @@ iteration. The fixture records the number of distinct console identities, verifi
 retains exactly the single matching console, proves the lease can be reacquired after every
 completion, then evicts that bounded owner and requires the console lifetime to be disposed.
 
-The NEW_EACH case performs **16 completed acquisitions** through the same shipping adapter. It
-requires one distinct console per iteration and verifies that none enters the zMyBatis REUSE cache.
+Fresh-console acquisition is no longer a shipping capability. Scale evidence repeatedly borrows one
+Database Tools-owned console, requires zero zMyBatis cache retention, and verifies no source-key lease is stranded.
 The real console lifetimes are deliberately left untouched by fixture cleanup so the platform test
 project teardown can establish the actual post-terminal lifetime boundary. The fixture records how
 many NEW_EACH consoles remain live immediately after terminal handoff and, from `tearDown()`, how
@@ -546,4 +546,4 @@ remain comparative observations, not latency SLAs.
 
 ### P5 legacy UX parity evidence
 
-P5 adds an explicit UX regression contract on top of functional parity. `DatabaseToolsConsoleAdapterBoundaryTest` pins the maintained public background navigation entry point and legacy mapper-based console identity so internal Database Tools resource creation does not become a second branded workflow surface. Human smoke verifies the same packaged behavior in IDEA. UI improvements to parameter entry are allowed when they clarify state without changing input authority.
+P5 adds an explicit UX regression contract on top of functional parity. `DatabaseToolsConsoleAdapterBoundaryTest` pins existing-session/client discovery and forbids `JdbcConsole.newConsole`, editor-tab navigation, console focus stealing, zMyBatis console ownership, and duplicate branded console identities. Human smoke verifies the same packaged behavior in IDEA. UI improvements to parameter entry are allowed when they clarify state without changing input authority.
