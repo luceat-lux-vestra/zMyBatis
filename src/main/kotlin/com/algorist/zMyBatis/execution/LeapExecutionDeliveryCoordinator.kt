@@ -13,6 +13,7 @@ import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.source.SourceGraphRevalidationFailure
 import com.algorist.zMyBatis.source.SourceGraphRevalidationResult
 import com.algorist.zMyBatis.source.StatementSourceGraphRevalidator
+import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.project.Project
 
 /**
@@ -40,6 +41,7 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
         source: PreparationSource,
         parameterContract: ParameterContract,
         inputEnvironment: InputEnvironment,
+        dataContext: DataContext? = null,
         targetDescriptor: ExecutionTargetDescriptor,
         resourceKey: String,
         approvalOptions: LeapExecutionApprovalOptions,
@@ -73,6 +75,7 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
                 continueWithCandidate(
                     authority = authority,
                     candidate = candidate,
+                    dataContext = dataContext,
                     targetDescriptor = targetDescriptor,
                     resourceKey = resourceKey,
                     approvalOptions = approvalOptions,
@@ -89,6 +92,7 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
     private fun continueWithCandidate(
         authority: PreparationSourceAuthority,
         candidate: LeapExecutionCandidateResult,
+        dataContext: DataContext?,
         targetDescriptor: ExecutionTargetDescriptor,
         resourceKey: String,
         approvalOptions: LeapExecutionApprovalOptions,
@@ -132,6 +136,7 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
                         deliverApproved(
                             authority = authority,
                             plan = plan,
+                            dataContext = dataContext,
                             targetDescriptor = targetDescriptor,
                             resourceKey = resourceKey,
                                     isInvocationActive = isInvocationActive,
@@ -150,6 +155,7 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
     private fun deliverApproved(
         authority: PreparationSourceAuthority,
         plan: PreparedExecutionPlan,
+        dataContext: DataContext?,
         targetDescriptor: ExecutionTargetDescriptor,
         resourceKey: String,
         isInvocationActive: () -> Boolean,
@@ -178,7 +184,10 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
         consoleAdapter.acquireAndDeliverConsole(
             dataSource = deliveryTarget.dataSource,
             schema = deliveryTarget.schema,
+            targetId = deliveryTarget.resolvedTarget.targetId,
             resourceKey = resourceKey,
+            dataContext = dataContext,
+            onCancelled = onCancelled,
             onConsoleReady = { console, releaseConsole ->
                 val preExecutionCheck = {
                     planDeliveryValid(
