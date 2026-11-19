@@ -164,11 +164,32 @@ private object LeapActionFailurePresenter {
                 message = "The configured datasource or explicit schema is unavailable or changed. Select the execution target again.",
             )
 
-            is LeapActionContextAdmissionFailure.InvocationFailed ->
-                FailurePresentation(
-                    title = "zMyBatis: Execution Refused",
-                    message = "zMyBatis could not complete this statement through the supported execution path. Review the mapper, inputs, and target, then try again.",
-                )
+            is LeapActionContextAdmissionFailure.InvocationFailed -> {
+                val consoleFailure =
+                    (failure.failure as? LeapExecutionInvocationFailure.DeliveryFailed)
+                        ?.failure
+                        ?.let { it as? LeapExecutionDeliveryFailure.ConsoleAcquisitionFailed }
+                        ?.failure
+                when (consoleFailure) {
+                    DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleUnavailable ->
+                        FailurePresentation(
+                            title = "zMyBatis: Existing Database Console Required",
+                            message = "No existing Database Tools query console is available for the selected datasource. " +
+                                "Open or create a query console in Database Tools, then run zMyBatis again from the mapper.",
+                        )
+                    DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleAmbiguous ->
+                        FailurePresentation(
+                            title = "zMyBatis: Database Console Ambiguous",
+                            message = "More than one existing Database Tools console can serve this mapper and no unique mapper-matching console was found. " +
+                                "Keep one matching console for this mapper/session, then run zMyBatis again.",
+                        )
+                    else ->
+                        FailurePresentation(
+                            title = "zMyBatis: Execution Refused",
+                            message = "zMyBatis could not complete this statement through the supported execution path. Review the mapper, inputs, and target, then try again.",
+                        )
+                }
+            }
         }
 
         show(project, presentation, error = true)
