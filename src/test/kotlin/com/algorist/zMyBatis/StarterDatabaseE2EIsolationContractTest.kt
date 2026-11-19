@@ -105,6 +105,17 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("prepared approval must not literalize the bound value") &&
                 e2e.contains("bound registered execution must use zMyBatis prepared-result presentation"),
         )
+        assertTrue(
+            "P5 packaged parity must prove built-in parameterType metadata reaches the prepared backend",
+            e2e.contains("registeredActionExecutesBuiltInParameterTypeThroughPreparedRoute") &&
+                e2e.contains("parameterType=\"long\"") &&
+                e2e.contains("SELECT ?::BIGINT AS RESULT_VALUE") &&
+                e2e.contains("#1 property=value") &&
+                e2e.contains("javaType=java.lang.Long") &&
+                e2e.contains("handler=org.apache.ibatis.type.LongTypeHandler") &&
+                e2e.contains("parameterType parity must not reintroduce literalized bound SQL") &&
+                e2e.contains("parameterType-backed bound execution must remain on the prepared-result route"),
+        )
         assertFalse(
             "prepared registered-action proof must not reconstruct the retired BIGINT materialized artifact",
             e2e.contains("stockPostgreSqlBigintArtifact") ||
