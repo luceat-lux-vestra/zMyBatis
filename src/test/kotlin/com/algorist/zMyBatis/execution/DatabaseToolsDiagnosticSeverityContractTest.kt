@@ -19,13 +19,14 @@ class DatabaseToolsDiagnosticSeverityContractTest {
         assertTrue(adapter.contains("catch (ex: Exception)"))
         assertTrue(adapter.contains("catch (fatal: Throwable)"))
 
-        assertTrue(adapter.contains("zMyBatis: console creation failed"))
+        assertTrue(adapter.contains("zMyBatis: existing console lookup failed"))
         assertTrue(adapter.contains("zMyBatis: schema switch failed"))
         assertTrue(adapter.contains("zMyBatis: SQL execution failed"))
 
         listOf(
             "data object SchemaSwitchFailed",
-            "data object ConsoleCreationFailed",
+            "data object ExistingConsoleUnavailable",
+            "data object ExistingConsoleAmbiguous",
             "data object EditorUnavailable",
             "data object ExecutionFailed",
         ).forEach { payloadFreeFailure ->
@@ -36,19 +37,18 @@ class DatabaseToolsDiagnosticSeverityContractTest {
 
         assertFalse(adapter.contains("LOG.error(\"zMyBatis: failed to create console"))
         assertFalse(adapter.contains("LOG.error(\"zMyBatis: execution failed\""))
+        assertFalse(adapter.contains("console editor-open failure"))
 
         val fatalErrorCalls = Regex("""LOG\.error\("zMyBatis: fatal [^"]+", fatal\)""")
             .findAll(adapter)
             .count()
-        // Opening the editor now has an additional explicit fatal boundary.
-        // All four must log as fatal, never be transformed into a typed ordinary error.
-        assertTrue(adapter.contains("LOG.error(\"zMyBatis: fatal console editor-open failure\", fatal)"))
-        assertEquals(4, fatalErrorCalls)
+        // Existing-console lookup, schema switch and SQL dispatch keep fatal Throwable semantics.
+        assertEquals(3, fatalErrorCalls)
 
         val fatalRethrows = Regex("""catch \(fatal: Throwable\) \{[\s\S]*?throw fatal""")
             .findAll(adapter)
             .count()
-        assertEquals(4, fatalRethrows)
+        assertEquals(3, fatalRethrows)
     }
 
     @Test
