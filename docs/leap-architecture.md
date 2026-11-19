@@ -25,7 +25,7 @@ The retained architecture is driven by these invariants:
 3. **Current editor content is authoritative.** Active unsaved edits cannot be silently replaced by stale committed PSI or disk content.
 4. **`#{}` and `${}` are different types of input.** This distinction survives every layer.
 5. **Preparation and execution are separate capabilities.** Preparing, formatting, previewing, restoring state, or cancelling cannot execute SQL.
-6. **Preview and execution cannot drift.** The immutable prepared/materialized execution authority approved by the user is exactly what the Database Tools adapter consumes; presentation rendering never becomes a different executable statement.
+6. **Preview and execution cannot drift.** The immutable `PreparedExecutionPlan` approved by the user is exactly the plan revalidated and dispatched; presentation rendering never becomes a different executable statement.
 7. **Wrong target is worse than refusal.** Datasource/schema ambiguity fails closed.
 8. **Platform objects stay at the edge.** `AnActionEvent`, `Editor`, PSI, `Document`, `JdbcConsole`, database PSI objects, dialogs, and disposables do not leak into core contracts.
 9. **Sensitive data is not diagnostics.** Raw inputs, remembered values, credentials, and rendered SQL are not normal log payloads.
@@ -47,9 +47,14 @@ Low-level console creation, schema switching, editor/document mutation, script-m
 
 Parameter requirements are typed/provenanced contracts. Contract codecs/submission policy, `ContractParameterInputDialog`, and `ContractInputHistoryService` own validation, presentation, and opt-in retention. Raw interpolation remains a distinct non-retainable input kind. There is no regex parameter extractor, legacy JSON dialog, or raw-string history service in production.
 
-### MyBatis preparation and materialization
+### MyBatis preparation and execution-plan freezing
 
-The root plugin packages `:mybatis-engine`. Supported source shapes prepare through isolated stock MyBatis semantics and return structured `PreparedExecution`. Execution is allowed only after an explicitly proven materializer creates one immutable target-bound SQL-text artifact. Unsupported dialect/type/semantic shapes fail typed and do not route to a compatibility evaluator.
+The root plugin packages `:mybatis-engine`. Supported source shapes prepare through isolated stock
+MyBatis semantics and return structured `PreparedExecution`. `PreparedExecutionPlanner` freezes
+that evidence into one immutable target-bound `PreparedExecutionPlan`. Bound plans execute with
+stock MyBatis binding metadata through the prepared backend; zero-binding/exact-text plans use the
+explicit native backend. Unsupported runtime capability, binding, target or execution shapes fail
+typed and do not route to a compatibility evaluator/materializer fallback.
 
 ### Target persistence and `ConsoleCacheService`
 
@@ -89,7 +94,7 @@ Contains framework-independent domain/application contracts:
 - source snapshots and canonical statement identity;
 - source dependency graph model;
 - parameter/input provenance model;
-- preparation/materialization models and typed failures;
+- preparation/execution-plan models and typed failures;
 - execution target descriptors;
 - confirmation/safety policy inputs;
 - use-case ports and orchestration that do not require IntelliJ or Database Tools.
@@ -458,9 +463,11 @@ PreparationFailure
   UnsupportedSemantic
   PreparationInvariantFailure
 
-MaterializationFailure
-  BoundExecutionRequired
-  RawInterpolationPolicyRequired
+PlanFailure
+  SourceAuthorityMismatch
+  TargetIdentityMismatch
+  DatabaseIdMismatch
+  BindingMetadataUnsupported
 
 TargetFailure
   MissingDatasource
@@ -512,14 +519,14 @@ D0  record the parity architecture in authoritative docs
   -> P6  superseded admission/preflight/materializer cleanup
 ```
 
-#509 and #510 are parity-regression evidence. Do not patch them independently into the current
-dynamic-admission/materializer architecture before D1.
+#509 and #510 are historical parity-regression evidence whose semantic replacements landed through
+P1/P2. P5 now reconciles their packaged/manual/product evidence before final disposition.
 
 ## 15. Evidence ownership during recovery
 
-Current tests remain authoritative evidence for the current shipping safety boundaries they actually
-exercise: source identity, target identity, cancellation/lifecycle, privacy, approval, packaged host
-behavior, and bounded current preparation/materialization.
+Current tests remain authoritative evidence for the shipping safety boundaries they actually
+exercise: source identity, caller input, target identity, cancellation/lifecycle, privacy, exact-plan
+approval, explicit backend routing, prepared/native execution, and packaged host behavior.
 
 They are **not** automatically evidence that a current refusal is desired 1.0 behavior.
 
