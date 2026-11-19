@@ -41,11 +41,9 @@ internal class XmlParameterObjectInputEditor(
     private var suppressTracking = false
     private var explicitlyEdited = false
 
-    val primaryEditor: JBTextArea
-        get() = jsonEditor
+    val primaryEditor: JBTextArea = jsonEditor
 
-    val component: JComponent
-        get() = tabs
+    val component: JComponent = tabs
 
     init {
         val fieldsPanel = JPanel().apply {
