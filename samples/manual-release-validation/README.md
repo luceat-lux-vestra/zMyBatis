@@ -41,7 +41,7 @@ evidence.
 
 #509 and #510 are no longer treated here as pending semantic contradictions. P1/P2 established the
 production preparation/invocation contracts for standard dynamic tags and ordinary result/parameter
-metadata. Their final issue disposition is completed only after P5 packaged/manual evidence agrees
+metadata. Their final issue disposition is completed only after P5 packaged/automated evidence agrees
 with those contracts.
 
 ## 1. Record the exact candidate
@@ -77,7 +77,6 @@ candidate version: ____________________
 candidate commit:  ____________________
 plugin ZIP SHA-256: ____________________
 IDEA version:       ____________________
-DataGrip version:   ____________________
 validator/date:     ____________________
 ```
 
