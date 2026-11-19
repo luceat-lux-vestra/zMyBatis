@@ -19,7 +19,10 @@ internal object XmlParameterObjectInputSupport {
     private val pathToken = Regex("""[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*""")
     private val quotedText = Regex("""'[^']*'|"[^"]*"""")
     private val comparison = Regex(
-        """([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*(?:==|!=|>=|<=|>|<)\s*(null|true|false|-?\d+(?:\.\d+)?|'[^']*'|"[^"]*")""",
+        """([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*(?:==|!=|>=|<=|>|<)\s*(null|true|false|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?[lLfFdD]?|'[^']*'|"[^"]*")""",
+    )
+    private val numericLiteral = Regex(
+        """(?<![A-Za-z0-9_])[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?[lLfFdD]?(?![A-Za-z0-9_])""",
     )
     private val jsonNumber = Regex("""-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?""")
     private val reservedTokens = setOf(
@@ -106,7 +109,8 @@ internal object XmlParameterObjectInputSupport {
 
     private fun ognlPaths(expression: String): List<Pair<String, String?>> {
         val withoutQuotedText = quotedText.replace(expression, " ")
-        return pathToken.findAll(withoutQuotedText)
+        val withoutLiterals = numericLiteral.replace(withoutQuotedText, " ")
+        return pathToken.findAll(withoutLiterals)
             .mapNotNull { match ->
                 val raw = match.value
                 if (raw in reservedTokens) return@mapNotNull null
@@ -132,9 +136,12 @@ internal object XmlParameterObjectInputSupport {
 
     private fun literalAsJson(literal: String): String? {
         val trimmed = literal.trim()
+        val numeric = trimmed.removeSuffix("L").removeSuffix("l")
+            .removeSuffix("F").removeSuffix("f")
+            .removeSuffix("D").removeSuffix("d")
         return when {
             trimmed == "null" || trimmed == "true" || trimmed == "false" -> trimmed
-            jsonNumber.matches(trimmed) -> trimmed
+            jsonNumber.matches(numeric) -> numeric
             trimmed.length >= 2 && trimmed.startsWith("'") && trimmed.endsWith("'") ->
                 quoteJson(trimmed.substring(1, trimmed.length - 1))
             trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"') -> trimmed
@@ -176,12 +183,8 @@ internal object XmlParameterObjectInputSupport {
                     current.children[segment] = value
                 }
             } else {
-                val next = current.children[segment]
-                current = if (next is ObjectNode) {
-                    next
-                } else {
-                    ObjectNode().also { current.children[segment] = it }
-                }
+                current = current.children[segment] as? ObjectNode
+                    ?: ObjectNode().also { current.children[segment] = it }
             }
         }
     }
