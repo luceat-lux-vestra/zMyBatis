@@ -122,7 +122,7 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(xml.contains("#{value,jdbcType=BIGINT}::BIGINT AS result_value"))
         assertTrue(xml.contains("<if test=\"value > 0\">"))
         assertTrue(xml.contains("<foreach collection=\"ids\" item=\"id\""))
-        assertTrue(xml.contains("SELECT ${value} AS result_value"))
+        assertTrue(xml.contains("SELECT \${value} AS result_value"))
         assertTrue(xml.contains("databaseId=\"PostgreSQL\""))
         assertTrue(xml.contains("jdbcType=VARCHAR"))
         assertTrue(xml.contains("#{left,jdbcType=BIGINT}"))
@@ -182,7 +182,7 @@ class ManualReleaseValidationSampleContractTest {
 
         assertTrue(bind.contains("namespace=\"fixture.ParityBindMapper\""))
         assertTrue(bind.contains("<bind name=\"pattern\""))
-        assertTrue(bind.contains("SELECT '${pattern}' AS result_value"))
+        assertTrue(bind.contains("SELECT '\${pattern}' AS result_value"))
         assertTrue(bind.contains("R02: P5 parity acceptance case"))
 
         assertTrue(resultMap.contains("<resultMap"))
@@ -268,7 +268,7 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(
             direct.contains("@Select(\"SELECT #{value,jdbcType=BIGINT}::BIGINT AS result_value\")"),
         )
-        assertTrue(direct.contains("@Select(\"SELECT ${value} AS result_value\")"))
+        assertTrue(direct.contains("@Select(\"SELECT \${value} AS result_value\")"))
         assertTrue(direct.contains("@Insert("))
         assertTrue(direct.contains("@Update("))
         assertTrue(direct.contains("@Delete("))
