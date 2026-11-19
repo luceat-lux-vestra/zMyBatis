@@ -453,7 +453,9 @@ preconditions, not by zMyBatis acquisition.
 The shipping adapter performs **borrow-only** acquisition. It enumerates the resolved datasource's
 existing Database Tools session clients, prefers a unique mapper-name match, and fails closed when
 no console exists or the match is ambiguous. It never calls `JdbcConsole.newConsole`, never places
-a borrowed console in the zMyBatis ownership cache, and never disposes that console.
+a borrowed console in the zMyBatis ownership cache, and never disposes that console. A source lease
+prevents duplicate invocation for one mapper, while a second lease keyed by the selected console
+prevents different mapper sources from concurrently mutating the same console document.
 
 The repeated-completion case performs **48** same-source acquisitions and requires every handoff to
 return the same existing console identity. Each terminal callback releases the source-key lease,
