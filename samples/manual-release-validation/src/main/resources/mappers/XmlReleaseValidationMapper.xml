@@ -84,4 +84,23 @@
         WHERE FALSE
     </delete>
 
+    <!-- M15: stock-MyBatis set/trim + multi-@Param mutation; AND FALSE keeps it safe. -->
+    <update id="setTrimNoop">
+        UPDATE products
+        <set>
+            <if test="name != null">
+                name = #{name,jdbcType=VARCHAR},
+            </if>
+        </set>
+        <trim prefix="WHERE" prefixOverrides="AND |OR ">
+            AND id = #{id,jdbcType=BIGINT}
+            AND FALSE
+        </trim>
+    </update>
+
+    <!-- M16: JSON Map caller input with nested property lookup. -->
+    <select id="nestedMapEcho">
+        SELECT #{filter.tenantId,jdbcType=BIGINT}::BIGINT AS result_value
+    </select>
+
 </mapper>
