@@ -228,7 +228,7 @@ jobs:
             echo "workflow_sha=$GITHUB_SHA"
             echo "java_target=25"
             echo "host=DATAGRIP"
-            echo "ide_release=2026.2.3"
+            echo "ide_release=2026.3"
             echo "plugin_artifact=$artifact"
             echo "plugin_sha256=$artifact_sha256"
           } | tee datagrip-e2e-artifact-manifest.txt
@@ -237,6 +237,33 @@ jobs:
         shell: bash
         run: |
           bash .github/scripts/install-arm64-egl.sh
+
+      - name: Start pinned PostgreSQL E2E service for DataGrip
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --rm \
+            --name zmybatis-postgres-datagrip-e2e \
+            -e POSTGRES_USER=zmybatis \
+            -e POSTGRES_DB=zmybatis \
+            -e POSTGRES_HOST_AUTH_METHOD=trust \
+            -p 5432:5432 \
+            postgres@sha256:0b2882c46a2b8d8e148431b333394348cf4d7f15aec6df7f17d51dc641e56cfa
+          for attempt in $(seq 1 60); do
+            if docker exec zmybatis-postgres-datagrip-e2e \
+                pg_isready -h 127.0.0.1 -U zmybatis -d zmybatis >/dev/null &&
+              docker exec zmybatis-postgres-datagrip-e2e \
+                psql -h 127.0.0.1 -U zmybatis -d zmybatis -Atc 'select 1' | grep -qx '1'; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              docker logs zmybatis-postgres-datagrip-e2e
+              exit 1
+            fi
+            sleep 1
+          done
+          docker exec zmybatis-postgres-datagrip-e2e \
+            psql -h 127.0.0.1 -U zmybatis -d zmybatis -Atc 'select version()'
 
       - name: Run DataGrip Starter / Driver E2E
         shell: bash
