@@ -680,6 +680,7 @@ internal class LeapActionContextAdmissionCoordinator(
                         continueWithTarget(
                             evidence = evidence,
                             target = target,
+                            dataContext = dataContext,
                             liveInvocation = liveInvocation,
                             onExecuted = onExecuted,
                             onCancelled = onCancelled,
@@ -702,6 +703,7 @@ internal class LeapActionContextAdmissionCoordinator(
     private fun continueWithTarget(
         evidence: LeapActionSourceEvidence,
         target: LeapExecutionTargetAdmissionResult.Ready,
+        dataContext: DataContext,
         liveInvocation: () -> Boolean,
         onExecuted: () -> Unit,
         onCancelled: () -> Unit,
@@ -723,6 +725,7 @@ internal class LeapActionContextAdmissionCoordinator(
                             continueWithSelectedSource(
                                 selection = result.selection,
                                 target = target,
+                                dataContext = dataContext,
                                 liveInvocation = liveInvocation,
                                 onExecuted = onExecuted,
                                 onCancelled = onCancelled,
@@ -745,6 +748,7 @@ internal class LeapActionContextAdmissionCoordinator(
         continueWithSelectedSource(
             selection = selection,
             target = target,
+            dataContext = dataContext,
             liveInvocation = liveInvocation,
             onExecuted = onExecuted,
             onCancelled = onCancelled,
@@ -755,6 +759,7 @@ internal class LeapActionContextAdmissionCoordinator(
     private fun continueWithSelectedSource(
         selection: LeapPreparationSourceSelectionResult,
         target: LeapExecutionTargetAdmissionResult.Ready,
+        dataContext: DataContext,
         liveInvocation: () -> Boolean,
         onExecuted: () -> Unit,
         onCancelled: () -> Unit,
@@ -805,6 +810,7 @@ internal class LeapActionContextAdmissionCoordinator(
 
         invocationCoordinator.execute(
             source = source,
+            dataContext = dataContext,
             isInvocationActive = liveInvocation,
             onExecuted = onExecuted,
             onCancelled = onCancelled,
