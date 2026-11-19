@@ -38,7 +38,7 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         assertTrue(adapter.contains("DatabaseSessionManager.getSessions(project, sessionDataSource)"))
         assertTrue(adapter.contains("session.clientsWithFile"))
         assertTrue(adapter.contains(".filterIsInstance<JdbcConsole>()"))
-        assertTrue(adapter.contains("cache.rememberedConsole(resourceKey, targetId, consoles)"))
+        assertTrue(adapter.contains("cache.rememberedConsole(resourceKey, it)"))
         assertTrue(adapter.contains("cache.rememberConsole(resourceKey, targetId, console)"))
         assertTrue(adapter.contains("console.file.virtualFile?.name == mapperName"))
         assertTrue(adapter.contains("JBPopupFactory.getInstance().createActionGroupPopup("))
