@@ -116,7 +116,10 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             }
 
             val sqlFileType = FileTypeManager.getInstance().getFileTypeByExtension("sql")
-            val consoleName = resourceKey.substringAfterLast('/').substringAfterLast('\\') + " - zMyBatis"
+            // Preserve the legacy product-facing console identity. The console is an internal
+            // Database Tools resource; branding it as a second zMyBatis surface makes one mapper
+            // appear as two unrelated sessions in Services.
+            val consoleName = resourceKey.substringAfterLast('/').substringAfterLast('\\')
             val lightFile = LightVirtualFile(consoleName, sqlFileType, "")
 
             val sessionDataSource = DbImplUtil.getMaybeLocalDataSource(dataSource)
@@ -331,7 +334,9 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 // This stable navigation entry point avoids experimental APIs.
                 // Never inject SQL if the editor did not open.
                 try {
-                    OpenFileDescriptor(project, vFile).navigate(true)
+                    // Native execution still needs a live SQL editor, but opening that
+                    // internal console must not steal focus from the mapper the user executed.
+                    OpenFileDescriptor(project, vFile).navigate(false)
                     ApplicationManager.getApplication().invokeLater({
                         try {
                             if (isProjectUnavailable()) return@invokeLater
