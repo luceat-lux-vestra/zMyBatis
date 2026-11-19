@@ -93,7 +93,7 @@ class ManualReleaseValidationSampleContractTest {
     fun `manual checklist pins all maintained release acceptance families`() {
         val readme = source("README.md")
         val requiredIds = buildList {
-            addAll((1..16).map { "M%02d".format(it) })
+            addAll((1..17).map { "M%02d".format(it) })
             addAll((1..7).map { "J%02d".format(it) })
             addAll((1..8).map { "U%02d".format(it) })
             addAll((1..7).map { "T%02d".format(it) })
@@ -133,6 +133,8 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(xml.contains("#{id,jdbcType=BIGINT}"))
         assertTrue(xml.contains("#{filter.tenantId,jdbcType=BIGINT}"))
         assertTrue(product.contains("<include refid=\"fixture.SharedFragments.productColumns\"/>"))
+        assertTrue(product.contains("<sql id=\"localProductColumns\">"))
+        assertTrue(product.contains("<include refid=\"localProductColumns\"/>"))
 
         assertTrue(readme.contains("M06 | `<foreach>` additional bindings"))
         assertTrue(readme.contains("both execute prepared"))
@@ -144,6 +146,8 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(readme.contains("mutation approval is mandatory"))
         assertTrue(readme.contains("M16 | nested Map property"))
         assertTrue(readme.contains("JSON Map editor"))
+        assertTrue(readme.contains("M17 | same-namespace include"))
+        assertTrue(readme.contains("M02 and M17 jointly cover cross-namespace and same-namespace include authority"))
         assertTrue(readme.contains("M10 is the manual representative for mapper-method multi-`@Param`"))
         assertTrue(readme.contains("M06 is the manual representative for"))
         assertTrue(readme.contains("Collection and"))
@@ -219,6 +223,19 @@ class ManualReleaseValidationSampleContractTest {
                 assertFalse("promoted parity fixture must not retain pending name: $pending", pending in names)
             }
         }
+    }
+
+    @Test
+    fun `manual Product fixture pins both cross and same namespace include authority`() {
+        val mapper = source("src/main/java/fixture/ProductMapper.java")
+        val xml = source("src/main/resources/mappers/ProductMapper.xml")
+        val readme = source("README.md")
+
+        assertTrue(mapper.contains("List<Product> findAllProductsLocalInclude()"))
+        assertTrue(xml.contains("<include refid=\"fixture.SharedFragments.productColumns\"/>"))
+        assertTrue(xml.contains("<sql id=\"localProductColumns\">"))
+        assertTrue(xml.contains("<include refid=\"localProductColumns\"/>"))
+        assertTrue(readme.contains("M02 and M17 jointly cover cross-namespace and same-namespace include authority"))
     }
 
     @Test
