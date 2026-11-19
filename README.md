@@ -91,7 +91,7 @@ For development/testing, a locally built distribution can also be installed thro
 - [Leap architecture](./docs/leap-architecture.md) — current architecture and ownership boundaries
 - [Test contracts](./docs/test-contracts.md) — what automated evidence does and does not prove
 - [Starter / Driver E2E](./docs/e2e-testing.md) — process-level applicability and maintained scenarios
-- [Manual release validation](./samples/manual-release-validation/README.md) — maintainer-run packaged-plugin acceptance project and GO/NO-GO checklist
+- [Release acceptance fixture](./samples/manual-release-validation/README.md) — automated acceptance inventory plus minimal exact-ZIP human UX smoke
 - [Session persistence](./docs/session-persistence.md) — v3 datasource/schema persistence contract
 - [Release recovery](./docs/release-recovery.md) — fail-closed Marketplace recovery procedure
 - [Contributing](./CONTRIBUTING.md) and [Security](./SECURITY.md) — repository mechanics and vulnerability reporting
