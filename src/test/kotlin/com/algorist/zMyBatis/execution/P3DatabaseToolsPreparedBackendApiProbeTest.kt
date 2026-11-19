@@ -220,6 +220,21 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
             }.getOrElse { "$className=<absent>" }
         }
 
+        val builderType = Class.forName("com.intellij.database.console.JdbcConsole\$Builder")
+        val sessionType = Class.forName("com.intellij.database.console.session.DatabaseSession")
+        val useSession = builderType.methods.singleOrNull { method ->
+            method.name == "useSession" &&
+                method.parameterTypes.contentEquals(arrayOf(sessionType))
+        }
+        assertNotNull(
+            "IDEA 263 must expose JdbcConsole.Builder.useSession(DatabaseSession) so mapper-created consoles can reuse the Database Tools session",
+            useSession,
+        )
+        assertTrue(
+            "JdbcConsole.Builder.useSession(DatabaseSession) must remain public",
+            Modifier.isPublic(useSession!!.modifiers),
+        )
+
         println("ZMYBATIS_P3_API consoleSession=$classes")
     }
 
