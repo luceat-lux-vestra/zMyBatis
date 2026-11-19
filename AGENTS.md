@@ -143,8 +143,10 @@ Hardening #57 established the stable datasource/schema safety baseline, and #260
 - development-only v2 project-scoped records were never distributed and are not read or migrated;
 - startup only prunes stale current-v3 source associations and creates no `JdbcConsole`;
 - datasource/schema resources are resolved exactly when an explicit action needs database execution;
-- shipping execution reuses an existing Database Tools session/client; it must not create, cache, replace, or dispose a user console;
-- `ConsoleCacheService` supplies two non-owning shipping leases: one by source identity and one by the selected existing console identity. Same-source overlap and cross-source overlap on the same console both fail closed before schema/document mutation; unrelated sources on unrelated consoles remain independent;
+- shipping console selection follows this order: remembered runtime source+target association, unique current-mapper filename match, sole eligible console, explicit chooser when multiple remain, then console creation when none exists or the user explicitly chooses creation;
+- mapper filename matching is a dynamic convenience heuristic only; it is never persisted target authority and no concrete mapper name is hardcoded;
+- existing Database Tools consoles remain platform-owned and are never disposed by zMyBatis; a console created by zMyBatis is owned only for its resource lifetime and may be reused by later invocations;
+- `ConsoleCacheService` stores source+target→console association only in memory and supplies two execution leases: one by source identity and one by the selected console identity. Same-source overlap and cross-source overlap on the same console both fail closed before schema/document mutation; unrelated sources on unrelated consoles remain independent;
 - cancellation, terminal execution callbacks, lookup failure, and shutdown release or clear that lease fail-closed.
 
 Development-only v2 persistence was never distributed and has no runtime reader or migration path. Legacy console-cache ownership helpers may remain only until bounded cleanup; they are not shipping acquisition authority.
