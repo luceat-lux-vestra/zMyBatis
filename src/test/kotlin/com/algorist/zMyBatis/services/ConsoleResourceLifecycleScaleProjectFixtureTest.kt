@@ -199,15 +199,14 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
             cache.endReuseLease(cancellationKey)
             assertFalse("cancellation must not dispose the borrowed console", lifetime.isDisposed)
 
-            val missingDataSource = registeredDbDataSource(
-                name = "zMyBatis missing-console terminal path",
-                url = "jdbc:h2:mem:zmybatis_missing_terminal",
-            )
+            Disposer.dispose(console)
+            assertTrue("fixture precondition must remove the existing console", lifetime.isDisposed)
+
             val missingKey = "vfs:file:///tmp/zmybatis/NoConsoleMapper.xml"
             var failure: DatabaseToolsConsoleAcquisitionFailure? = null
             var created: JdbcConsole? = null
             adapter.acquireAndDeliverConsole(
-                dataSource = missingDataSource,
+                dataSource = dataSource,
                 schema = null,
                 resourceKey = missingKey,
                 onConsoleReady = { console, release ->
