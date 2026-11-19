@@ -152,6 +152,7 @@ Use `src/main/resources/mappers/XmlReleaseValidationMapper.xml` unless another m
 | M15 | `<set>` + `<trim>` safe UPDATE | `setTrimNoop`, `name=ignored`, `id=1` | stock MyBatis emits SET/WHERE from dynamic tags; two prepared bindings are shown; mutation approval is mandatory; `AND FALSE` keeps update count at 0 | P2 set/trim registered parity + P4 prepared mutation route |
 | M16 | nested Map property | `nestedMapEcho`, JSON Map `{"tenantId":2}` | input uses JSON Map editor; `filter.tenantId` resolves to one BIGINT prepared binding; result is `2` | P2 caller-authority nested Map parity + prepared backend |
 | M17 | same-namespace include | `ProductMapper.findAllProductsLocalInclude` | local `<sql id="localProductColumns">` resolves through `<include refid="localProductColumns"/>`; zero-binding native result contains products `1..3` | source graph + P1 projection parity |
+| M18 | XML-only Fields + JSON input | open `XmlOnlyInputValidationMapper.findByIdJSON` (no Java mapper method) | input dialog defaults to Fields for `user.id`, `cust.name`, `test`; JSON tab contains the same generated nested object template; either mode submits one XML parameter object and `test=42` returns `42` | XML caller-provenance + dual-input presentation tests |
 
 M02 and M17 jointly cover cross-namespace and same-namespace include authority. M10 is the manual representative for mapper-method multi-`@Param`; M06 is the manual representative for
 List/foreach additional bindings. P2 lower-layer parity separately owns equivalent Collection and
@@ -265,7 +266,7 @@ not replayed manually.
 
 | ID | Human-only check | Expected |
 | --- | --- | --- |
-| H01 | Install the exact ZIP in IDEA Ultimate 2026.3; open zMyBatis settings and a supported XML mapper | plugin is enabled, settings render normally, Execute (zMyBatis) is visible in the supported statement context |
+| H01 | Install the exact ZIP in IDEA Ultimate 2026.3; open zMyBatis settings and a supported XML mapper; open M18 once | plugin is enabled, settings render normally, Execute (zMyBatis) is visible; XML-only input shows source-proven Fields plus the generated JSON tab instead of a generic `{"key":"value"}` object |
 | H02 | Run M01 once and M03 once | native Database Tools result visibly shows `7`; zMyBatis prepared-result UI visibly shows `42`; dialogs/tables are readable and not visibly broken |
 | H03 | Restart IDEA/project after H02 and invoke the same source again | persisted exact datasource UUID + `public` target restores/reuses without silently switching target; visible flow remains usable |
 
