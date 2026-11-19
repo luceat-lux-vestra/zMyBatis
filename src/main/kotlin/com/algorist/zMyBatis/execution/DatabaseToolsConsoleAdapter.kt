@@ -174,9 +174,12 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             onConsoleReady(console, releaseAll)
         }
 
-        fun createAndDeliver(existing: List<JdbcConsole>) {
+        fun createAndDeliver(
+            sessionDataSource: com.intellij.database.dataSource.LocalDataSource,
+            existing: List<JdbcConsole>,
+        ) {
             val console = createConsole(
-                dataSource = dataSource,
+                dataSource = sessionDataSource,
                 resourceKey = resourceKey,
                 existing = existing,
             )
@@ -229,7 +232,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                     deliver(consoles.single())
                     LOG.info("zMyBatis: sole Database Tools console reused")
                 }
-                consoles.isEmpty() -> createAndDeliver(consoles)
+                consoles.isEmpty() -> createAndDeliver(sessionDataSource, consoles)
                 else -> {
                     if (dataContext == null) {
                         fail(DatabaseToolsConsoleAcquisitionFailure.ConsoleSelectionUnavailable)
@@ -239,7 +242,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                         consoles = consoles,
                         dataContext = dataContext,
                         onSelected = { selected -> deliver(selected) },
-                        onCreate = { createAndDeliver(consoles) },
+                        onCreate = { createAndDeliver(sessionDataSource, consoles) },
                         onCancelled = ::cancel,
                         onFailure = {
                             fail(DatabaseToolsConsoleAcquisitionFailure.ConsoleSelectionUnavailable)
@@ -337,7 +340,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
     }
 
     private fun createConsole(
-        dataSource: DbDataSource,
+        dataSource: com.intellij.database.dataSource.LocalDataSource,
         resourceKey: String,
         existing: List<JdbcConsole>,
     ): JdbcConsole? =
@@ -347,8 +350,10 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 baseName = mapperDisplayName(resourceKey),
                 existing = existing,
             )
+            val session = DatabaseSessionManager.getSession(project, dataSource)
             JdbcConsole.newConsole(project)
                 .fromDataSource(dataSource)
+                .useSession(session)
                 .forFile(LightVirtualFile(consoleName, sqlFileType, ""))
                 .build()
         } catch (ex: ProcessCanceledException) {
