@@ -125,7 +125,7 @@ The plugin uses `com.intellij.database.*`, including APIs that can move between 
 
 - `pluginSinceBuild`, platform type/version, bundled database plugin declarations, and Plugin Verifier configuration form one compatibility contract.
 - The declared minimum is build **263**. The required `Verify plugin` context independently targets IntelliJ IDEA Ultimate 2026.3 and DataGrip 2026.3. Their independent SDK selectors do not create 2026.2 support. A configured host is not PASS without exact-HEAD evidence; the default internal/override-only API failure levels remain enforced.
-- Host evidence remains asymmetric: the **2026.3** IDEA Ultimate Starter/Driver suite owns the full PostgreSQL execution matrix, while the **2026.3** DataGrip suite independently owns packaged plugin/service loading, typed XML no-datasource refusal, and one bounded XML prepared-PostgreSQL route through the Database Tools session backend. These are requirements, not asserted PASS results. DataGrip proof does not imply Java-source parity or native Database Tools result/history parity. Internal and experimental IntelliJ editor-open API usage is disallowed; the 2026.3 public `OpenFileDescriptor.navigate(true)` path must preserve lease ownership and revalidate the immutable artifact, console and actual editor in the EDT continuation.
+- Host evidence remains asymmetric: the **2026.3** IDEA Ultimate Starter/Driver suite owns the full PostgreSQL execution matrix, while the **2026.3** DataGrip suite independently owns packaged plugin/service loading, typed XML no-datasource refusal, and one bounded XML prepared-PostgreSQL route through the Database Tools session backend. These are requirements, not asserted PASS results. DataGrip proof does not imply Java-source parity or native Database Tools result/history parity. Internal and experimental IntelliJ editor-open API usage is disallowed; the 2026.3 public `OpenFileDescriptor.navigate(false)` path must preserve lease ownership and revalidate the immutable artifact, console and actual editor in the EDT continuation without stealing focus from the mapper.
 - Raising the minimum IDE build or widening compatibility claims is a product/API decision, not a routine dependency bump.
 
 ## 5. Datasource / schema / session identity — hardened baseline
@@ -314,3 +314,14 @@ Current GitHub Issue/branch/commit/PR/check/review/merge state is authoritative 
 After a material external mutation, verify the resulting GitHub postcondition before advancing the checkpoint. If a response or session is lost, never blindly repeat the mutation merely because the checkpoint is behind. Re-read and classify the result as matching, stale-but-reconcilable, retryable-absent, conflicting, or `UNKNOWN`.
 
 Checkpoint updates must not move the production PR HEAD. Any actual HEAD movement invalidates prior exact-HEAD evidence under this repository's normal merge gate. Deliberately stale checkpoints are a test technique only; normal work updates the checkpoint after every verified durable boundary.
+
+
+### Legacy UX parity during P5
+
+P5 human smoke treats the pre-Leap product workflow as the UX baseline while allowing presentation/UI improvements. Internal architecture may change, but it must not introduce user-visible execution surfaces merely to expose implementation details.
+
+- mapper execution keeps the mapper editor focused while an internal Database Tools console editor is prepared in the background;
+- the internal console keeps the legacy mapper filename as its product-facing identity; do not append a second `- zMyBatis` session identity;
+- parameter input may improve labels, validation, accessibility, and structured editing without changing caller authority;
+- zero-binding/exact-text execution continues to use native Database Tools result/history surfaces;
+- bound prepared execution must not be moved back to unsafe universal SQL literalization merely for UI parity. If maintained public Database Tools APIs cannot surface prepared results natively, treat result presentation as an explicit UX gap to resolve, not as permission to weaken binding semantics.
