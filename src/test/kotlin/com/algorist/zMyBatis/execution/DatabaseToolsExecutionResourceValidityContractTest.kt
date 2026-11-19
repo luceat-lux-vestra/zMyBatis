@@ -18,11 +18,11 @@ class DatabaseToolsExecutionResourceValidityContractTest {
 
         val disposedCheck = executeSql.indexOf("!console.isValid")
         val documentAccess = executeSql.indexOf("val consoleDoc = console.document")
-        val fileAccess = executeSql.indexOf("val consolePsiFile = console.file")
+        val editorLookup = executeSql.indexOf("editorFactory.getEditors(consoleDoc, project)")
 
         assertTrue("executeSql must check console disposal", disposedCheck >= 0)
         assertTrue("console disposal must be checked before document access", documentAccess > disposedCheck)
-        assertTrue("console disposal must be checked before file access", fileAccess > disposedCheck)
+        assertTrue("editor lookup must happen only after validated document access", editorLookup > documentAccess)
         assertTrue(
             "disposed console must become a typed execution failure",
             executeSql.contains("onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)"),
@@ -30,28 +30,27 @@ class DatabaseToolsExecutionResourceValidityContractTest {
     }
 
     @Test
-    fun `editor open retry revalidates console and excludes disposed editors`() {
+    fun `missing persistent editor uses one transient off-screen editor and releases it`() {
         val adapter = source(
             "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"
         )
         val executeSql = adapter
             .substringAfter("fun executeSql(")
             .substringBefore("@Suppress(\"UsePropertyAccessSyntax\", \"TooGenericExceptionCaught\"")
-        val retry = executeSql
-            .substringAfter("ApplicationManager.getApplication().invokeLater({")
-            .substringBefore("}, ModalityState.any())")
 
-        val disposedCheck = retry.indexOf("!console.isValid")
-        val editorLookup = retry.indexOf("EditorFactory.getInstance().getEditors")
-
-        assertTrue("retry callback must re-check console disposal", disposedCheck >= 0)
-        assertTrue("retry disposal check must precede editor lookup", editorLookup > disposedCheck)
         assertTrue(
-            "initial and retry editor lookup must exclude disposed editors",
-            Regex("""firstOrNull \{ it is EditorEx && !it\.isDisposed \}""")
-                .findAll(executeSql)
-                .count() >= 2,
+            "existing editor lookup must exclude disposed editors",
+            executeSql.contains("firstOrNull { it is EditorEx && !it.isDisposed }"),
         )
+        val create = executeSql.indexOf("editorFactory.createEditor(consoleDoc, project)")
+        val execute = executeSql.indexOf("performExecution(", create)
+        val release = executeSql.indexOf("editorFactory.releaseEditor(transientEditor)", execute)
+
+        assertTrue("transient editor must be created only when no live editor exists", create >= 0)
+        assertTrue("transient editor must drive the same execution boundary", execute > create)
+        assertTrue("transient editor must be released after dispatch", release > execute)
+        assertTrue("shipping execution must not navigate to a console tab", !executeSql.contains("OpenFileDescriptor"))
+        assertTrue("shipping execution must not request console focus", !executeSql.contains("requestFocusInWindow"))
     }
 
     @Test
