@@ -34,6 +34,13 @@ class DataGripStarterDriverE2EContractTest {
                 "scenario=xml-prepared-postgresql result=PASS action_registered=true ",
             ),
         )
+        assertTrue(e2e.contains("DataGrip 2026.3 exposes the activated host surface as \"Database Explorer\""))
+        assertTrue(e2e.contains("//div[@visible_text='PostgreSQL']"))
+        assertTrue(e2e.contains("invokeAction(\"DatabaseView.Refresh\", now = false)"))
+        assertFalse(
+            "DataGrip host proof must not reuse the IU-only Database Tool Window locator",
+            e2e.contains("databaseToolWindow"),
+        )
 
         assertFalse(
             "bounded DataGrip prepared proof must not claim direct-Java source parity",
