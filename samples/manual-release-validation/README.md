@@ -206,8 +206,10 @@ DataGrip acceptance remains XML-focused.
 | U04 | Remember Last Inputs | execute M03 twice | eligible BIGINT input may be restored for the same statement |
 | U05 | Raw non-retention | execute/cancel M07 twice | previous raw value remains blank |
 | U06 | Statement isolation | enter M03 value, then M14 | values do not bleed across canonical statements |
-| U07 | existing console reuse | execute M01 twice from the mapper | the same existing Database Tools console/session client is reused; no duplicate console appears in Services |
-| U08 | mapper focus | execute M01 from the XML mapper while its console editor is closed | execution must not open or focus another console editor tab; mapper remains the active editor |
+| U07 | existing console reuse | keep one eligible Database Tools console; execute M01 twice from the mapper | the same console is reused and the remembered source+target association wins on the second execution |
+| U08 | no-console creation | close/remove eligible consoles for the selected target; execute M01 | one mapper-derived console is created automatically; no extra editor tab steals focus |
+| U09 | multiple-console chooser | keep two eligible consoles for the target; execute M01 | Choose Database Console popup appears with both candidates plus Create New Console; the chosen console is remembered |
+| U10 | mapper focus | execute M01 from the XML mapper while its console editor is closed | execution must not open or focus another console editor tab; mapper remains the active editor |
 
 Prepared bound-result presentation remains a separate P5 UX gap until maintained Database Tools APIs
 can preserve true prepared binding semantics and native result/history without unsafe literalization.
