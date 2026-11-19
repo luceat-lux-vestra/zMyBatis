@@ -92,12 +92,14 @@ internal object XmlParameterObjectInputSupport {
         )
 
     fun scalarPlaceholder(hint: XmlParameterObjectPathHint): String {
-        val example = hint.exampleJson ?: return "value"
-        if (example == "null") return "null"
-        if (example.startsWith('"') && example.endsWith('"') && example.length >= 2) {
-            return example.substring(1, example.length - 1)
+        val example = hint.exampleJson ?: return "Required value"
+        val rendered = when {
+            example == "null" -> "null"
+            example.startsWith('"') && example.endsWith('"') && example.length >= 2 ->
+                example.substring(1, example.length - 1)
+            else -> example
         }
-        return example
+        return "Example: $rendered"
     }
 
     private fun shouldReplace(existing: String?, candidate: String?): Boolean = when {
