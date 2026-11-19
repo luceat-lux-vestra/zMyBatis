@@ -211,7 +211,7 @@ class P2CallerAuthorityParityTest {
     fun xmlOnlyObjectContractCarriesCallerPathHintsWithoutPromotingMyBatisInternals() {
         val source = xmlSource(
             body = """
-                <select id="findByIdJSON">
+                <select id="find">
                     <bind name="pattern" value="'%' + search + '%'"/>
                     SELECT
                     <if test="user.id == 1">id</if>
@@ -251,6 +251,23 @@ class P2CallerAuthorityParityTest {
         assertFalse(evidence.any {
             it is InputEvidence.Placeholder && it.expression in setOf("pattern", "item")
         })
+    }
+
+    @Test
+    fun xmlOnlyStaticBindLiteralDoesNotManufactureCallerInput() {
+        val source = xmlSource(
+            body = """
+                <select id="find">
+                    <bind name="value" value="41L"/>
+                    SELECT #{value,jdbcType=BIGINT}
+                </select>
+            """.trimIndent(),
+        )
+
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
     }
 
     @Test
