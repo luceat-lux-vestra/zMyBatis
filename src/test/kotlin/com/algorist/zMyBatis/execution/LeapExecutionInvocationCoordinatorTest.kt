@@ -14,7 +14,6 @@ import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
 import com.algorist.zMyBatis.mybatis.MyBatisInvocationContractFactory
-import com.algorist.zMyBatis.settings.ConsoleSessionPolicy
 import java.nio.file.Files
 import java.nio.file.Path
 import org.junit.Assert.assertEquals
@@ -25,24 +24,13 @@ import org.junit.Test
 
 class LeapExecutionInvocationCoordinatorTest {
     @Test
-    fun policySnapshotMapsOnlyExplicitPresentationAndSessionInputs() {
-        val reuse = leapExecutionInvocationPolicy(
+    fun policySnapshotMapsOnlyExplicitPresentationInputs() {
+        val policy = leapExecutionInvocationPolicy(
             showSqlPreview = true,
             formatPreviewSql = false,
-            consoleSessionPolicy = ConsoleSessionPolicy.REUSE,
         )
-        assertTrue(reuse.approvalOptions.showSqlPreview)
-        assertFalse(reuse.approvalOptions.formatPreviewSql)
-        assertFalse(reuse.forceNewConsole)
-
-        val forceNew = leapExecutionInvocationPolicy(
-            showSqlPreview = false,
-            formatPreviewSql = true,
-            consoleSessionPolicy = ConsoleSessionPolicy.NEW_EACH,
-        )
-        assertFalse(forceNew.approvalOptions.showSqlPreview)
-        assertTrue(forceNew.approvalOptions.formatPreviewSql)
-        assertTrue(forceNew.forceNewConsole)
+        assertTrue(policy.approvalOptions.showSqlPreview)
+        assertFalse(policy.approvalOptions.formatPreviewSql)
     }
 
     @Test
@@ -122,6 +110,8 @@ class LeapExecutionInvocationCoordinatorTest {
         assertFalse(coordinator.contains(" ParameterInputDialog("))
         assertFalse(coordinator.contains("DbPsiFacade"))
         assertFalse(coordinator.contains("JBPopupFactory"))
+        assertFalse(coordinator.contains("ConsoleSessionPolicy"))
+        assertFalse(coordinator.contains("forceNewConsole"))
     }
 
     private fun emptyEnvironment(): InputEnvironment {
