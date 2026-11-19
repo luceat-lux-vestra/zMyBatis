@@ -839,6 +839,15 @@ def check_main_e2e_cache_seed(failures: list[str]) -> None:
            "          cache-read-only: true" in workflow
            and "github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)" in workflow,
            failures)
+    expect("DataGrip prepared XML evidence owns a pinned PostgreSQL service",
+           "Start pinned PostgreSQL E2E service for DataGrip" in workflow
+           and "zmybatis-postgres-datagrip-e2e" in workflow
+           and "postgres@sha256:0b2882c46a2b8d8e148431b333394348cf4d7f15aec6df7f17d51dc641e56cfa" in workflow,
+           failures)
+    expect("DataGrip artifact manifest reports the maintained 2026.3 host",
+           'echo "host=DATAGRIP"' in workflow
+           and 'echo "ide_release=2026.3"' in workflow,
+           failures)
     expect("PRs are always read-only and main only may publish caches",
            "github.ref != 'refs/heads/main' || (github.event_name != 'push' && github.event_name != 'workflow_dispatch')" in workflow,
            failures)
