@@ -33,6 +33,21 @@ class StarterDatabaseE2EIsolationContractTest {
     }
 
     @Test
+    fun `IDEA process artifact identity must match the maintained 2026 3 host claim`() {
+        val workflow = source(".github/workflows/e2e.yml")
+
+        assertTrue(
+            "IDEA E2E identity must record the maintained 2026.3 host release",
+            workflow.contains("echo \"ide_release=2026.3\""),
+        )
+        assertFalse(
+            "IDEA E2E identity must not regress to the retired 2026.2.3 release label",
+            workflow.contains("echo \"ide_release=2026.2.3\""),
+        )
+        assertTrue(workflow.contains("name: e2e-artifact-identity"))
+    }
+
+    @Test
     fun `process golden path must reuse one maintained PostgreSQL Database Tools stack`() {
         val e2e = source(
             "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
