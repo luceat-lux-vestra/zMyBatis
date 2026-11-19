@@ -93,7 +93,7 @@ class ManualReleaseValidationSampleContractTest {
     fun `manual checklist pins all maintained release acceptance families`() {
         val readme = source("README.md")
         val requiredIds = buildList {
-            addAll((1..14).map { "M%02d".format(it) })
+            addAll((1..16).map { "M%02d".format(it) })
             addAll((1..7).map { "J%02d".format(it) })
             addAll((1..8).map { "U%02d".format(it) })
             addAll((1..7).map { "T%02d".format(it) })
@@ -127,6 +127,11 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(xml.contains("jdbcType=VARCHAR"))
         assertTrue(xml.contains("#{left,jdbcType=BIGINT}"))
         assertTrue(xml.contains("#{right,jdbcType=BIGINT}"))
+        assertTrue(xml.contains("<set>"))
+        assertTrue(xml.contains("<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">"))
+        assertTrue(xml.contains("#{name,jdbcType=VARCHAR}"))
+        assertTrue(xml.contains("#{id,jdbcType=BIGINT}"))
+        assertTrue(xml.contains("#{filter.tenantId,jdbcType=BIGINT}"))
         assertTrue(product.contains("<include refid=\"fixture.SharedFragments.productColumns\"/>"))
 
         assertTrue(readme.contains("M06 | `<foreach>` additional bindings"))
@@ -135,6 +140,14 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(readme.contains("this is now supported"))
         assertTrue(readme.contains("M10 | two BIGINT bindings"))
         assertTrue(readme.contains("two ordered bindings execute prepared"))
+        assertTrue(readme.contains("M15 | `<set>` + `<trim>` safe UPDATE"))
+        assertTrue(readme.contains("mutation approval is mandatory"))
+        assertTrue(readme.contains("M16 | nested Map property"))
+        assertTrue(readme.contains("JSON Map editor"))
+        assertTrue(readme.contains("M10 is the manual representative for mapper-method multi-`@Param`"))
+        assertTrue(readme.contains("M06 is the manual representative for"))
+        assertTrue(readme.contains("Collection and"))
+        assertTrue(readme.contains("array alias/wrapper behavior"))
 
         listOf(
             "PostgreSqlBigintExecutionMaterializer",
@@ -206,6 +219,27 @@ class ManualReleaseValidationSampleContractTest {
                 assertFalse("promoted parity fixture must not retain pending name: $pending", pending in names)
             }
         }
+    }
+
+    @Test
+    fun `manual mapper method fixture pins set trim multi-param and nested map caller shapes`() {
+        val mapper = source("src/main/java/fixture/XmlReleaseValidationMapper.java")
+        val xml = source("src/main/resources/mappers/XmlReleaseValidationMapper.xml")
+        val readme = source("README.md")
+
+        assertTrue(mapper.contains("int setTrimNoop(@Param(\"name\") String name, @Param(\"id\") Long id)"))
+        assertTrue(mapper.contains("Long nestedMapEcho(@Param(\"filter\") Map<String, Object> filter)"))
+        assertTrue(mapper.contains("import java.util.Map;"))
+
+        assertTrue(xml.contains("<update id=\"setTrimNoop\">"))
+        assertTrue(xml.contains("<set>"))
+        assertTrue(xml.contains("<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">"))
+        assertTrue(xml.contains("AND FALSE"))
+        assertTrue(xml.contains("<select id=\"nestedMapEcho\">"))
+        assertTrue(xml.contains("#{filter.tenantId,jdbcType=BIGINT}"))
+
+        assertTrue(readme.contains("P2 lower-layer parity separately owns equivalent Collection and"))
+        assertTrue(readme.contains("array alias/wrapper behavior"))
     }
 
     @Test
