@@ -10,6 +10,7 @@ import com.algorist.zMyBatis.services.ExecutionTargetDescriptorStore
 import com.algorist.zMyBatis.settings.ZMyBatisSettings
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.project.Project
 
 /**
@@ -121,6 +122,7 @@ internal class LeapExecutionInvocationCoordinator(private val project: Project) 
 
     fun execute(
         source: PreparationSource,
+        dataContext: DataContext? = null,
         isInvocationActive: () -> Boolean,
         onExecuted: () -> Unit,
         onCancelled: () -> Unit,
@@ -171,6 +173,7 @@ internal class LeapExecutionInvocationCoordinator(private val project: Project) 
             deliveryCoordinator.execute(
                 source = source,
                 parameterContract = parameterContract,
+                dataContext = dataContext,
                 inputEnvironment = environment,
                 targetDescriptor = targetDescriptor,
                 resourceKey = sourceFileId.value,
