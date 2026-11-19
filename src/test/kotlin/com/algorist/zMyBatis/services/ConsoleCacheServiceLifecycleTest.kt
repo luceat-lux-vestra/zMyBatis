@@ -378,8 +378,7 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         }
     }
 
-    fun testAdapterDoesNotCreateConsoleWhenNoExistingDatabaseToolsClientExists() {
-        val cache = ConsoleCacheService.getInstance(project)
+    fun testAdapterCreatesConsoleWhenNoExistingDatabaseToolsClientExists() {
         val dataSource = registeredDbDataSource(
             name = "zMyBatis no-existing-console fixture",
             url = "jdbc:h2:mem:zmybatis_no_existing_console",
@@ -400,14 +399,15 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
             onFailure = { failure = it },
         )
 
-        assertNull(delivered)
-        assertSame(DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleUnavailable, failure)
-        assertNull(cache.get(key))
-        assertTrue("failed lookup must release the source lease", cache.beginReuseLease(key))
-        cache.endReuseLease(key)
+        assertNull(failure)
+        assertNotNull("no-candidate flow must create a usable Database Tools console", delivered)
+        assertTrue(delivered!!.isValid)
+        assertEquals("MissingMapper.xml", delivered!!.file.virtualFile?.name)
+        assertTrue("terminal completion must release the source lease", ConsoleCacheService.getInstance(project).beginReuseLease(key))
+        ConsoleCacheService.getInstance(project).endReuseLease(key)
     }
 
-    fun testAdapterFailsClosedWhenMultipleMatchingExistingConsolesAreAmbiguous() {
+    fun testAdapterRequiresChooserContextWhenMultipleExistingConsolesRemainAmbiguous() {
         val dataSource = registeredDbDataSource(
             name = "zMyBatis ambiguous-console fixture",
             url = "jdbc:h2:mem:zmybatis_ambiguous_console",
@@ -425,6 +425,7 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
                 dataSource = dataSource,
                 schema = null,
                 resourceKey = key,
+                dataContext = null,
                 onConsoleReady = { console, release ->
                     delivered = console
                     release()
@@ -433,9 +434,9 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
             )
 
             assertNull(delivered)
-            assertSame(DatabaseToolsConsoleAcquisitionFailure.ExistingConsoleAmbiguous, failure)
-            assertFalse("zMyBatis must not dispose the first platform-owned candidate", firstLifetime.isDisposed)
-            assertFalse("zMyBatis must not dispose the second platform-owned candidate", secondLifetime.isDisposed)
+            assertSame(DatabaseToolsConsoleAcquisitionFailure.ConsoleSelectionUnavailable, failure)
+            assertFalse("candidate selection must not dispose the first platform-owned console", firstLifetime.isDisposed)
+            assertFalse("candidate selection must not dispose the second platform-owned console", secondLifetime.isDisposed)
         } finally {
             if (!firstLifetime.isDisposed) Disposer.dispose(first)
             if (!secondLifetime.isDisposed) Disposer.dispose(second)
