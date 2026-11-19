@@ -32,6 +32,10 @@ class XmlParameterObjectInputSupportTest {
             listOf("1", "\"test\"", null, "[1]"),
             hints.map { it.exampleJson },
         )
+        assertEquals("Example: 1", XmlParameterObjectInputSupport.scalarPlaceholder(hints[0]))
+        assertEquals("Example: test", XmlParameterObjectInputSupport.scalarPlaceholder(hints[1]))
+        assertEquals("Required value", XmlParameterObjectInputSupport.scalarPlaceholder(hints[2]))
+        assertEquals("Example: [1]", XmlParameterObjectInputSupport.scalarPlaceholder(hints[3]))
         assertEquals(
             """
             {
