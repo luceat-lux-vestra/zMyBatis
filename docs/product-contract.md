@@ -270,8 +270,8 @@ Current target/session rules:
 
 - the v3 `ExecutionTargetDescriptor` remains independently meaningful and revalidatable without a live console cache entry;
 - startup may prune stale current-v3 source associations but does not recreate consoles or migrate deleted legacy state;
-- console/editor/document resources are ephemeral Database Tools adapter resources;
-- `REUSE`/`NEW_EACH` are optional in-memory resource policies, not target identities;
+- console/session resources are owned by Database Tools and borrowed by zMyBatis; transient execution editors are zMyBatis-owned only for the duration of dispatch;
+- shipping execution has no fresh-console resource policy; persisted target identity remains independent from whichever existing console client is borrowed;
 - default-schema restart remains unsupported until stable search-path identity exists.
 
 ## 13. Threading, cancellation, and lifecycle
@@ -305,7 +305,7 @@ Existing privacy hardening remains protected during parity recovery; regaining m
 - The minimum compatible IDE build is **263**. IDEA Ultimate 2026.3 is the compile/test SDK, Plugin Verifier target and real Starter/Driver PostgreSQL execution target under #521. The 2026.2 line is deliberately unsupported: its editor API differs, and supporting it via `@Internal` is not an acceptable product boundary. Only exact-HEAD CI can establish the 2026.3 runtime evidence.
 - DataGrip 2026.3 is independently configured by `dataGripPlatformVersion` and is an independent Plugin Verifier and Starter/Driver target. Its process proof is bounded to packaged-plugin/service loading, the registered XML action's typed no-datasource refusal, one XML-only prepared PostgreSQL route through the Database Tools session backend, and clean shutdown. This is a required check, not a claim of a passed result.
 - DataGrip host evidence does not imply Java-annotation parity or native Database Tools PostgreSQL result/history parity; those claims require explicit host-specific proof before they can be added.
-- Database Tools APIs are isolated behind adapters so platform drift has a bounded replacement surface. The SQL-console editor-open flow uses the 263 public `OpenFileDescriptor.navigate(false)` navigation entry point, then revalidates the immutable SQL artifact, live console and actual editor in its EDT continuation before any injection. The internal console must not take focus away from the mapper that initiated execution. This avoids `@Internal` and `@Experimental` editor-open APIs.
+- Database Tools APIs are isolated behind adapters so platform drift has a bounded replacement surface. Shipping execution does not open a SQL-console editor tab. It borrows an existing Database Tools `JdbcConsole` from the resolved datasource session, revalidates that console and target before dispatch, and uses a transient off-screen editor over the existing console document only when native SQL parsing requires an `Editor`. This avoids `@Internal` and `@Experimental` editor-open APIs.
 - Public Marketplace/README compatibility claims must match the maintained exact-head verifier/runtime evidence established by #67 and be refreshed whenever the compatibility claim changes.
 
 ## 16. Target product workflow
@@ -375,4 +375,4 @@ P3 maintained-API stop gate has passed and remains a regression constraint.
 
 The pre-Leap product interaction is the acceptance baseline: execute from the mapper, provide required input, optionally approve preview, and observe database execution without exposing new implementation-specific workflow steps. New architecture may improve UI clarity, validation, accessibility, and structured input, but it must not require the user to understand backend routing or console-resource ownership.
 
-The Database Tools console remains an internal execution resource. When a console editor must be materialized for native execution, it opens without requesting focus and retains the mapper filename as its legacy-facing title rather than creating a separate `<mapper> - zMyBatis` identity. Prepared binding semantics remain authoritative; UX parity does not authorize unsafe generic literalization.
+The Database Tools console is an existing user/session resource, not a zMyBatis-owned resource. zMyBatis must reuse an existing matching console client, never create a duplicate console, never add a separate `<mapper> - zMyBatis` identity, and never open a console tab merely because execution started from a mapper. Prepared binding semantics remain authoritative; UX parity does not authorize unsafe generic literalization.
