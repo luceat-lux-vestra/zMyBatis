@@ -50,6 +50,22 @@ class XmlParameterObjectInputSupportTest {
     }
 
     @Test
+    fun `numeric suffixes are examples not caller paths while dependent bind names remain caller paths`() {
+        val provenance = InputProvenance(
+            listOf(
+                InputEvidence.XmlParameterObject(SOURCE),
+                InputEvidence.OgnlExpression("id == 41L", SOURCE),
+                InputEvidence.OgnlExpression("'%' + search + '%'", SOURCE),
+            ),
+        )
+
+        val hints = XmlParameterObjectInputSupport.hints(provenance)
+
+        assertEquals(listOf("id", "search"), hints.map { it.path })
+        assertEquals(listOf("41", null), hints.map { it.exampleJson })
+    }
+
+    @Test
     fun `scalar values compose into the same XML parameter object shape`() {
         val json = XmlParameterObjectInputSupport.composeScalarValues(
             linkedMapOf(
