@@ -35,18 +35,30 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
    - declares `parameterType="long"` on the XML statement rather than stripping or rejecting it during whole-document preflight;
    - enters one scalar through the normal contract dialog and requires placeholder SQL plus Long/BIGINT/LongTypeHandler binding metadata;
    - executes through `DatabaseSessionPreparedBackend`, observes the zMyBatis prepared-result table, and rejects native-grid/literalized-SQL fallback.
-5. **Registered XML raw-interpolation confirmation path**
+5. **Target-derived databaseId selection path**
+   - declares both PostgreSQL-specific and default variants for one XML statement id;
+   - selects the real PostgreSQL datasource + explicit `public` schema through production UI;
+   - requires preview/result `2620` from the PostgreSQL variant and rejects the default `2600` result.
+6. **Mutation-declaration approval path**
+   - declares an XML `<update>` while ordinary SQL Preview is disabled;
+   - requires the final-plan preview anyway because statement kind is mutation evidence;
+   - cancels approval and proves no Database Tools result grid is created.
+7. **Unsupported Provider annotation path**
+   - opens a real direct Java `@SelectProvider` method in the packaged IDE;
+   - invokes the registered action and requires the explicit `zMyBatis: Provider Not Supported` notice;
+   - no datasource or alternate execution route is involved.
+8. **Registered XML raw-interpolation confirmation path**
    - declares `${}` in the XML mapper while using a real Java mapper method for caller-input authority;
    - reuses the maintained PostgreSQL datasource/explicit-schema path;
    - verifies raw interpolation forces final-SQL preview even when the ordinary preview setting is disabled;
    - cancels at approval and proves no native result grid is created.
-6. **Registered direct-Java-annotation raw-interpolation path**
+9. **Registered direct-Java-annotation raw-interpolation path**
    - opens a real Java mapper method with direct `@Select` plus explicit `@Param` provenance and invokes the registered `zMyBatis.Execute` action from that source;
    - uses the same maintained PostgreSQL datasource/explicit-schema lifecycle and keeps `sqlPreview=false` so raw interpolation itself must force approval;
    - cancels one exact raw artifact and proves it creates neither a native result grid nor native query-history entry;
    - invokes the same method again, proves the prior raw value was not retained, approves a different exact SQL artifact, observes its native result value, and verifies only the executed artifact reaches Database Tools history;
    - the build-tool-free Starter sample supplies minimal source stubs for the MyBatis annotation FQNs so Java PSI can resolve the direct annotation; real MyBatis 3.6.0 annotation resolution remains independently covered by the Java source-adapter project fixture.
-6. **Registered-action fail-closed path**
+10. **Registered-action fail-closed no-datasource path**
    - opens the mapper fixture in a fresh IDE process without any datasource;
    - invokes the real production action from the supported statement context;
    - requires the typed `zMyBatis: Execution Target Unavailable` refusal instead of preparation or execution.
