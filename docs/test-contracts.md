@@ -223,7 +223,7 @@ materializer tests are no longer execution-authority evidence.
 ## IDEA 2026.3 compatibility and console lifetime authority (2026.2.3 historical)
 
 The build and Starter/Driver IDE now target IDEA Ultimate 2026.3 on JDK 25.
-The declared minimum is **263**; independent Plugin Verifier targets are IDEA Ultimate 2026.3 and DataGrip 2026.3. Historical #251 Database Tools parameterized-execution probes and the previous IDEA 2026.2.3 lifetime tests remain historical evidence, **not** a current support promise. The 263 SQL-console editor opening uses the public `OpenFileDescriptor.navigate(true)` entry point; its EDT continuation requires the actual non-disposed editor and exact-source/target and live-console revalidation before native execution. No internal or experimental editor-open APIs are permitted.
+The declared minimum is **263**; independent Plugin Verifier targets are IDEA Ultimate 2026.3 and DataGrip 2026.3. Historical #251 Database Tools parameterized-execution probes and the previous IDEA 2026.2.3 lifetime tests remain historical evidence, **not** a current support promise. The 263 SQL-console editor opening uses the public `OpenFileDescriptor.navigate(false)` entry point; its EDT continuation requires the actual non-disposed editor and exact-source/target and live-console revalidation before native execution, while the mapper retains user focus. No internal or experimental editor-open APIs are permitted.
 
 `DatabaseToolsConsoleAdapter` uses public `JdbcConsole.isValid()` before resource access, after
 editor-open scheduling and immediately before native query invocation. The maintained API includes
@@ -542,3 +542,8 @@ The cardinalities are reproducible evidence points, not product limits. The fixt
 records deterministic resource cardinalities (input nodes, mappings/placeholders and SQL size)
 rather than forced-GC heap guesses. Timeouts elsewhere remain hang guards and these elapsed values
 remain comparative observations, not latency SLAs.
+
+
+### P5 legacy UX parity evidence
+
+P5 adds an explicit UX regression contract on top of functional parity. `DatabaseToolsConsoleAdapterBoundaryTest` pins the maintained public background navigation entry point and legacy mapper-based console identity so internal Database Tools resource creation does not become a second branded workflow surface. Human smoke verifies the same packaged behavior in IDEA. UI improvements to parameter entry are allowed when they clarify state without changing input authority.
