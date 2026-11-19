@@ -224,9 +224,11 @@ Install the same ZIP and run only the maintained bounded host claim:
 - the maintained XML execution/refusal smoke succeeds;
 - IDE closes cleanly.
 
-Do not infer Java annotation support or IDEA-only UX from the DataGrip result. If P5 automation proves
-a stable prepared XML case on the maintained DataGrip host, record that case explicitly rather than
-broadening the claim implicitly.
+P5 automation owns one stable XML-only prepared PostgreSQL case on the maintained DataGrip host:
+stock MyBatis creates one internal BIGINT binding, the registered action selects explicit `public`,
+and the result is presented through the zMyBatis prepared-result dialog. Do not infer Java annotation
+support, native Database Tools result/history parity, every DBMS/dialect, or IDEA-only UX from that
+bounded case.
 
 ## 10. Explicit unsupported boundaries
 
