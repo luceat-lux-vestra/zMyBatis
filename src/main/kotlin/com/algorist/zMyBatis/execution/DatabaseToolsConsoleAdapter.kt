@@ -46,8 +46,10 @@ internal sealed interface DatabaseToolsSqlExecutionFailure {
 /**
  * Project-scoped boundary for low-level JetBrains Database Tools console mechanics.
  *
- * This adapter owns only ephemeral console/resource operations. Target persistence, target
- * selection, mapper/input semantics, preview/confirmation, and clipboard policy remain outside.
+ * This adapter borrows existing Database Tools console/session clients and owns only invocation
+ * leases plus transient execution-editor state. It never creates or disposes a user console.
+ * Target persistence, target selection, mapper/input semantics, preview/confirmation, and clipboard
+ * policy remain outside.
  */
 @Service(Service.Level.PROJECT)
 internal class DatabaseToolsConsoleAdapter(private val project: Project) {
@@ -66,7 +68,6 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         dataSource: DbDataSource,
         schema: DasNamespace?,
         resourceKey: String,
-        @Suppress("UNUSED_PARAMETER") forceNew: Boolean,
         onConsoleReady: (JdbcConsole, () -> Unit) -> Unit,
         onFailure: (DatabaseToolsConsoleAcquisitionFailure) -> Unit,
     ) {
