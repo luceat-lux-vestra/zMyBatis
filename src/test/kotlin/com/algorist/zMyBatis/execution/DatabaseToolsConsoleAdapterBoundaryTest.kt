@@ -47,6 +47,7 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         // and the actual SQL editor before any native query is issued.
         assertTrue(adapter.contains("OpenFileDescriptor(project, vFile).navigate(false)"))
         assertFalse(adapter.contains("OpenFileDescriptor(project, vFile).navigate(true)"))
+        assertFalse(adapter.contains("consoleEditor.contentComponent.requestFocusInWindow()"))
         assertTrue(
             adapter.contains(
                 "val consoleName = resourceKey.substringAfterLast('/').substringAfterLast('\\\\')"
