@@ -109,6 +109,26 @@ Position: 9
 
 The P3 negative-control test now pins this behavior explicitly. Therefore `QueryRequest.params` is not a maintained bridge from `StatementParameters.asData(sql)` / `ParameterizedStatementData` into native-console JDBC parameter binding on the 2026.3 baseline either. The opaque slot remains rejected as execution authority.
 
+The same 2026.3 runtime inventory checked the adjacent request types before closing the probe:
+
+```text
+ConsoleDataRequest
+  superclass: DataRequest.QueryRequest
+  constructor: private(JdbcConsoleBase, String, Shared, int, boolean, Set)
+  public factory: newConsoleRequest(JdbcConsoleBase, Editor, ScriptModel, boolean)
+
+DataRequest.RawQueryRequest
+  superclass: DataRequest.IsolatedQueryRequest
+  constructor: protected(Owner, String, Constraints)
+
+DataRequest.IsolatedQueryRequest
+  superclass: DataRequest.QueryRequest
+  constructor: protected(Owner, String, Constraints, Object)
+```
+
+No public `ConsoleDataRequest` factory accepts ordered values or `ParameterizedStatementData`; `RawQueryRequest` exposes no parameter payload; and `IsolatedQueryRequest` only repeats the same undocumented opaque `Object` slot already disproven on the native query path. No new maintained 2026.3 request surface therefore closes the gap between true JDBC binding and native console result/history presentation.
+
+
 
 ### Candidate A result
 
