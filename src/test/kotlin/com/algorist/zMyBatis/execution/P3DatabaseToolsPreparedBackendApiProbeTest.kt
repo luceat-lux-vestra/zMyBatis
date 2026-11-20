@@ -288,14 +288,20 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
             }
 
         val classes = listOf(
+            "com.intellij.database.dataSource.connection.statements.StatementParameters",
             "com.intellij.database.dataSource.connection.statements.ParameterizedStatementData",
             "com.intellij.database.dataSource.connection.statements.ParameterizedStatementBasis",
             "com.intellij.database.dataSource.connection.statements.ParameterizedStatementDecoration",
             "com.intellij.database.dataSource.connection.statements.ExecutionMode",
+            "com.intellij.database.dataSource.connection.statements.StandardExecutionMode",
             "com.intellij.database.dataSource.connection.statements.ExecutionResult",
             "com.intellij.database.dataSource.connection.statements.ResultsProducer",
             "com.intellij.database.dataSource.connection.statements.ResultsProducer\$Processor",
             "com.intellij.database.dataSource.connection.statements.ResultsProducer\$VoidReadyProcessor",
+            "com.intellij.database.dataSource.connection.statements.StandardResultsProcessors",
+            "com.intellij.database.datagrid.mutating.ColumnQueryData",
+            "com.intellij.database.datagrid.GridColumn",
+            "com.intellij.database.datagrid.JdbcColumnDescriptor",
             "com.intellij.database.datagrid.DataRequest\$RawQueryRequest",
             "com.intellij.database.datagrid.DataRequest\$IsolatedQueryRequest",
             "com.intellij.database.datagrid.DataRequest\$Visitor",
