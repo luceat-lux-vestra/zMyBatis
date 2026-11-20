@@ -408,11 +408,11 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         }
         assertTrue(createdConsole.isValid)
         assertEquals("MissingMapper.xml", createdConsole.file.virtualFile?.name)
-        val expectedClients = expectedSession.clientsWithFile.toList()
+        val expectedClients = expectedSession.clients.toList()
         val sessionCandidates = DatabaseSessionManager.getSessions(project, sessionDataSource)
         val sessionDiagnostics = sessionCandidates.joinToString("; ") { session ->
             "sessionIdentity=${System.identityHashCode(session)} clients=" +
-                session.clientsWithFile.joinToString { client ->
+                session.clients.joinToString { client ->
                     "${client.javaClass.simpleName}@${System.identityHashCode(client)}"
                 }
         }
@@ -426,7 +426,7 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         )
         val attachedSessions = DatabaseSessionManager.getSessions(project, sessionDataSource)
             .filter { session ->
-                session.clientsWithFile.any { client -> client === createdConsole }
+                session.clients.any { client -> client === createdConsole }
             }
         assertEquals(
             "created console must be attached to exactly one Database Tools session",
@@ -444,7 +444,7 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         Disposer.dispose(createdConsole)
         assertFalse(
             "disposing a zMyBatis-created console must detach it from the Database Tools session",
-            expectedSession.clientsWithFile.any { client -> client === createdConsole },
+            expectedSession.clients.any { client -> client === createdConsole },
         )
     }
 
