@@ -368,10 +368,6 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                     "parameterized QueryRequest must complete through the Database Tools request pipeline",
                     completed.await(30, TimeUnit.SECONDS),
                 )
-                assertNull(
-                    "parameterized QueryRequest must not report a Database Tools execution error",
-                    requestFailure.get(),
-                )
                 PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
 
                 val persisted = executeRaw(fixture.dataSource, "native-query-request-readback") { connection ->
@@ -381,15 +377,35 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                     ) { statement ->
                         statement.execute()
                         withResultSet(statement) { result ->
-                            check(result.next()) {
-                                "parameterized QueryRequest must perform its data-modifying CTE"
+                            if (result.next()) {
+                                result.getString(1) to result.getString(2)
+                            } else {
+                                null
                             }
-                            result.getString(1) to result.getString(2)
                         }
                     }
                 }
-                assertEquals("73", persisted.first)
+                val executionError = requestFailure.get()
+                println(
+                    "ZMYBATIS_P3_NATIVE_RESULT_DIAGNOSTIC " +
+                        "requestFinished=true " +
+                        "databaseSideEffect=${persisted != null} " +
+                        "persistedId=${persisted?.first ?: "<none>"} " +
+                        "persistedLabel=${persisted?.second ?: "<none>"} " +
+                        "error=${executionError ?: "<none>"}",
+                )
+
+                assertNotNull(
+                    "parameterized QueryRequest must perform its data-modifying CTE before result presentation",
+                    persisted,
+                )
+                assertEquals("73", persisted!!.first)
                 assertEquals("native-grid-proof", persisted.second)
+                assertNull(
+                    "parameterized QueryRequest must not report a Database Tools execution error; " +
+                        "actual=$executionError",
+                    executionError,
+                )
 
                 println(
                     "ZMYBATIS_P3_NATIVE_RESULT " +
