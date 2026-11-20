@@ -376,34 +376,40 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 val persisted = executeRaw(fixture.dataSource, "native-query-request-readback") { connection ->
                     withPrepared(
                         connection,
-                        "SELECT id, label FROM zmybatis_native_query_request_probe WHERE id = 73",
+                        "SELECT count(*), max(id), max(label) " +
+                            "FROM zmybatis_native_query_request_probe WHERE id = 73",
                     ) { statement ->
                         statement.execute()
                         withResultSet(statement) { result ->
-                            if (result.next()) {
-                                result.getString(1) to result.getString(2)
-                            } else {
-                                null
+                            check(result.next()) {
+                                "native QueryRequest readback aggregate must return one row"
                             }
+                            Triple(
+                                result.getString(1).toInt(),
+                                result.getString(2),
+                                result.getString(3),
+                            )
                         }
                     }
                 }
                 val executionError = requestFailure.get()
+                val databaseSideEffect = persisted.first == 1
                 println(
                     "ZMYBATIS_P3_NATIVE_RESULT_DIAGNOSTIC " +
                         "requestFinished=true " +
-                        "databaseSideEffect=${persisted != null} " +
-                        "persistedId=${persisted?.first ?: "<none>"} " +
-                        "persistedLabel=${persisted?.second ?: "<none>"} " +
+                        "databaseSideEffect=$databaseSideEffect " +
+                        "persistedId=${persisted.second ?: "<none>"} " +
+                        "persistedLabel=${persisted.third ?: "<none>"} " +
                         "error=${executionError ?: "<none>"}",
                 )
 
-                assertNotNull(
-                    "parameterized QueryRequest must perform its data-modifying CTE before result presentation",
-                    persisted,
+                assertTrue(
+                    "parameterized QueryRequest must perform its data-modifying CTE before result presentation; " +
+                        "error=$executionError",
+                    databaseSideEffect,
                 )
-                assertEquals("73", persisted!!.first)
-                assertEquals("native-grid-proof", persisted.second)
+                assertEquals("73", persisted.second)
+                assertEquals("native-grid-proof", persisted.third)
                 assertNull(
                     "parameterized QueryRequest must not report a Database Tools execution error; " +
                         "actual=$executionError",
