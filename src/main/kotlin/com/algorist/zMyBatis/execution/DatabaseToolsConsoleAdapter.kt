@@ -204,7 +204,7 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
 
             val consoles = DatabaseSessionManager.getSessions(project, sessionDataSource)
                 .asSequence()
-                .flatMap { session -> session.clientsWithFile.asSequence() }
+                .flatMap { session -> session.clients.asSequence() }
                 .filterIsInstance<JdbcConsole>()
                 .filter { console -> console.isValid }
                 .distinct()
