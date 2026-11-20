@@ -242,7 +242,8 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
                     "com.intellij.database.console.client.DatabaseSessionClient"
         }
         assertNotNull(
-            "IDEA 263 must expose DatabaseSession.attach(DatabaseSessionClient) so a mapper-created console becomes a real session client",
+            "IDEA 263 must expose DatabaseSession.attach(DatabaseSessionClient) for compatibility characterization; " +
+                "public availability alone does not establish exact-session identity for a built JdbcConsole",
             attach,
         )
         assertTrue(

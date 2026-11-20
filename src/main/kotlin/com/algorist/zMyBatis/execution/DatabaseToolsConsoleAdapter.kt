@@ -350,23 +350,12 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 baseName = mapperDisplayName(resourceKey),
                 existing = existing,
             )
-            val session = DatabaseSessionManager.getSession(project, dataSource)
-            val console = JdbcConsole.newConsole(project)
+            val requestedSession = DatabaseSessionManager.getSession(project, dataSource)
+            JdbcConsole.newConsole(project)
                 .fromDataSource(dataSource)
-                .useSession(session)
+                .useSession(requestedSession)
                 .forFile(LightVirtualFile(consoleName, sqlFileType, ""))
                 .build()
-            try {
-                if (session.clients.none { client -> client === console }) {
-                    session.attach(console)
-                }
-                console
-            } catch (failure: Throwable) {
-                if (console.isValid) {
-                    Disposer.dispose(console)
-                }
-                throw failure
-            }
         } catch (ex: ProcessCanceledException) {
             throw ex
         } catch (ex: Exception) {

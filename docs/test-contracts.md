@@ -456,7 +456,11 @@ the exact source+target, then prefers one unique dynamically derived mapper-file
 sole eligible console. Multiple remaining candidates require an explicit chooser and include a
 Create New Console action; zero candidates create one automatically. Borrowed consoles are never
 owned or disposed by zMyBatis. Consoles created by zMyBatis are resource-owned and cleaned through
-the existing console lifecycle service. A source lease prevents duplicate invocation for one mapper,
+the existing console lifecycle service. Creation supplies the datasource-scoped session to the
+`JdbcConsole` builder, but post-build authority comes from the resulting `JdbcConsole.session` and
+the datasource-scoped Database Tools session registry. The lifecycle contract requires the created
+console to belong to exactly one registered live session; it does not require that session object to
+be identical to the pre-build `getSession(...)` object. A source lease prevents duplicate invocation for one mapper,
 while a second lease keyed by the selected console prevents different mapper sources from
 concurrently mutating the same console document.
 

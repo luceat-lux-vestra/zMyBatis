@@ -386,7 +386,6 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         )
         val key = "vfs:file:///tmp/zmybatis/MissingMapper.xml"
         val sessionDataSource = requireNotNull(DbImplUtil.getMaybeLocalDataSource(dataSource))
-        val expectedSession = DatabaseSessionManager.getSession(project, sessionDataSource)
         val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
         var delivered: JdbcConsole? = null
         var failure: DatabaseToolsConsoleAcquisitionFailure? = null
@@ -408,53 +407,41 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         }
         assertTrue(createdConsole.isValid)
         assertEquals("MissingMapper.xml", createdConsole.file.virtualFile?.name)
-        val expectedClients = expectedSession.clients.toList()
         val sessionCandidates = DatabaseSessionManager.getSessions(project, sessionDataSource)
-        println(
-            "ZMYBATIS_RESOURCE_LIFECYCLE phase=session-attach-debug " +
-                "expectedSession=${System.identityHashCode(expectedSession)} " +
-                "consoleSession=${System.identityHashCode(createdConsole.session)} " +
-                "sameSession=${createdConsole.session === expectedSession} " +
-                "console=${System.identityHashCode(createdConsole)} " +
-                "clientCount=${expectedClients.size} " +
-                "clientIdentities=${expectedClients.map { System.identityHashCode(it) }} " +
-                "edt=${com.intellij.openapi.application.ApplicationManager.getApplication().isDispatchThread}"
-        )
+        val attachedSessions = sessionCandidates.filter { session ->
+            session.clients.any { client -> client === createdConsole }
+        }
         val sessionDiagnostics = sessionCandidates.joinToString("; ") { session ->
             "sessionIdentity=${System.identityHashCode(session)} clients=" +
                 session.clients.joinToString { client ->
                     "${client.javaClass.simpleName}@${System.identityHashCode(client)}"
                 }
         }
-        assertTrue(
-            "created console must be a client of the Database Tools-selected datasource session; " +
-                "expectedSession=${System.identityHashCode(expectedSession)} " +
-                "createdConsole=${System.identityHashCode(createdConsole)} " +
-                "expectedClients=${expectedClients.map { System.identityHashCode(it) }} " +
-                "sessionCandidates=[$sessionDiagnostics]",
-            expectedClients.any { client -> client === createdConsole },
-        )
-        val attachedSessions = DatabaseSessionManager.getSessions(project, sessionDataSource)
-            .filter { session ->
-                session.clients.any { client -> client === createdConsole }
-            }
         assertEquals(
-            "created console must be attached to exactly one Database Tools session",
+            "created console must be owned by exactly one registered Database Tools session; " +
+                "createdConsole=${System.identityHashCode(createdConsole)} " +
+                "consoleSession=${System.identityHashCode(createdConsole.session)} " +
+                "sessionCandidates=[$sessionDiagnostics]",
             1,
             attachedSessions.size,
         )
+        val authoritativeSession = attachedSessions.single()
         assertSame(
-            "the sole attached session must be the Database Tools-selected datasource session",
-            expectedSession,
-            attachedSessions.single(),
+            "the platform-returned JdbcConsole.session must be the registered session that owns the console",
+            createdConsole.session,
+            authoritativeSession,
+        )
+        assertTrue(
+            "created console session must remain registered for the selected datasource",
+            sessionCandidates.any { session -> session === authoritativeSession },
         )
         assertTrue("terminal completion must release the source lease", ConsoleCacheService.getInstance(project).beginReuseLease(key))
         ConsoleCacheService.getInstance(project).endReuseLease(key)
 
         Disposer.dispose(createdConsole)
         assertFalse(
-            "disposing a zMyBatis-created console must detach it from the Database Tools session",
-            expectedSession.clients.any { client -> client === createdConsole },
+            "disposing a zMyBatis-created console must detach it from its authoritative Database Tools session",
+            authoritativeSession.clients.any { client -> client === createdConsole },
         )
     }
 

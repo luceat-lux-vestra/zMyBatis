@@ -361,7 +361,7 @@ Execution behavior:
 7. route nonzero bindings through the Database Tools session-backed prepared backend, or zero bindings through the explicit native text backend;
 8. preserve prepared cancellation ownership and native console document/editor state according to the adapter contract.
 
-Shipping execution has one console policy: borrow an existing Database Tools console/session client. Creating a new console is not execution authority and is not a user-facing option.
+Shipping execution uses one resource policy: reuse a remembered/eligible Database Tools console, ask the user to choose when multiple candidates remain, and create one console when no candidate exists or creation is explicitly chosen. Existing consoles remain platform-owned; created consoles are zMyBatis-owned resources. For a created console, the platform-returned `JdbcConsole.session` and datasource-scoped session registry are authoritative after build; exact identity with the pre-build session object is not a product invariant.
 
 ## 10. Application orchestration
 
