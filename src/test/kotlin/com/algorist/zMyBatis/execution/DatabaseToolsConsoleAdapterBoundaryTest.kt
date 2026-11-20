@@ -36,7 +36,7 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         )
 
         assertTrue(adapter.contains("DatabaseSessionManager.getSessions(project, sessionDataSource)"))
-        assertTrue(adapter.contains("session.clientsWithFile"))
+        assertTrue(adapter.contains("session.clients"))
         assertTrue(adapter.contains(".filterIsInstance<JdbcConsole>()"))
         assertTrue(adapter.contains("cache.rememberedConsole(resourceKey, it)"))
         assertTrue(adapter.contains("cache.rememberConsole(resourceKey, targetId, console)"))
