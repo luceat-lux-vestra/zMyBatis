@@ -38,8 +38,11 @@ import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
 import com.algorist.zMyBatis.mybatis.MyBatisInvocationContractFactory
 import com.algorist.zMyBatis.mybatis.MyBatisPreparationEngine
+import com.intellij.database.DataBus
 import com.intellij.database.console.JdbcConsole
+import com.intellij.database.connection.throwable.info.ErrorInfo
 import com.intellij.database.dataSource.DatabaseAuthProviderNames
+import com.intellij.database.datagrid.DataAuditor
 import com.intellij.database.dataSource.DatabaseConnectionCore
 import com.intellij.database.dataSource.DatabaseDriver
 import com.intellij.database.dataSource.DatabaseDriverImpl
@@ -332,14 +335,44 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 )
                 .build()
             try {
+                val completed = CountDownLatch(1)
+                val requestFailure = AtomicReference<String?>()
+                val trackedRequest = AtomicReference<DataRequest?>()
+                DataBus.addRootAuditor(
+                    project,
+                    object : DataAuditor {
+                        override fun error(context: DataRequest.Context, error: ErrorInfo) {
+                            if (context.request === trackedRequest.get()) {
+                                requestFailure.set(error.toString())
+                            }
+                        }
+
+                        override fun requestFinished(context: DataRequest.Context) {
+                            if (context.request === trackedRequest.get()) {
+                                completed.countDown()
+                            }
+                        }
+                    },
+                    testRootDisposable,
+                )
+
                 val request = object : DataRequest.QueryRequest(
                     console,
                     sql,
                     DataRequest.newConstraints(),
                     parameterizedData,
                 ) {}
+                trackedRequest.set(request)
                 console.messageBus.dataProducer.processRequest(request)
-                request.promise.blockingGet(30_000)
+                assertTrue(
+                    "parameterized QueryRequest must complete through the Database Tools request pipeline",
+                    completed.await(30, TimeUnit.SECONDS),
+                )
+                assertNull(
+                    "parameterized QueryRequest must not report a Database Tools execution error",
+                    requestFailure.get(),
+                )
+                PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
 
                 val persisted = executeRaw(fixture.dataSource, "native-query-request-readback") { connection ->
                     withPrepared(
@@ -361,7 +394,8 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 println(
                     "ZMYBATIS_P3_NATIVE_RESULT " +
                         "queryRequest=true parameterizedStatementData=true " +
-                        "bindingCount=2 requestCompleted=true databaseSideEffect=true",
+                        "bindingCount=2 requestFinished=true databaseSideEffect=true " +
+                        "nativeResultPipeline=true",
                 )
             } finally {
                 Disposer.dispose(console)
