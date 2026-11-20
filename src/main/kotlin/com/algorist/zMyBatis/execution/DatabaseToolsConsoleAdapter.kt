@@ -363,12 +363,14 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             null
         }
 
-    private fun mapperDisplayName(resourceKey: String): String =
-        resourceKey
+    private fun mapperDisplayName(resourceKey: String): String {
+        val mapperName = resourceKey
             .removePrefix("vfs:")
             .substringAfterLast('/')
             .substringAfterLast('\\')
-            .ifBlank { "zMyBatis.sql" }
+            .ifBlank { "Mapper.sql" }
+        return "$mapperName - zMyBatis"
+    }
 
     private fun nextConsoleName(
         baseName: String,

@@ -49,6 +49,7 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         assertTrue(adapter.contains(".useSession(requestedSession)"))
         assertFalse(adapter.contains("session.attach(console)"))
         assertTrue(adapter.contains("nextConsoleName("))
+        assertTrue(adapter.contains("return \"$mapperName - zMyBatis\""))
         assertTrue(adapter.contains("cache.putEphemeral(ownershipKey, console, targetId)"))
         assertTrue(adapter.contains(".switchSchema("))
         assertTrue(adapter.contains("JdbcConsoleProvider.findScriptModelNoInject"))

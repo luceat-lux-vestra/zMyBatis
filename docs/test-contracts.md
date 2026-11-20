@@ -547,4 +547,6 @@ remain comparative observations, not latency SLAs.
 
 ### P5 legacy UX parity evidence
 
-P5 adds an explicit UX regression contract on top of functional parity. `DatabaseToolsConsoleAdapterBoundaryTest` pins existing-session/client discovery and forbids `JdbcConsole.newConsole`, editor-tab navigation, console focus stealing, zMyBatis console ownership, and duplicate branded console identities. Human smoke verifies the same packaged behavior in IDEA. UI improvements to parameter entry are allowed when they clarify state without changing input authority.
+P5 adds an explicit UX regression contract on top of functional parity. `DatabaseToolsConsoleAdapterBoundaryTest` pins existing-session/client discovery, prefers reuse over creation, forbids editor-tab navigation and console focus stealing, and requires any zMyBatis-created fallback console to retain the dynamic `<mapper filename> - zMyBatis` identity. Human smoke verifies the same packaged behavior in IDEA. UI improvements to parameter entry are allowed when they clarify state without changing input authority.
+
+The prepared-result presentation remains a P5 human-smoke blocker until IDEA 263 runtime characterization either proves a maintained typed bridge into the native Database Tools result grid or disproves that bridge strongly enough to justify a separate zMyBatis presentation surface. An opaque `QueryRequest` parameter slot alone is not sufficient evidence of impossibility.

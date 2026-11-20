@@ -180,6 +180,62 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
     }
 
     @Test
+    fun `263 characterizes native QueryRequest and parameterized statement surfaces`() {
+        fun methodSignatures(type: Class<*>): String =
+            (type.methods.toList() + type.declaredMethods.toList())
+                .distinctBy { method ->
+                    method.name +
+                        method.parameterTypes.joinToString { it.name } +
+                        method.returnType.name
+                }
+                .sortedBy { it.name }
+                .joinToString(";") { method ->
+                    method.name +
+                        method.parameterTypes.joinToString(prefix = "(", postfix = ")") { it.name } +
+                        ":" + method.returnType.name +
+                        ":" + Modifier.toString(method.modifiers)
+                }
+
+        val queryRequestType = DataRequest.QueryRequest::class.java
+        val constructors = queryRequestType.declaredConstructors.joinToString(";") { constructor ->
+            constructor.parameterTypes.joinToString(prefix = "(", postfix = ")") { it.name }
+        }
+        val fields = queryRequestType.declaredFields.joinToString(";") { field ->
+            field.name + ":" + field.type.name + ":" + field.genericType.typeName
+        }
+        val nested = DataRequest::class.java.declaredClasses
+            .map { type -> type.name }
+            .sorted()
+            .joinToString(",")
+
+        val poweredBy = SmartStatementFactoryService::class.java.methods.single { method ->
+            method.name == "poweredBy" &&
+                method.parameterTypes.contentEquals(arrayOf(DatabaseConnectionCore::class.java))
+        }
+        val factoryType = poweredBy.returnType
+        val parameterizedMethod = factoryType.methods.single { method ->
+            method.name == "parameterized" && method.parameterCount == 0
+        }
+        val parameterizedType = parameterizedMethod.returnType
+
+        assertTrue("QueryRequest constructors must remain observable", constructors.isNotBlank())
+        assertTrue(
+            "Database Tools parameterized statement surface must expose execution methods",
+            parameterizedType.methods.any { method -> method.name == "execute" },
+        )
+
+        println(
+            "ZMYBATIS_P3_API nativePreparedResult " +
+                "queryRequestConstructors={$constructors} " +
+                "queryRequestFields={$fields} " +
+                "queryRequestMethods={${methodSignatures(queryRequestType)}} " +
+                "dataRequestNested={$nested} " +
+                "parameterizedType=${parameterizedType.name} " +
+                "parameterizedMethods={${methodSignatures(parameterizedType)}}",
+        )
+    }
+
+    @Test
     fun `263 characterizes console session attach surface`() {
         fun signature(type: Class<*>): String =
             (type.methods.toList() + type.declaredMethods.toList())

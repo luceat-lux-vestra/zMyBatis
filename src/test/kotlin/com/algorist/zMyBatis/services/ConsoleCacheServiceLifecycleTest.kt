@@ -406,7 +406,7 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
             "no-candidate flow must create a usable Database Tools console"
         }
         assertTrue(createdConsole.isValid)
-        assertEquals("MissingMapper.xml", createdConsole.file.virtualFile?.name)
+        assertEquals("MissingMapper.xml - zMyBatis", createdConsole.file.virtualFile?.name)
         val sessionCandidates = DatabaseSessionManager.getSessions(project, sessionDataSource)
         val attachedSessions = sessionCandidates.filter { session ->
             session.clients.any { client -> client === createdConsole }
