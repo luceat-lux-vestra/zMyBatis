@@ -411,7 +411,7 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         val expectedClients = expectedSession.clients.toList()
         val sessionCandidates = DatabaseSessionManager.getSessions(project, sessionDataSource)
         println(
-            "ZMYBATIS_P5_SESSION_ATTACH " +
+            "ZMYBATIS_RESOURCE_LIFECYCLE phase=session-attach-debug " +
                 "expectedSession=${System.identityHashCode(expectedSession)} " +
                 "consoleSession=${System.identityHashCode(createdConsole.session)} " +
                 "sameSession=${createdConsole.session === expectedSession} " +
