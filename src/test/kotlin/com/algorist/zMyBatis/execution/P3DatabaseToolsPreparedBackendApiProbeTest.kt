@@ -235,6 +235,21 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
             Modifier.isPublic(useSession!!.modifiers),
         )
 
+        val attach = sessionType.methods.singleOrNull { method ->
+            method.name == "attach" &&
+                method.parameterCount == 1 &&
+                method.parameterTypes.single().name ==
+                    "com.intellij.database.console.client.DatabaseSessionClient"
+        }
+        assertNotNull(
+            "IDEA 263 must expose DatabaseSession.attach(DatabaseSessionClient) so a mapper-created console becomes a real session client",
+            attach,
+        )
+        assertTrue(
+            "DatabaseSession.attach(DatabaseSessionClient) must remain public",
+            Modifier.isPublic(attach!!.modifiers),
+        )
+
         println("ZMYBATIS_P3_API consoleSession=$classes")
     }
 
