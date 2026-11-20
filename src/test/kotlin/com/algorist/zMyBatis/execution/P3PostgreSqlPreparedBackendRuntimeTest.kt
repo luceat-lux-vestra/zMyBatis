@@ -409,8 +409,8 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
     fun testNativePreparedResultRequestApiSurface() {
         val classNames = listOf(
             "com.intellij.database.run.ConsoleDataRequest",
-            "com.intellij.database.datagrid.DataRequest\\$RawQueryRequest",
-            "com.intellij.database.datagrid.DataRequest\\$IsolatedQueryRequest",
+            "com.intellij.database.datagrid.DataRequest\$RawQueryRequest",
+            "com.intellij.database.datagrid.DataRequest\$IsolatedQueryRequest",
         )
         val surfaces = classNames.map { className ->
             val type = Class.forName(className)
