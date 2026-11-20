@@ -267,7 +267,13 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             executeRaw(fixture.dataSource, "native-query-request-setup") { connection ->
                 withPrepared(
                     connection,
-                    "CREATE TEMP TABLE zmybatis_native_query_request_probe(" +
+                    "DROP TABLE IF EXISTS zmybatis_native_query_request_probe",
+                ) { statement ->
+                    statement.execute()
+                }
+                withPrepared(
+                    connection,
+                    "CREATE TABLE zmybatis_native_query_request_probe(" +
                         "id BIGINT PRIMARY KEY, label VARCHAR(64))",
                 ) { statement ->
                     statement.execute()
@@ -361,6 +367,16 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 Disposer.dispose(console)
             }
         } finally {
+            runCatching {
+                executeRaw(fixture.dataSource, "native-query-request-cleanup") { connection ->
+                    withPrepared(
+                        connection,
+                        "DROP TABLE IF EXISTS zmybatis_native_query_request_probe",
+                    ) { statement ->
+                        statement.execute()
+                    }
+                }
+            }
             fixture.dispose()
         }
     }
