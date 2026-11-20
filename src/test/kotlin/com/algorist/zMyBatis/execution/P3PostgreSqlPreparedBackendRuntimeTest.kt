@@ -296,7 +296,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             val statementParameters = StatementParameters()
             statementParameters.placeholdersOffsets(placeholderOffsets)
             statementParameters.parameters(
-                listOf(
+                mutableListOf(
                     ColumnQueryData(
                         DataConsumer.Column(
                             0,
