@@ -408,9 +408,21 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         }
         assertTrue(createdConsole.isValid)
         assertEquals("MissingMapper.xml", createdConsole.file.virtualFile?.name)
+        val expectedClients = expectedSession.clientsWithFile.toList()
+        val sessionCandidates = DatabaseSessionManager.getSessions(project, sessionDataSource)
+        val sessionDiagnostics = sessionCandidates.joinToString("; ") { session ->
+            "sessionIdentity=${System.identityHashCode(session)} clients=" +
+                session.clientsWithFile.joinToString { client ->
+                    "${client.javaClass.simpleName}@${System.identityHashCode(client)}"
+                }
+        }
         assertTrue(
-            "created console must be a client of the Database Tools-selected datasource session",
-            expectedSession.clientsWithFile.any { client -> client === createdConsole },
+            "created console must be a client of the Database Tools-selected datasource session; " +
+                "expectedSession=${System.identityHashCode(expectedSession)} " +
+                "createdConsole=${System.identityHashCode(createdConsole)} " +
+                "expectedClients=${expectedClients.map { System.identityHashCode(it) }} " +
+                "sessionCandidates=[$sessionDiagnostics]",
+            expectedClients.any { client -> client === createdConsole },
         )
         val attachedSessions = DatabaseSessionManager.getSessions(project, sessionDataSource)
             .filter { session ->
