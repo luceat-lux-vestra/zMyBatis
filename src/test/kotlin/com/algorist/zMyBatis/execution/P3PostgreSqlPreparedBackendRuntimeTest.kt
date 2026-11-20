@@ -343,7 +343,20 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                     object : DataAuditor {
                         override fun error(context: DataRequest.Context, error: ErrorInfo) {
                             if (context.request === trackedRequest.get()) {
-                                requestFailure.set(error.toString())
+                                val original = error.originalThrowable
+                                requestFailure.set(
+                                    buildString {
+                                        append(error.javaClass.name)
+                                        append(": ")
+                                        append(error.message)
+                                        if (original != null) {
+                                            append(" | original=")
+                                            append(original.javaClass.name)
+                                            append(": ")
+                                            append(original.message)
+                                        }
+                                    },
+                                )
                             }
                         }
 
