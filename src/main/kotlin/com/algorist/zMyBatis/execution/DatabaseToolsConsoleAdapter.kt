@@ -356,10 +356,17 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 .useSession(session)
                 .forFile(LightVirtualFile(consoleName, sqlFileType, ""))
                 .build()
-            if (session.clients.none { client -> client === console }) {
-                session.attach(console)
+            try {
+                if (session.clients.none { client -> client === console }) {
+                    session.attach(console)
+                }
+                console
+            } catch (failure: Throwable) {
+                if (console.isValid) {
+                    Disposer.dispose(console)
+                }
+                throw failure
             }
-            console
         } catch (ex: ProcessCanceledException) {
             throw ex
         } catch (ex: Exception) {
