@@ -406,52 +406,6 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         }
     }
 
-    fun testNativePreparedResultRequestApiSurface() {
-        val classNames = listOf(
-            "com.intellij.database.run.ConsoleDataRequest",
-            "com.intellij.database.datagrid.DataRequest\$RawQueryRequest",
-            "com.intellij.database.datagrid.DataRequest\$IsolatedQueryRequest",
-        )
-        val surfaces = classNames.map { className ->
-            val type = Class.forName(className)
-            val constructors = type.declaredConstructors
-                .sortedBy { constructor -> constructor.parameterTypes.joinToString(",") { it.name } }
-                .joinToString(";") { constructor ->
-                    java.lang.reflect.Modifier.toString(constructor.modifiers) +
-                        "(" + constructor.parameterTypes.joinToString(",") { it.name } + ")"
-                }
-                .ifEmpty { "none" }
-            val fields = type.declaredFields
-                .sortedBy { field -> field.name }
-                .joinToString(";") { field ->
-                    field.name + ":" + field.type.name + ":" +
-                        java.lang.reflect.Modifier.toString(field.modifiers)
-                }
-                .ifEmpty { "none" }
-            val methods = type.methods
-                .filter { method ->
-                    val name = method.name.lowercase()
-                    name.contains("param") ||
-                        name.contains("query") ||
-                        name.contains("request") ||
-                        name.contains("statement") ||
-                        name.contains("console") ||
-                        name.contains("finish")
-                }
-                .sortedBy { method -> method.name + method.parameterTypes.joinToString { it.name } }
-                .joinToString(";") { method ->
-                    method.name + "(" + method.parameterTypes.joinToString(",") { it.name } +
-                        "):" + method.returnType.name
-                }
-                .ifEmpty { "none" }
-
-            type.name + "|super=" + (type.superclass?.name ?: "<none>") +
-                "|constructors={" + constructors + "}|fields={" + fields + "}|methods={" + methods + "}"
-        }
-
-        println("ZMYBATIS_P3_NATIVE_REQUEST_API " + surfaces.joinToString(" || "))
-    }
-
     fun testProductionDatabaseSessionPreparedBackendThroughDatabaseToolsOwnedSession() {
         val fixture = registerPostgreSqlDataSource()
         try {
