@@ -53,6 +53,9 @@ import com.intellij.database.psi.DbDataSource
 import com.intellij.database.psi.DbPsiFacade
 import com.intellij.database.util.DbImplUtil
 import com.intellij.database.dataSource.url.template.UrlTemplate
+import com.intellij.database.dataSource.connection.statements.StatementParameters
+import com.intellij.database.datagrid.DataConsumer
+import com.intellij.database.datagrid.mutating.ColumnQueryData
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.LightVirtualFile
@@ -253,6 +256,110 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                     "cancelled=${cancellation.interrupted} " +
                     "cancelElapsedMs=${cancellation.elapsedMillis}",
             )
+        } finally {
+            fixture.dispose()
+        }
+    }
+
+    fun testNativeParameterizedQueryRequestThroughDatabaseToolsResultPipeline() {
+        val fixture = registerPostgreSqlDataSource()
+        try {
+            executeRaw(fixture.dataSource, "native-query-request-setup") { connection ->
+                withPrepared(
+                    connection,
+                    "CREATE TEMP TABLE zmybatis_native_query_request_probe(" +
+                        "id BIGINT PRIMARY KEY, label VARCHAR(64))",
+                ) { statement ->
+                    statement.execute()
+                }
+            }
+
+            val sql = """
+                WITH inserted AS (
+                  INSERT INTO zmybatis_native_query_request_probe(id, label)
+                  VALUES (?::BIGINT, ?::VARCHAR)
+                  RETURNING id, label
+                )
+                SELECT id, label FROM inserted
+            """.trimIndent()
+            val placeholderOffsets = sql.indices.filter { index -> sql[index] == '?' }.toIntArray()
+            check(placeholderOffsets.size == 2) {
+                "native QueryRequest fixture must contain exactly two JDBC placeholders"
+            }
+
+            val statementParameters = StatementParameters()
+            statementParameters.placeholdersOffsets(placeholderOffsets)
+            statementParameters.parameters(
+                listOf(
+                    ColumnQueryData(
+                        DataConsumer.Column(
+                            0,
+                            "id",
+                            Types.BIGINT,
+                            "BIGINT",
+                            Long::class.java.name,
+                        ),
+                        73L,
+                    ),
+                    ColumnQueryData(
+                        DataConsumer.Column(
+                            1,
+                            "label",
+                            Types.VARCHAR,
+                            "VARCHAR",
+                            String::class.java.name,
+                        ),
+                        "native-grid-proof",
+                    ),
+                ),
+            )
+            val parameterizedData = statementParameters.asData(sql)
+
+            val console = JdbcConsole.newConsole(project)
+                .fromDataSource(fixture.dataSource)
+                .forFile(
+                    LightVirtualFile(
+                        "p3-native-parameterized-query-request.sql",
+                        FileTypeManager.getInstance().getFileTypeByExtension("sql"),
+                        "",
+                    ),
+                )
+                .build()
+            try {
+                val request = object : DataRequest.QueryRequest(
+                    console,
+                    sql,
+                    DataRequest.newConstraints(),
+                    parameterizedData,
+                ) {}
+                console.messageBus.dataProducer.processRequest(request)
+                request.promise.blockingGet(30_000)
+
+                val persisted = executeRaw(fixture.dataSource, "native-query-request-readback") { connection ->
+                    withPrepared(
+                        connection,
+                        "SELECT id, label FROM zmybatis_native_query_request_probe WHERE id = 73",
+                    ) { statement ->
+                        statement.execute()
+                        withResultSet(statement) { result ->
+                            check(result.next()) {
+                                "parameterized QueryRequest must perform its data-modifying CTE"
+                            }
+                            result.getString(1) to result.getString(2)
+                        }
+                    }
+                }
+                assertEquals("73", persisted.first)
+                assertEquals("native-grid-proof", persisted.second)
+
+                println(
+                    "ZMYBATIS_P3_NATIVE_RESULT " +
+                        "queryRequest=true parameterizedStatementData=true " +
+                        "bindingCount=2 requestCompleted=true databaseSideEffect=true",
+                )
+            } finally {
+                Disposer.dispose(console)
+            }
         } finally {
             fixture.dispose()
         }
