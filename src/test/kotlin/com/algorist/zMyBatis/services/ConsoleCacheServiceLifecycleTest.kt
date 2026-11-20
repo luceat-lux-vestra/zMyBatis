@@ -410,6 +410,16 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         assertEquals("MissingMapper.xml", createdConsole.file.virtualFile?.name)
         val expectedClients = expectedSession.clients.toList()
         val sessionCandidates = DatabaseSessionManager.getSessions(project, sessionDataSource)
+        println(
+            "ZMYBATIS_P5_SESSION_ATTACH " +
+                "expectedSession=${System.identityHashCode(expectedSession)} " +
+                "consoleSession=${System.identityHashCode(createdConsole.session)} " +
+                "sameSession=${createdConsole.session === expectedSession} " +
+                "console=${System.identityHashCode(createdConsole)} " +
+                "clientCount=${expectedClients.size} " +
+                "clientIdentities=${expectedClients.map { System.identityHashCode(it) }} " +
+                "edt=${com.intellij.openapi.application.ApplicationManager.getApplication().isDispatchThread}"
+        )
         val sessionDiagnostics = sessionCandidates.joinToString("; ") { session ->
             "sessionIdentity=${System.identityHashCode(session)} clients=" +
                 session.clients.joinToString { client ->
