@@ -265,7 +265,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         }
     }
 
-    fun testNativeParameterizedQueryRequestThroughDatabaseToolsResultPipeline() {
+    fun testQueryRequestOpaqueParamsDoNotBridgeParameterizedStatementDataToNativeBinding() {
         val fixture = registerPostgreSqlDataSource()
         try {
             // Keep the native-result probe free of table/column references. The previous CTE fixture
@@ -372,27 +372,31 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
 
                 val executionError = requestFailure.get()
                 println(
-                    "ZMYBATIS_P3_NATIVE_RESULT_DIAGNOSTIC " +
+                    "ZMYBATIS_P3_QUERYREQUEST_PARAMS_DIAGNOSTIC " +
                         "requestFinished=true " +
                         "fetchStarted=${fetchStarted.get()} " +
                         "error=${executionError ?: "<none>"}",
                 )
 
-                assertNull(
-                    "reference-free parameterized QueryRequest must execute without a Database Tools error; " +
-                        "actual=$executionError",
+                assertFalse(
+                    "opaque QueryRequest params must not be mistaken for a maintained prepared-binding bridge",
+                    fetchStarted.get(),
+                )
+                assertNotNull(
+                    "unbound PostgreSQL placeholders must fail when ParameterizedStatementData is supplied " +
+                        "only through QueryRequest.params",
                     executionError,
                 )
                 assertTrue(
-                    "reference-free parameterized QueryRequest must produce a result set",
-                    fetchStarted.get(),
+                    "negative control must reach PostgreSQL as an unbound query; actual=$executionError",
+                    executionError!!.contains("[42601]") && executionError.contains("syntax error"),
                 )
 
                 println(
-                    "ZMYBATIS_P3_NATIVE_RESULT " +
-                        "queryRequest=true parameterizedStatementData=true " +
-                        "bindingCount=2 requestFinished=true fetchStarted=true " +
-                        "nativeResultPipeline=true",
+                    "ZMYBATIS_P3_QUERYREQUEST_PARAMS_NEGATIVE " +
+                        "queryRequestAccepted=true parameterizedStatementData=true " +
+                        "bindingCount=2 requestFinished=true fetchStarted=false " +
+                        "nativeBinding=false sqlState=42601",
                 )
             } finally {
                 Disposer.dispose(console)
@@ -400,6 +404,52 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
         } finally {
             fixture.dispose()
         }
+    }
+
+    fun testNativePreparedResultRequestApiSurface() {
+        val classNames = listOf(
+            "com.intellij.database.run.ConsoleDataRequest",
+            "com.intellij.database.datagrid.DataRequest\\$RawQueryRequest",
+            "com.intellij.database.datagrid.DataRequest\\$IsolatedQueryRequest",
+        )
+        val surfaces = classNames.map { className ->
+            val type = Class.forName(className)
+            val constructors = type.declaredConstructors
+                .sortedBy { constructor -> constructor.parameterTypes.joinToString(",") { it.name } }
+                .joinToString(";") { constructor ->
+                    java.lang.reflect.Modifier.toString(constructor.modifiers) +
+                        "(" + constructor.parameterTypes.joinToString(",") { it.name } + ")"
+                }
+                .ifEmpty { "none" }
+            val fields = type.declaredFields
+                .sortedBy { field -> field.name }
+                .joinToString(";") { field ->
+                    field.name + ":" + field.type.name + ":" +
+                        java.lang.reflect.Modifier.toString(field.modifiers)
+                }
+                .ifEmpty { "none" }
+            val methods = type.methods
+                .filter { method ->
+                    val name = method.name.lowercase()
+                    name.contains("param") ||
+                        name.contains("query") ||
+                        name.contains("request") ||
+                        name.contains("statement") ||
+                        name.contains("console") ||
+                        name.contains("finish")
+                }
+                .sortedBy { method -> method.name + method.parameterTypes.joinToString { it.name } }
+                .joinToString(";") { method ->
+                    method.name + "(" + method.parameterTypes.joinToString(",") { it.name } +
+                        "):" + method.returnType.name
+                }
+                .ifEmpty { "none" }
+
+            type.name + "|super=" + (type.superclass?.name ?: "<none>") +
+                "|constructors={" + constructors + "}|fields={" + fields + "}|methods={" + methods + "}"
+        }
+
+        println("ZMYBATIS_P3_NATIVE_REQUEST_API " + surfaces.joinToString(" || "))
     }
 
     fun testProductionDatabaseSessionPreparedBackendThroughDatabaseToolsOwnedSession() {
