@@ -440,6 +440,12 @@ class ConsoleCacheServiceLifecycleTest : BasePlatformTestCase() {
         )
         assertTrue("terminal completion must release the source lease", ConsoleCacheService.getInstance(project).beginReuseLease(key))
         ConsoleCacheService.getInstance(project).endReuseLease(key)
+
+        Disposer.dispose(createdConsole)
+        assertFalse(
+            "disposing a zMyBatis-created console must detach it from the Database Tools session",
+            expectedSession.clientsWithFile.any { client -> client === createdConsole },
+        )
     }
 
     fun testAdapterRequiresChooserContextWhenMultipleExistingConsolesRemainAmbiguous() {
