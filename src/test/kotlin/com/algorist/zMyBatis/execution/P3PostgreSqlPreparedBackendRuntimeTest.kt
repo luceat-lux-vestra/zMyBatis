@@ -368,8 +368,11 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                     "parameterized QueryRequest must complete through the Database Tools request pipeline",
                     completed.await(30, TimeUnit.SECONDS),
                 )
-                PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
 
+                // requestFinished is the Database Tools engine-completion authority. Do not flush
+                // the EDT here: the headless 263 fixture records ResultSetPrinter/SQL-PSI soft
+                // read-access assertions as async ERRORs, and flushing the queue rethrows them
+                // before we can independently verify whether PostgreSQL execution itself happened.
                 val persisted = executeRaw(fixture.dataSource, "native-query-request-readback") { connection ->
                     withPrepared(
                         connection,
