@@ -218,7 +218,7 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
 
             assertNull(failure)
             assertNotNull("no-candidate flow must create a console", created)
-            assertEquals("NoConsoleMapper.xml", created!!.file.virtualFile?.name)
+            assertEquals("NoConsoleMapper.xml - zMyBatis", created!!.file.virtualFile?.name)
             assertTrue(cache.beginReuseLease(missingKey))
             cache.endReuseLease(missingKey)
             if (created!!.isValid) {

@@ -107,7 +107,7 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
     }
 
     @Test
-    fun `263 still has no typed QueryRequest binding port for native result UX`() {
+    fun `263 QueryRequest binding slot remains erased and requires runtime characterization`() {
         val processRaw = DataRequest.RawRequest::class.java.declaredMethods
             .singleOrNull { method ->
                 method.name == "processRaw" &&
@@ -122,8 +122,8 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
         val constructors = DataRequest.QueryRequest::class.java.declaredConstructors.toList()
         assertTrue("QueryRequest constructors must remain observable", constructors.isNotEmpty())
         assertTrue(
-            "IDEA 263 still exposes the query parameter slot only as opaque Object; " +
-                "if this fails, reopen the native prepared-result bridge investigation. " +
+            "IDEA 263 exposes the query parameter slot as erased Object; " +
+                "this assertion characterizes the binary signature and does not prove the accepted runtime payload type. " +
                 "Observed: " + constructors.joinToString { constructor ->
                     constructor.parameterTypes.joinToString(
                         prefix = "(",
@@ -233,6 +233,77 @@ class P3DatabaseToolsPreparedBackendApiProbeTest {
                 "parameterizedType=${parameterizedType.name} " +
                 "parameterizedMethods={${methodSignatures(parameterizedType)}}",
         )
+    }
+
+    @Test
+    fun `263 characterizes prepared native result payload types`() {
+        fun describe(className: String): String =
+            runCatching {
+                val type = Class.forName(className)
+                val constructors = type.declaredConstructors
+                    .sortedBy { it.parameterCount }
+                    .joinToString(";") { constructor ->
+                        Modifier.toString(constructor.modifiers) +
+                            constructor.parameters.joinToString(prefix = "(", postfix = ")") { parameter ->
+                                parameter.name + ":" +
+                                    parameter.type.name + ":" +
+                                    parameter.parameterizedType.typeName
+                            }
+                    }
+                val fields = type.declaredFields
+                    .sortedBy { it.name }
+                    .joinToString(";") { field ->
+                        Modifier.toString(field.modifiers) + ":" +
+                            field.name + ":" +
+                            field.type.name + ":" +
+                            field.genericType.typeName
+                    }
+                val methods = (type.methods.toList() + type.declaredMethods.toList())
+                    .distinctBy { method ->
+                        method.name +
+                            method.parameterTypes.joinToString { it.name } +
+                            method.returnType.name
+                    }
+                    .sortedWith(compareBy({ it.name }, { it.parameterCount }))
+                    .joinToString(";") { method ->
+                        Modifier.toString(method.modifiers) + ":" +
+                            method.name +
+                            method.parameters.joinToString(prefix = "(", postfix = ")") { parameter ->
+                                parameter.name + ":" +
+                                    parameter.type.name + ":" +
+                                    parameter.parameterizedType.typeName
+                            } +
+                            ":" + method.returnType.name +
+                            ":" + method.genericReturnType.typeName
+                    }
+                className +
+                    "{modifiers=" + Modifier.toString(type.modifiers) +
+                    ",super=" + (type.superclass?.name ?: "<none>") +
+                    ",interfaces=" + type.interfaces.joinToString(",") { it.name } +
+                    ",constructors=" + constructors +
+                    ",fields=" + fields +
+                    ",methods=" + methods + "}"
+            }.getOrElse { failure ->
+                className + "=<absent:" + failure.javaClass.name + ">"
+            }
+
+        val classes = listOf(
+            "com.intellij.database.dataSource.connection.statements.ParameterizedStatementData",
+            "com.intellij.database.dataSource.connection.statements.ParameterizedStatementBasis",
+            "com.intellij.database.dataSource.connection.statements.ParameterizedStatementDecoration",
+            "com.intellij.database.dataSource.connection.statements.ExecutionMode",
+            "com.intellij.database.dataSource.connection.statements.ExecutionResult",
+            "com.intellij.database.dataSource.connection.statements.ResultsProducer",
+            "com.intellij.database.dataSource.connection.statements.ResultsProducer\$Processor",
+            "com.intellij.database.dataSource.connection.statements.ResultsProducer\$VoidReadyProcessor",
+            "com.intellij.database.datagrid.DataRequest\$RawQueryRequest",
+            "com.intellij.database.datagrid.DataRequest\$IsolatedQueryRequest",
+            "com.intellij.database.datagrid.DataRequest\$Visitor",
+            "com.intellij.database.datagrid.DataRequest\$Context",
+        )
+
+        val descriptions = classes.joinToString("|") { className -> describe(className) }
+        println("ZMYBATIS_P3_API nativePreparedPayload " + descriptions)
     }
 
     @Test
