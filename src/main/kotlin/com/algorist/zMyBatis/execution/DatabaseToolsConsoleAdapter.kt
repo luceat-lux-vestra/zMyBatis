@@ -351,11 +351,15 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 existing = existing,
             )
             val session = DatabaseSessionManager.getSession(project, dataSource)
-            JdbcConsole.newConsole(project)
+            val console = JdbcConsole.newConsole(project)
                 .fromDataSource(dataSource)
                 .useSession(session)
                 .forFile(LightVirtualFile(consoleName, sqlFileType, ""))
                 .build()
+            if (session.clients.none { client -> client === console }) {
+                session.attach(console)
+            }
+            console
         } catch (ex: ProcessCanceledException) {
             throw ex
         } catch (ex: Exception) {
