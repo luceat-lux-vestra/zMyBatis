@@ -266,6 +266,132 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     @Test
+    fun registeredActionReusesPersistedTargetAcrossLargeCrossDocumentMapperProject(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-postgresql-large-mapper-project"))
+        val generatedMapperCount = writeLargeCrossDocumentMapperProject(projectDir)
+        assertEquals(
+            258,
+            generatedMapperCount,
+            "large-project regression fixture must keep its bounded mapper scale stable",
+        )
+        println(
+            "ZMYBATIS_E2E_REAL_PROJECT_SCALE generated_mapper_xml_count=$generatedMapperCount " +
+                "noise_mapper_count=256 cross_document_include=true",
+        )
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-postgresql-large-mapper-persisted-target", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("LargeProjectMapper.xml")
+                ui.codeEditorForFile("LargeProjectMapper.xml").clickOnPosition(3, 40)
+                val zeroStartedAt = System.nanoTime()
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("large-project zero-binding datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("large-project explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                waitFor(
+                    message = "large-project zero-binding native result becomes visible",
+                    timeout = 2.minutes,
+                ) {
+                    try {
+                        ui.accessibleTable {
+                            byType("com.intellij.database.run.ui.table.TableResultView")
+                        }.content().values.any { row ->
+                            row.values.any { cell -> cell.trim() == "7007" }
+                        }
+                    } catch (_: com.intellij.driver.sdk.WaitForException) {
+                        false
+                    }
+                }
+                println(
+                    "ZMYBATIS_E2E_REAL_PROJECT_SCALE phase=zero-binding-native-result " +
+                        "elapsed_ms=${(System.nanoTime() - zeroStartedAt) / 1_000_000}",
+                )
+                ui.waitForNoOpenedDialogs()
+
+                // Same source file: the first invocation persisted the exact datasource + public
+                // schema. The second invocation must not ask for the target again. It also carries
+                // a cross-document include, forcing the registered action through the real
+                // project-expansion/source-selection path before the parameter dialog can appear.
+                ui.codeEditorForFile("LargeProjectMapper.xml").clickOnPosition(4, 40)
+                val boundStartedAt = System.nanoTime()
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor(
+                    message = "large-project bound parameter dialog or unexpected target chooser",
+                    timeout = 90.seconds,
+                ) {
+                    ui.isDialogOpened("//div[@title='Enter MyBatis Parameters']") ||
+                        ui.popups().list().isNotEmpty()
+                }
+                assertTrue(
+                    ui.isDialogOpened("//div[@title='Enter MyBatis Parameters']"),
+                    "persisted target plus large mapper expansion must reach the parameter dialog",
+                )
+                assertTrue(
+                    ui.popups().list().isEmpty(),
+                    "persisted target must bypass datasource/schema chooser on the second invocation",
+                )
+                println(
+                    "ZMYBATIS_E2E_REAL_PROJECT_SCALE phase=bound-parameter-dialog " +
+                        "elapsed_ms=${(System.nanoTime() - boundStartedAt) / 1_000_000}",
+                )
+
+                ui.dialog(title = "Enter MyBatis Parameters") {
+                    textField().text = "41"
+                    button("OK").click()
+                }
+
+                waitFor(
+                    message = "large-project bound native result becomes visible",
+                    timeout = 2.minutes,
+                ) {
+                    try {
+                        ui.accessibleTable {
+                            byType("com.intellij.database.run.ui.table.TableResultView")
+                        }.content().values.any { row ->
+                            row.values.any { cell -> cell.trim() == "42" }
+                        }
+                    } catch (_: com.intellij.driver.sdk.WaitForException) {
+                        false
+                    }
+                }
+                assertFalse(
+                    ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
+                    "large-project bound execution must remain on the native Database Tools result path",
+                )
+                ui.waitForNoOpenedDialogs()
+            }
+    }
+
+    @Test
     fun registeredActionExecutesMultiBindingPlanThroughNativeResult(@TempDir tempDir: Path) {
         val projectDir = copySampleProject(tempDir.resolve("action-postgresql-prepared-project"))
         val mapper = """
@@ -1168,6 +1294,65 @@ class ZMyBatisStarterDriverE2ETest {
             }
             """.trimIndent(),
         )
+    }
+
+    private fun writeLargeCrossDocumentMapperProject(projectDir: Path): Int {
+        Files.writeString(
+            projectDir.resolve("LargeProjectMapper.xml"),
+            """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.LargeProjectMapper">
+            <select id="zeroBinding">SELECT <include refid="fixture.SharedFragments.zeroValue"/> AS RESULT_VALUE</select>
+            <select id="boundValue">SELECT #{value,jdbcType=BIGINT}::BIGINT + <include refid="fixture.SharedFragments.boundDelta"/> AS RESULT_VALUE</select>
+            </mapper>
+            """.trimIndent(),
+        )
+        Files.writeString(
+            projectDir.resolve("SharedFragments.xml"),
+            """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.SharedFragments">
+            <sql id="zeroValue">7007</sql>
+            <sql id="boundDelta">1</sql>
+            </mapper>
+            """.trimIndent(),
+        )
+
+        val packageDir = Files.createDirectories(projectDir.resolve("fixture"))
+        Files.writeString(
+            packageDir.resolve("LargeProjectMapper.java"),
+            """
+            package fixture;
+
+            public interface LargeProjectMapper {
+                Object zeroBinding();
+                Object boundValue(long value);
+            }
+            """.trimIndent(),
+        )
+
+        val inertPayload = "x".repeat(4 * 1024)
+        var mapperCount = 2
+        repeat(8) { moduleIndex ->
+            val mapperDir = Files.createDirectories(
+                projectDir.resolve("module-$moduleIndex/src/main/resources/mappers"),
+            )
+            repeat(32) { mapperIndex ->
+                val mapperName = "NoiseMapper%02d_%02d".format(moduleIndex, mapperIndex)
+                Files.writeString(
+                    mapperDir.resolve("$mapperName.xml"),
+                    """
+                    <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+                    <mapper namespace="fixture.noise.module$moduleIndex.$mapperName">
+                    <!-- $inertPayload -->
+                    <sql id="fragment">$mapperIndex</sql>
+                    </mapper>
+                    """.trimIndent(),
+                )
+                mapperCount += 1
+            }
+        }
+        return mapperCount
     }
 
     private fun writeMapperInterface(

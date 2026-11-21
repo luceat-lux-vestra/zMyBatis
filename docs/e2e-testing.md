@@ -62,6 +62,13 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
    - opens the mapper fixture in a fresh IDE process without any datasource;
    - invokes the real production action from the supported statement context;
    - requires the typed `zMyBatis: Execution Target Unavailable` refusal instead of preparation or execution.
+11. **Large multi-mapper / persisted-target registered-action regression**
+   - generates 256 inert mapper XML documents across eight module-shaped resource trees plus one root mapper and one shared-fragment mapper;
+   - uses qualified cross-document `<include>` references so the shipping action must traverse the real lazy project-expansion/source-selection boundary instead of the root-only fast path;
+   - runs the zero-binding statement with ordinary SQL Preview disabled, selects PostgreSQL + explicit `public`, and requires native result value `7007`;
+   - invokes a bound statement from the **same mapper file** so the exact persisted target must be reused with no datasource/schema chooser;
+   - requires the parameter dialog to become reachable under that real-project mapper load, submits `41`, and requires native Database Tools result value `42`;
+   - emits `ZMYBATIS_E2E_REAL_PROJECT_SCALE` observations for generated mapper count and visible-action phases. The bounded waits are liveness guards, not latency SLAs.
 
 No production method exists solely for this harness. The process database stack uses only pinned pgJDBC on the `integrationTestImplementation` graph; before IDE startup, the test copies that JAR into the isolated Starter config and records it as a local Driver Files library. Driver then creates and persists the datasource through maintained Database Tools UI, refreshes Database Tools, and selects explicit `public` through shipping UI. Connectivity is proven by the downstream packaged zMyBatis execution reaching native Database Tools result/history evidence rather than by the separate asynchronous Test Connection UI lifecycle. No H2-specific cold-datasource/introspection harness participates in #448 evidence.
 

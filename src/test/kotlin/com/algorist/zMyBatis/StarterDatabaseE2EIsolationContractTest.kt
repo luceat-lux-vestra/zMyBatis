@@ -128,6 +128,21 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("zMyBatis: Provider Not Supported"),
         )
         assertTrue(
+            "real-project regression must cover large cross-document mapper expansion plus persisted-target bound and zero-binding UX",
+            e2e.contains("registeredActionReusesPersistedTargetAcrossLargeCrossDocumentMapperProject") &&
+                e2e.contains("writeLargeCrossDocumentMapperProject(projectDir)") &&
+                e2e.contains("generated_mapper_xml_count=") &&
+                e2e.contains("noise_mapper_count=256") &&
+                e2e.contains("fixture.SharedFragments.zeroValue") &&
+                e2e.contains("fixture.SharedFragments.boundDelta") &&
+                e2e.contains("setSqlPreview(false)") &&
+                e2e.contains("persisted target must bypass datasource/schema chooser on the second invocation") &&
+                e2e.contains("persisted target plus large mapper expansion must reach the parameter dialog") &&
+                e2e.contains("large-project zero-binding native result becomes visible") &&
+                e2e.contains("large-project bound native result becomes visible"),
+        )
+
+        assertTrue(
             "bound PostgreSQL proof must materialize multiple bindings and land in the native Database Tools grid",
             e2e.contains("registeredActionExecutesMultiBindingPlanThroughNativeResult") &&
                 e2e.contains("executableSql.count { it == '?' }") &&
