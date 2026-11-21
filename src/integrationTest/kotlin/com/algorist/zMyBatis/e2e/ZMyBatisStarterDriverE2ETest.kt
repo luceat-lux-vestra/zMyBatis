@@ -89,6 +89,22 @@ interface TrialAvailabilityRemote {
     fun getValue(): Boolean?
 }
 
+@Remote("com.intellij.openapi.extensions.PluginId")
+interface PluginIdRemote {
+    fun getId(idString: String): PluginIdRemote
+}
+
+@Remote("com.intellij.ide.plugins.PluginDetailsService")
+interface PluginDetailsServiceRemote {
+    fun isLoaded(pluginId: PluginIdRemote): Boolean
+    fun findDetails(pluginId: PluginIdRemote): PluginDetailsRemote?
+}
+
+@Remote("com.intellij.ide.plugins.PluginDetailsService\$PluginDetails")
+interface PluginDetailsRemote {
+    fun getVersion(): String?
+}
+
 private class JTextAreaUi(data: ComponentData) : UiComponent(data) {
     var text: String
         get() = driver.cast(component, JTextComponentRemote::class).getText()
@@ -134,6 +150,15 @@ class ZMyBatisStarterDriverE2ETest {
                 ?.takeIf { it.isNotBlank() }
                 ?: System.getProperty("path.to.build.plugin"),
         ).toAbsolutePath()
+        private val expectedCandidateVersion: String =
+            System.getenv("ZMYBATIS_E2E_CANDIDATE_VERSION")
+                ?.takeIf { it.isNotBlank() }
+                ?: pluginArchive.fileName.toString()
+                    .takeIf { it.startsWith("zMyBatis-") && it.endsWith(".zip") }
+                    ?.removePrefix("zMyBatis-")
+                    ?.removeSuffix(".zip")
+                ?: error("Unable to derive the zMyBatis E2E candidate version")
+        private const val ZMYBATIS_PLUGIN_ID = "com.algorist.zMyBatis"
         private val sampleProject: Path = pathOf("src/integrationTest/testProject").toAbsolutePath()
         private val activationSeedLock = Any()
 
@@ -511,6 +536,176 @@ class ZMyBatisStarterDriverE2ETest {
                 assertFalse(
                     ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
                     "editor popup bound execution must remain on the native Database Tools result path",
+                )
+                ui.waitForNoOpenedDialogs()
+            }
+    }
+
+    @Test
+    fun restartedIdeReusesSameStarterConfigAndExactCandidateForPersistedExecution(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-restart-persisted-target-project"))
+        val firstZeroResult = 7401L
+        val reopenedZeroResult = 7402L
+        val boundInput = 41L
+        val boundDelta = 1L
+        writeRestartLifecycleMapperProject(
+            projectDir = projectDir,
+            firstZeroResult = firstZeroResult,
+            reopenedZeroResult = reopenedZeroResult,
+            boundDelta = boundDelta,
+        )
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-restart-persisted-target", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+        val configDir = context.paths.configDir
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+                assertLoadedZMyBatisCandidate()
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("RestartLifecycleMapper.xml")
+                invokeZMyBatisFromEditorPopup(
+                    fileName = "RestartLifecycleMapper.xml",
+                    statementMarker = "beforeRestart",
+                )
+
+                waitFor(
+                    message = "restart lifecycle first-launch target chooser or explicit zMyBatis refusal",
+                    timeout = 30.seconds,
+                ) {
+                    openZMyBatisExecutionFailureTitle() != null ||
+                        ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) }
+                }
+                assertNoZMyBatisExecutionFailure("restart lifecycle first-launch invocation")
+                assertTrue(
+                    ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) },
+                    "first launch must select the exact datasource/schema target",
+                )
+
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("restart lifecycle explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                waitFor(
+                    message = "restart lifecycle first-launch native result or explicit zMyBatis refusal",
+                    timeout = 2.minutes,
+                ) {
+                    nativeResultContains(firstZeroResult.toString()) ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("restart lifecycle first-launch delivery")
+                assertTrue(
+                    nativeResultContains(firstZeroResult.toString()),
+                    "first launch must complete through the native Database Tools result path",
+                )
+                ui.waitForNoOpenedDialogs()
+            }
+
+        assertTrue(
+            Files.isDirectory(configDir),
+            "Starter config must survive the first clean IDE shutdown for the reopen proof",
+        )
+        assertEquals(
+            configDir,
+            context.paths.configDir,
+            "the second launch must reuse the exact same Starter config directory",
+        )
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+                assertLoadedZMyBatisCandidate()
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                openFile("RestartLifecycleMapper.xml")
+                invokeZMyBatisFromEditorPopup(
+                    fileName = "RestartLifecycleMapper.xml",
+                    statementMarker = "afterRestart",
+                )
+
+                waitFor(
+                    message = "restart lifecycle reopened zero-binding result, unexpected chooser, or explicit refusal",
+                    timeout = 2.minutes,
+                ) {
+                    nativeResultContains(reopenedZeroResult.toString()) ||
+                        ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) } ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("restart lifecycle reopened zero-binding invocation")
+                assertFalse(
+                    ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) },
+                    "persisted target must survive close/reopen without asking for datasource/schema again",
+                )
+                assertTrue(
+                    nativeResultContains(reopenedZeroResult.toString()),
+                    "reopened zero-binding execution must produce a fresh native result",
+                )
+                ui.waitForNoOpenedDialogs()
+
+                invokeZMyBatisFromEditorPopup(
+                    fileName = "RestartLifecycleMapper.xml",
+                    statementMarker = "boundValue",
+                )
+
+                waitFor(
+                    message = "restart lifecycle reopened bound parameter dialog, unexpected chooser, or explicit refusal",
+                    timeout = 90.seconds,
+                ) {
+                    ui.isDialogOpened("//div[@title='$PARAMETER_DIALOG_TITLE']") ||
+                        ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) } ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("restart lifecycle reopened bound invocation")
+                assertTrue(
+                    ui.isDialogOpened("//div[@title='$PARAMETER_DIALOG_TITLE']"),
+                    "reopened bound execution must reach parameter input on the persisted target",
+                )
+                assertFalse(
+                    ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) },
+                    "reopened bound execution must not silently switch or reselect the persisted target",
+                )
+
+                setSingleParameterDialogTextWithTransportRecovery(boundInput.toString())
+                ui.dialog(title = PARAMETER_DIALOG_TITLE) {
+                    button("OK").click()
+                }
+
+                val expectedBoundResult = (boundInput + boundDelta).toString()
+                waitFor(
+                    message = "restart lifecycle reopened bound native result or explicit zMyBatis refusal",
+                    timeout = 2.minutes,
+                ) {
+                    nativeResultContains(expectedBoundResult) ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("restart lifecycle reopened bound delivery")
+                assertTrue(
+                    nativeResultContains(expectedBoundResult),
+                    "reopened bound execution must land in the native Database Tools result path",
+                )
+                assertFalse(
+                    ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
+                    "reopened bound execution must not regress to a zMyBatis-owned result modal",
                 )
                 ui.waitForNoOpenedDialogs()
             }
@@ -1328,6 +1523,25 @@ class ZMyBatisStarterDriverE2ETest {
         )
     }
 
+    private fun Driver.assertLoadedZMyBatisCandidate() {
+        val pluginId = utility(PluginIdRemote::class).getId(ZMYBATIS_PLUGIN_ID)
+        val detailsService = service(PluginDetailsServiceRemote::class)
+        assertTrue(
+            detailsService.isLoaded(pluginId),
+            "zMyBatis candidate must be loaded in the current IDE process",
+        )
+        val details = detailsService.findDetails(pluginId)
+        assertTrue(
+            details != null,
+            "PluginDetailsService must resolve the loaded zMyBatis candidate",
+        )
+        assertEquals(
+            expectedCandidateVersion,
+            details?.getVersion(),
+            "the current IDE process must load the exact validation candidate version",
+        )
+    }
+
     private fun Driver.invokeZMyBatisFromEditorPopup(
         fileName: String,
         statementMarker: String,
@@ -1528,6 +1742,39 @@ class ZMyBatisStarterDriverE2ETest {
             public interface JavaRawQueryMapper {
                 @Select(value = "SELECT $rawToken AS RESULT_VALUE")
                 Object ping(@Param(value = "value") String value);
+            }
+            """.trimIndent(),
+        )
+    }
+
+    private fun writeRestartLifecycleMapperProject(
+        projectDir: Path,
+        firstZeroResult: Long,
+        reopenedZeroResult: Long,
+        boundDelta: Long,
+    ) {
+        Files.writeString(
+            projectDir.resolve("RestartLifecycleMapper.xml"),
+            """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.RestartLifecycleMapper">
+            <select id="beforeRestart">SELECT $firstZeroResult AS RESULT_VALUE</select>
+            <select id="afterRestart">SELECT $reopenedZeroResult AS RESULT_VALUE</select>
+            <select id="boundValue">SELECT #{value,jdbcType=BIGINT}::BIGINT + $boundDelta AS RESULT_VALUE</select>
+            </mapper>
+            """.trimIndent(),
+        )
+
+        val packageDir = Files.createDirectories(projectDir.resolve("fixture"))
+        Files.writeString(
+            packageDir.resolve("RestartLifecycleMapper.java"),
+            """
+            package fixture;
+
+            public interface RestartLifecycleMapper {
+                Object beforeRestart();
+                Object afterRestart();
+                Object boundValue(long value);
             }
             """.trimIndent(),
         )

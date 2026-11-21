@@ -138,6 +138,62 @@ class StarterDatabaseE2EIsolationContractTest {
     }
 
     @Test
+    fun `IDEA restart reproducer must reuse one config and verify the loaded candidate before persisted execution`() {
+        val e2e = source(
+            "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
+        )
+        val scenarioStart = e2e.indexOf(
+            "fun restartedIdeReusesSameStarterConfigAndExactCandidateForPersistedExecution",
+        )
+        val scenarioEnd = e2e.indexOf("@Test", scenarioStart + 1)
+        assertTrue("restart lifecycle scenario must remain present", scenarioStart >= 0 && scenarioEnd > scenarioStart)
+        val scenario = e2e.substring(scenarioStart, scenarioEnd)
+
+        assertTrue(
+            "restart proof must create one Starter context and launch that same context twice",
+            scenario.split("starterContext(").size - 1 == 1 &&
+                scenario.split(".runIdeWithDriver()").size - 1 == 2,
+        )
+        assertTrue(
+            "both IDE processes must assert the exact loaded zMyBatis candidate",
+            scenario.split("assertLoadedZMyBatisCandidate()").size - 1 == 2,
+        )
+        assertTrue(
+            "restart proof must require target reuse instead of silently reselecting it",
+            scenario.contains("persisted target must survive close/reopen without asking for datasource/schema again") &&
+                scenario.contains("reopened bound execution must not silently switch or reselect the persisted target"),
+        )
+        assertTrue(
+            "restart proof must exercise fresh zero-binding and bound results after reopen",
+            scenario.contains("statementMarker = \"afterRestart\"") &&
+                scenario.contains("statementMarker = \"boundValue\"") &&
+                scenario.contains("setSingleParameterDialogTextWithTransportRecovery"),
+        )
+
+        val identityHelperStart = e2e.indexOf("private fun Driver.assertLoadedZMyBatisCandidate")
+        val identityHelperEnd = e2e.indexOf("private fun Driver.invokeZMyBatisFromEditorPopup", identityHelperStart)
+        assertTrue(
+            "runtime candidate identity helper must remain present",
+            identityHelperStart >= 0 && identityHelperEnd > identityHelperStart,
+        )
+        val identityHelper = e2e.substring(identityHelperStart, identityHelperEnd)
+        assertTrue(identityHelper.contains("PluginDetailsServiceRemote"))
+        assertTrue(identityHelper.contains("expectedCandidateVersion"))
+        assertFalse(
+            "runtime identity proof must use the maintained PluginDetailsService instead of internal PluginManagerCore",
+            identityHelper.contains("PluginManagerCore"),
+        )
+
+        val workflow = source(".github/workflows/e2e.yml")
+        assertTrue(
+            "IDEA workflow must pass the resolved candidate version into the IDE process identity proof",
+            workflow.contains(
+                "echo \"ZMYBATIS_E2E_CANDIDATE_VERSION=$candidate_version\" >> \"$GITHUB_ENV\"",
+            ),
+        )
+    }
+
+    @Test
     fun `process golden path must reuse one maintained PostgreSQL Database Tools stack`() {
         val e2e = source(
             "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",

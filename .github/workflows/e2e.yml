@@ -133,6 +133,7 @@ jobs:
           fi
 
           echo "ZMYBATIS_E2E_PLUGIN_ARCHIVE=$artifact" >> "$GITHUB_ENV"
+          echo "ZMYBATIS_E2E_CANDIDATE_VERSION=$candidate_version" >> "$GITHUB_ENV"
           {
             echo "tested_commit=$candidate_sha"
             echo "workflow_sha=$GITHUB_SHA"
