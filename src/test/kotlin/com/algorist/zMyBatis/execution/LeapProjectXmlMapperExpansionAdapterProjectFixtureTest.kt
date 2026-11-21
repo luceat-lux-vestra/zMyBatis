@@ -141,6 +141,34 @@ class LeapProjectXmlMapperExpansionAdapterProjectFixtureTest : BasePlatformTestC
             )
         }
 
+    fun testExpanderExceptionCompletesWithTypedFailureWithoutCancellation() =
+        withProductionStyleBackgroundTasks {
+            val evidence = rootEvidence()
+            val observed = CompletableFuture<LeapProjectXmlMapperExpansionTaskResult>()
+            val cancelled = AtomicBoolean(false)
+            val expander: LeapProjectXmlMapperExpander = { _, _, _ ->
+                throw IllegalStateException("fixture detail must not escape the worker boundary")
+            }
+
+            requestExpansion(
+                adapter = LeapProjectXmlMapperExpansionAdapter(project, expander),
+                evidence = evidence,
+                onResult = observed::complete,
+                onCancelled = { cancelled.set(true) },
+            )
+
+            val completed = PlatformTestUtil.waitForFuture(observed, FIXTURE_TIMEOUT_MILLIS)
+            assertTrue(completed is LeapProjectXmlMapperExpansionTaskResult.Failed)
+            assertEquals(
+                IllegalStateException::class.java.name,
+                (completed as LeapProjectXmlMapperExpansionTaskResult.Failed).diagnosticType,
+            )
+            assertFalse(
+                "ordinary project-expansion exception must not be classified as user cancellation",
+                cancelled.get(),
+            )
+        }
+
     fun testInvocationInvalidationRejectsDelayedExpansionCompletion() =
         withProductionStyleBackgroundTasks {
             val evidence = rootEvidence()

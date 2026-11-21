@@ -19,6 +19,10 @@ internal sealed interface LeapPreparationSourceSelectionTaskResult {
         val selection: LeapPreparationSourceSelectionResult,
     ) : LeapPreparationSourceSelectionTaskResult
 
+    data class Failed(
+        val diagnosticType: String,
+    ) : LeapPreparationSourceSelectionTaskResult
+
     data object InvocationInvalidated : LeapPreparationSourceSelectionTaskResult
 }
 
@@ -93,6 +97,20 @@ internal class LeapPreparationSourceSelectionAdapter(
                 } else {
                     onResult(LeapPreparationSourceSelectionTaskResult.InvocationInvalidated)
                 }
+            }
+
+            override fun onThrowable(error: Throwable) {
+                if (error !is Exception) {
+                    super.onThrowable(error)
+                    return
+                }
+                onResult(
+                    if (liveInvocation()) {
+                        LeapPreparationSourceSelectionTaskResult.Failed(error.javaClass.name)
+                    } else {
+                        LeapPreparationSourceSelectionTaskResult.InvocationInvalidated
+                    },
+                )
             }
         }.queue()
     }

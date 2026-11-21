@@ -527,6 +527,14 @@ internal sealed interface LeapActionContextAdmissionFailure {
     data object SourceSelectionCancelled : LeapActionContextAdmissionFailure
     data object ProjectXmlExpansionCancelled : LeapActionContextAdmissionFailure
 
+    data class SourceSelectionTaskFailed(
+        val diagnosticType: String,
+    ) : LeapActionContextAdmissionFailure
+
+    data class ProjectXmlExpansionTaskFailed(
+        val diagnosticType: String,
+    ) : LeapActionContextAdmissionFailure
+
     data class SourceInvalid(
         val failure: SourceGraphRevalidationFailure,
     ) : LeapActionContextAdmissionFailure
@@ -766,6 +774,12 @@ internal class LeapActionContextAdmissionCoordinator(
                             )
                         }
                     }
+                    is LeapPreparationSourceSelectionTaskResult.Failed ->
+                        onFailure(
+                            LeapActionContextAdmissionFailure.SourceSelectionTaskFailed(
+                                result.diagnosticType,
+                            ),
+                        )
                     LeapPreparationSourceSelectionTaskResult.InvocationInvalidated ->
                         onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
                 }
@@ -817,6 +831,12 @@ internal class LeapActionContextAdmissionCoordinator(
                                     ),
                                 )
                         }
+                    is LeapProjectXmlMapperExpansionTaskResult.Failed ->
+                        onFailure(
+                            LeapActionContextAdmissionFailure.ProjectXmlExpansionTaskFailed(
+                                result.diagnosticType,
+                            ),
+                        )
                     LeapProjectXmlMapperExpansionTaskResult.InvocationInvalidated ->
                         onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
                 }

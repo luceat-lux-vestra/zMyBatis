@@ -84,6 +84,10 @@ private fun leapActionFailureDiagnosticCode(
             "source-selection-cancelled"
         LeapActionContextAdmissionFailure.ProjectXmlExpansionCancelled ->
             "project-xml-expansion-cancelled"
+        is LeapActionContextAdmissionFailure.SourceSelectionTaskFailed ->
+            "source-selection-task-failed:" + failure.diagnosticType
+        is LeapActionContextAdmissionFailure.ProjectXmlExpansionTaskFailed ->
+            "project-xml-expansion-task-failed:" + failure.diagnosticType
         is LeapActionContextAdmissionFailure.SourceInvalid ->
             "source-invalid:" + failure.failure.javaClass.simpleName
         is LeapActionContextAdmissionFailure.TargetAdmissionFailed ->
@@ -203,6 +207,8 @@ private object LeapActionFailurePresenter {
 
             LeapActionContextAdmissionFailure.SourceSelectionCancelled,
             LeapActionContextAdmissionFailure.ProjectXmlExpansionCancelled,
+            is LeapActionContextAdmissionFailure.SourceSelectionTaskFailed,
+            is LeapActionContextAdmissionFailure.ProjectXmlExpansionTaskFailed,
             -> FailurePresentation(
                 title = "zMyBatis: Mapper Source Resolution Interrupted",
                 message = "Mapper source resolution stopped before execution. " +
