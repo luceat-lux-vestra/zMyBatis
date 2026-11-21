@@ -60,7 +60,7 @@
   <li><b>Configured compile/test SDK:</b> IntelliJ IDEA Ultimate 2026.3 (IU-263.7307.200); 2026.3 support requires exact-head evidence from issue #521.</li>
   <li><b>Configured Plugin Verifier targets:</b> IntelliJ IDEA Ultimate 2026.3 and DataGrip 2026.3, each requiring independent exact-HEAD verifier and process E2E evidence. 2026.2 is no longer supported; verifier success does not establish full GUI/runtime coverage.</li>
   <li>JetBrains Database Tools (<code>com.intellij.database</code>) and a configured datasource are required for execution.</li>
-  <li><b>Runtime host evidence:</b> IDEA Ultimate retains the full maintained PostgreSQL execution suite. DataGrip independently proves packaged-plugin/service loading, typed XML no-datasource refusal, and one bounded XML prepared-PostgreSQL route through the Database Tools session backend. DataGrip evidence does not imply Java-annotation parity or native Database Tools result/history parity.</li>
+  <li><b>Runtime host evidence:</b> IDEA Ultimate retains the full maintained PostgreSQL execution suite. DataGrip independently proves packaged-plugin/service loading, typed XML no-datasource refusal, and one bounded XML-only bound PostgreSQL route through the native Database Tools result surface. DataGrip evidence does not imply Java-annotation parity or the broader IDEA-only execution matrix beyond that maintained XML route.</li>
 </ul>
 
 <p>The authoritative capability matrix and fail-closed boundaries are maintained in <a href="https://github.com/luceat-lux-vestra/zMyBatis/blob/main/docs/product-contract.md">docs/product-contract.md</a>.</p>
