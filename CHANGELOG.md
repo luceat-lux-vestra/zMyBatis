@@ -15,7 +15,7 @@
 - Execute supported XML mapper statements and direct Java `@Select` / `@Insert` / `@Update` / `@Delete` annotations through the registered contract-driven action.
 - Capture canonical statement/source authority and supported `<sql>/<include>` dependencies, then delegate admitted dynamic-SQL meaning to isolated stock MyBatis semantics.
 - Preserve `#{}` bound inputs and `${}` raw interpolation as distinct contract kinds through preparation and approval.
-- Materialize only explicitly proven executable SQL-text shapes: zero-binding execution is DB-neutral, and the maintained nonzero slice is PostgreSQL BIGINT. Other nonzero dialect/type/placeholder shapes fail typed rather than claiming generic JDBC/TypeHandler parity.
+- Materialize only explicitly proven executable SQL-text shapes: zero-binding execution remains DB-neutral, while the maintained PostgreSQL bound envelope covers ordered common stock scalar bindings (integer families, REAL/DOUBLE/DECIMAL, BOOLEAN, VARCHAR, VARBINARY, LocalDate/LocalTime/LocalDateTime TIMESTAMP, typed null, and foreach/additional-parameter order). Unproven dialect/type/value shapes fail typed rather than claiming generic JDBC/TypeHandler parity.
 - Require explicit final-artifact approval for raw interpolation and INSERT/UPDATE/DELETE declarations; cancellation stops before native execution.
 - Kotlin direct statement annotations, Provider annotations, custom language drivers/runtime-only extensions, and unproven dialect/type materialization remain unsupported.
 

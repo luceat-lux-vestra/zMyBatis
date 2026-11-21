@@ -8,24 +8,24 @@
 
 > **Distribution status:** zMyBatis is published on [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30447-zmybatis--mybatis-dynamic-sql-runner-with-parameters-mybatis). This GitHub repository is the canonical public source repository. No public GitHub Release artifact is currently published.
 
-> **Pre-1.0 development baseline:** the registered execution path now uses the
+> **Pre-1.0 development baseline:** the registered execution path uses the
 > [zMyBatis 1.0 MyBatis-compatibility architecture](docs/mybatis-compatibility-architecture.md):
 > stock MyBatis owns preparation semantics, one immutable `PreparedExecutionPlan` is approved and
-> revalidated, bound statements execute through the Database Tools session-backed prepared backend,
-> and zero-binding/exact-text statements use the explicit native Database Tools backend. The former
-> PostgreSQL BIGINT SQL-text materializer is historical migration evidence, not shipping authority.
+> revalidated, supported bound plans are materialized into one exact executable SQL artifact, and
+> both bound and zero-binding statements are dispatched through the native Database Tools console/result
+> surface. Unsupported materialization shapes fail closed; the deleted legacy evaluator is not restored.
 
 <!-- Plugin description -->
 <p><b>zMyBatis</b> is a JetBrains IDE plugin for executing supported MyBatis mapper statements directly from XML mapper files and direct Java statement annotations.</p>
 
-<p>The registered action captures authoritative mapper source, derives caller-authoritative input, prepares dynamic SQL through isolated stock MyBatis semantics, freezes one immutable <code>PreparedExecutionPlan</code>, approves and revalidates that exact plan, then explicitly routes bound statements to a Database Tools session-backed prepared backend and zero-binding/exact-text statements to the native Database Tools backend.</p>
+<p>The registered action captures authoritative mapper source, derives caller-authoritative input, prepares dynamic SQL through isolated stock MyBatis semantics, freezes one immutable <code>PreparedExecutionPlan</code>, materializes only explicitly supported bound values into the exact approved executable SQL artifact, revalidates source/target/lifecycle authority, and dispatches through the native Database Tools console/result path.</p>
 
 <h2>Execution model</h2>
 <ul>
   <li>Supported XML mapper statements and direct Java <code>@Select</code> / <code>@Insert</code> / <code>@Update</code> / <code>@Delete</code> annotations use one Leap execution authority.</li>
   <li><code>#{}</code> bound inputs and <code>${}</code> raw interpolation remain distinct end-to-end.</li>
   <li>Raw interpolation and mutation declarations require explicit final-artifact confirmation.</li>
-  <li>Unsupported or ambiguous source, input, MyBatis runtime capability, target, binding, or execution cases fail closed; prepared/native backends never silently fall back to each other or to a legacy evaluator/materializer.</li>
+  <li>Unsupported or ambiguous source, input, MyBatis runtime capability, target, binding/materialization, or execution cases fail closed; there is no silent fallback to the retired prepared-result modal or legacy evaluator.</li>
   <li>Kotlin direct-annotation execution and Provider annotations are currently unsupported.</li>
 </ul>
 
@@ -35,9 +35,9 @@
 <p>MyBatis is the semantic authority for admitted dynamic-SQL behavior. Source graphs, including supported <code>&lt;sql&gt;</code>/<code>&lt;include&gt;</code> dependencies, are captured and revalidated before execution. Missing, ambiguous, cyclic, stale, or otherwise unsupported authority is a typed refusal.</p>
 
 <h2>Execution plans and Database Tools</h2>
-<p>Stock MyBatis preparation is frozen into one immutable <code>PreparedExecutionPlan</code>. Plans with ordered JDBC bindings execute through the Database Tools session-backed prepared backend using maintained stock TypeHandler metadata; zero-binding/exact-text plans execute through the explicit native Database Tools backend.</p>
+<p>Stock MyBatis preparation is frozen into one immutable <code>PreparedExecutionPlan</code>. Zero-binding plans remain exact SQL text. Supported PostgreSQL bound plans use ordered MyBatis binding metadata to produce one explicit, tested executable SQL artifact; unsupported type/dialect/value shapes fail typed rather than switching execution backends.</p>
 
-<p>Preview and execution refer to the same immutable plan identity. For prepared execution, preview shows placeholder SQL plus value-hidden binding metadata; formatting is presentation-only. For native execution, the exact SQL text remains the payload sent to Database Tools.</p>
+<p>Preview and execution refer to the same immutable plan identity and materialized artifact. With SQL Preview disabled, an ordinary read executes directly after input collection. When preview is enabled—or required for mutation/raw interpolation—the dialog shows the exact executable SQL plus binding metadata; formatting is presentation-only. Database Tools owns the resulting native Services/result grid and history.</p>
 
 <h2>Datasource and schema identity</h2>
 <p>Restart persistence stores only current v3 source-to-target descriptors: canonical source identity, stable datasource UUID, and explicit named schema. Live consoles are ephemeral resources. Startup may prune stale v3 source associations but never recreates a console or executes SQL.</p>
