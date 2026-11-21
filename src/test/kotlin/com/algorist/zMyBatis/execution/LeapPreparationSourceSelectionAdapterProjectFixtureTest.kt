@@ -156,9 +156,9 @@ class LeapPreparationSourceSelectionAdapterProjectFixtureTest : BasePlatformTest
 
             val completed = PlatformTestUtil.waitForFuture(observed, FIXTURE_TIMEOUT_MILLIS)
             assertTrue(completed is LeapPreparationSourceSelectionTaskResult.Failed)
-            assertEquals(
-                IllegalStateException::class.java.name,
-                (completed as LeapPreparationSourceSelectionTaskResult.Failed).diagnosticType,
+            assertSame(
+                IllegalStateException::class.java,
+                (completed as LeapPreparationSourceSelectionTaskResult.Failed).exceptionClass,
             )
             assertFalse(
                 "ordinary selector exception must not be classified as user cancellation",

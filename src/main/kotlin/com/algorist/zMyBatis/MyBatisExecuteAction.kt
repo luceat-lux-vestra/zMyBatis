@@ -85,9 +85,9 @@ private fun leapActionFailureDiagnosticCode(
         LeapActionContextAdmissionFailure.ProjectXmlExpansionCancelled ->
             "project-xml-expansion-cancelled"
         is LeapActionContextAdmissionFailure.SourceSelectionTaskFailed ->
-            "source-selection-task-failed:" + failure.diagnosticType
+            "source-selection-task-failed:" + failure.exceptionClass.name
         is LeapActionContextAdmissionFailure.ProjectXmlExpansionTaskFailed ->
-            "project-xml-expansion-task-failed:" + failure.diagnosticType
+            "project-xml-expansion-task-failed:" + failure.exceptionClass.name
         is LeapActionContextAdmissionFailure.SourceInvalid ->
             "source-invalid:" + failure.failure.javaClass.simpleName
         is LeapActionContextAdmissionFailure.TargetAdmissionFailed ->

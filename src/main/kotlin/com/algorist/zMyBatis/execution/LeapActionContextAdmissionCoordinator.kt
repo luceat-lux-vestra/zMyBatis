@@ -528,11 +528,11 @@ internal sealed interface LeapActionContextAdmissionFailure {
     data object ProjectXmlExpansionCancelled : LeapActionContextAdmissionFailure
 
     data class SourceSelectionTaskFailed(
-        val diagnosticType: String,
+        val exceptionClass: Class<out Exception>,
     ) : LeapActionContextAdmissionFailure
 
     data class ProjectXmlExpansionTaskFailed(
-        val diagnosticType: String,
+        val exceptionClass: Class<out Exception>,
     ) : LeapActionContextAdmissionFailure
 
     data class SourceInvalid(
@@ -777,7 +777,7 @@ internal class LeapActionContextAdmissionCoordinator(
                     is LeapPreparationSourceSelectionTaskResult.Failed ->
                         onFailure(
                             LeapActionContextAdmissionFailure.SourceSelectionTaskFailed(
-                                result.diagnosticType,
+                                result.exceptionClass,
                             ),
                         )
                     LeapPreparationSourceSelectionTaskResult.InvocationInvalidated ->
@@ -834,7 +834,7 @@ internal class LeapActionContextAdmissionCoordinator(
                     is LeapProjectXmlMapperExpansionTaskResult.Failed ->
                         onFailure(
                             LeapActionContextAdmissionFailure.ProjectXmlExpansionTaskFailed(
-                                result.diagnosticType,
+                                result.exceptionClass,
                             ),
                         )
                     LeapProjectXmlMapperExpansionTaskResult.InvocationInvalidated ->

@@ -20,7 +20,7 @@ internal sealed interface LeapProjectXmlMapperExpansionTaskResult {
     ) : LeapProjectXmlMapperExpansionTaskResult
 
     data class Failed(
-        val diagnosticType: String,
+        val exceptionClass: Class<out Exception>,
     ) : LeapProjectXmlMapperExpansionTaskResult
 
     data object InvocationInvalidated : LeapProjectXmlMapperExpansionTaskResult
@@ -96,7 +96,7 @@ internal class LeapProjectXmlMapperExpansionAdapter(
                 }
                 onResult(
                     if (liveInvocation()) {
-                        LeapProjectXmlMapperExpansionTaskResult.Failed(error.javaClass.name)
+                        LeapProjectXmlMapperExpansionTaskResult.Failed(error.javaClass)
                     } else {
                         LeapProjectXmlMapperExpansionTaskResult.InvocationInvalidated
                     },

@@ -159,9 +159,9 @@ class LeapProjectXmlMapperExpansionAdapterProjectFixtureTest : BasePlatformTestC
 
             val completed = PlatformTestUtil.waitForFuture(observed, FIXTURE_TIMEOUT_MILLIS)
             assertTrue(completed is LeapProjectXmlMapperExpansionTaskResult.Failed)
-            assertEquals(
-                IllegalStateException::class.java.name,
-                (completed as LeapProjectXmlMapperExpansionTaskResult.Failed).diagnosticType,
+            assertSame(
+                IllegalStateException::class.java,
+                (completed as LeapProjectXmlMapperExpansionTaskResult.Failed).exceptionClass,
             )
             assertFalse(
                 "ordinary project-expansion exception must not be classified as user cancellation",
