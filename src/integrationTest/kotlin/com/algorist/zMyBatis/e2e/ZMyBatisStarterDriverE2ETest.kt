@@ -1214,7 +1214,7 @@ class ZMyBatisStarterDriverE2ETest {
      * deliberately outside this recovery boundary so product failures are never converted into
      * test retries or duplicate execution attempts.
      */
-    private fun setSingleParameterDialogTextWithTransportRecovery(value: String) {
+    private fun Driver.setSingleParameterDialogTextWithTransportRecovery(value: String) {
         var attempt = 1
         while (true) {
             try {

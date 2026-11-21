@@ -53,12 +53,16 @@ class StarterDatabaseE2EIsolationContractTest {
             "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
         )
         val helperStart = e2e.indexOf(
-            "private fun setSingleParameterDialogTextWithTransportRecovery",
+            "private fun Driver.setSingleParameterDialogTextWithTransportRecovery",
         )
         val helperEnd = e2e.indexOf("private fun writeDirectJavaProviderMapper", helperStart)
         assertTrue("transport recovery helper must exist", helperStart >= 0 && helperEnd > helperStart)
 
         val helper = e2e.substring(helperStart, helperEnd)
+        assertTrue(
+            "transport recovery helper must retain explicit Driver receiver authority",
+            helper.contains("private fun Driver.setSingleParameterDialogTextWithTransportRecovery"),
+        )
         assertTrue(helper.contains("REMOTE_DRIVER_HIERARCHY_EOF_MAX_ATTEMPTS"))
         assertTrue(helper.contains("com.intellij.driver.client.impl.DriverCallException"))
         assertTrue(helper.contains("com.intellij.driver.client.impl.JmxCallException"))
