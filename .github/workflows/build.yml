@@ -202,10 +202,12 @@ jobs:
             echo "workflow_run_id=$GITHUB_RUN_ID"
           } | tee "$manifest"
 
-          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
-          echo "candidate_sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
-          echo "candidate_version=$CANDIDATE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "candidate_sha256=$artifact_sha256" >> "$GITHUB_OUTPUT"
+          {
+            echo "artifact_name=$artifact_name"
+            echo "candidate_sha=$CANDIDATE_SHA"
+            echo "candidate_version=$CANDIDATE_VERSION"
+            echo "candidate_sha256=$artifact_sha256"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload exact validation candidate
         if: ${{ steps.scope.outputs.docs_only != 'true' }}

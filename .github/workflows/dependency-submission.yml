@@ -81,7 +81,7 @@ jobs:
               raise SystemExit(f"Dependency graph lost required coverage: {len(resolved)} < 650")
           required = {
               "org.mybatis:mybatis:3.6.0",
-              "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:2.19.0",
+              "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:2.20.1",
           }
           if missing := required - resolved.keys():
               raise SystemExit(f"Dependency graph lost required coordinates: {sorted(missing)}")

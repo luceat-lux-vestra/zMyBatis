@@ -19,10 +19,12 @@ RELEVANT_PATHS = frozenset({
     ".github/workflows/dependency-submission.yml",
     ".github/workflows/build.yml",
     ".github/workflow-policy/trusted_dependency_submission_validation.py",
+    "build.gradle.kts",
+    "gradle/libs.versions.toml",
 })
 REQUIRED_COORDINATES = frozenset({
     "org.mybatis:mybatis:3.6.0",
-    "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:2.19.0",
+    "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:2.20.1",
 })
 SUPPORTED_COORDINATE_KEYS = frozenset({
     "org.mybatis:mybatis",
@@ -245,6 +247,14 @@ def self_test() -> None:
         "filename": ".github/workflow-policy/trusted_dependency_submission_validation.py",
         "status": "modified",
     }]], sha)
+    assert classify(pull, [[{
+        "filename": "build.gradle.kts",
+        "status": "modified",
+    }]], sha)
+    assert classify(pull, [[{
+        "filename": "gradle/libs.versions.toml",
+        "status": "modified",
+    }]], sha)
     assert not classify(
         pull,
         [[{"filename": "README.md", "status": "modified"}]],
@@ -384,7 +394,7 @@ def self_test() -> None:
             "relationship": "direct"
         }
         resolved[
-            "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:2.19.0"
+            "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:2.20.1"
         ] = {"relationship": "direct"}
         graph = {
             "sha": sha,
