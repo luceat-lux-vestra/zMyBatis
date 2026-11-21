@@ -9,49 +9,40 @@ import org.junit.Test
 class DataGripStarterDriverE2EContractTest {
 
     @Test
-    fun `DataGrip host evidence remains bounded while owning one prepared XML route`() {
+    fun `DataGrip host evidence remains bounded while owning one native bound XML route`() {
         val e2e = source(
             "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/" +
                 "ZMyBatisDataGripStarterDriverE2ETest.kt",
         )
 
-        assertTrue(e2e.contains("registeredXmlPreparedExecutionUsesDatabaseToolsSessionOnDataGrip"))
-        assertTrue(e2e.contains("<bind name=\"value\" value=\"41L\"/>"))
+        assertTrue(e2e.contains("registeredXmlBoundExecutionUsesNativeDatabaseToolsResultOnDataGrip"))
+        assertTrue(e2e.contains("<bind name=\\"value\\" value=\\"41L\\"/>"))
         assertTrue(e2e.contains("SELECT #{value,jdbcType=BIGINT}::BIGINT AS RESULT_VALUE"))
-        assertTrue(e2e.contains("SELECT ?::BIGINT AS RESULT_VALUE"))
-        assertTrue(e2e.contains("#1 property=value"))
-        assertTrue(e2e.contains("jdbcType=BIGINT"))
-        assertTrue(e2e.contains("zMyBatis: Query Result"))
-        assertTrue(e2e.contains("com.intellij.ui.table.JBTable"))
+        assertTrue(e2e.contains("SELECT 41::BIGINT AS RESULT_VALUE"))
+        assertTrue(e2e.contains("com.intellij.database.run.ui.table.TableResultView"))
+        assertTrue(e2e.contains("scenario=xml-bound-native-postgresql result=PASS action_registered=true "))
+        assertTrue(e2e.contains("native_result=true clean_shutdown=true"))
+        assertFalse(
+            "bound XML acceptance must not fall back to zMyBatis-owned result modal",
+            e2e.contains("zMyBatis: Query Result"),
+        )
         assertFalse(
             "static XML bind literal must not open the caller-parameter dialog",
-            e2e.contains("ui.dialog(title = \"Enter MyBatis Parameters\")"),
+            e2e.contains("ui.dialog(title = \\"Enter MyBatis Parameters\\")"),
         )
         assertFalse(
             "static XML bind literal must not submit a synthetic caller object",
-            e2e.contains("dataGripTextArea().text = \"\"\"{\"value\":999}\"\"\""),
+            e2e.contains("dataGripTextArea().text = \\"\\"\\"{\\"value\\":999}\\"\\"\\""),
         )
-        assertTrue(e2e.contains("DataGrip prepared acceptance must not literalize the bound value"))
-        assertTrue(
-            e2e.contains(
-                "DataGrip bound XML execution must remain on zMyBatis prepared-result presentation",
-            ),
-        )
-        assertTrue(
-            e2e.contains(
-                "scenario=xml-prepared-postgresql result=PASS action_registered=true ",
-            ),
-        )
-        assertTrue(e2e.contains("DataGrip 2026.3 exposes the activated host surface as \"Database Explorer\""))
+        assertTrue(e2e.contains("DataGrip 2026.3 exposes the activated host surface as \\"Database Explorer\\""))
         assertTrue(e2e.contains("//div[@visible_text='PostgreSQL']"))
-        assertTrue(e2e.contains("invokeAction(\"DatabaseView.Refresh\", now = false)"))
+        assertTrue(e2e.contains("invokeAction(\\"DatabaseView.Refresh\\", now = false)"))
         assertFalse(
             "DataGrip host proof must not reuse the IU-only Database Tool Window locator",
             e2e.contains("databaseToolWindow"),
         )
-
         assertFalse(
-            "bounded DataGrip prepared proof must not claim direct-Java source parity",
+            "bounded DataGrip proof must not claim direct-Java source parity",
             e2e.contains("JavaRawQueryMapper") ||
                 e2e.contains("JavaProviderMapper") ||
                 e2e.contains("writeMapperInterface("),
