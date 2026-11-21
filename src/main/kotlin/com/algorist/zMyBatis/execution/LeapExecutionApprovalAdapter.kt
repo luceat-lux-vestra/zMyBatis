@@ -27,6 +27,7 @@ internal sealed interface LeapExecutionApprovalResult {
 internal fun preparedPlanPreview(
     plan: PreparedExecutionPlan,
     sqlPresentation: String = plan.sqlWithPlaceholders,
+    valuesMaterialized: Boolean = false,
 ): String {
     if (plan.orderedBindings.isEmpty()) return sqlPresentation
 
@@ -44,17 +45,25 @@ internal fun preparedPlanPreview(
 
     return buildString {
         append(sqlPresentation)
-        append("\n\nBindings (values hidden):\n")
+        append(
+            if (valuesMaterialized) {
+                "\n\nBinding metadata (values materialized in SQL above):\n"
+            } else {
+                "\n\nBindings (values hidden):\n"
+            },
+        )
         append(bindings)
     }
 }
 
 /**
  * Testable approval kernel. [formatPreview] and [showPreview] may transform/display only a
- * presentation copy. [plan] remains the sole execution authority.
+ * presentation copy. [plan] remains the semantic authority and [executionSql] is the exact
+ * materialized text that will be dispatched after approval.
  */
 internal fun runLeapExecutionApproval(
     plan: PreparedExecutionPlan,
+    executionSql: String = plan.sqlWithPlaceholders,
     options: LeapExecutionApprovalOptions,
     isInvocationActive: () -> Boolean,
     formatPreview: (String) -> String,
@@ -74,11 +83,15 @@ internal fun runLeapExecutionApproval(
 
     val previewSql =
         if (options.formatPreviewSql) {
-            formatPreview(plan.sqlWithPlaceholders)
+            formatPreview(executionSql)
         } else {
-            plan.sqlWithPlaceholders
+            executionSql
         }
-    val previewText = preparedPlanPreview(plan, previewSql)
+    val previewText = preparedPlanPreview(
+        plan = plan,
+        sqlPresentation = previewSql,
+        valuesMaterialized = plan.orderedBindings.isNotEmpty(),
+    )
     if (!showPreview(previewText)) {
         return LeapExecutionApprovalResult.UserCancelled
     }
@@ -93,12 +106,13 @@ internal fun runLeapExecutionApproval(
 /**
  * IDE modal adapter for immutable-artifact approval.
  *
- * A required preview is always scheduled onto the EDT. The original plan is never rewritten;
- * formatting is presentation-only and approval resumes with the exact same plan instance.
+ * A required preview is always scheduled onto the EDT. The original plan/materialized SQL are
+ * never rewritten; formatting is presentation-only and execution resumes with the exact artifact.
  */
 internal class LeapExecutionApprovalAdapter(private val project: Project) {
     fun requestApproval(
         plan: PreparedExecutionPlan,
+        executionSql: String = plan.sqlWithPlaceholders,
         options: LeapExecutionApprovalOptions,
         isInvocationActive: () -> Boolean,
         onResult: (LeapExecutionApprovalResult) -> Unit,
@@ -124,6 +138,7 @@ internal class LeapExecutionApprovalAdapter(private val project: Project) {
             onResult(
                 runLeapExecutionApproval(
                     plan = plan,
+                    executionSql = executionSql,
                     options = options,
                     isInvocationActive = liveInvocation,
                     formatPreview = { sql -> SqlFormatter.format(project, sql) },

@@ -102,6 +102,11 @@ private fun leapDeliveryFailureDiagnosticCode(
             "plan-source-authority-mismatch"
         LeapExecutionDeliveryFailure.TargetSemanticDrift ->
             "target-semantic-drift"
+        is LeapExecutionDeliveryFailure.MaterializationFailed ->
+            "materialization-failed:" +
+                failure.failure.kind.name.lowercase().replace('_', '-') +
+                ":" +
+                failure.failure.code
         is LeapExecutionDeliveryFailure.ConsoleAcquisitionFailed ->
             "console-acquisition-failed:" + failure.failure.javaClass.simpleName
         is LeapExecutionDeliveryFailure.NativeExecutionFailed ->
