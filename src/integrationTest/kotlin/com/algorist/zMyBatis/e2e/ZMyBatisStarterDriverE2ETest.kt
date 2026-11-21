@@ -2,6 +2,7 @@ package com.algorist.zMyBatis.e2e
 
 import com.intellij.driver.client.Driver
 import com.intellij.driver.client.Remote
+import com.intellij.driver.model.RemoteMouseButton
 import com.intellij.driver.sdk.arePluginsInitialized
 import com.intellij.driver.sdk.invokeAction
 import com.intellij.driver.sdk.isPluginLoaded
@@ -20,6 +21,7 @@ import com.intellij.driver.sdk.ui.components.elements.dialog
 import com.intellij.driver.sdk.ui.components.elements.isDialogOpened
 import com.intellij.driver.sdk.ui.components.elements.list
 import com.intellij.driver.sdk.ui.components.elements.popup
+import com.intellij.driver.sdk.ui.components.elements.popupMenu
 import com.intellij.driver.sdk.ui.components.elements.popups
 import com.intellij.driver.sdk.ui.components.elements.textField
 import com.intellij.driver.sdk.ui.components.elements.waitForNoOpenedDialogs
@@ -124,6 +126,7 @@ class ZMyBatisStarterDriverE2ETest {
         private const val IDE_RELEASE = "2026.3"
         private const val POSTGRES_E2E_DRIVER_NAME = "zMyBatis PostgreSQL 42.7.14"
         private const val POSTGRES_E2E_DATA_SOURCE_NAME = POSTGRES_E2E_DRIVER_NAME
+        private const val EXECUTE_ACTION_TEXT = "Execute (zMyBatis)"
         private const val PARAMETER_DIALOG_TITLE = "Enter MyBatis Parameters"
         private const val REMOTE_DRIVER_HIERARCHY_EOF_MAX_ATTEMPTS = 2
         private val pluginArchive: Path = pathOf(
@@ -389,6 +392,125 @@ class ZMyBatisStarterDriverE2ETest {
                 assertFalse(
                     ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
                     "large-project bound execution must remain on the native Database Tools result path",
+                )
+                ui.waitForNoOpenedDialogs()
+            }
+    }
+
+    @Test
+    fun editorPopupMenuPreservesMapperContextForZeroAndBoundExecution(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-editor-popup-context-project"))
+        val zeroResult = 7301L
+        val boundInput = 41L
+        val boundDelta = 1L
+        writeEditorPopupContextMapperProject(
+            projectDir = projectDir,
+            zeroResult = zeroResult,
+            boundDelta = boundDelta,
+        )
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-editor-popup-context", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("EditorPopupMapper.xml")
+                invokeZMyBatisFromEditorPopup(
+                    fileName = "EditorPopupMapper.xml",
+                    statementMarker = "zeroBinding",
+                )
+
+                waitFor(
+                    message = "editor-popup zero-binding target chooser or explicit zMyBatis refusal",
+                    timeout = 30.seconds,
+                ) {
+                    openZMyBatisExecutionFailureTitle() != null ||
+                        ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) }
+                }
+                assertNoZMyBatisExecutionFailure("editor-popup zero-binding invocation")
+                assertTrue(
+                    ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) },
+                    "editor popup invocation must reach the datasource/schema chooser",
+                )
+
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("editor-popup explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                waitFor(
+                    message = "editor-popup zero-binding native result or explicit zMyBatis refusal",
+                    timeout = 2.minutes,
+                ) {
+                    nativeResultContains(zeroResult.toString()) ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("editor-popup zero-binding delivery")
+                assertTrue(
+                    nativeResultContains(zeroResult.toString()),
+                    "editor popup zero-binding execution must land in the native Database Tools result",
+                )
+                ui.waitForNoOpenedDialogs()
+
+                invokeZMyBatisFromEditorPopup(
+                    fileName = "EditorPopupMapper.xml",
+                    statementMarker = "boundValue",
+                )
+
+                waitFor(
+                    message = "editor-popup bound parameter dialog, unexpected chooser, or explicit refusal",
+                    timeout = 90.seconds,
+                ) {
+                    ui.isDialogOpened("//div[@title='$PARAMETER_DIALOG_TITLE']") ||
+                        ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) } ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("editor-popup bound invocation")
+                assertTrue(
+                    ui.isDialogOpened("//div[@title='$PARAMETER_DIALOG_TITLE']"),
+                    "real EditorPopupMenu invocation must preserve mapper context through actionPerformed",
+                )
+                assertFalse(
+                    ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) },
+                    "persisted editor-popup target must bypass datasource/schema chooser",
+                )
+
+                setSingleParameterDialogTextWithTransportRecovery(boundInput.toString())
+                ui.dialog(title = PARAMETER_DIALOG_TITLE) {
+                    button("OK").click()
+                }
+
+                val expectedBoundResult = (boundInput + boundDelta).toString()
+                waitFor(
+                    message = "editor-popup bound native result or explicit zMyBatis refusal",
+                    timeout = 2.minutes,
+                ) {
+                    nativeResultContains(expectedBoundResult) ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("editor-popup bound delivery")
+                assertTrue(
+                    nativeResultContains(expectedBoundResult),
+                    "editor popup bound execution must land in the native Database Tools result",
+                )
+                assertFalse(
+                    ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
+                    "editor popup bound execution must remain on the native Database Tools result path",
                 )
                 ui.waitForNoOpenedDialogs()
             }
@@ -1206,6 +1328,60 @@ class ZMyBatisStarterDriverE2ETest {
         )
     }
 
+    private fun Driver.invokeZMyBatisFromEditorPopup(
+        fileName: String,
+        statementMarker: String,
+    ) {
+        val editor = ui.codeEditorForFile(fileName)
+        editor.clickOn(statementMarker)
+        editor.clickOn(statementMarker, RemoteMouseButton.RIGHT)
+
+        val menu = ui.popupMenu()
+        val actionItem = menu.findMenuItemByText(EXECUTE_ACTION_TEXT)
+        assertEquals(
+            EXECUTE_ACTION_TEXT,
+            actionItem.getText(),
+            "real editor context menu must expose the registered zMyBatis action",
+        )
+        actionItem.click()
+
+        waitFor("real editor context menu closes after zMyBatis action click", timeout = 10.seconds) {
+            ui.popups().list().none { it.hasText(EXECUTE_ACTION_TEXT) }
+        }
+    }
+
+    private fun Driver.nativeResultContains(expectedValue: String): Boolean =
+        try {
+            ui.accessibleTable {
+                byType("com.intellij.database.run.ui.table.TableResultView")
+            }.content().values.any { row ->
+                row.values.any { cell -> cell.trim() == expectedValue }
+            }
+        } catch (_: com.intellij.driver.sdk.WaitForException) {
+            false
+        }
+
+    private fun Driver.openZMyBatisExecutionFailureTitle(): String? =
+        listOf(
+            "zMyBatis: Execution Context Unavailable",
+            "zMyBatis: Mapper Source Resolution Interrupted",
+            "zMyBatis: Mapper Source Not Executable",
+            "zMyBatis: Execution Target Unavailable",
+            "zMyBatis: Database Console Unavailable",
+            "zMyBatis: Database Console Selection Unavailable",
+            "zMyBatis: Execution Refused",
+        ).firstOrNull { title ->
+            ui.isDialogOpened("//div[@title='$title']")
+        }
+
+    private fun Driver.assertNoZMyBatisExecutionFailure(stage: String) {
+        val failureTitle = openZMyBatisExecutionFailureTitle()
+        assertTrue(
+            failureTitle == null,
+            "$stage must not stop at an explicit zMyBatis refusal; got: $failureTitle",
+        )
+    }
+
     /**
      * Remote Driver hierarchy transport may occasionally drop its JMX/RMI response while the IDE
      * and modal dialog remain alive. Only the idempotent text assignment/read-back is retried.
@@ -1352,6 +1528,36 @@ class ZMyBatisStarterDriverE2ETest {
             public interface JavaRawQueryMapper {
                 @Select(value = "SELECT $rawToken AS RESULT_VALUE")
                 Object ping(@Param(value = "value") String value);
+            }
+            """.trimIndent(),
+        )
+    }
+
+    private fun writeEditorPopupContextMapperProject(
+        projectDir: Path,
+        zeroResult: Long,
+        boundDelta: Long,
+    ) {
+        Files.writeString(
+            projectDir.resolve("EditorPopupMapper.xml"),
+            """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.EditorPopupMapper">
+            <select id="zeroBinding">SELECT $zeroResult AS RESULT_VALUE</select>
+            <select id="boundValue">SELECT #{value,jdbcType=BIGINT}::BIGINT + $boundDelta AS RESULT_VALUE</select>
+            </mapper>
+            """.trimIndent(),
+        )
+
+        val packageDir = Files.createDirectories(projectDir.resolve("fixture"))
+        Files.writeString(
+            packageDir.resolve("EditorPopupMapper.java"),
+            """
+            package fixture;
+
+            public interface EditorPopupMapper {
+                Object zeroBinding();
+                Object boundValue(long value);
             }
             """.trimIndent(),
         )

@@ -96,6 +96,48 @@ class StarterDatabaseE2EIsolationContractTest {
     }
 
     @Test
+    fun `IDEA editor popup reproducer uses the real context menu action surface`() {
+        val e2e = source(
+            "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
+        )
+
+        val scenarioStart = e2e.indexOf(
+            "fun editorPopupMenuPreservesMapperContextForZeroAndBoundExecution",
+        )
+        val scenarioEnd = e2e.indexOf("@Test", scenarioStart + 1)
+        assertTrue("editor-popup reproducer must exist", scenarioStart >= 0 && scenarioEnd > scenarioStart)
+        val scenario = e2e.substring(scenarioStart, scenarioEnd)
+
+        assertTrue(scenario.contains("statementMarker = \"zeroBinding\""))
+        assertTrue(scenario.contains("statementMarker = \"boundValue\""))
+        assertTrue(scenario.contains("real EditorPopupMenu invocation must preserve mapper context through actionPerformed"))
+        assertTrue(scenario.contains("persisted editor-popup target must bypass datasource/schema chooser"))
+        assertTrue(scenario.contains("nativeResultContains(zeroResult.toString())"))
+        assertTrue(scenario.contains("nativeResultContains(expectedBoundResult)"))
+        assertFalse(
+            "editor-popup reproducer must not bypass the UI by invoking the action id directly",
+            scenario.contains("invokeAction(\"zMyBatis.Execute\""),
+        )
+
+        val helperStart = e2e.indexOf("private fun Driver.invokeZMyBatisFromEditorPopup")
+        val helperEnd = e2e.indexOf(
+            "private fun Driver.nativeResultContains",
+            helperStart,
+        )
+        assertTrue("editor-popup invocation helper must exist", helperStart >= 0 && helperEnd > helperStart)
+        val helper = e2e.substring(helperStart, helperEnd)
+
+        assertTrue(helper.contains("editor.clickOn(statementMarker, RemoteMouseButton.RIGHT)"))
+        assertTrue(helper.contains("ui.popupMenu()"))
+        assertTrue(helper.contains("findMenuItemByText(EXECUTE_ACTION_TEXT)"))
+        assertTrue(helper.contains("actionItem.click()"))
+        assertFalse(
+            "real editor-popup helper must never fall back to direct action-id invocation",
+            helper.contains("invokeAction("),
+        )
+    }
+
+    @Test
     fun `process golden path must reuse one maintained PostgreSQL Database Tools stack`() {
         val e2e = source(
             "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
