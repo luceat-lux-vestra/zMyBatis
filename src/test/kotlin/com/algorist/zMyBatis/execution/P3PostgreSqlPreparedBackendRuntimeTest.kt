@@ -456,7 +456,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                   (?::date)::text,
                   (?::time)::text,
                   (?::timestamp)::text,
-                  CASE WHEN ?::varchar IS NULL THEN 'NULL' ELSE 'NON_NULL' END,
+                  pg_typeof(?)::text,
                   array_to_string(ARRAY[?, ?]::text[], '|')
             """.trimIndent()
             val execution = PreparedExecution(
@@ -510,7 +510,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                 "2026-11-18",
                 "12:34:56",
                 "2026-11-18 12:34:56",
-                "NULL",
+                "character varying",
                 "left|right",
             )
             check(actual == expected) {
@@ -522,7 +522,7 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                     "bindingCount=${plan.orderedBindings.size} " +
                     "resultColumns=${actual.size} " +
                     "integer=true decimal=true boolean=true varchar=true binary=true " +
-                    "date=true time=true timestamp=true typedNull=true foreach=true",
+                    "date=true time=true timestamp=true typedNullType=true foreach=true",
             )
         } finally {
             fixture.dispose()

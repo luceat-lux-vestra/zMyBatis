@@ -154,8 +154,25 @@ class PreparedPlanSqlMaterializerTest {
                   DATE '2026-11-18'::date,
                   TIME '12:34:56'::time,
                   TIMESTAMP '2026-11-18 12:34:56'::timestamp,
-                  CASE WHEN NULL::varchar IS NULL THEN 'NULL' ELSE 'NON_NULL' END
+                  CASE WHEN CAST(NULL AS varchar)::varchar IS NULL THEN 'NULL' ELSE 'NON_NULL' END
             """.trimIndent(),
+            artifact.executionSql,
+        )
+    }
+
+    @Test
+    fun typedNullPreservesJdbcTypeAuthorityWithoutSqlContext() {
+        val artifact = ready(
+            NativeExecutionPlanMaterializer.materialize(
+                plan(
+                    sql = "SELECT pg_typeof(?)::text",
+                    bindings = listOf(typedNull(0, "VARCHAR")),
+                ),
+            ),
+        )
+
+        assertEquals(
+            "SELECT pg_typeof(CAST(NULL AS varchar))::text",
             artifact.executionSql,
         )
     }

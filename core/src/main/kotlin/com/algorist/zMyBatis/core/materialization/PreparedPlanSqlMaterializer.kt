@@ -144,11 +144,11 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
             ?: return BindingRenderResult.MetadataUnsupported
 
         if (binding.value == InputValue.NullValue) {
-            return if (supportsTypedNull(metadata.mappingJavaTypeIdentity, metadata.typeHandlerIdentity, jdbcType)) {
-                BindingRenderResult.Ready("NULL")
-            } else {
-                BindingRenderResult.MetadataUnsupported
-            }
+            return renderTypedNull(
+                mappingType = metadata.mappingJavaTypeIdentity,
+                handler = metadata.typeHandlerIdentity,
+                jdbcType = jdbcType,
+            )
         }
 
         return when (val value = binding.value) {
@@ -263,14 +263,20 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
             metadata.declaredJavaTypeIdentity?.value in spec.javaTypes
     }
 
-    private fun supportsTypedNull(
+    private fun renderTypedNull(
         mappingType: String?,
         handler: String?,
         jdbcType: String,
-    ): Boolean {
-        val spec = NULL_SPECS[jdbcType] ?: return false
-        return (mappingType in spec.javaTypes && handler in spec.handlers) ||
-            (mappingType == OBJECT_TYPE && handler == UNKNOWN_HANDLER)
+    ): BindingRenderResult {
+        val spec = NULL_SPECS[jdbcType] ?: return BindingRenderResult.MetadataUnsupported
+        val supported =
+            (mappingType in spec.javaTypes && handler in spec.handlers) ||
+                (mappingType == OBJECT_TYPE && handler == UNKNOWN_HANDLER)
+        return if (supported) {
+            BindingRenderResult.Ready("CAST(NULL AS ${spec.postgreSqlType})")
+        } else {
+            BindingRenderResult.MetadataUnsupported
+        }
     }
 
     /**
@@ -314,6 +320,7 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
         val jdbcTypes: Set<String>,
         val javaTypes: Set<String>,
         val handlers: Set<String>,
+        val postgreSqlType: String,
         val minInteger: BigInteger? = null,
         val maxInteger: BigInteger? = null,
     )
@@ -337,6 +344,7 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
         jdbcTypes = setOf("TINYINT"),
         javaTypes = setOf("byte", "java.lang.Byte"),
         handlers = setOf("org.apache.ibatis.type.ByteTypeHandler"),
+        postgreSqlType = "smallint",
         minInteger = BYTE_MIN,
         maxInteger = BYTE_MAX,
     )
@@ -344,6 +352,7 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
         jdbcTypes = setOf("SMALLINT"),
         javaTypes = setOf("short", "java.lang.Short"),
         handlers = setOf("org.apache.ibatis.type.ShortTypeHandler"),
+        postgreSqlType = "smallint",
         minInteger = SHORT_MIN,
         maxInteger = SHORT_MAX,
     )
@@ -351,6 +360,7 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
         jdbcTypes = setOf("INTEGER"),
         javaTypes = setOf("int", "java.lang.Integer"),
         handlers = setOf("org.apache.ibatis.type.IntegerTypeHandler"),
+        postgreSqlType = "integer",
         minInteger = INT_MIN,
         maxInteger = INT_MAX,
     )
@@ -358,6 +368,7 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
         jdbcTypes = setOf("BIGINT"),
         javaTypes = setOf("long", "java.lang.Long"),
         handlers = setOf("org.apache.ibatis.type.LongTypeHandler"),
+        postgreSqlType = "bigint",
         minInteger = LONG_MIN,
         maxInteger = LONG_MAX,
     )
@@ -365,46 +376,55 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
         jdbcTypes = setOf("REAL"),
         javaTypes = setOf("float", "java.lang.Float"),
         handlers = setOf("org.apache.ibatis.type.FloatTypeHandler"),
+        postgreSqlType = "real",
     )
     private val DOUBLE_SPEC = BindingSpec(
         jdbcTypes = setOf("DOUBLE"),
         javaTypes = setOf("double", "java.lang.Double"),
         handlers = setOf("org.apache.ibatis.type.DoubleTypeHandler"),
+        postgreSqlType = "double precision",
     )
     private val DECIMAL_SPEC = BindingSpec(
         jdbcTypes = setOf("DECIMAL"),
         javaTypes = setOf("java.math.BigDecimal"),
         handlers = setOf("org.apache.ibatis.type.BigDecimalTypeHandler"),
+        postgreSqlType = "numeric",
     )
     private val BOOLEAN_SPEC = BindingSpec(
         jdbcTypes = setOf("BOOLEAN"),
         javaTypes = setOf("boolean", "java.lang.Boolean"),
         handlers = setOf("org.apache.ibatis.type.BooleanTypeHandler"),
+        postgreSqlType = "boolean",
     )
     private val VARCHAR_SPEC = BindingSpec(
         jdbcTypes = setOf("VARCHAR"),
         javaTypes = setOf("java.lang.String"),
         handlers = setOf("org.apache.ibatis.type.StringTypeHandler"),
+        postgreSqlType = "varchar",
     )
     private val BINARY_SPEC = BindingSpec(
         jdbcTypes = setOf("VARBINARY"),
         javaTypes = setOf("[B", "byte[]"),
         handlers = setOf("org.apache.ibatis.type.ByteArrayTypeHandler"),
+        postgreSqlType = "bytea",
     )
     private val DATE_SPEC = BindingSpec(
         jdbcTypes = setOf("DATE"),
         javaTypes = setOf("java.time.LocalDate"),
         handlers = setOf("org.apache.ibatis.type.LocalDateTypeHandler"),
+        postgreSqlType = "date",
     )
     private val TIME_SPEC = BindingSpec(
         jdbcTypes = setOf("TIME"),
         javaTypes = setOf("java.time.LocalTime"),
         handlers = setOf("org.apache.ibatis.type.LocalTimeTypeHandler"),
+        postgreSqlType = "time",
     )
     private val TIMESTAMP_SPEC = BindingSpec(
         jdbcTypes = setOf("TIMESTAMP"),
         javaTypes = setOf("java.time.LocalDateTime"),
         handlers = setOf("org.apache.ibatis.type.LocalDateTimeTypeHandler"),
+        postgreSqlType = "timestamp",
     )
 
     private val INTEGER_SPECS = mapOf(
