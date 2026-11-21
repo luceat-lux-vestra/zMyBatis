@@ -1,8 +1,8 @@
 package com.algorist.zMyBatis
 
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
-import java.net.URI
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -29,8 +29,12 @@ class ManualReleaseValidationSampleContractTest {
             "historical MySQL/H2 fixture must not define the release target",
             compose.contains("mysql") || compose.contains("h2"),
         )
-        assertTrue(readme.contains("This is **not** a replacement for automated tests."))
-        assertTrue(readme.contains("#509"))
+        assertTrue(readme.contains("This fixture is **not** a replacement for automated tests."))
+        assertTrue(readme.contains("PreparedExecutionPlan"))
+        assertTrue(readme.contains("NativeExecutionPlanMaterializer"))
+        assertTrue(readme.contains("NativeConsoleSqlTextBackend"))
+        assertTrue(readme.contains("native Database Tools result workflow"))
+        assertFalse(readme.contains("DatabaseSessionPreparedBackend"))
     }
 
     @Test
@@ -87,35 +91,36 @@ class ManualReleaseValidationSampleContractTest {
     }
 
     @Test
-    fun `manual checklist pins all maintained release acceptance families`() {
+    fun `acceptance inventory pins all families while human smoke stays minimal`() {
         val readme = source("README.md")
         val requiredIds = buildList {
-            addAll((1..14).map { "M%02d".format(it) })
+            addAll((1..17).map { "M%02d".format(it) })
             addAll((1..7).map { "J%02d".format(it) })
             addAll((1..8).map { "U%02d".format(it) })
             addAll((1..7).map { "T%02d".format(it) })
-            addAll(listOf("R01", "R02", "R03", "R04", "R05"))
+            addAll((1..5).map { "R%02d".format(it) })
         }
 
         requiredIds.forEach { id ->
             assertTrue("manual release checklist must retain case $id", readme.contains(id))
         }
+
         assertTrue(readme.contains("#509 disposition:  RESOLVED / BLOCKED"))
         assertTrue(readme.contains("#510 disposition:  RESOLVED / BLOCKED"))
-        assertTrue(readme.contains("Release decision:  GO / NO-GO"))
-        assertTrue(readme.contains("Wrong-datasource or wrong-schema execution is a **release blocker**"))
-        assertTrue(readme.contains("stable UUID keeps the same target valid"))
+        assertTrue(readme.contains("They are not a mandatory maintainer-run checklist."))
+        assertTrue(readme.contains("H01 install/settings/action: PASS / FAIL"))
+        assertTrue(readme.contains("H02 native bound/unbound visual: PASS / FAIL"))
+        assertTrue(readme.contains("H03 restart/target UX:      PASS / FAIL"))
+        assertTrue(readme.contains("Human smoke:       GO / NO-GO"))
+        assertTrue(readme.contains("DataGrip requires no separate manual smoke"))
+        assertTrue(readme.contains("exact final P5 candidate ZIP"))
     }
 
     @Test
-    fun `manual XML fixtures reuse canonical shipping and refusal shapes`() {
+    fun `manual fixture encodes stock MyBatis materialization to native result routing`() {
+        val readme = source("README.md")
         val xml = source("src/main/resources/mappers/XmlReleaseValidationMapper.xml")
         val product = source("src/main/resources/mappers/ProductMapper.xml")
-        val pendingChoose = source("src/main/resources/mappers/PendingChooseMapper.xml")
-        val pendingBind = source("src/main/resources/mappers/PendingBindMapper.xml")
-        val pendingResultMap = source("src/main/resources/mappers/PendingResultMapMapper.xml")
-        val pendingResultType = source("src/main/resources/mappers/PendingResultTypeMapper.xml")
-        val pendingParameterType = source("src/main/resources/mappers/PendingParameterTypeMapper.xml")
 
         assertTrue(xml.contains("SELECT 7 AS result_value"))
         assertTrue(xml.contains("#{value,jdbcType=BIGINT}::BIGINT AS result_value"))
@@ -126,39 +131,136 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(xml.contains("jdbcType=VARCHAR"))
         assertTrue(xml.contains("#{left,jdbcType=BIGINT}"))
         assertTrue(xml.contains("#{right,jdbcType=BIGINT}"))
+        assertTrue(xml.contains("<set>"))
+        assertTrue(xml.contains("<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">"))
+        assertTrue(xml.contains("#{name,jdbcType=VARCHAR}"))
+        assertTrue(xml.contains("#{id,jdbcType=BIGINT}"))
+        assertTrue(xml.contains("#{filter.tenantId,jdbcType=BIGINT}"))
         assertTrue(product.contains("<include refid=\"fixture.SharedFragments.productColumns\"/>"))
-        assertFalse(
-            "passing XML fixture must stay inside current class-loading preflight",
-            xml.contains("resultType=") ||
-                xml.contains("resultMap=") ||
-                xml.contains("parameterType="),
-        )
-        assertFalse(
-            "passing Product fixture must stay inside current class-loading preflight",
-            product.contains("<resultMap") ||
-                product.contains("resultMap=") ||
-                product.contains("resultType=") ||
-                product.contains("parameterType="),
-        )
-        listOf(pendingChoose, pendingBind).forEach { pending ->
+        assertTrue(product.contains("<sql id=\"localProductColumns\">"))
+        assertTrue(product.contains("<include refid=\"localProductColumns\"/>"))
+
+        assertTrue(readme.contains("M06 | `<foreach>` additional bindings"))
+        assertTrue(readme.contains("materialize in exact order"))
+        assertTrue(readme.contains("M09 | VARCHAR bound execution"))
+        assertTrue(readme.contains("PostgreSQL-safe escaping"))
+        assertTrue(readme.contains("M10 | two BIGINT bindings"))
+        assertTrue(readme.contains("two ordered bindings materialize in exact order"))
+        assertTrue(readme.contains("M15 | `<set>` + `<trim>` safe UPDATE"))
+        assertTrue(readme.contains("mutation approval is mandatory"))
+        assertTrue(readme.contains("M16 | nested Map property"))
+        assertTrue(readme.contains("JSON Map editor"))
+        assertTrue(readme.contains("M17 | same-namespace include"))
+        assertTrue(readme.contains("M02 and M17 jointly cover cross-namespace and same-namespace include authority"))
+        assertTrue(readme.contains("M10 is the manual representative for mapper-method multi-`@Param`"))
+        assertTrue(readme.contains("M06 is the manual representative for"))
+        assertTrue(readme.contains("Collection and"))
+        assertTrue(readme.contains("array alias/wrapper behavior"))
+
+        listOf(
+            "PostgreSqlBigintExecutionMaterializer",
+            "one-binding envelope",
+            "must **Execution Refused** before native execution",
+            "unsupported VARCHAR binding",
+            "unsupported two-BIGINT materialization",
+        ).forEach { retired ->
             assertFalse(
-                "dynamic-tag reproduction must not be masked by class-loading refusal",
-                pending.contains("resultType=") ||
-                    pending.contains("resultMap=") ||
-                    pending.contains("parameterType="),
+                "manual PASS contract must not retain retired materializer-era authority: $retired",
+                readme.contains(retired),
             )
         }
-        assertTrue(pendingChoose.contains("<choose>"))
-        assertTrue(pendingChoose.contains("R01: NOT a release PASS case while #509 is open"))
-        assertTrue(pendingBind.contains("<bind name=\"pattern\""))
-        assertTrue(pendingBind.contains("R02: NOT a release PASS case while #509 is open"))
-        assertTrue(pendingResultMap.contains("<resultMap"))
-        assertTrue(pendingResultMap.contains("resultMap=\"ProductResultMap\""))
-        assertTrue(pendingResultMap.contains("R03: NOT a release PASS case while #510 is open"))
-        assertTrue(pendingResultType.contains("resultType=\"fixture.Product\""))
-        assertTrue(pendingResultType.contains("R04: NOT a release PASS case while #510 is open"))
-        assertTrue(pendingParameterType.contains("parameterType=\"long\""))
-        assertTrue(pendingParameterType.contains("R05: NOT a release PASS case while #510 is open"))
+    }
+
+    @Test
+    fun `historical R01 to R05 reproductions are promoted to parity acceptance fixtures`() {
+        val readme = source("README.md")
+        val choose = source("src/main/resources/mappers/ParityChooseMapper.xml")
+        val bind = source("src/main/resources/mappers/ParityBindMapper.xml")
+        val resultMap = source("src/main/resources/mappers/ParityResultMapMapper.xml")
+        val resultType = source("src/main/resources/mappers/ParityResultTypeMapper.xml")
+        val parameterType = source("src/main/resources/mappers/ParityParameterTypeMapper.xml")
+
+        assertTrue(choose.contains("namespace=\"fixture.ParityChooseMapper\""))
+        assertTrue(choose.contains("<choose>"))
+        assertTrue(choose.contains("R01: P5 parity acceptance case"))
+
+        assertTrue(bind.contains("namespace=\"fixture.ParityBindMapper\""))
+        assertTrue(bind.contains("<bind name=\"pattern\""))
+        assertTrue(bind.contains("SELECT '\${pattern}' AS result_value"))
+        assertTrue(bind.contains("R02: P5 parity acceptance case"))
+
+        assertTrue(resultMap.contains("<resultMap"))
+        assertTrue(resultMap.contains("resultMap=\"ProductResultMap\""))
+        assertTrue(resultMap.contains("R03: P5 parity acceptance case"))
+
+        assertTrue(resultType.contains("resultType=\"fixture.Product\""))
+        assertTrue(resultType.contains("R04: P5 parity acceptance case"))
+
+        assertTrue(parameterType.contains("parameterType=\"long\""))
+        assertTrue(parameterType.contains("#{id,jdbcType=BIGINT}"))
+        assertTrue(parameterType.contains("R05: P5 parity acceptance case"))
+
+        assertTrue(readme.contains("ParityChooseMapper.chooseParity"))
+        assertTrue(readme.contains("ParityBindMapper.bindParity"))
+        assertTrue(readme.contains("ParityResultMapMapper.findAllWithResultMap"))
+        assertTrue(readme.contains("ParityResultTypeMapper.findAllWithResultType"))
+        assertTrue(readme.contains("ParityParameterTypeMapper.findByIdWithParameterType"))
+
+        val pendingPaths = listOf(
+            "PendingChooseMapper.java",
+            "PendingBindMapper.java",
+            "PendingResultMapMapper.java",
+            "PendingResultTypeMapper.java",
+            "PendingParameterTypeMapper.java",
+            "PendingChooseMapper.xml",
+            "PendingBindMapper.xml",
+            "PendingResultMapMapper.xml",
+            "PendingResultTypeMapper.xml",
+            "PendingParameterTypeMapper.xml",
+        )
+        Files.walk(sample).use { paths ->
+            val names = paths.filter { path -> Files.isRegularFile(path) }
+                .map { it.fileName.toString() }
+                .toList()
+                .toSet()
+            pendingPaths.forEach { pending ->
+                assertFalse("promoted parity fixture must not retain pending name: $pending", pending in names)
+            }
+        }
+    }
+
+    @Test
+    fun `manual Product fixture pins both cross and same namespace include authority`() {
+        val mapper = source("src/main/java/fixture/ProductMapper.java")
+        val xml = source("src/main/resources/mappers/ProductMapper.xml")
+        val readme = source("README.md")
+
+        assertTrue(mapper.contains("List<Product> findAllProductsLocalInclude()"))
+        assertTrue(xml.contains("<include refid=\"fixture.SharedFragments.productColumns\"/>"))
+        assertTrue(xml.contains("<sql id=\"localProductColumns\">"))
+        assertTrue(xml.contains("<include refid=\"localProductColumns\"/>"))
+        assertTrue(readme.contains("M02 and M17 jointly cover cross-namespace and same-namespace include authority"))
+    }
+
+    @Test
+    fun `manual mapper method fixture pins set trim multi-param and nested map caller shapes`() {
+        val mapper = source("src/main/java/fixture/XmlReleaseValidationMapper.java")
+        val xml = source("src/main/resources/mappers/XmlReleaseValidationMapper.xml")
+        val readme = source("README.md")
+
+        assertTrue(mapper.contains("int setTrimNoop(@Param(\"name\") String name, @Param(\"id\") Long id)"))
+        assertTrue(mapper.contains("Long nestedMapEcho(@Param(\"filter\") Map<String, Object> filter)"))
+        assertTrue(mapper.contains("import java.util.Map;"))
+
+        assertTrue(xml.contains("<update id=\"setTrimNoop\">"))
+        assertTrue(xml.contains("<set>"))
+        assertTrue(xml.contains("<trim prefix=\"WHERE\" prefixOverrides=\"AND |OR \">"))
+        assertTrue(xml.contains("AND FALSE"))
+        assertTrue(xml.contains("<select id=\"nestedMapEcho\">"))
+        assertTrue(xml.contains("#{filter.tenantId,jdbcType=BIGINT}"))
+
+        assertTrue(readme.contains("P2 lower-layer parity separately owns equivalent Collection and"))
+        assertTrue(readme.contains("array alias/wrapper behavior"))
     }
 
     @Test
@@ -175,9 +277,12 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(direct.contains("@Update("))
         assertTrue(direct.contains("@Delete("))
         assertTrue(provider.contains("@SelectProvider"))
-        assertTrue(
-            source("README.md").contains("foreach item bindings are MyBatis additional parameters"),
-        )
+
+        val readme = source("README.md")
+        assertTrue(readme.contains("J02 | bound `@Select` BIGINT"))
+        assertTrue(readme.contains("exact materialized preview + native result"))
+        assertTrue(readme.contains("J07 | `@SelectProvider`"))
+        assertTrue(readme.contains("typed provider-not-supported refusal"))
     }
 
     private fun javacExecutable(): String {
@@ -212,11 +317,13 @@ class ManualReleaseValidationSampleContractTest {
             "file" -> {
                 var root = Path.of(resource.toURI())
                 repeat(resourcePath.split('/').size) {
-                    root = requireNotNull(root.parent) { "invalid MyBatis class resource root: $resource" }
+                    root = requireNotNull(root.parent) {
+                        "invalid MyBatis class resource root: $resource"
+                    }
                 }
                 root
             }
-            else -> error("unsupported MyBatis class resource protocol: ${resource.protocol}")
+            else -> error("unsupported MyBatis class resource protocol: $resource")
         }
     }
 

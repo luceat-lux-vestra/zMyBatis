@@ -1,8 +1,10 @@
 # Leap current architecture and retained safety boundaries
 
-**2026-11-16 pre-1.0 parity note:** the target architecture is now
-[MyBatis-compatibility architecture](mybatis-compatibility-architecture.md) under #512. That target
-supersedes the bounded SQL-text/materializer architecture in this document wherever the two conflict.
+**2026-11-21 P5 parity note:** the target architecture is
+[MyBatis-compatibility architecture](mybatis-compatibility-architecture.md) under #512. P4's
+true-prepared + zMyBatis-result-modal split is retained only as historical/platform evidence; P5
+restores the pre-Leap native Database Tools result workflow through explicit post-stock-MyBatis
+SQL-text materialization for supported bound shapes.
 
 This document records the **current Leap implementation**, the outer boundaries worth retaining, and
 historical rationale from Epic #60. It is not the pre-1.0 target authority.
@@ -25,7 +27,7 @@ The retained architecture is driven by these invariants:
 3. **Current editor content is authoritative.** Active unsaved edits cannot be silently replaced by stale committed PSI or disk content.
 4. **`#{}` and `${}` are different types of input.** This distinction survives every layer.
 5. **Preparation and execution are separate capabilities.** Preparing, formatting, previewing, restoring state, or cancelling cannot execute SQL.
-6. **Preview and execution cannot drift.** The immutable prepared/materialized execution authority approved by the user is exactly what the Database Tools adapter consumes; presentation rendering never becomes a different executable statement.
+6. **Preview and execution cannot drift.** The immutable `PreparedExecutionPlan` approved by the user is exactly the plan revalidated and dispatched; presentation rendering never becomes a different executable statement.
 7. **Wrong target is worse than refusal.** Datasource/schema ambiguity fails closed.
 8. **Platform objects stay at the edge.** `AnActionEvent`, `Editor`, PSI, `Document`, `JdbcConsole`, database PSI objects, dialogs, and disposables do not leak into core contracts.
 9. **Sensitive data is not diagnostics.** Raw inputs, remembered values, credentials, and rendered SQL are not normal log payloads.
@@ -47,9 +49,15 @@ Low-level console creation, schema switching, editor/document mutation, script-m
 
 Parameter requirements are typed/provenanced contracts. Contract codecs/submission policy, `ContractParameterInputDialog`, and `ContractInputHistoryService` own validation, presentation, and opt-in retention. Raw interpolation remains a distinct non-retainable input kind. There is no regex parameter extractor, legacy JSON dialog, or raw-string history service in production.
 
-### MyBatis preparation and materialization
+### MyBatis preparation and execution-plan freezing
 
-The root plugin packages `:mybatis-engine`. Supported source shapes prepare through isolated stock MyBatis semantics and return structured `PreparedExecution`. Execution is allowed only after an explicitly proven materializer creates one immutable target-bound SQL-text artifact. Unsupported dialect/type/semantic shapes fail typed and do not route to a compatibility evaluator.
+The root plugin packages `:mybatis-engine`. Supported source shapes prepare through isolated stock
+MyBatis semantics and return structured `PreparedExecution`. `PreparedExecutionPlanner` freezes
+that evidence into one immutable target-bound `PreparedExecutionPlan`. Zero-binding plans remain
+exact text; supported bound plans are materialized from the ordered stock-MyBatis binding metadata
+into one immutable executable SQL artifact, then both routes use the native Database Tools console/result
+path. Unsupported runtime capability, binding/materialization, target or execution shapes fail typed.
+The deleted legacy evaluator is not a fallback.
 
 ### Target persistence and `ConsoleCacheService`
 
@@ -89,7 +97,7 @@ Contains framework-independent domain/application contracts:
 - source snapshots and canonical statement identity;
 - source dependency graph model;
 - parameter/input provenance model;
-- preparation/materialization models and typed failures;
+- preparation/execution-plan models and typed failures;
 - execution target descriptors;
 - confirmation/safety policy inputs;
 - use-case ports and orchestration that do not require IntelliJ or Database Tools.
@@ -195,20 +203,24 @@ PreparedExecution(
 
 Each ordered binding records enough metadata to let the execution adapter preserve and supply it safely without guessing, including property provenance and relevant Java/JDBC/type-handler identity where available.
 
-### Current execution artifact boundary
+### Current execution-plan boundary
 
-The current registered Leap implementation converts structured `PreparedExecution` into an exact
-target-bound SQL-text artifact only for proven materialization shapes. Zero-binding is DB-neutral and
-the maintained nonzero slice is PostgreSQL BIGINT. Unsupported nonzero shapes fail typed.
+The registered path now freezes structured stock-MyBatis preparation into one immutable
+`PreparedExecutionPlan`. Approval, source revisions, target identity, databaseId, statement kind,
+raw-risk evidence and ordered typed bindings belong to that exact plan.
 
-This remains valid **current behavior** and useful safety evidence, but it is no longer the 1.0 target.
-The pre-1.0 architecture freezes an immutable `PreparedExecutionPlan` and routes bound statements to
-a true prepared backend if the P3 platform proof succeeds. See
-[MyBatis-compatibility architecture](mybatis-compatibility-architecture.md).
+Delivery is explicit:
 
-#251 remains historical evidence about the investigated 2026.2 Database Tools APIs. #391 remains
-historical evidence explaining why SQL-text materialization was selected for the first Leap cutover.
-Neither requires 1.0 to preserve single-binding literalization as the general execution model.
+- ordered bindings == 0 -> exact plan SQL -> `NativeConsoleSqlTextBackend`;
+- supported ordered bindings > 0 -> `NativeExecutionPlanMaterializer` -> exact executable SQL artifact -> `NativeConsoleSqlTextBackend`;
+- successful execution -> Database Tools native result/history.
+
+The historical one-off PostgreSQL BIGINT materializer is not registered authority; P5 replaces that
+bounded slice with the maintained common-scalar plan materializer. There is no silent fallback to
+`DatabaseSessionPreparedBackend` or the retired zMyBatis result modal when materialization refuses.
+
+#251/P3 remain historical evidence about Database Tools session/prepared mechanics. Their inability
+to expose a maintained prepared-to-native-grid bridge does not waive the native-result UX contract.
 
 ### Execution target
 
@@ -321,24 +333,16 @@ It never returns diagnostic comments as SQL.
 
 Current shipping behavior:
 
-1. stock MyBatis produces structured prepared evidence;
-2. a bounded materializer creates an exact SQL-text artifact only for a proven shape;
-3. approval and source/target/cancellation checks apply to that artifact;
-4. Database Tools native console executes the exact text.
-
-The registered action currently admits DB-neutral zero-binding and the proven PostgreSQL BIGINT
-nonzero slice. Other nonzero shapes fail closed and do not route to legacy execution.
-
-This current boundary is protected from unsafe fallback, but its materializer restriction is not the
-1.0 target. The target defined in
-[MyBatis-compatibility architecture](mybatis-compatibility-architecture.md) uses one immutable
-execution-plan authority with explicit backends:
-
-- bound statements -> `DatabaseSessionPreparedBackend` after the P3 maintained-API stop gate;
-- zero-binding/exact-text statements -> `NativeConsoleSqlTextBackend`.
+1. stock MyBatis produces `PreparedExecution` with ordered mappings/values;
+2. `PreparedExecutionPlanner` freezes the exact target-bound `PreparedExecutionPlan`;
+3. approval and immediate source/target/lifecycle checks apply to that exact plan;
+4. bound plans execute through `DatabaseSessionPreparedBackend`;
+5. zero-binding/exact-text plans execute through `NativeConsoleSqlTextBackend`;
+6. prepared outcomes use the bounded zMyBatis result adapter while native text retains Database Tools result/history.
 
 Native Database Tools result/history parity is not a correctness requirement for the prepared
-backend. Source/target/lifecycle/approval invariants remain unchanged in strength.
+backend. Source/target/lifecycle/approval invariants remain unchanged in strength, and no alternate
+backend is used after a selected backend fails.
 
 ## 9. Target/session and Database Tools adapter
 
@@ -358,11 +362,11 @@ Execution behavior:
 3. re-check target validity after user/modality/background boundaries;
 4. acquire/reuse a console as an ephemeral resource according to policy;
 5. apply schema and verify success;
-6. submit the single immutable proven SQL-text artifact; unproven nonzero shapes fail typed;
-7. invoke the native Database Tools path without a zMyBatis DBMS target allowlist;
-8. preserve/restore console document/editor state according to the adapter contract.
+6. freeze and revalidate the immutable `PreparedExecutionPlan`;
+7. materialize supported nonzero bindings into the exact executable SQL artifact; zero-binding plans remain exact text;
+8. dispatch the approved artifact through the native Database Tools console path and preserve console document/editor/resource state according to the adapter contract.
 
-`REUSE` and `NEW_EACH` are resource policies, not target identities.
+Shipping execution uses one resource policy: reuse a remembered/eligible Database Tools console, ask the user to choose when multiple candidates remain, and create one console when no candidate exists or creation is explicitly chosen. Existing consoles remain platform-owned; created consoles are zMyBatis-owned resources. For a created console, the platform-returned `JdbcConsole.session` and datasource-scoped session registry are authoritative after build; exact identity with the pre-build session object is not a product invariant.
 
 ## 10. Application orchestration
 
@@ -464,9 +468,11 @@ PreparationFailure
   UnsupportedSemantic
   PreparationInvariantFailure
 
-MaterializationFailure
-  BoundExecutionRequired
-  RawInterpolationPolicyRequired
+PlanFailure
+  SourceAuthorityMismatch
+  TargetIdentityMismatch
+  DatabaseIdMismatch
+  BindingMetadataUnsupported
 
 TargetFailure
   MissingDatasource
@@ -514,18 +520,18 @@ D0  record the parity architecture in authoritative docs
   -> P2  mapper-method/XML-only invocation contract replacement
   -> P3  prepared-backend spike + hard stop gate
   -> P4  unified execution-plan cutover
-  -> P5  packaged/manual parity
+  -> P5  packaged parity + minimal human UX smoke
   -> P6  superseded admission/preflight/materializer cleanup
 ```
 
-#509 and #510 are parity-regression evidence. Do not patch them independently into the current
-dynamic-admission/materializer architecture before D1.
+#509 and #510 are historical parity-regression evidence whose semantic replacements landed through
+P1/P2. P5 now reconciles their packaged/manual/product evidence before final disposition.
 
 ## 15. Evidence ownership during recovery
 
-Current tests remain authoritative evidence for the current shipping safety boundaries they actually
-exercise: source identity, target identity, cancellation/lifecycle, privacy, approval, packaged host
-behavior, and bounded current preparation/materialization.
+Current tests remain authoritative evidence for the shipping safety boundaries they actually
+exercise: source identity, caller input, target identity, cancellation/lifecycle, privacy, exact-plan
+approval, explicit backend routing, prepared/native execution, and packaged host behavior.
 
 They are **not** automatically evidence that a current refusal is desired 1.0 behavior.
 
@@ -567,10 +573,12 @@ Do not retain old and new semantic authorities simultaneously.
 - **Treat current fail-closed behavior as the desired product contract merely because tests exist:**
   rejected; D1 stock-MyBatis parity defines the target semantic oracle.
 - **Strip arbitrary mapper XML with regexes:** rejected; preparation projection is structural.
-- **Replace SQL literalization with another hand-written scalar JDBC binder matrix:** rejected as the
-  default target; prefer stock MyBatis standard binding semantics.
-- **Require native Database Tools result/history at the cost of refusing ordinary bound MyBatis
-  statements:** rejected for the prepared backend.
+- **Revive the deleted legacy evaluator as a second MyBatis semantic engine:** rejected; stock MyBatis
+  owns dynamic SQL and ordered binding semantics before materialization.
+- **Ad-hoc universal literal substitution:** rejected. The maintained materializer is an explicit,
+  tested PostgreSQL compatibility envelope and unsupported shapes fail typed.
+- **Treat the separate prepared-result modal as equivalent to the established Database Tools UX:**
+  rejected for 1.0 parity.
 - **Hide a second execution authority behind fallback routing:** rejected.
 - **Weaken source/target/cancellation/privacy protections to regain parity:** rejected.
 - **One giant rewrite PR:** rejected; delivery stays phase-gated and rollback-bounded.

@@ -47,6 +47,10 @@ class ContractParameterInputDialog(
         val optionalSupply: JBCheckBox?,
         val rawConfirmation: JBCheckBox?,
         val retainSelection: JBCheckBox?,
+        val textValue: () -> String,
+        val clearValue: () -> Unit,
+        val isExplicitlyEdited: () -> Boolean,
+        val validationMessage: () -> String?,
     )
 
     private val ownerProject = project
@@ -114,6 +118,9 @@ class ContractParameterInputDialog(
 
     override fun doValidate(): ValidationInfo? {
         if (!isFieldPopulationComplete()) return null
+        fields.values.firstNotNullOfOrNull { ui ->
+            ui.validationMessage()?.let { message -> ValidationInfo(message, ui.component) }
+        }?.let { return it }
         return when (val prepared = prepareCurrentInput()) {
             is ContractInputAdapterResult.Success -> null
             is ContractInputAdapterResult.Failure -> validationInfo(prepared.failures.first())
@@ -157,7 +164,7 @@ class ContractParameterInputDialog(
     internal fun materializedRequirementIdsForTest(): List<InputRequirementId> = fields.keys.toList()
 
     internal fun materializedRetainedDraftCountForTest(): Int =
-        fields.count { (id, ui) -> retainedDrafts[id] == ui.editor.text }
+        fields.count { (id, ui) -> retainedDrafts[id] == ui.textValue() }
 
     private fun scheduleNextFieldPopulationChunk() {
         if (
@@ -254,6 +261,15 @@ class ContractParameterInputDialog(
     private fun isFieldPopulationComplete(): Boolean = fields.size == presentationFields.size
 
     private fun createFieldUi(field: ContractInputField): FieldUi {
+        val xmlHints = XmlParameterObjectInputSupport.hints(field.provenance)
+        if (
+            field.editorKind == ContractInputEditorKind.JSON_OBJECT &&
+            XmlParameterObjectInputSupport.isXmlParameterObject(field.provenance) &&
+            xmlHints.isNotEmpty()
+        ) {
+            return createXmlParameterObjectFieldUi(field, xmlHints)
+        }
+
         val rendered = ContractInputSwingRenderer.create(field)
         val editor = rendered.editor
         retainedDrafts[field.requirementId]?.let { retained -> editor.text = retained }
@@ -268,7 +284,55 @@ class ContractParameterInputDialog(
         } else {
             null
         }
-        val retainSelection = if (
+        val retainSelection = retainSelection(field)
+
+        editor.document.addDocumentListener(object : DocumentListener {
+            override fun insertUpdate(event: DocumentEvent) = markEdited(field.requirementId, optionalSupply)
+            override fun removeUpdate(event: DocumentEvent) = markEdited(field.requirementId, optionalSupply)
+            override fun changedUpdate(event: DocumentEvent) = markEdited(field.requirementId, optionalSupply)
+        })
+
+        return FieldUi(
+            editor = editor,
+            component = rendered.component,
+            optionalSupply = optionalSupply,
+            rawConfirmation = rawConfirmation,
+            retainSelection = retainSelection,
+            textValue = { editor.text },
+            clearValue = { editor.text = "" },
+            isExplicitlyEdited = { field.requirementId in editedRequirementIds },
+            validationMessage = { null },
+        )
+    }
+
+    private fun createXmlParameterObjectFieldUi(
+        field: ContractInputField,
+        hints: List<XmlParameterObjectPathHint>,
+    ): FieldUi {
+        val editor = XmlParameterObjectInputEditor(hints)
+        retainedDrafts[field.requirementId]?.let(editor::loadRetainedJson)
+
+        val rawConfirmation = if (field.requiresExplicitRawConfirmation) {
+            JBCheckBox("I understand this parameter object contains raw SQL interpolation input", false)
+        } else {
+            null
+        }
+
+        return FieldUi(
+            editor = editor.primaryEditor,
+            component = editor.component,
+            optionalSupply = null,
+            rawConfirmation = rawConfirmation,
+            retainSelection = retainSelection(field),
+            textValue = editor::textForSubmission,
+            clearValue = editor::clearValue,
+            isExplicitlyEdited = editor::isExplicitlyEdited,
+            validationMessage = editor::validationMessage,
+        )
+    }
+
+    private fun retainSelection(field: ContractInputField): JBCheckBox? =
+        if (
             retentionEnabled && field.retentionPolicy == ContractInputRetentionPolicy.RETAINABLE
         ) {
             JBCheckBox(
@@ -282,15 +346,6 @@ class ContractParameterInputDialog(
             null
         }
 
-        editor.document.addDocumentListener(object : DocumentListener {
-            override fun insertUpdate(event: DocumentEvent) = markEdited(field.requirementId, optionalSupply)
-            override fun removeUpdate(event: DocumentEvent) = markEdited(field.requirementId, optionalSupply)
-            override fun changedUpdate(event: DocumentEvent) = markEdited(field.requirementId, optionalSupply)
-        })
-
-        return FieldUi(editor, rendered.component, optionalSupply, rawConfirmation, retainSelection)
-    }
-
     private fun markEdited(requirementId: InputRequirementId, optionalSupply: JBCheckBox?) {
         if (suppressDocumentTracking) return
         editedRequirementIds += requirementId
@@ -302,9 +357,9 @@ class ContractParameterInputDialog(
             val ui = fields.getValue(field.requirementId)
             ContractInputDraft(
                 requirementId = field.requirementId,
-                text = ui.editor.text,
+                text = ui.textValue(),
                 supplied = field.requiredness == InputRequiredness.REQUIRED || ui.optionalSupply?.isSelected == true,
-                edited = field.requirementId in editedRequirementIds,
+                edited = ui.isExplicitlyEdited(),
                 retained = field.requirementId in retainedDrafts,
                 rawConfirmed = ui.rawConfirmation?.isSelected == true,
             )
@@ -372,9 +427,10 @@ class ContractParameterInputDialog(
         suppressDocumentTracking = true
         try {
             retainedDrafts.keys.toList().forEach { id ->
-                if (id !in editedRequirementIds) {
-                    fields[id]?.editor?.text = ""
-                    fields[id]?.optionalSupply?.isSelected = false
+                val ui = fields[id]
+                if (ui?.isExplicitlyEdited() != true) {
+                    ui?.clearValue?.invoke()
+                    ui?.optionalSupply?.isSelected = false
                 }
                 fields[id]?.retainSelection?.isSelected = false
             }
@@ -388,6 +444,7 @@ class ContractParameterInputDialog(
     }
 
     private fun displayName(requirementId: InputRequirementId): String {
+        if (requirementId.value == "xml-parameter-object") return "XML parameters"
         val aliases = contract.aliases.filter { it.requirementId == requirementId }.map { it.name }.distinct()
         return when (aliases.size) {
             0 -> requirementId.value

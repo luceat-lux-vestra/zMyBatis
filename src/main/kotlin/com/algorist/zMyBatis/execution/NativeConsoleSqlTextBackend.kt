@@ -1,45 +1,33 @@
 package com.algorist.zMyBatis.execution
 
-import com.algorist.zMyBatis.core.execution.PreparedExecutionPlan
 import com.intellij.database.console.JdbcConsole
 
 internal sealed interface NativeConsoleSqlTextFailure {
-    data object BindingsPresent : NativeConsoleSqlTextFailure
-
     data class DatabaseTools(
         val failure: DatabaseToolsSqlExecutionFailure,
     ) : NativeConsoleSqlTextFailure
 }
 
 /**
- * Explicit zero-binding/exact-text backend.
+ * Native Database Tools SQL-text backend.
  *
- * The backend executes only the exact SQL text already frozen in the approved plan. It never
- * literalizes bindings and refuses any plan that still carries JDBC bindings.
+ * Materialization and approval happen before this boundary. This backend receives exactly one
+ * immutable executable SQL string and never derives, rewrites or binds values itself.
  */
 internal class NativeConsoleSqlTextBackend(
     private val consoleAdapter: DatabaseToolsConsoleAdapter,
 ) {
     fun execute(
         console: JdbcConsole,
-        plan: PreparedExecutionPlan,
+        executionSql: String,
         preExecutionCheck: () -> Boolean,
         onExecuted: () -> Unit,
         onFailure: (NativeConsoleSqlTextFailure) -> Unit,
         onFinished: () -> Unit,
     ) {
-        if (plan.orderedBindings.isNotEmpty()) {
-            try {
-                onFailure(NativeConsoleSqlTextFailure.BindingsPresent)
-            } finally {
-                onFinished()
-            }
-            return
-        }
-
         consoleAdapter.executeSql(
             console = console,
-            sql = plan.sqlWithPlaceholders,
+            sql = executionSql,
             preExecutionCheck = preExecutionCheck,
             onExecuted = onExecuted,
             onFailure = { failure ->

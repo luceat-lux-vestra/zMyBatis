@@ -59,6 +59,7 @@ object MyBatisInvocationContractFactory {
         "char",
     )
     private val rawInterpolation = Regex("""\$\{([^}]*)}""")
+    private val boundPlaceholder = Regex("""#\{([^}]*)}""")
     private val simpleRoot = Regex("[A-Za-z_][A-Za-z0-9_]*")
 
     fun build(source: PreparationSource): ParameterContract = when (source) {
@@ -142,13 +143,7 @@ object MyBatisInvocationContractFactory {
         val provenance = InputProvenance(
             buildList {
                 add(InputEvidence.XmlParameterObject(rootEvidence))
-                addAll(scan.rawUses.map { use ->
-                    InputEvidence.Placeholder(
-                        kind = InputKind.RAW_INTERPOLATION,
-                        expression = use.expression,
-                        source = use.source,
-                    )
-                })
+                addAll(scan.objectEvidence)
             },
         )
         val usages = buildSet {
@@ -438,9 +433,14 @@ object MyBatisInvocationContractFactory {
     )
 
     internal object XmlInvocationUsageScanner {
+        private val bindLiteral = Regex(
+            """null|true|false|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?[lLfFdD]?|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"""",
+        )
+
         data class Result(
             val requiresCallerObject: Boolean,
             val rawUses: List<RawUse>,
+            val objectEvidence: List<InputEvidence>,
         )
 
         fun scan(projection: XmlMapperPreparationProjection.Result.Ready): Result {
@@ -469,7 +469,11 @@ object MyBatisInvocationContractFactory {
                 source = rootDocument.sourceEvidence(),
                 scan = scan,
             )
-            return Result(scan.requiresCallerObject, scan.rawUses.toList())
+            return Result(
+                requiresCallerObject = scan.requiresCallerObject,
+                rawUses = scan.rawUses.toList(),
+                objectEvidence = scan.objectEvidence.toList(),
+            )
         }
 
         private fun inspectNode(
@@ -513,9 +517,47 @@ object MyBatisInvocationContractFactory {
                     }
 
                     when (node.tagName) {
-                        "if", "when" -> if (node.hasAttribute("test")) scan.requiresCallerObject = true
-                        "foreach" -> if (node.hasAttribute("collection")) scan.requiresCallerObject = true
-                        "bind" -> if (node.hasAttribute("value")) scan.requiresCallerObject = true
+                        "if", "when" -> node.getAttribute("test").trim()
+                            .takeIf(String::isNotEmpty)
+                            ?.let { expression ->
+                                scan.requiresCallerObject = true
+                                scan.objectEvidence += InputEvidence.OgnlExpression(
+                                    expression = expression,
+                                    source = source,
+                                )
+                            }
+                        "foreach" -> {
+                            node.getAttribute("item").trim()
+                                .takeIf(String::isNotEmpty)
+                                ?.let(scan.internalNames::add)
+                            node.getAttribute("index").trim()
+                                .takeIf(String::isNotEmpty)
+                                ?.let(scan.internalNames::add)
+                            node.getAttribute("collection").trim()
+                                .takeIf(String::isNotEmpty)
+                                ?.let { expression ->
+                                    scan.requiresCallerObject = true
+                                    scan.objectEvidence += InputEvidence.ForeachCollection(
+                                        expression = expression,
+                                        source = source,
+                                    )
+                                }
+                        }
+                        "bind" -> {
+                            node.getAttribute("name").trim()
+                                .takeIf(String::isNotEmpty)
+                                ?.let(scan.internalNames::add)
+                            node.getAttribute("value").trim()
+                                .takeIf(String::isNotEmpty)
+                                ?.takeUnless(::isSelfContainedBindLiteral)
+                                ?.let { expression ->
+                                    scan.requiresCallerObject = true
+                                    scan.objectEvidence += InputEvidence.OgnlExpression(
+                                        expression = expression,
+                                        source = source,
+                                    )
+                                }
+                        }
                     }
 
                     val attributes = node.attributes
@@ -537,14 +579,45 @@ object MyBatisInvocationContractFactory {
             scan: ScanState,
             source: SourceEvidence,
         ) {
-            if ("#{" in text) scan.requiresCallerObject = true
+            boundPlaceholder.findAll(text).forEach { match ->
+                val expression = match.groupValues[1].substringBefore(',').trim()
+                val root = expression.substringBefore('.').substringBefore('[').trim()
+                if (
+                    expression.isEmpty() ||
+                    expression in variables ||
+                    root in scan.internalNames
+                ) {
+                    return@forEach
+                }
+                scan.requiresCallerObject = true
+                scan.objectEvidence += InputEvidence.Placeholder(
+                    kind = InputKind.BOUND,
+                    expression = expression,
+                    source = source,
+                )
+            }
             rawInterpolation.findAll(text).forEach { match ->
                 val expression = match.groupValues[1].trim()
-                if (expression.isEmpty() || expression in variables) return@forEach
+                val root = expression.substringBefore('.').substringBefore('[').trim()
+                if (
+                    expression.isEmpty() ||
+                    expression in variables ||
+                    root in scan.internalNames
+                ) {
+                    return@forEach
+                }
                 scan.requiresCallerObject = true
                 scan.rawUses += RawUse(expression, source)
+                scan.objectEvidence += InputEvidence.Placeholder(
+                    kind = InputKind.RAW_INTERPOLATION,
+                    expression = expression,
+                    source = source,
+                )
             }
         }
+
+        private fun isSelfContainedBindLiteral(expression: String): Boolean =
+            bindLiteral.matches(expression)
 
         private fun parseDocument(
             projected: XmlMapperPreparationProjection.ProjectedDocument,
@@ -623,6 +696,8 @@ object MyBatisInvocationContractFactory {
         private class ScanState {
             var requiresCallerObject: Boolean = false
             val rawUses = mutableListOf<RawUse>()
+            val objectEvidence = mutableListOf<InputEvidence>()
+            val internalNames = linkedSetOf<String>()
         }
     }
 }

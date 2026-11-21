@@ -3,6 +3,19 @@ name: E2E
 on:
   # PR execution is owned by the canonical Build DAG via workflow_call.
   workflow_call:
+    inputs:
+      candidate_artifact_name:
+        required: true
+        type: string
+      candidate_sha:
+        required: true
+        type: string
+      candidate_version:
+        required: true
+        type: string
+      candidate_sha256:
+        required: true
+        type: string
   # Same trusted-main cache owner as manual E2E; only actual Gradle inputs
   # schedule a bounded cache prime. Product-source merges do not launch E2E.
   push:
@@ -26,6 +39,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  actions: read # Read the exact candidate artifact produced earlier in the same Build run.
   contents: read
 
 jobs:
@@ -64,30 +78,70 @@ jobs:
           # Qodana, or a competing Gradle cache writer on post-merge push.
           ./gradlew --no-daemon -Dorg.gradle.java.installations.fromEnv=JAVA_HOME buildPlugin :mybatis-engine:compileKotlin
 
-      - name: Build exact plugin artifact
+      - name: Resolve exact validation candidate
         if: ${{ github.event_name != 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_ARTIFACT_NAME: ${{ inputs.candidate_artifact_name }}
+          EXPECTED_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          EXPECTED_CANDIDATE_VERSION: ${{ inputs.candidate_version }}
+          EXPECTED_CANDIDATE_SHA256: ${{ inputs.candidate_sha256 }}
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME buildPlugin
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            test -n "$EXPECTED_ARTIFACT_NAME"
+            test -n "$EXPECTED_CANDIDATE_SHA"
+            test -n "$EXPECTED_CANDIDATE_VERSION"
+            test -n "$EXPECTED_CANDIDATE_SHA256"
+            test "$(git rev-parse HEAD)" = "$EXPECTED_CANDIDATE_SHA"
 
-          mapfile -t archives < <(find build/distributions -maxdepth 1 -type f -name '*.zip' -print)
-          if [[ ${#archives[@]} -ne 1 ]]; then
-            echo "::error::Expected exactly one plugin distribution, found ${#archives[@]}"
-            printf '%s\n' "${archives[@]}"
-            exit 1
+            candidate_dir="$RUNNER_TEMP/zmybatis-validation-candidate"
+            rm -rf "$candidate_dir"
+            mkdir -p "$candidate_dir"
+            gh run download "$GITHUB_RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name "$EXPECTED_ARTIFACT_NAME" \
+              --dir "$candidate_dir"
+
+            mapfile -t manifests < <(find "$candidate_dir" -type f -name 'validation-candidate-manifest.txt' -print)
+            mapfile -t archives < <(find "$candidate_dir" -type f -name '*.zip' -print)
+            test "${#manifests[@]}" -eq 1
+            test "${#archives[@]}" -eq 1
+            manifest="${manifests[0]}"
+            artifact="$(realpath "${archives[0]}")"
+
+            manifest_value() { sed -n "s/^$1=//p" "$manifest"; }
+            test "$(manifest_value candidate_sha)" = "$EXPECTED_CANDIDATE_SHA"
+            test "$(manifest_value candidate_version)" = "$EXPECTED_CANDIDATE_VERSION"
+            test "$(manifest_value plugin_artifact)" = "$(basename "$artifact")"
+            test "$(manifest_value plugin_sha256)" = "$EXPECTED_CANDIDATE_SHA256"
+            actual_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
+            test "$actual_sha256" = "$EXPECTED_CANDIDATE_SHA256"
+            candidate_sha="$EXPECTED_CANDIDATE_SHA"
+            candidate_version="$EXPECTED_CANDIDATE_VERSION"
+            candidate_artifact_name="$EXPECTED_ARTIFACT_NAME"
+          else
+            candidate_sha="$(git rev-parse HEAD)"
+            candidate_version="0.0.0-validation.sha${candidate_sha:0:12}"
+            ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME buildPlugin -PpluginVersion="$candidate_version"
+            mapfile -t archives < <(find build/distributions -maxdepth 1 -type f -name '*.zip' -print)
+            test "${#archives[@]}" -eq 1
+            artifact="$(realpath "${archives[0]}")"
+            actual_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
+            candidate_artifact_name="standalone-local-build"
           fi
 
-          tested_commit="$(git rev-parse HEAD)"
-          artifact="${archives[0]}"
-          artifact_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
+          echo "ZMYBATIS_E2E_PLUGIN_ARCHIVE=$artifact" >> "$GITHUB_ENV"
           {
-            echo "tested_commit=$tested_commit"
+            echo "tested_commit=$candidate_sha"
             echo "workflow_sha=$GITHUB_SHA"
+            echo "candidate_version=$candidate_version"
+            echo "candidate_artifact_name=$candidate_artifact_name"
             echo "java_target=25"
-            echo "ide_release=2026.2.3"
-            echo "plugin_artifact=$artifact"
-            echo "plugin_sha256=$artifact_sha256"
+            echo "ide_release=2026.3"
+            echo "plugin_artifact=$(basename "$artifact")"
+            echo "plugin_sha256=$actual_sha256"
           } | tee e2e-artifact-manifest.txt
 
       - name: Install ARM64 EGL runtime for IntelliJ Skiko
@@ -207,36 +261,103 @@ jobs:
           # starterDriver job as the single trusted cache owner.
           cache-read-only: true
 
-      - name: Build exact DataGrip evidence artifact
+      - name: Resolve exact validation candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_ARTIFACT_NAME: ${{ inputs.candidate_artifact_name }}
+          EXPECTED_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          EXPECTED_CANDIDATE_VERSION: ${{ inputs.candidate_version }}
+          EXPECTED_CANDIDATE_SHA256: ${{ inputs.candidate_sha256 }}
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME buildPlugin
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            test -n "$EXPECTED_ARTIFACT_NAME"
+            test -n "$EXPECTED_CANDIDATE_SHA"
+            test -n "$EXPECTED_CANDIDATE_VERSION"
+            test -n "$EXPECTED_CANDIDATE_SHA256"
+            test "$(git rev-parse HEAD)" = "$EXPECTED_CANDIDATE_SHA"
 
-          mapfile -t archives < <(find build/distributions -maxdepth 1 -type f -name '*.zip' -print)
-          if [[ ${#archives[@]} -ne 1 ]]; then
-            echo "::error::Expected exactly one plugin distribution, found ${#archives[@]}"
-            printf '%s\n' "${archives[@]}"
-            exit 1
+            candidate_dir="$RUNNER_TEMP/zmybatis-validation-candidate"
+            rm -rf "$candidate_dir"
+            mkdir -p "$candidate_dir"
+            gh run download "$GITHUB_RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name "$EXPECTED_ARTIFACT_NAME" \
+              --dir "$candidate_dir"
+
+            mapfile -t manifests < <(find "$candidate_dir" -type f -name 'validation-candidate-manifest.txt' -print)
+            mapfile -t archives < <(find "$candidate_dir" -type f -name '*.zip' -print)
+            test "${#manifests[@]}" -eq 1
+            test "${#archives[@]}" -eq 1
+            manifest="${manifests[0]}"
+            artifact="$(realpath "${archives[0]}")"
+
+            manifest_value() { sed -n "s/^$1=//p" "$manifest"; }
+            test "$(manifest_value candidate_sha)" = "$EXPECTED_CANDIDATE_SHA"
+            test "$(manifest_value candidate_version)" = "$EXPECTED_CANDIDATE_VERSION"
+            test "$(manifest_value plugin_artifact)" = "$(basename "$artifact")"
+            test "$(manifest_value plugin_sha256)" = "$EXPECTED_CANDIDATE_SHA256"
+            actual_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
+            test "$actual_sha256" = "$EXPECTED_CANDIDATE_SHA256"
+            candidate_sha="$EXPECTED_CANDIDATE_SHA"
+            candidate_version="$EXPECTED_CANDIDATE_VERSION"
+            candidate_artifact_name="$EXPECTED_ARTIFACT_NAME"
+          else
+            candidate_sha="$(git rev-parse HEAD)"
+            candidate_version="0.0.0-validation.sha${candidate_sha:0:12}"
+            ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME buildPlugin -PpluginVersion="$candidate_version"
+            mapfile -t archives < <(find build/distributions -maxdepth 1 -type f -name '*.zip' -print)
+            test "${#archives[@]}" -eq 1
+            artifact="$(realpath "${archives[0]}")"
+            actual_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
+            candidate_artifact_name="standalone-local-build"
           fi
 
-          tested_commit="$(git rev-parse HEAD)"
-          artifact="${archives[0]}"
-          artifact_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
+          echo "ZMYBATIS_E2E_PLUGIN_ARCHIVE=$artifact" >> "$GITHUB_ENV"
           {
-            echo "tested_commit=$tested_commit"
+            echo "tested_commit=$candidate_sha"
             echo "workflow_sha=$GITHUB_SHA"
+            echo "candidate_version=$candidate_version"
+            echo "candidate_artifact_name=$candidate_artifact_name"
             echo "java_target=25"
             echo "host=DATAGRIP"
-            echo "ide_release=2026.2.3"
-            echo "plugin_artifact=$artifact"
-            echo "plugin_sha256=$artifact_sha256"
+            echo "ide_release=2026.3"
+            echo "plugin_artifact=$(basename "$artifact")"
+            echo "plugin_sha256=$actual_sha256"
           } | tee datagrip-e2e-artifact-manifest.txt
 
       - name: Install ARM64 EGL runtime for DataGrip Skiko
         shell: bash
         run: |
           bash .github/scripts/install-arm64-egl.sh
+
+      - name: Start pinned PostgreSQL E2E service for DataGrip
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --rm \
+            --name zmybatis-postgres-datagrip-e2e \
+            -e POSTGRES_USER=zmybatis \
+            -e POSTGRES_DB=zmybatis \
+            -e POSTGRES_HOST_AUTH_METHOD=trust \
+            -p 5432:5432 \
+            postgres@sha256:0b2882c46a2b8d8e148431b333394348cf4d7f15aec6df7f17d51dc641e56cfa
+          for attempt in $(seq 1 60); do
+            if docker exec zmybatis-postgres-datagrip-e2e \
+                pg_isready -h 127.0.0.1 -U zmybatis -d zmybatis >/dev/null &&
+              docker exec zmybatis-postgres-datagrip-e2e \
+                psql -h 127.0.0.1 -U zmybatis -d zmybatis -Atc 'select 1' | grep -qx '1'; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              docker logs zmybatis-postgres-datagrip-e2e
+              exit 1
+            fi
+            sleep 1
+          done
+          docker exec zmybatis-postgres-datagrip-e2e \
+            psql -h 127.0.0.1 -U zmybatis -d zmybatis -Atc 'select version()'
 
       - name: Run DataGrip Starter / Driver E2E
         shell: bash

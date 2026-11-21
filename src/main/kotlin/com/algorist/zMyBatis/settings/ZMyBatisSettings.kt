@@ -25,7 +25,6 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
         var rememberLastInputs: Boolean = false,
         var sqlPreview: Boolean = false,
         var autoFormatSql: Boolean = true,
-        var consoleSessionPolicy: ConsoleSessionPolicy = ConsoleSessionPolicy.REUSE,
     )
 
     private var myState = State()
@@ -48,23 +47,9 @@ class ZMyBatisSettings : PersistentStateComponent<ZMyBatisSettings.State> {
         get() = myState.autoFormatSql
         set(value) { myState.autoFormatSql = value }
 
-    var consoleSessionPolicy: ConsoleSessionPolicy
-        get() = myState.consoleSessionPolicy
-        set(value) { myState.consoleSessionPolicy = value }
 
     companion object {
         fun getInstance(): ZMyBatisSettings =
             ApplicationManager.getApplication().getService(ZMyBatisSettings::class.java)
     }
-}
-
-/**
- * Policy for DB console resource management.
- *
- * - [REUSE]     : reuse an existing live console when its target identity still matches.
- * - [NEW_EACH]  : acquire a fresh console resource for every execution.
- */
-enum class ConsoleSessionPolicy {
-    REUSE,
-    NEW_EACH,
 }

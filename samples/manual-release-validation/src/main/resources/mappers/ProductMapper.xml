@@ -3,15 +3,25 @@
 <mapper namespace="fixture.ProductMapper">
 
     <!-- M02: realistic Product query retained from the historical mybatisTest project.
-         The qualified include proves a captured cross-namespace fragment dependency.
-         Result-mapping declarations are deliberately absent while #510 is unresolved. -->
+         The qualified include proves a captured cross-namespace fragment dependency. -->
     <select id="findAllProducts">
         SELECT <include refid="fixture.SharedFragments.productColumns"/>
         FROM products
         ORDER BY id
     </select>
 
-    <!-- M14: realistic single-BIGINT lookup. Result mapping remains a #510 pending case. -->
+    <!-- M17: same-namespace include remains a normal projection dependency. -->
+    <sql id="localProductColumns">
+        id, name, active
+    </sql>
+
+    <select id="findAllProductsLocalInclude">
+        SELECT <include refid="localProductColumns"/>
+        FROM products
+        ORDER BY id
+    </select>
+
+    <!-- M14: realistic bound Product lookup through the prepared backend. -->
     <select id="findProductById">
         SELECT <include refid="fixture.SharedFragments.productColumns"/>
         FROM products

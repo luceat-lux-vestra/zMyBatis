@@ -2,6 +2,7 @@
 
 package com.algorist.zMyBatis
 
+import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAcquisitionFailure
 import com.algorist.zMyBatis.execution.LeapActionContextAdmissionCoordinator
 import com.algorist.zMyBatis.execution.LeapActionContextAdmissionFailure
 import com.algorist.zMyBatis.execution.LeapExecutionDeliveryFailure
@@ -101,6 +102,11 @@ private fun leapDeliveryFailureDiagnosticCode(
             "plan-source-authority-mismatch"
         LeapExecutionDeliveryFailure.TargetSemanticDrift ->
             "target-semantic-drift"
+        is LeapExecutionDeliveryFailure.MaterializationFailed ->
+            "materialization-failed:" +
+                failure.failure.kind.name.lowercase().replace('_', '-') +
+                ":" +
+                failure.failure.code
         is LeapExecutionDeliveryFailure.ConsoleAcquisitionFailed ->
             "console-acquisition-failed:" + failure.failure.javaClass.simpleName
         is LeapExecutionDeliveryFailure.NativeExecutionFailed ->
@@ -164,11 +170,32 @@ private object LeapActionFailurePresenter {
                 message = "The configured datasource or explicit schema is unavailable or changed. Select the execution target again.",
             )
 
-            is LeapActionContextAdmissionFailure.InvocationFailed ->
-                FailurePresentation(
-                    title = "zMyBatis: Execution Refused",
-                    message = "zMyBatis could not complete this statement through the supported execution path. Review the mapper, inputs, and target, then try again.",
-                )
+            is LeapActionContextAdmissionFailure.InvocationFailed -> {
+                val consoleFailure =
+                    (failure.failure as? LeapExecutionInvocationFailure.DeliveryFailed)
+                        ?.failure
+                        ?.let { it as? LeapExecutionDeliveryFailure.ConsoleAcquisitionFailed }
+                        ?.failure
+                when (consoleFailure) {
+                    DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed ->
+                        FailurePresentation(
+                            title = "zMyBatis: Database Console Unavailable",
+                            message = "zMyBatis could not create a Database Tools console for the selected datasource. " +
+                                "Check the datasource/session state and run the mapper again.",
+                        )
+                    DatabaseToolsConsoleAcquisitionFailure.ConsoleSelectionUnavailable ->
+                        FailurePresentation(
+                            title = "zMyBatis: Database Console Selection Unavailable",
+                            message = "zMyBatis could not present the Database Tools console chooser for this execution. " +
+                                "Run the mapper again from an active editor.",
+                        )
+                    else ->
+                        FailurePresentation(
+                            title = "zMyBatis: Execution Refused",
+                            message = "zMyBatis could not complete this statement through the supported execution path. Review the mapper, inputs, and target, then try again.",
+                        )
+                }
+            }
         }
 
         show(project, presentation, error = true)

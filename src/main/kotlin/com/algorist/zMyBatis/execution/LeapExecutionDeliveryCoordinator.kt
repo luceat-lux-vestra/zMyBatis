@@ -6,6 +6,10 @@ import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanFailure
 import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailure
 import com.algorist.zMyBatis.core.input.InputEnvironment
+import com.algorist.zMyBatis.core.materialization.NativeExecutionPlanMaterializer
+import com.algorist.zMyBatis.core.materialization.PreparedPlanSqlArtifact
+import com.algorist.zMyBatis.core.materialization.PreparedPlanSqlMaterializationFailure
+import com.algorist.zMyBatis.core.materialization.PreparedPlanSqlMaterializationResult
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.preparation.PreparationFailure
 import com.algorist.zMyBatis.core.preparation.PreparationSource
@@ -13,13 +17,15 @@ import com.algorist.zMyBatis.core.source.SourceSnapshot
 import com.algorist.zMyBatis.source.SourceGraphRevalidationFailure
 import com.algorist.zMyBatis.source.SourceGraphRevalidationResult
 import com.algorist.zMyBatis.source.StatementSourceGraphRevalidator
+import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.project.Project
 
 /**
  * Registered-action coordinator from immutable preparation inputs to one approved execution plan.
  *
- * Backend selection is explicit and determined only by whether the approved plan still carries
- * JDBC bindings. No materialization/literalization fallback is permitted.
+ * Stock MyBatis owns SQL shape/binding order. P5 materializes the supported plan into one immutable
+ * executable SQL artifact before approval, then sends that exact text through the native Database
+ * Tools result path. Unsupported materialization fails closed; there is no prepared/modal fallback.
  */
 internal class LeapExecutionDeliveryCoordinator(project: Project) {
     private val targetResolver = DatabaseToolsTargetResolver(project)
@@ -27,22 +33,14 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
     private val approvalAdapter = LeapExecutionApprovalAdapter(project)
     private val candidateAdapter = LeapExecutionCandidateAdapter(project)
     private val nativeBackend = NativeConsoleSqlTextBackend(consoleAdapter)
-    private val preparedBackend = DatabaseSessionPreparedBackend(
-        PreparedResultLimits(
-            maxRows = PREPARED_RESULT_MAX_ROWS,
-            maxColumns = PREPARED_RESULT_MAX_COLUMNS,
-        ),
-    )
-    private val preparedExecutionTask = PreparedBackendExecutionTaskAdapter(project)
-    private val preparedResultAdapter = PreparedResultPresentationAdapter(project)
 
     fun execute(
         source: PreparationSource,
         parameterContract: ParameterContract,
         inputEnvironment: InputEnvironment,
+        dataContext: DataContext? = null,
         targetDescriptor: ExecutionTargetDescriptor,
         resourceKey: String,
-        forceNewConsole: Boolean,
         approvalOptions: LeapExecutionApprovalOptions,
         isInvocationActive: () -> Boolean,
         onExecuted: () -> Unit,
@@ -74,9 +72,9 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
                 continueWithCandidate(
                     authority = authority,
                     candidate = candidate,
+                    dataContext = dataContext,
                     targetDescriptor = targetDescriptor,
                     resourceKey = resourceKey,
-                    forceNewConsole = forceNewConsole,
                     approvalOptions = approvalOptions,
                     isInvocationActive = isInvocationActive,
                     onExecuted = onExecuted,
@@ -91,9 +89,9 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
     private fun continueWithCandidate(
         authority: PreparationSourceAuthority,
         candidate: LeapExecutionCandidateResult,
+        dataContext: DataContext?,
         targetDescriptor: ExecutionTargetDescriptor,
         resourceKey: String,
-        forceNewConsole: Boolean,
         approvalOptions: LeapExecutionApprovalOptions,
         isInvocationActive: () -> Boolean,
         onExecuted: () -> Unit,
@@ -125,8 +123,17 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
             return
         }
 
+        val artifact = when (val materialization = NativeExecutionPlanMaterializer.materialize(plan)) {
+            is PreparedPlanSqlMaterializationResult.Ready -> materialization.artifact
+            is PreparedPlanSqlMaterializationResult.Failed -> {
+                onFailure(LeapExecutionDeliveryFailure.MaterializationFailed(materialization.failure))
+                return
+            }
+        }
+
         approvalAdapter.requestApproval(
             plan = plan,
+            executionSql = artifact.executionSql,
             options = approvalOptions,
             isInvocationActive = isInvocationActive,
             onResult = { approval ->
@@ -135,10 +142,11 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
                         deliverApproved(
                             authority = authority,
                             plan = plan,
+                            artifact = artifact,
+                            dataContext = dataContext,
                             targetDescriptor = targetDescriptor,
                             resourceKey = resourceKey,
-                            forceNewConsole = forceNewConsole,
-                            isInvocationActive = isInvocationActive,
+                                    isInvocationActive = isInvocationActive,
                             onExecuted = onExecuted,
                             onCancelled = onCancelled,
                             onFailure = onFailure,
@@ -154,9 +162,10 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
     private fun deliverApproved(
         authority: PreparationSourceAuthority,
         plan: PreparedExecutionPlan,
+        artifact: PreparedPlanSqlArtifact,
+        dataContext: DataContext?,
         targetDescriptor: ExecutionTargetDescriptor,
         resourceKey: String,
-        forceNewConsole: Boolean,
         isInvocationActive: () -> Boolean,
         onExecuted: () -> Unit,
         onCancelled: () -> Unit,
@@ -183,8 +192,10 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
         consoleAdapter.acquireAndDeliverConsole(
             dataSource = deliveryTarget.dataSource,
             schema = deliveryTarget.schema,
+            targetId = deliveryTarget.resolvedTarget.targetId,
             resourceKey = resourceKey,
-            forceNew = forceNewConsole,
+            dataContext = dataContext,
+            onCancelled = onCancelled,
             onConsoleReady = { console, releaseConsole ->
                 val preExecutionCheck = {
                     planDeliveryValid(
@@ -195,79 +206,19 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
                     )
                 }
 
-                if (plan.orderedBindings.isEmpty()) {
-                    nativeBackend.execute(
-                        console = console,
-                        plan = plan,
-                        preExecutionCheck = preExecutionCheck,
-                        onExecuted = onExecuted,
-                        onFailure = { failure ->
-                            onFailure(LeapExecutionDeliveryFailure.NativeExecutionFailed(failure))
-                        },
-                        onFinished = releaseConsole,
-                    )
-                } else {
-                    preparedExecutionTask.execute(
-                        executeBackend = { onHandleReady, onCompleted ->
-                            preparedBackend.execute(
-                                console = console,
-                                plan = plan,
-                                currentTarget = deliveryTarget.resolvedTarget,
-                                preExecutionCheck = preExecutionCheck,
-                                onHandleReady = onHandleReady,
-                                onCompleted = onCompleted,
-                            )
-                        },
-                        onCompleted = { outcome ->
-                            handlePreparedOutcome(
-                                outcome = outcome,
-                                isInvocationActive = isInvocationActive,
-                                onExecuted = onExecuted,
-                                onCancelled = onCancelled,
-                                onFailure = onFailure,
-                                onFinished = releaseConsole,
-                            )
-                        },
-                    )
-                }
+                nativeBackend.execute(
+                    console = console,
+                    executionSql = artifact.executionSql,
+                    preExecutionCheck = preExecutionCheck,
+                    onExecuted = onExecuted,
+                    onFailure = { failure ->
+                        onFailure(LeapExecutionDeliveryFailure.NativeExecutionFailed(failure))
+                    },
+                    onFinished = releaseConsole,
+                )
             },
             onFailure = { failure ->
                 onFailure(LeapExecutionDeliveryFailure.ConsoleAcquisitionFailed(failure))
-            },
-        )
-    }
-
-    private fun handlePreparedOutcome(
-        outcome: DatabaseSessionPreparedOutcome,
-        isInvocationActive: () -> Boolean,
-        onExecuted: () -> Unit,
-        onCancelled: () -> Unit,
-        onFailure: (LeapExecutionDeliveryFailure) -> Unit,
-        onFinished: () -> Unit,
-    ) {
-        preparedResultAdapter.present(
-            outcome = outcome,
-            isInvocationActive = isInvocationActive,
-            onFinished = {
-                try {
-                    when (outcome) {
-                        is DatabaseSessionPreparedOutcome.Query,
-                        is DatabaseSessionPreparedOutcome.Update,
-                        -> onExecuted()
-
-                        DatabaseSessionPreparedOutcome.Cancelled ->
-                            onCancelled()
-
-                        is DatabaseSessionPreparedOutcome.Failed ->
-                            onFailure(
-                                LeapExecutionDeliveryFailure.PreparedExecutionFailed(
-                                    outcome.failure,
-                                ),
-                            )
-                    }
-                } finally {
-                    onFinished()
-                }
             },
         )
     }
@@ -303,10 +254,6 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
     private fun revalidate(authority: PreparationSourceAuthority): SourceGraphRevalidationResult =
         StatementSourceGraphRevalidator.revalidateSnapshots(authority.snapshots)
 
-    companion object {
-        private const val PREPARED_RESULT_MAX_ROWS = 1_000
-        private const val PREPARED_RESULT_MAX_COLUMNS = 256
-    }
 }
 
 internal sealed interface LeapDeliveryAdmission {
@@ -375,6 +322,10 @@ internal sealed interface LeapExecutionDeliveryFailure {
     data object PlanSourceAuthorityMismatch : LeapExecutionDeliveryFailure
 
     data object TargetSemanticDrift : LeapExecutionDeliveryFailure
+
+    data class MaterializationFailed(
+        val failure: PreparedPlanSqlMaterializationFailure,
+    ) : LeapExecutionDeliveryFailure
 
     data class ConsoleAcquisitionFailed(
         val failure: DatabaseToolsConsoleAcquisitionFailure,

@@ -15,18 +15,18 @@ evidence. The old IntelliJ template rename test and evaluator debug/reproduction
 
 | Correctness boundary | Authoritative evidence | What it proves |
 | --- | --- | --- |
-| Caller-authority parameter/input boundary | `P2CallerAuthorityParityTest`, `P2RegisteredPathParityTest`, `LeapExecutionInvocationCoordinatorTest`, `LeapExecutionCandidateCoordinatorTest`, `ContractInputAdapterTest`, `ContractInputSubmissionPolicyTest`, `ContractInputSwingRendererProjectFixtureTest`, `ContractInputHistoryPolicyTest` | mapper method metadata or the explicit XML-only parameter object owns caller requirements; stock-compatible aliases/parameter objects are built independently of dynamic SQL syntax; bound/raw usage is separate from caller value type; raw-used input remains non-retainable |
-| Java direct-annotation source authority | `JavaAnnotationSourceCaptureAdapterProjectFixtureTest`, `JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest`, `LeapActionContextAdmissionCoordinatorTest` | immutable Java method identity, ordered signature, explicit `@Param`, constants/dependencies, databaseId variants, source revision authority, and typed unsupported cases feed the registered action |
+| Caller-authority parameter/input boundary | `P2CallerAuthorityParityTest`, `P2RegisteredPathParityTest`, `LeapExecutionInvocationCoordinatorTest`, `LeapExecutionCandidateCoordinatorTest`, `ContractInputAdapterTest`, `ContractInputSubmissionPolicyTest`, `ContractInputSwingRendererProjectFixtureTest`, `XmlParameterObjectInputSupportTest`, `XmlParameterObjectInputEditorProjectFixtureTest`, `ContractInputHistoryPolicyTest` | mapper method metadata or the explicit XML-only parameter object owns caller requirements; stock-compatible aliases/parameter objects are built independently of dynamic SQL syntax; XML-only source provenance may project confidently observed dotted caller paths into convenient Fields and an editable generated JSON template without changing the single-object core contract or promoting `<bind>` / foreach locals to caller input; bound/raw usage is separate from caller value type; raw-used input remains non-retainable |
+| Java direct-annotation source authority | `JavaAnnotationSourceCaptureAdapterProjectFixtureTest`, `JavaAnnotationSourceCaptureAdapterAdversarialProjectFixtureTest`, `LeapActionContextAdmissionCoordinatorTest`, `ZMyBatisStarterDriverE2ETest` | immutable Java method identity, ordered signature, explicit `@Param`, constants/dependencies and databaseId variants feed the registered action; Provider annotations remain explicitly unsupported and the packaged action presents that refusal |
 | XML source/dependency authority | `XmlMapperSourceDiscoveryTest`, `XmlStatementSourceGraphResolverTest`, adversarial source-graph tests, `LeapActionContextAdmissionCoordinatorTest` | canonical XML statement identity and reachable `<sql>/<include>` dependencies are complete, source-backed, target-selected where applicable, and fail typed on missing/ambiguous/cyclic/stale authority |
 | Isolated MyBatis preparation | `P2RegisteredPathParityTest`, `P2OgnlSafetyAdmissionTest`, `MyBatisPreparationEngineTest`, `XmlMapperPreparationEngineTest`, `XmlMapperPreparationProjectionParityTest`, `XmlSiblingBooleanIfPreparationTest`, `XmlMapperForeachPreparationTest` | selected Java/XML statements prepare through stock MyBatis after caller authority and capability-only safety checks; standard if/choose/foreach/where/set/trim/bind semantics are not gated by syntax-specific admission owners; source projection, topology, runtime isolation and typed capability failures remain enforced |
 | Stock MyBatis parity oracle and registered P2 parity | `StockMyBatisParityOracleTest`, `P2CallerAuthorityParityTest`, `P2RegisteredPathParityTest` + `mybatis-engine/src/test/resources/parity/**` | the frozen stock oracle defines expected MyBatis 3.6.0 semantics, while P2 registered-path tests prove caller-object construction and standard dynamic-tag execution now reach the maintained Java/XML preparation paths without a second zMyBatis semantic grammar |
 | Raw-interpolation confirmation | `LeapExecutionApprovalPolicyTest`, `LeapExecutionApprovalAdapterTest`, `LeapExecutionDeliveryCoordinatorTest`, `ZMyBatisStarterDriverE2ETest` | raw provenance forces final-artifact approval even when ordinary preview is off; cancellation is fail-closed; packaged XML and direct-Java raw composition is exercised |
 | Direct Java annotation raw composition | `P2CallerAuthorityParityTest`, `MyBatisPreparationEngineTest`, `LeapExecutionInvocationCoordinatorTest`, `ContractInputSwingRendererProjectFixtureTest`, `StarterDatabaseE2EIsolationContractTest`, `ZMyBatisStarterDriverE2ETest` | direct Java `@Select` / dynamic `<script>` uses mapper-signature caller authority; one String value may participate in both bound and raw usage; raw use remains non-retained and approval-gated before Database Tools delivery |
-| Mutation-declaration confirmation | `LeapExecutionApprovalPolicyTest`, `LeapExecutionApprovalAdapterTest`, `LeapExecutionDeliveryCoordinatorTest` | mutation declaration forces approval but is not SQL authorization |
+| Mutation-declaration confirmation | `LeapExecutionApprovalPolicyTest`, `LeapExecutionApprovalAdapterTest`, `LeapExecutionDeliveryCoordinatorTest`, `ZMyBatisStarterDriverE2ETest` | mutation declaration forces approval but is not SQL authorization; packaged IDEA proves SQL Preview OFF cannot bypass final-plan confirmation and cancellation prevents execution |
 | Registered action boundary | `MyBatisActionUpdateProjectFixtureTest`, `MyBatisActionUpdateBoundaryTest`, `LeapActionContextAdmissionCoordinatorTest` | `MyBatisExecuteAction` keeps update bounded and delegates supported execution only to Leap admission; no low-level Database Tools or alternative execution route is present at the action edge |
-| Target persistence and console lifecycle | `PersistedExecutionTargetSelectionTest`, `ExecutionTargetDescriptorStoreTest`, `MyBatisActionInterceptorActivityLifecycleTest`, `ConsoleCacheServiceLifecycleTest`, `ConsoleCacheOwnedResourceDisposalContractTest`, `DatabaseToolsTargetResolverTest`, `DatabaseToolsConsoleAdapterBoundaryTest` | current v3 source→target persistence is independent of live consoles; exact target identity gates REUSE; matching live consoles are reused under source-key ownership; same-source overlap, shutdown, invalid/disposed resources, and stale targets fail closed |
+| Target persistence, databaseId and console lifecycle | `PersistedExecutionTargetSelectionTest`, `ExecutionTargetDescriptorStoreTest`, `MyBatisActionInterceptorActivityLifecycleTest`, `ConsoleCacheServiceLifecycleTest`, `ConsoleCacheOwnedResourceDisposalContractTest`, `DatabaseToolsTargetResolverTest`, `DatabaseToolsConsoleAdapterBoundaryTest`, `ZMyBatisStarterDriverE2ETest` | current v3 source→target persistence is independent of live consoles; exact target identity gates REUSE; packaged PostgreSQL selection derives the PostgreSQL databaseId variant rather than the default; same-source overlap, shutdown, invalid/disposed resources, and stale targets fail closed |
 | Sensitive production logging | `SensitiveLoggingContractTest`, action/adapter diagnostic contract tests | production logs reject direct interpolation of known sensitive SQL/input/source/target identities and platform exception messages; typed expected failures expose metadata rather than raw payload |
-| Real packaged execution | `ZMyBatisStarterDriverE2ETest` via `E2E / Starter / Driver E2E` | exact packaged plugin must execute maintained zero-binding, PostgreSQL BIGINT, XML raw, direct-Java raw, cancellation/history and fail-closed scenarios through the registered action on IDEA Ultimate 2026.3 (exact-HEAD evidence required) |
+| Real packaged execution | `ZMyBatisStarterDriverE2ETest` via `E2E / Starter / Driver E2E` | exact packaged plugin must execute zero-binding and representative multi-binding cases through the native Database Tools result surface, plus XML/direct-Java raw approval and maintained fail-closed/lifecycle scenarios on IDEA Ultimate 2026.3; a separate zMyBatis query-result modal is a P5 blocker (exact-HEAD evidence required) |
 
 ## Pre-1.0 parity-recovery evidence
 
@@ -57,8 +57,9 @@ The oracle deliberately does **not** encode historical Leap refusal as target tr
 `XmlMapperPreparationProjectionParityTest` for structural selected-statement/reachable-fragment
 projection. P2 now extends that frozen oracle into the registered invocation/input authority:
 `P2CallerAuthorityParityTest`, `P2RegisteredPathParityTest` and the Java/XML engine suites prove
-mapper-signature / explicit XML-object caller authority and stock dynamic-SQL execution. P3 is the
-next hard-stop phase and extends this evidence into the prepared Database Tools backend.
+mapper-signature / explicit XML-object caller authority and stock dynamic-SQL execution. P3/P4 then
+promoted the maintained prepared Database Tools backend and immutable execution-plan routing into the
+registered path.
 
 Historical Boolean-if/foreach syntax-admission owners are no longer registered semantic authorities.
 Their retained successor tests exercise stock behavior plus provenance/topology/security invariants,
@@ -67,16 +68,18 @@ not a second dynamic-language permission table.
 ## Manual release acceptance boundary
 
 The repository-owned [manual release validation sample](../samples/manual-release-validation/README.md)
-is supplemental maintainer evidence for an exact packaged release candidate. It intentionally reuses
-the maintained zero-binding, PostgreSQL BIGINT + Boolean-if, XML raw and direct-Java raw shapes while
-adding safe manual probes for mutation confirmation, qualified includes, databaseId selection,
-unsupported materialization, settings, target persistence, console policy and DataGrip smoke.
+is the shared acceptance fixture for an exact packaged release candidate. Its M/J/R/U/T matrix maps
+current P1-P4 behavior to explicit automated owners; it is **not** a mandate to replay the full
+semantic/routing matrix manually.
 
-Manual acceptance does **not** replace automated evidence and does not define target semantics merely
-because a fixture can be written. #509 and #510 are parity-regression evidence under #512. Their
-pending reproductions intentionally remain outside the current PASS set until the new preparation/
-invocation/backend architecture makes them real supported cases. The goal is to promote those
-fixtures to PASS before 1.0, not to document them permanently as product exclusions.
+Manual acceptance is restricted to three residual IDEA UX checks that automation does not judge
+well: exact-ZIP install/settings/action visibility, one native + one prepared result visual sanity
+check, and restart/persisted-target UX. DataGrip has no separate manual requirement because its exact
+packaged service/refusal/prepared route is already exercised independently by Starter/Driver.
+
+Historical #509/#510 reproductions are promoted to normal `Parity*` acceptance fixtures only
+because P1/P2 and packaged evidence own the underlying behavior. Human smoke never substitutes for
+those automated contracts.
 
 ## Sensitive logging evidence boundary
 
@@ -119,28 +122,46 @@ The remaining preflight logic is capability/safety-only: unsafe executable OGNL/
 custom application TypeHandler/LanguageDriver boundaries, resource budgets, raw non-retention/
 approval provenance, source revision identity and bound-token topology remain fail closed.
 
-There is no compatibility evaluator, unknown-tag stripping mode, OGNL source rewrite, error-as-SQL path, or evaluator-owned generic literalization in the registered execution architecture. Unsupported preparation/materialization returns typed failure before approval or Database Tools delivery.
+There is no compatibility evaluator, unknown-tag stripping mode, OGNL source rewrite, error-as-SQL
+path, or evaluator-owned generic literalization in the registered execution architecture.
+Unsupported preparation, plan freezing, binding, target, or backend execution returns typed failure
+without switching to a legacy/materializer route.
 
 ## Mutation and raw interpolation safety evidence boundary
 
 Raw interpolation is represented explicitly in the parameter contract and `PreparedExecution`; it is never treated as a normal bound value. `LeapExecutionApprovalPolicyTest` and adapter/delivery tests prove that any raw interpolation or INSERT/UPDATE/DELETE declaration forces final-artifact confirmation even when ordinary `sqlPreview` is disabled.
 
-Statement kind remains confirmation evidence, not SQL authorization. The immutable materialized artifact is the only executable payload, cancellation terminates the invocation, and packaged Starter/Driver scenarios prove XML and direct-Java raw confirmation/cancellation behavior against the maintained PostgreSQL Database Tools path.
+Statement kind remains confirmation evidence, not SQL authorization. The immutable approved
+`PreparedExecutionPlan` is the execution authority; cancellation terminates the invocation, and
+packaged Starter/Driver scenarios prove XML/direct-Java raw confirmation behavior without weakening
+the prepared/native routing boundary.
 
 ## Preview and execution boundary
 
-Current shipping preview/approval receives the immutable materialized SQL-text artifact. Formatting
-may derive presentation text but cannot mutate `executionSql`; the Database Tools adapter receives
-the exact frozen artifact after source/target/lifecycle revalidation.
+Current shipping preview/approval receives the immutable `PreparedExecutionPlan`: placeholder SQL,
+ordered typed bindings, raw interpolation provenance/result, source revisions, target/databaseId and
+statement kind. Formatting derives presentation text only and cannot mutate the approved plan.
 
-The 1.0 target generalizes that identity to an immutable `PreparedExecutionPlan`: SQL with
-placeholders plus ordered typed bindings, raw interpolation provenance/result, source revisions,
-target and statement kind. P3/P4 must add backend/plan evidence before this target becomes current
-product evidence.
+The exact approved plan is immediately revalidated before delivery. Current P4 code still dispatches
+bindings > 0 to `DatabaseSessionPreparedBackend`, but P5 treats that prepared/modal route as a regression.
+The target evidence is:
+- bindings == 0 -> exact text -> `NativeConsoleSqlTextBackend`;
+- supported bindings > 0 -> proven executable-SQL materialization -> `NativeConsoleSqlTextBackend`.
 
-The maintained Starter/Driver E2E currently supplies representative full click-throughs for
-DB-neutral zero-binding, PostgreSQL BIGINT input/materialization/native history, XML raw cancellation,
-and direct-Java raw cancel/reinvoke/execute. These do not imply broader 1.0 parity.
+The Starter/Driver E2E must supply representative full click-throughs for:
+- zero-binding native execution;
+- multi-binding materialized execution with the native Database Tools result grid;
+- promoted built-in `parameterType="long"` metadata through the registered prepared route;
+- target-derived PostgreSQL `databaseId` selection over the default variant;
+- mutation-declaration approval with ordinary preview disabled and cancellation before execution;
+- explicit packaged `@SelectProvider` refusal;
+- XML raw cancellation;
+- direct-Java raw cancel/reinvoke/execute;
+- typed no-datasource refusal.
+
+The parameterType scenario is P5 packaged acceptance for historical #510/R05. These representative
+scenarios still do not replace the lower-layer stock MyBatis oracle or project-fixture lifecycle/
+prepared-cancellation evidence.
 
 ## Session and datasource platform gaps
 
@@ -152,9 +173,9 @@ The tests prove project-scoped v3 persistence, stable datasource UUID + explicit
 
 #478 adds DataGrip as an explicit, independently visible host proof rather than reusing IDEA Ultimate evidence.
 
-`verifyPlugin` targets DataGrip 2026.3 independently of IDEA Ultimate 2026.3, with the minimum build raised to 263. The process layer uses `ZMyBatisDataGripStarterDriverE2ETest` through the separate `dataGripIntegrationTest` task and `Starter / Driver E2E (DataGrip)` CI job. The exact packaged plugin must load in DataGrip 2026.3, expose the shipping settings service, register the XML action, reach the typed no-datasource refusal, remain Driver-responsive, and close cleanly under a strict IDE-failure boundary.
+`verifyPlugin` targets DataGrip 2026.3 independently of IDEA Ultimate 2026.3, with the minimum build raised to 263. The process layer uses `ZMyBatisDataGripStarterDriverE2ETest` through the separate `dataGripIntegrationTest` task and `Starter / Driver E2E (DataGrip)` CI job. P5 must move the bounded XML-only PostgreSQL DataGrip scenario to the same native-result contract: stock MyBatis resolves the bound shape, the admitted value is materialized safely, and Database Tools presents `41` through its normal result surface rather than a zMyBatis prepared-result dialog. The host suite also retains service loading, typed no-datasource refusal, strict IDE-failure reporting and clean shutdown.
 
-DataGrip evidence is deliberately narrower than the IU PostgreSQL golden path. It does not prove Java annotation source behavior, native PostgreSQL result/history parity, every datasource/schema lifecycle case, or wider JetBrains host compatibility. A successful IU run cannot satisfy the DataGrip obligation, and a successful DataGrip smoke cannot widen the Java-source or DBMS capability matrix. Those gaps are explicit so a green `Test` context is not misrepresented as broader platform proof.
+DataGrip evidence is deliberately narrower than the IU PostgreSQL golden path. It does not prove Java annotation source behavior, native Database Tools result/history parity, every datasource/schema lifecycle case, every DBMS/dialect, or wider JetBrains host compatibility. A successful IU run cannot satisfy the DataGrip obligation, and a successful DataGrip run cannot widen the Java-source or native-result capability matrix. Those gaps are explicit so a green `Test` context is not misrepresented as broader platform proof. `DataGripStarterDriverE2EContractTest` pins that bounded claim and the pinned PostgreSQL workflow prerequisite.
 
 ## Other gates
 
@@ -197,14 +218,14 @@ authority.
 The root execution tests (`LeapExecutionInvocationCoordinatorTest`,
 `LeapExecutionCandidateCoordinatorTest`, and the project-fixture handoff tests) use the same
 `MyBatisInvocationContractFactory` as production. This prevents test-only legacy contracts from
-masking registered-path drift. Materialization remains intentionally bounded after preparation:
-current zero-binding/raw/PostgreSQL-BIGINT adapters are execution envelopes, not MyBatis semantic
-authorities. P3 is the next hard-stop phase for prepared Database Tools backend evidence.
+masking registered-path drift. P3/P4 are complete: nonzero ordered bindings are ordinary prepared
+backend input, while zero-binding/exact-text plans use the explicit native backend. Historical
+materializer tests are no longer execution-authority evidence.
 
 ## IDEA 2026.3 compatibility and console lifetime authority (2026.2.3 historical)
 
 The build and Starter/Driver IDE now target IDEA Ultimate 2026.3 on JDK 25.
-The declared minimum is **263**; independent Plugin Verifier targets are IDEA Ultimate 2026.3 and DataGrip 2026.3. Historical #251 Database Tools parameterized-execution probes and the previous IDEA 2026.2.3 lifetime tests remain historical evidence, **not** a current support promise. The 263 SQL-console editor opening uses the public `OpenFileDescriptor.navigate(true)` entry point; its EDT continuation requires the actual non-disposed editor and exact-source/target and live-console revalidation before native execution. No internal or experimental editor-open APIs are permitted.
+The declared minimum is **263**; independent Plugin Verifier targets are IDEA Ultimate 2026.3 and DataGrip 2026.3. Historical #251 Database Tools parameterized-execution probes and the previous IDEA 2026.2.3 lifetime tests remain historical evidence, **not** a current support promise. The 263 shipping console boundary does not open an editor tab. It borrows an existing Database Tools console/session client and uses a transient off-screen editor only when native SQL parsing requires an `Editor`; exact source/target and console validity are still revalidated before native execution. No internal or experimental editor-open APIs are permitted.
 
 `DatabaseToolsConsoleAdapter` uses public `JdbcConsole.isValid()` before resource access, after
 editor-open scheduling and immediately before native query invocation. The maintained API includes
@@ -425,79 +446,68 @@ Retained-resource/lifecycle evidence beyond this dialog callback ownership is co
 by #476, while separate DataGrip host evidence is covered by #478/#480/#481; this dialog fixture
 does not subsume either boundary.
 
-## Repeated console resource lifecycle and retention evidence
+## Repeated borrowed-console lifecycle evidence
 
-`ConsoleResourceLifecycleScaleProjectFixtureTest` measures the repeated resource envelope of the
-shipping Database Tools acquisition boundary using real IntelliJ `JdbcConsole` instances.
+`ConsoleResourceLifecycleScaleProjectFixtureTest` measures the shipping Database Tools boundary
+using real IntelliJ `JdbcConsole` instances that are created by the fixture as platform-owned
+preconditions, not by zMyBatis acquisition.
 
-The REUSE case performs **32 same-source/same-target completed acquisitions** through
-`DatabaseToolsConsoleAdapter`. Every terminal callback releases keyed ownership before the next
-iteration. The fixture records the number of distinct console identities, verifies that the cache
-retains exactly the single matching console, proves the lease can be reacquired after every
-completion, then evicts that bounded owner and requires the console lifetime to be disposed.
+The shipping adapter performs **reuse / choose / create** acquisition. It enumerates the resolved
+datasource's existing Database Tools session clients, first honors one live runtime association for
+the exact source+target, then prefers one unique dynamically derived mapper-filename match, then the
+sole eligible console. Multiple remaining candidates require an explicit chooser and include a
+Create New Console action; zero candidates create one automatically. Borrowed consoles are never
+owned or disposed by zMyBatis. Consoles created by zMyBatis are resource-owned and cleaned through
+the existing console lifecycle service. Creation supplies the datasource-scoped session to the
+`JdbcConsole` builder, but post-build authority comes from the resulting `JdbcConsole.session` and
+the datasource-scoped Database Tools session registry. The lifecycle contract requires the created
+console to belong to exactly one registered live session; it does not require that session object to
+be identical to the pre-build `getSession(...)` object. A source lease prevents duplicate invocation for one mapper,
+while a second lease keyed by the selected console prevents different mapper sources from
+concurrently mutating the same console document.
 
-The NEW_EACH case performs **16 completed acquisitions** through the same shipping adapter. It
-requires one distinct console per iteration and verifies that none enters the zMyBatis REUSE cache.
-The real console lifetimes are deliberately left untouched by fixture cleanup so the platform test
-project teardown can establish the actual post-terminal lifetime boundary. The fixture records how
-many NEW_EACH consoles remain live immediately after terminal handoff and, from `tearDown()`, how
-many are disposed when the owning IntelliJ test project is torn down. A live NEW_EACH console after
-terminal handoff is therefore recorded as outside zMyBatis cache ownership rather than being
-silently classified as a leak.
+The repeated-completion case performs **48** same-source acquisitions and requires every handoff to
+return the same existing console identity. Each terminal callback releases the source-key lease,
+the zMyBatis console cache stays empty, and the Database Tools-owned console remains live.
 
-Terminal cleanup evidence separately injects `ProcessCanceledException` and an ordinary delivery
-failure from the real acquisition callback. Both paths must remove any newly registered REUSE
-console and release keyed ownership so the same key can be acquired again. An isolated real-console
-service fixture additionally owns **8 REUSE resources** and requires explicit
-`ConsoleCacheService` disposal to dispose all eight.
+The materialized-delivery characterization performs **12** repeated terminal cycles through the
+native SQL-text boundary. When no persistent console editor exists, the adapter creates one
+off-screen transient `Editor` over the existing console document, dispatches through the same
+native Database Tools boundary, and releases that editor immediately. The test requires zero
+persistent-editor cardinality growth, document restoration on late invalidation, no native
+invocation after invalidation, no stranded lease, and no disposal of the borrowed console.
 
-Successful runs emit `ZMYBATIS_RESOURCE_LIFECYCLE` records for repeated completion, materialized
-delivery terminal ownership, terminal cleanup, service disposal, and project disposal. The root test
-task surfaces this prefix alongside the existing XML/input measurement prefixes without enabling
-arbitrary test stdout.
+Terminal cleanup separately injects `ProcessCanceledException` and a no-existing-console condition.
+Both paths must release source-key ownership. The no-console path must create exactly one usable
+console without opening a persistent editor tab. Ambiguity is covered structurally by the chooser
+contract and packaged human smoke rather than by arbitrary automatic selection.
 
-The materialized-delivery fixture adds **8 repeated cycles per policy** through the real
-`acquireAndDeliverConsole -> executeMaterialized -> onFinished` shipping chain. It provides one real
-editor for each delivered console, lets the adapter inject/commit the exact artifact SQL and build
-the Database Tools script model, then deterministically invalidates the invocation at the final
-pre-native revalidation boundary. That forces document restoration and the real `onFinished`
-callback without turning an asynchronous database query into a timing oracle. REUSE must release
-its keyed lease on every cycle and retain only one console; NEW_EACH must remain uncached and live
-until its explicit/platform owner disposes it. Editor cardinality is observed at the execution
-boundary and fixture-created editors are explicitly released.
+Successful runs emit `ZMYBATIS_RESOURCE_LIFECYCLE` records for repeated borrowed-console completion,
+materialized delivery with zero persistent-editor delta, and terminal cleanup. The root test task
+surfaces this prefix alongside the XML/input measurement prefixes without enabling arbitrary test
+stdout.
 
-This repeated fixture deliberately records `native_invocations=0`: it is resource-lifecycle
-evidence, not a substitute for the maintained Starter/Driver E2E that proves successful native
-Database Tools query invocation from the packaged plugin. The separation keeps lifecycle assertions
-deterministic while still exercising the shipping document/editor/script-model terminal path.
-
-These fixtures measure zMyBatis cache/lease ownership plus real console lifetime convergence; they
-do not claim every native Database Tools result/editor/history object is owned by zMyBatis. Native
-visible-console/history behavior remains platform-owned evidence; the separate DataGrip host claim is maintained by #478 and does not widen this resource fixture. No forced GC, heap-size threshold, arbitrary console-count
-limit, or REUSE/NEW_EACH policy redesign is introduced by this measurement slice.
+These fixtures characterize lease/transient-editor ownership plus bounded ownership of consoles
+created by zMyBatis. Database Tools continues to own borrowed consoles, connection sessions, visible
+Services nodes, result tabs, and history. Transient editors are intentionally created/released per
+dispatch; no hidden editor pool is retained without measured performance evidence and an explicit
+lifecycle contract.
 
 
+## Preparation scale and retired materializer characterization
 
-## Preparation/materialization scale disposition
+Large-collection preparation remains a relevant stock-MyBatis responsiveness boundary even though
+the former single-BIGINT SQL-text materializer is no longer shipping execution authority.
+`MyBatisValueConversion` currently bounds structured conversion at 65,536 input nodes, while #470
+measures source-graph scale and #472/#474 measure many UI requirements/drafts rather than one large
+runtime collection flowing through isolated MyBatis preparation.
 
-The registered materialization envelope is intentionally cardinality-bounded rather than a generic
-large-binding renderer: zero ordered bindings use the target-bound zero-binding/raw routes, and the
-only maintained non-zero execution slice accepts exactly one proven PostgreSQL BIGINT binding.
-Accordingly, a separate "large materialization cardinality" benchmark would measure unsupported
-behavior rather than a shipping execution capability.
-
-Preparation is different because it runs **before** materialization. A source-authorized foreach
-LIST/ARRAY/MAP can expand through stock MyBatis into many parameter mappings before the later
-materializer rejects an unsupported multi-binding result. `MyBatisValueConversion` currently bounds
-structured conversion at 65,536 input nodes, while #470 measures source-graph scale and #472/#474
-measure many UI requirements/drafts rather than one large runtime collection flowing through
-isolated MyBatis preparation.
-
-#494 closed this production responsiveness envelope by measuring representative large-collection
-preparation through the stock-MyBatis boundary used by the registered candidate path, composing that
-measurement with the separately maintained off-EDT/cancellation authority, and proving the resulting
-unsupported multi-binding artifact still fails closed. Timings remain comparison observations, not
-product SLAs; any future concrete defect must be split into its own bounded fix.
+#494 measured representative large-collection preparation through the same stock-MyBatis boundary
+used by the registered candidate path and then characterized the **then-shipping** materializer's
+multi-binding refusal. That terminal refusal is retained as historical migration evidence only.
+Current P4 execution instead freezes the resulting mappings into `PreparedExecutionPlan` and routes
+nonzero ordered bindings to `DatabaseSessionPreparedBackend`. Timings remain comparison
+observations, not product SLAs; any future concrete defect must be split into its own bounded fix.
 
 
 `MyBatisPreparationScaleTest` makes that scale obligation executable in
@@ -512,9 +522,11 @@ count, emitted ordered-binding/placeholder cardinality, SQL character count, pre
 materialization elapsed and combined pipeline elapsed under the `ZMYBATIS_PREPARATION_SCALE`
 prefix. Exact linear mapping growth is required.
 
-The prepared artifact is then passed to the shipping `PostgreSqlBigintExecutionMaterializer`.
-Because every measured case has more than one ordered binding, materialization must fail with
-`BINDING_COUNT_UNSUPPORTED`; no executable artifact or support expansion is admitted.
+The historical fixture then passes the prepared artifact to
+`PostgreSqlBigintExecutionMaterializer` and records its former
+`BINDING_COUNT_UNSUPPORTED` behavior. That assertion characterizes the retired compatibility
+boundary; it does **not** describe current registered execution, where those mappings are ordinary
+prepared bindings.
 
 The root IntelliJ unit harness is deliberately not used as authority for the dynamic-MyBatis scale
 measurement. Its flattened IntelliJ test classloader can load MyBatis without a recoverable local
@@ -533,3 +545,10 @@ The cardinalities are reproducible evidence points, not product limits. The fixt
 records deterministic resource cardinalities (input nodes, mappings/placeholders and SQL size)
 rather than forced-GC heap guesses. Timeouts elsewhere remain hang guards and these elapsed values
 remain comparative observations, not latency SLAs.
+
+
+### P5 legacy UX parity evidence
+
+P5 adds an explicit UX regression contract on top of functional parity. `DatabaseToolsConsoleAdapterBoundaryTest` pins existing-session/client discovery, prefers reuse over creation, forbids editor-tab navigation and console focus stealing, and requires any zMyBatis-created fallback console to retain the dynamic `<mapper filename> - zMyBatis` identity. Human smoke verifies the same packaged behavior in IDEA. UI improvements to parameter entry are allowed when they clarify state without changing input authority.
+
+The 263 runtime characterization disproved the attempted true-prepared `QueryRequest.params` bridge, but that does not waive the pre-Leap native-result product requirement. P5 therefore treats the prepared/modal route as a regression and restores native Database Tools result ownership through proven post-stock-MyBatis executable-SQL materialization. A separate `zMyBatis: Query Result` surface is not an accepted 1.0 fallback.

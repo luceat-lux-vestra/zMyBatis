@@ -24,337 +24,162 @@ import com.intellij.database.psi.DbDataSource
 import com.intellij.database.psi.DbPsiFacade
 import com.intellij.database.util.DbImplUtil
 import com.intellij.openapi.editor.EditorFactory
-import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.progress.ProcessCanceledException
-import com.intellij.openapi.util.CheckedDisposable
 import com.intellij.openapi.util.Disposer
+import com.intellij.testFramework.LightVirtualFile
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
+/**
+ * Scale evidence for the shipping console boundary after P5 UX parity recovery.
+ *
+ * zMyBatis reuses Database Tools-owned consoles when available and creates one only for a
+ * no-candidate flow or explicit user choice. These fixtures prove repeated borrowing, bounded
+ * ownership of created consoles, lease cleanup, and zero persistent editor/tab growth.
+ */
 class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
 
-    private val projectTeardownLifetimes = mutableListOf<CheckedDisposable>()
-    private var projectTeardownPolicy: String? = null
-
-    fun testRepeatedReuseCompletionKeepsOneCachedConsoleAndNoLeaseStranded() {
+    fun testRepeatedBorrowedConsoleCompletionKeepsOnePlatformConsoleAndNoLeaseStranded() {
         val cache = ConsoleCacheService.getInstance(project)
         val dataSource = registeredDbDataSource(
-            name = "zMyBatis resource lifecycle reuse",
-            url = "jdbc:h2:mem:zmybatis_resource_reuse",
+            name = "zMyBatis existing-console scale",
+            url = "jdbc:h2:mem:zmybatis_existing_console_scale",
         )
+        val console = newConsole(dataSource, "ResourceReuseMapper.xml")
+        val lifetime = Disposer.newCheckedDisposable(console)
         val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
-        val key = "file:///tmp/zmybatis/ResourceReuseMapper.xml"
-        val uniqueConsoles = mutableListOf<JdbcConsole>()
-        var failure: DatabaseToolsConsoleAcquisitionFailure? = null
+        val key = "vfs:file:///tmp/zmybatis/ResourceReuseMapper.xml"
+        val identities = mutableSetOf<Int>()
 
         try {
-            repeat(REUSE_ITERATIONS) {
+            repeat(BORROW_ITERATIONS) {
+                var failure: DatabaseToolsConsoleAcquisitionFailure? = null
+                var delivered = false
+
                 adapter.acquireAndDeliverConsole(
                     dataSource = dataSource,
                     schema = null,
                     resourceKey = key,
-                    forceNew = false,
-                    onConsoleReady = { console, release ->
-                        if (uniqueConsoles.none { it === console }) {
-                            uniqueConsoles += console
-                        }
+                    onConsoleReady = { borrowed, release ->
+                        delivered = true
+                        assertSame(console, borrowed)
+                        identities += System.identityHashCode(borrowed)
                         release()
                     },
                     onFailure = { failure = it },
                 )
 
+                assertTrue(delivered)
                 assertNull(failure)
-                assertTrue(
-                    "terminal REUSE completion must release keyed ownership",
-                    cache.beginReuseLease(key),
-                )
+                assertFalse(lifetime.isDisposed)
+                assertNull("shipping borrow must never populate the zMyBatis console cache", cache.get(key))
+                assertTrue("terminal completion must release the keyed lease", cache.beginReuseLease(key))
                 cache.endReuseLease(key)
             }
 
-            assertEquals(1, uniqueConsoles.size)
-            assertSame(uniqueConsoles.single(), cache.get(key))
-
-            val lifetime = Disposer.newCheckedDisposable(uniqueConsoles.single())
-            assertFalse(lifetime.isDisposed)
-            cache.evict(key)
-            assertTrue("evicting the bounded REUSE owner must dispose its console", lifetime.isDisposed)
-
+            assertEquals(1, identities.size)
             println(
                 "ZMYBATIS_RESOURCE_LIFECYCLE phase=repeated-completion " +
-                    "policy=REUSE iterations=$REUSE_ITERATIONS " +
-                    "distinct_consoles=${uniqueConsoles.size} cache_retained_before_evict=1 " +
-                    "lease_stranded=false disposed_after_evict=true",
+                    "policy=BORROW_EXISTING iterations=$BORROW_ITERATIONS " +
+                    "distinct_consoles=1 cache_retained=0 lease_stranded=false " +
+                    "platform_console_live=true",
             )
         } finally {
-            cache.evict(key)
+            if (!lifetime.isDisposed) Disposer.dispose(console)
         }
     }
 
-    fun testRepeatedNewEachCompletionRemainsOutsideReuseCacheUntilProjectTeardown() {
+    fun testRepeatedMaterializedDeliveryUsesTransientEditorsWithoutOpeningPersistentEditor() {
         val cache = ConsoleCacheService.getInstance(project)
         val dataSource = registeredDbDataSource(
-            name = "zMyBatis resource lifecycle new-each",
-            url = "jdbc:h2:mem:zmybatis_resource_new_each",
+            name = "zMyBatis existing-console materialized scale",
+            url = "jdbc:h2:mem:zmybatis_existing_console_materialized",
         )
+        val console = newConsole(dataSource, "ResourceMaterializedMapper.xml")
+        val lifetime = Disposer.newCheckedDisposable(console)
         val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
-        val key = "file:///tmp/zmybatis/ResourceNewEachMapper.xml"
-        val consoles = mutableListOf<JdbcConsole>()
-        var failure: DatabaseToolsConsoleAcquisitionFailure? = null
-
-        repeat(NEW_EACH_ITERATIONS) {
-            adapter.acquireAndDeliverConsole(
-                dataSource = dataSource,
-                schema = null,
-                resourceKey = key,
-                forceNew = true,
-                onConsoleReady = { console, release ->
-                    consoles += console
-                    projectTeardownLifetimes += Disposer.newCheckedDisposable(console)
-                    release()
-                },
-                onFailure = { failure = it },
-            )
-            assertNull(failure)
-        }
-
-        assertEquals(NEW_EACH_ITERATIONS, consoles.size)
-        consoles.forEachIndexed { index, console ->
-            assertTrue(
-                "NEW_EACH iteration $index must produce a distinct console",
-                consoles.take(index).none { previous -> previous === console },
-            )
-        }
-        assertNull("NEW_EACH must remain outside the zMyBatis REUSE cache", cache.get(key))
-        assertEquals(
-            NEW_EACH_ITERATIONS,
-            projectTeardownLifetimes.count { !it.isDisposed },
-        )
-        projectTeardownPolicy = "NEW_EACH"
-
-        println(
-            "ZMYBATIS_RESOURCE_LIFECYCLE phase=repeated-completion " +
-                "policy=NEW_EACH iterations=$NEW_EACH_ITERATIONS " +
-                "distinct_consoles=${consoles.size} cache_retained=0 " +
-                "live_after_terminal=${projectTeardownLifetimes.count { !it.isDisposed }} " +
-                "ownership=zmybatis-cache:false project_disposal_pending=true",
-        )
-    }
-
-    fun testRepeatedReuseMaterializedDeliveryReleasesLeaseAfterEditorDocumentTerminalPath() {
-        val cache = ConsoleCacheService.getInstance(project)
-        val dataSource = registeredDbDataSource(
-            name = "zMyBatis resource lifecycle materialized reuse",
-            url = "jdbc:h2:mem:zmybatis_resource_materialized_reuse",
-        )
-        val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
-        val key = "file:///tmp/zmybatis/ResourceMaterializedReuseMapper.xml"
-        val target = targetId("resource-materialized-reuse", "public")
-        val uniqueConsoles = mutableListOf<JdbcConsole>()
-        var editorPeak = 0
+        val key = "vfs:file:///tmp/zmybatis/ResourceMaterializedMapper.xml"
+        val target = targetId("resource-materialized-existing", "public")
+        val baselineEditors = EditorFactory.getInstance().getEditors(console.document, project).size
         var terminalFailures = 0
 
         try {
             repeat(MATERIALIZED_DELIVERY_ITERATIONS) { iteration ->
                 var acquisitionFailure: DatabaseToolsConsoleAcquisitionFailure? = null
+
                 adapter.acquireAndDeliverConsole(
                     dataSource = dataSource,
                     schema = null,
                     resourceKey = key,
-                    forceNew = false,
-                    onConsoleReady = { console, release ->
-                        if (uniqueConsoles.none { it === console }) {
-                            uniqueConsoles += console
-                        }
-                        val editor = EditorFactory.getInstance()
-                            .createEditor(console.document, project) as EditorEx
-                        try {
-                            editorPeak = maxOf(
-                                editorPeak,
-                                EditorFactory.getInstance().getEditors(console.document, project).size,
-                            )
-                            val artifact = materialized(
-                                sql = "SELECT ${iteration + 1} AS resource_probe",
-                                target = target,
-                            )
-                            var invocationChecks = 0
-                            var executed = false
-                            var deliveryFailure: DatabaseToolsSqlExecutionFailure? = null
-                            var finished = 0
+                    onConsoleReady = { borrowed, release ->
+                        assertSame(console, borrowed)
+                        val artifact = materialized(
+                            sql = "SELECT ${iteration + 1} AS resource_probe",
+                            target = target,
+                        )
+                        var invocationChecks = 0
+                        var executed = false
+                        var deliveryFailure: DatabaseToolsSqlExecutionFailure? = null
+                        var finished = 0
 
-                            adapter.executeMaterialized(
-                                console = console,
-                                artifact = artifact,
-                                currentTarget = { resolvedTarget(target) },
-                                isInvocationActive = {
-                                    invocationChecks += 1
-                                    invocationChecks < LATE_INVALIDATION_CHECK
-                                },
-                                areSourceRevisionsCurrent = { it == artifact.sourceRevisions },
-                                onExecuted = { executed = true },
-                                onFailure = { deliveryFailure = it },
-                                onFinished = {
-                                    finished += 1
-                                    release()
-                                },
-                            )
+                        adapter.executeMaterialized(
+                            console = borrowed,
+                            artifact = artifact,
+                            currentTarget = { resolvedTarget(target) },
+                            isInvocationActive = {
+                                invocationChecks += 1
+                                invocationChecks < LATE_INVALIDATION_CHECK
+                            },
+                            areSourceRevisionsCurrent = { it == artifact.sourceRevisions },
+                            onExecuted = { executed = true },
+                            onFailure = { deliveryFailure = it },
+                            onFinished = {
+                                finished += 1
+                                release()
+                            },
+                        )
 
-                            assertEquals(
-                                DatabaseToolsSqlExecutionFailure.InvocationInvalidated,
-                                deliveryFailure,
-                            )
-                            assertFalse("late invalidation must stop native query invocation", executed)
-                            assertEquals(1, finished)
-                            assertEquals(
-                                "failed delivery must restore the reusable console document",
-                                "",
-                                console.document.text,
-                            )
-                            terminalFailures += 1
-                        } finally {
-                            EditorFactory.getInstance().releaseEditor(editor)
-                        }
+                        assertEquals(DatabaseToolsSqlExecutionFailure.InvocationInvalidated, deliveryFailure)
+                        assertFalse("late invalidation must stop native query invocation", executed)
+                        assertEquals(1, finished)
+                        assertEquals("failed delivery must restore the borrowed console document", "", console.document.text)
+                        assertEquals(
+                            "transient execution editor must be released after terminal delivery",
+                            baselineEditors,
+                            EditorFactory.getInstance().getEditors(console.document, project).size,
+                        )
+                        terminalFailures += 1
                     },
                     onFailure = { acquisitionFailure = it },
                 )
 
                 assertNull(acquisitionFailure)
-                assertTrue(
-                    "executeMaterialized onFinished must release REUSE ownership",
-                    cache.beginReuseLease(key),
-                )
+                assertTrue(cache.beginReuseLease(key))
                 cache.endReuseLease(key)
+                assertFalse(lifetime.isDisposed)
             }
-
-            assertEquals(1, uniqueConsoles.size)
-            assertSame(uniqueConsoles.single(), cache.get(key))
-            val lifetime = Disposer.newCheckedDisposable(uniqueConsoles.single())
-            cache.evict(key)
-            assertTrue(lifetime.isDisposed)
 
             println(
                 "ZMYBATIS_RESOURCE_LIFECYCLE phase=materialized-delivery-terminal " +
-                    "policy=REUSE iterations=$MATERIALIZED_DELIVERY_ITERATIONS " +
-                    "distinct_consoles=${uniqueConsoles.size} editor_peak=$editorPeak " +
+                    "policy=BORROW_EXISTING iterations=$MATERIALIZED_DELIVERY_ITERATIONS " +
+                    "distinct_consoles=1 persistent_editor_delta=0 " +
                     "terminal_failures=$terminalFailures native_invocations=0 " +
-                    "lease_stranded=false document_restored=true disposed_after_evict=true",
+                    "lease_stranded=false document_restored=true platform_console_live=true",
             )
         } finally {
-            cache.evict(key)
+            if (!lifetime.isDisposed) Disposer.dispose(console)
         }
     }
 
-    fun testRepeatedNewEachMaterializedDeliveryKeepsUncachedConsoleLiveAfterTerminal() {
+    fun testCancellationAndCreatedConsoleDoNotStrandOwnership() {
         val cache = ConsoleCacheService.getInstance(project)
         val dataSource = registeredDbDataSource(
-            name = "zMyBatis resource lifecycle materialized new-each",
-            url = "jdbc:h2:mem:zmybatis_resource_materialized_new_each",
+            name = "zMyBatis borrowed-console terminal paths",
+            url = "jdbc:h2:mem:zmybatis_borrowed_terminal",
         )
+        val console = newConsole(dataSource, "ResourceCancellationMapper.xml")
+        val lifetime = Disposer.newCheckedDisposable(console)
         val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
-        val key = "file:///tmp/zmybatis/ResourceMaterializedNewEachMapper.xml"
-        val target = targetId("resource-materialized-new-each", "public")
-        val consoles = mutableListOf<JdbcConsole>()
-        val lifetimes = mutableListOf<CheckedDisposable>()
-        var editorPeakPerConsole = 0
-        var terminalFailures = 0
-
-        try {
-            repeat(MATERIALIZED_DELIVERY_ITERATIONS) { iteration ->
-                var acquisitionFailure: DatabaseToolsConsoleAcquisitionFailure? = null
-                adapter.acquireAndDeliverConsole(
-                    dataSource = dataSource,
-                    schema = null,
-                    resourceKey = key,
-                    forceNew = true,
-                    onConsoleReady = { console, release ->
-                        consoles += console
-                        lifetimes += Disposer.newCheckedDisposable(console)
-                        val editor = EditorFactory.getInstance()
-                            .createEditor(console.document, project) as EditorEx
-                        try {
-                            editorPeakPerConsole = maxOf(
-                                editorPeakPerConsole,
-                                EditorFactory.getInstance().getEditors(console.document, project).size,
-                            )
-                            val artifact = materialized(
-                                sql = "SELECT ${iteration + 1} AS resource_probe",
-                                target = target,
-                            )
-                            var invocationChecks = 0
-                            var executed = false
-                            var deliveryFailure: DatabaseToolsSqlExecutionFailure? = null
-                            var finished = 0
-
-                            adapter.executeMaterialized(
-                                console = console,
-                                artifact = artifact,
-                                currentTarget = { resolvedTarget(target) },
-                                isInvocationActive = {
-                                    invocationChecks += 1
-                                    invocationChecks < LATE_INVALIDATION_CHECK
-                                },
-                                areSourceRevisionsCurrent = { it == artifact.sourceRevisions },
-                                onExecuted = { executed = true },
-                                onFailure = { deliveryFailure = it },
-                                onFinished = {
-                                    finished += 1
-                                    release()
-                                },
-                            )
-
-                            assertEquals(
-                                DatabaseToolsSqlExecutionFailure.InvocationInvalidated,
-                                deliveryFailure,
-                            )
-                            assertFalse("late invalidation must stop native query invocation", executed)
-                            assertEquals(1, finished)
-                            assertEquals("", console.document.text)
-                            terminalFailures += 1
-                        } finally {
-                            EditorFactory.getInstance().releaseEditor(editor)
-                        }
-                    },
-                    onFailure = { acquisitionFailure = it },
-                )
-                assertNull(acquisitionFailure)
-            }
-
-            assertEquals(MATERIALIZED_DELIVERY_ITERATIONS, consoles.size)
-            assertEquals(
-                MATERIALIZED_DELIVERY_ITERATIONS,
-                consoles.distinctBy { System.identityHashCode(it) }.size,
-            )
-            assertNull(cache.get(key))
-            assertEquals(
-                MATERIALIZED_DELIVERY_ITERATIONS,
-                lifetimes.count { !it.isDisposed },
-            )
-
-            println(
-                "ZMYBATIS_RESOURCE_LIFECYCLE phase=materialized-delivery-terminal " +
-                    "policy=NEW_EACH iterations=$MATERIALIZED_DELIVERY_ITERATIONS " +
-                    "distinct_consoles=${consoles.size} editor_peak_per_console=$editorPeakPerConsole " +
-                    "terminal_failures=$terminalFailures native_invocations=0 " +
-                    "cache_retained=0 live_after_terminal=${lifetimes.count { !it.isDisposed }} " +
-                    "document_restored=true",
-            )
-        } finally {
-            consoles.forEachIndexed { index, console ->
-                if (!lifetimes[index].isDisposed) {
-                    Disposer.dispose(console)
-                }
-            }
-            cache.evict(key)
-        }
-    }
-
-    fun testCancellationAndFailureDoNotStrandReuseOwnershipOrCacheResources() {
-        val cache = ConsoleCacheService.getInstance(project)
-        val dataSource = registeredDbDataSource(
-            name = "zMyBatis resource lifecycle terminal paths",
-            url = "jdbc:h2:mem:zmybatis_resource_terminal",
-        )
-        val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
-        val cancellationKey = "file:///tmp/zmybatis/ResourceCancellationMapper.xml"
-        val failureKey = "file:///tmp/zmybatis/ResourceFailureMapper.xml"
+        val cancellationKey = "vfs:file:///tmp/zmybatis/ResourceCancellationMapper.xml"
 
         try {
             try {
@@ -362,7 +187,6 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
                     dataSource = dataSource,
                     schema = null,
                     resourceKey = cancellationKey,
-                    forceNew = false,
                     onConsoleReady = { _, _ -> throw ProcessCanceledException() },
                     onFailure = { fail("cancellation must not become an acquisition failure") },
                 )
@@ -371,84 +195,43 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
                 // Expected platform cancellation.
             }
 
-            assertNull(cache.get(cancellationKey))
             assertTrue(cache.beginReuseLease(cancellationKey))
             cache.endReuseLease(cancellationKey)
+            assertFalse("cancellation must not dispose the borrowed console", lifetime.isDisposed)
 
+            Disposer.dispose(console)
+            assertTrue("fixture precondition must remove the existing console", lifetime.isDisposed)
+
+            val missingKey = "vfs:file:///tmp/zmybatis/NoConsoleMapper.xml"
             var failure: DatabaseToolsConsoleAcquisitionFailure? = null
+            var created: JdbcConsole? = null
             adapter.acquireAndDeliverConsole(
                 dataSource = dataSource,
                 schema = null,
-                resourceKey = failureKey,
-                forceNew = false,
-                onConsoleReady = { _, _ -> error("fixture delivery failure") },
+                resourceKey = missingKey,
+                onConsoleReady = { console, release ->
+                    created = console
+                    release()
+                },
                 onFailure = { failure = it },
             )
 
-            assertSame(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed, failure)
-            assertNull(cache.get(failureKey))
-            assertTrue(cache.beginReuseLease(failureKey))
-            cache.endReuseLease(failureKey)
+            assertNull(failure)
+            assertNotNull("no-candidate flow must create a console", created)
+            assertEquals("NoConsoleMapper.xml - zMyBatis", created!!.file.virtualFile?.name)
+            assertTrue(cache.beginReuseLease(missingKey))
+            cache.endReuseLease(missingKey)
+            if (created!!.isValid) {
+                Disposer.dispose(created!!)
+            }
 
             println(
                 "ZMYBATIS_RESOURCE_LIFECYCLE phase=terminal-cleanup " +
-                    "policy=REUSE cancellation_cache_retained=0 failure_cache_retained=0 " +
-                    "lease_stranded=false",
+                    "policy=REUSE_CHOOSE_CREATE cancellation_disposed=false " +
+                    "missing_console_created=true lease_stranded=false",
             )
         } finally {
-            cache.evict(cancellationKey)
-            cache.evict(failureKey)
-        }
-    }
-
-    fun testServiceDisposalConvergesAllOwnedReuseResources() {
-        val cache = ConsoleCacheService(project)
-        val dataSource = registeredDbDataSource(
-            name = "zMyBatis resource lifecycle service disposal",
-            url = "jdbc:h2:mem:zmybatis_resource_service_disposal",
-        )
-        val lifetimes = mutableListOf<CheckedDisposable>()
-
-        repeat(SERVICE_OWNED_RESOURCES) { index ->
-            val console = newConsole(dataSource, "service-owned-$index.sql")
-            lifetimes += Disposer.newCheckedDisposable(console)
-            assertTrue(
-                cache.putEphemeral(
-                    mapperKey = "file:///tmp/zmybatis/ServiceOwned$index.xml",
-                    console = console,
-                ),
-            )
-        }
-
-        assertEquals(SERVICE_OWNED_RESOURCES, lifetimes.count { !it.isDisposed })
-        Disposer.dispose(cache)
-        assertEquals(SERVICE_OWNED_RESOURCES, lifetimes.count { it.isDisposed })
-
-        println(
-            "ZMYBATIS_RESOURCE_LIFECYCLE phase=service-disposal " +
-                "policy=REUSE owned_before=$SERVICE_OWNED_RESOURCES " +
-                "disposed_after=$SERVICE_OWNED_RESOURCES",
-        )
-    }
-
-    override fun tearDown() {
-        val lifetimes = projectTeardownLifetimes.toList()
-        val policy = projectTeardownPolicy
-        try {
-            super.tearDown()
-        } finally {
-            if (lifetimes.isNotEmpty()) {
-                val disposed = lifetimes.count { it.isDisposed }
-                println(
-                    "ZMYBATIS_RESOURCE_LIFECYCLE phase=project-disposal " +
-                        "policy=${policy ?: "UNKNOWN"} resources=${lifetimes.size} disposed=$disposed",
-                )
-                assertEquals(
-                    "project teardown must dispose real NEW_EACH console resources",
-                    lifetimes.size,
-                    disposed,
-                )
-            }
+            if (!lifetime.isDisposed) Disposer.dispose(console)
         }
     }
 
@@ -520,7 +303,7 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
         JdbcConsole.newConsole(project)
             .fromDataSource(dataSource)
             .forFile(
-                com.intellij.testFramework.LightVirtualFile(
+                LightVirtualFile(
                     fileName,
                     com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
                         .getFileTypeByExtension("sql"),
@@ -530,10 +313,8 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
             .build()
 
     companion object {
-        private const val REUSE_ITERATIONS = 32
-        private const val NEW_EACH_ITERATIONS = 16
-        private const val MATERIALIZED_DELIVERY_ITERATIONS = 8
+        private const val BORROW_ITERATIONS = 48
+        private const val MATERIALIZED_DELIVERY_ITERATIONS = 12
         private const val LATE_INVALIDATION_CHECK = 4
-        private const val SERVICE_OWNED_RESOURCES = 8
     }
 }

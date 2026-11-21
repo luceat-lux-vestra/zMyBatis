@@ -15,6 +15,8 @@ import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.input.ProvidedInput
+import com.algorist.zMyBatis.core.materialization.NativeExecutionPlanMaterializer
+import com.algorist.zMyBatis.core.materialization.PreparedPlanSqlMaterializationResult
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationResult
@@ -38,8 +40,11 @@ import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.StatementSourceGraph
 import com.algorist.zMyBatis.mybatis.MyBatisInvocationContractFactory
 import com.algorist.zMyBatis.mybatis.MyBatisPreparationEngine
+import com.intellij.database.DataBus
 import com.intellij.database.console.JdbcConsole
+import com.intellij.database.connection.throwable.info.ErrorInfo
 import com.intellij.database.dataSource.DatabaseAuthProviderNames
+import com.intellij.database.datagrid.DataAuditor
 import com.intellij.database.dataSource.DatabaseConnectionCore
 import com.intellij.database.dataSource.DatabaseDriver
 import com.intellij.database.dataSource.DatabaseDriverImpl
@@ -53,6 +58,9 @@ import com.intellij.database.psi.DbDataSource
 import com.intellij.database.psi.DbPsiFacade
 import com.intellij.database.util.DbImplUtil
 import com.intellij.database.dataSource.url.template.UrlTemplate
+import com.intellij.database.dataSource.connection.statements.StatementParameters
+import com.intellij.database.datagrid.DataConsumer
+import com.intellij.database.datagrid.mutating.ColumnQueryData
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.LightVirtualFile
@@ -76,6 +84,7 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import org.apache.ibatis.type.JdbcType
 import org.apache.ibatis.type.ObjectTypeHandler
@@ -252,6 +261,276 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
                     "databaseErrorType=${databaseError.diagnosticType.substringAfterLast('.')} " +
                     "cancelled=${cancellation.interrupted} " +
                     "cancelElapsedMs=${cancellation.elapsedMillis}",
+            )
+        } finally {
+            fixture.dispose()
+        }
+    }
+
+    fun testQueryRequestOpaqueParamsDoNotBridgeParameterizedStatementDataToNativeBinding() {
+        val fixture = registerPostgreSqlDataSource()
+        try {
+            // Keep the native-result probe free of table/column references. The previous CTE fixture
+            // reached ResultSetPrinter but triggered a headless SQL-PSI/JPA read-access assertion
+            // while resolving table metadata, which confounded the JDBC-binding question.
+            val sql = "SELECT ?::BIGINT AS ID_VALUE, ?::VARCHAR AS LABEL_VALUE"
+            val placeholderOffsets = sql.indices.filter { index -> sql[index] == '?' }.toIntArray()
+            check(placeholderOffsets.size == 2) {
+                "native QueryRequest fixture must contain exactly two JDBC placeholders"
+            }
+
+            val statementParameters = StatementParameters()
+            statementParameters.placeholdersOffsets(placeholderOffsets)
+            statementParameters.parameters(
+                mutableListOf(
+                    ColumnQueryData(
+                        DataConsumer.Column(
+                            0,
+                            "ID_VALUE",
+                            Types.BIGINT,
+                            "BIGINT",
+                            Long::class.java.name,
+                        ),
+                        73L,
+                    ),
+                    ColumnQueryData(
+                        DataConsumer.Column(
+                            1,
+                            "LABEL_VALUE",
+                            Types.VARCHAR,
+                            "VARCHAR",
+                            String::class.java.name,
+                        ),
+                        "native-grid-proof",
+                    ),
+                ),
+            )
+            val parameterizedData = statementParameters.asData(sql)
+
+            val console = JdbcConsole.newConsole(project)
+                .fromDataSource(fixture.dataSource)
+                .forFile(
+                    LightVirtualFile(
+                        "p3-native-parameterized-query-request.sql",
+                        FileTypeManager.getInstance().getFileTypeByExtension("sql"),
+                        "",
+                    ),
+                )
+                .build()
+            try {
+                val completed = CountDownLatch(1)
+                val fetchStarted = AtomicBoolean(false)
+                val requestFailure = AtomicReference<String?>()
+                val trackedRequest = AtomicReference<DataRequest?>()
+                DataBus.addRootAuditor(
+                    project,
+                    object : DataAuditor {
+                        override fun fetchStarted(context: DataRequest.Context, resultSetIndex: Int) {
+                            if (context.request === trackedRequest.get()) {
+                                fetchStarted.set(true)
+                            }
+                        }
+
+                        override fun error(context: DataRequest.Context, error: ErrorInfo) {
+                            if (context.request === trackedRequest.get()) {
+                                val original = error.originalThrowable
+                                requestFailure.set(
+                                    buildString {
+                                        append(error.javaClass.name)
+                                        append(": ")
+                                        append(error.message)
+                                        if (original != null) {
+                                            append(" | original=")
+                                            append(original.javaClass.name)
+                                            append(": ")
+                                            append(original.message)
+                                        }
+                                    },
+                                )
+                            }
+                        }
+
+                        override fun requestFinished(context: DataRequest.Context) {
+                            if (context.request === trackedRequest.get()) {
+                                completed.countDown()
+                            }
+                        }
+                    },
+                    testRootDisposable,
+                )
+
+                val request = object : DataRequest.QueryRequest(
+                    console,
+                    sql,
+                    DataRequest.newConstraints(),
+                    parameterizedData,
+                ) {}
+                trackedRequest.set(request)
+                console.messageBus.dataProducer.processRequest(request)
+                assertTrue(
+                    "parameterized QueryRequest must complete through the Database Tools request pipeline",
+                    completed.await(30, TimeUnit.SECONDS),
+                )
+
+                val executionError = requestFailure.get()
+                println(
+                    "ZMYBATIS_P3_QUERYREQUEST_PARAMS_DIAGNOSTIC " +
+                        "requestFinished=true " +
+                        "fetchStarted=${fetchStarted.get()} " +
+                        "error=${executionError ?: "<none>"}",
+                )
+
+                assertFalse(
+                    "opaque QueryRequest params must not be mistaken for a maintained prepared-binding bridge",
+                    fetchStarted.get(),
+                )
+                assertNotNull(
+                    "unbound PostgreSQL placeholders must fail when ParameterizedStatementData is supplied " +
+                        "only through QueryRequest.params",
+                    executionError,
+                )
+                assertTrue(
+                    "negative control must reach PostgreSQL as an unbound query; actual=$executionError",
+                    executionError!!.contains("[42601]") && executionError.contains("syntax error"),
+                )
+
+                println(
+                    "ZMYBATIS_P3_QUERYREQUEST_PARAMS_NEGATIVE " +
+                        "queryRequestAccepted=true parameterizedStatementData=true " +
+                        "bindingCount=2 requestFinished=true fetchStarted=false " +
+                        "nativeBinding=false sqlState=42601",
+                )
+            } finally {
+                Disposer.dispose(console)
+            }
+        } finally {
+            fixture.dispose()
+        }
+    }
+
+    fun testNativeMaterializedCommonScalarEnvelopeThroughDatabaseToolsOwnedSession() {
+        val fixture = registerPostgreSqlDataSource()
+        try {
+            val instant = Instant.parse("2026-11-18T03:00:17Z")
+            val captured = prepareCapturedBindingExecution(
+                byteValue = 7.toByte(),
+                shortValue = 8.toShort(),
+                intValue = 9,
+                longValue = 42L,
+                floatValue = 11.25f,
+                doubleValue = 12.5,
+                decimalValue = BigDecimal("13.75"),
+                flag = true,
+                text = "captured-proof",
+                binary = byteArrayOf(1, 2, 3),
+                date = LocalDate.of(2026, 11, 18),
+                time = LocalTime.of(12, 34, 56),
+                dateTime = LocalDateTime.of(2026, 11, 18, 12, 34, 56),
+                instant = instant,
+                items = listOf("left", "right"),
+                effectiveDatabaseId = MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+            )
+
+            // Instant/TIMESTAMP remains outside the first materialization envelope because JDBC
+            // timestamp timezone conversion needs a separate parity proof. Remove only that one
+            // captured mapping while preserving every other common scalar and foreach binding.
+            val bindings = captured.orderedBindings
+                .filterNot { it.property == "instant" }
+                .mapIndexed { index, binding -> binding.copy(index = index) }
+            check(bindings.size == 16) {
+                "native materialized scalar proof must retain sixteen non-Instant bindings"
+            }
+            val nullBinding = bindings.single { it.property == "nullableText" }
+            check(nullBinding.value == InputValue.NullValue)
+            check(nullBinding.metadata.mappingJavaTypeIdentity == "java.lang.Object")
+            check(
+                nullBinding.metadata.typeHandlerIdentity ==
+                    "org.apache.ibatis.type.ObjectTypeHandler",
+            )
+            check(nullBinding.metadata.effectiveJdbcTypeIdentity == "VARCHAR")
+
+            val sql = """
+                SELECT
+                  (?::smallint)::text,
+                  (?::smallint)::text,
+                  (?::integer)::text,
+                  (?::bigint)::text,
+                  (?::real)::text,
+                  (?::double precision)::text,
+                  (?::numeric)::text,
+                  (?::boolean)::text,
+                  ?::varchar,
+                  encode(?::bytea, 'hex'),
+                  (?::date)::text,
+                  (?::time)::text,
+                  (?::timestamp)::text,
+                  pg_typeof(?)::text,
+                  array_to_string(ARRAY[?, ?]::text[], '|')
+            """.trimIndent()
+            val execution = PreparedExecution(
+                statementId = captured.statementId,
+                statementKind = captured.statementKind,
+                sourceRevisions = captured.sourceRevisions,
+                sqlWithPlaceholders = sql,
+                orderedBindings = bindings,
+                rawInterpolations = captured.rawInterpolations,
+                preparationMetadata = captured.preparationMetadata,
+            )
+            val dbDataSource = p4DbDataSource(fixture.dataSource)
+            val target = p4PreparedTarget(dbDataSource)
+            val plan = when (val frozen = PreparedExecutionPlanner.freeze(execution, target)) {
+                is PreparedExecutionPlanResult.Ready -> frozen.plan
+                is PreparedExecutionPlanResult.Failed ->
+                    error("P5 native materialized plan creation failed: ${frozen.failure.code}")
+            }
+            val artifact = when (val materialized = NativeExecutionPlanMaterializer.materialize(plan)) {
+                is PreparedPlanSqlMaterializationResult.Ready -> materialized.artifact
+                is PreparedPlanSqlMaterializationResult.Failed ->
+                    error(
+                        "P5 native materialization failed: " +
+                            "${materialized.failure.kind} / ${materialized.failure.code}",
+                    )
+            }
+
+            val actual = executeRaw(
+                fixture.dataSource,
+                "native-materialized-common-scalars",
+            ) { connection ->
+                withPrepared(connection, artifact.executionSql) { statement ->
+                    statement.execute()
+                    withResultSet(statement) { resultSet ->
+                        check(resultSet.next())
+                        (1..15).map { column -> resultSet.getString(column) }
+                    }
+                }
+            }
+            val expected = listOf(
+                "7",
+                "8",
+                "9",
+                "42",
+                "11.25",
+                "12.5",
+                "13.75",
+                "true",
+                "captured-proof",
+                "010203",
+                "2026-11-18",
+                "12:34:56",
+                "2026-11-18 12:34:56",
+                "character varying",
+                "left|right",
+            )
+            check(actual == expected) {
+                "P5 native materialized PostgreSQL scalar round-trip mismatch: $actual"
+            }
+
+            println(
+                "ZMYBATIS_P5_NATIVE_MATERIALIZED " +
+                    "bindingCount=${plan.orderedBindings.size} " +
+                    "resultColumns=${actual.size} " +
+                    "integer=true decimal=true boolean=true varchar=true binary=true " +
+                    "date=true time=true timestamp=true typedNullType=true foreach=true",
             )
         } finally {
             fixture.dispose()
