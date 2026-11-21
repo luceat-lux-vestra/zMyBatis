@@ -48,6 +48,50 @@ class StarterDatabaseE2EIsolationContractTest {
     }
 
     @Test
+    fun `IDEA parameter input recovery is transport only and never retries execution`() {
+        val e2e = source(
+            "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
+        )
+        val helperStart = e2e.indexOf(
+            "private fun setSingleParameterDialogTextWithTransportRecovery",
+        )
+        val helperEnd = e2e.indexOf("private fun writeDirectJavaProviderMapper", helperStart)
+        assertTrue("transport recovery helper must exist", helperStart >= 0 && helperEnd > helperStart)
+
+        val helper = e2e.substring(helperStart, helperEnd)
+        assertTrue(helper.contains("REMOTE_DRIVER_HIERARCHY_EOF_MAX_ATTEMPTS"))
+        assertTrue(helper.contains("com.intellij.driver.client.impl.DriverCallException"))
+        assertTrue(helper.contains("com.intellij.driver.client.impl.JmxCallException"))
+        assertTrue(helper.contains("current is EOFException"))
+        assertTrue(helper.contains("assertEquals("))
+        assertTrue(helper.contains("field.text = value"))
+        assertFalse(
+            "transport recovery must never retry the non-idempotent confirmation click",
+            helper.contains("button(\"OK\").click()"),
+        )
+        assertFalse(
+            "transport recovery must never retry the registered product action",
+            helper.contains("invokeAction("),
+        )
+        assertFalse(
+            "transport recovery must never retry SQL or Database Tools execution",
+            helper.contains("doRunQueryInConsole") ||
+                helper.contains("TableResultView") ||
+                helper.contains("SQL Preview"),
+        )
+
+        val scenarioStart = e2e.indexOf(
+            "fun registeredActionExecutesBuiltInParameterTypeThroughNativeResult",
+        )
+        val scenarioEnd = e2e.indexOf("@Test", scenarioStart + 1)
+        assertTrue("parameterType scenario must remain present", scenarioStart >= 0 && scenarioEnd > scenarioStart)
+        val scenario = e2e.substring(scenarioStart, scenarioEnd)
+        assertTrue(scenario.contains("setSingleParameterDialogTextWithTransportRecovery(\"41\")"))
+        assertTrue(scenario.contains("ui.dialog(title = PARAMETER_DIALOG_TITLE)"))
+        assertTrue(scenario.contains("button(\"OK\").click()"))
+    }
+
+    @Test
     fun `process golden path must reuse one maintained PostgreSQL Database Tools stack`() {
         val e2e = source(
             "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
