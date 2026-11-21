@@ -64,9 +64,9 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("connectAndPrimeH2DatabaseToolsSchemaMetadata"),
         )
         assertTrue(
-            "zero-binding native and multi-binding prepared proofs must reuse the maintained PostgreSQL datasource creation path",
+            "zero-binding and multi-binding native-result proofs must reuse the maintained PostgreSQL datasource creation path",
             e2e.contains("registeredActionExecutesZeroBindingQueryThroughRealDatabaseTools") &&
-                e2e.contains("registeredActionExecutesMultiBindingPlanThroughPreparedResultPresentation") &&
+                e2e.contains("registeredActionExecutesMultiBindingPlanThroughNativeResult") &&
                 e2e.contains("createPostgreSqlDataSourceThroughDatabaseTools(projectDir)") &&
                 e2e.contains("POSTGRES_E2E_DATA_SOURCE_NAME") &&
                 e2e.contains("waitOneText(\"public\")"),
@@ -128,28 +128,27 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("zMyBatis: Provider Not Supported"),
         )
         assertTrue(
-            "bound PostgreSQL proof must require multiple JDBC bindings and zMyBatis prepared-result presentation",
-            e2e.contains("registeredActionExecutesMultiBindingPlanThroughPreparedResultPresentation") &&
-                e2e.contains("preparedSql.count { it == '?' }") &&
+            "bound PostgreSQL proof must materialize multiple bindings and land in the native Database Tools grid",
+            e2e.contains("registeredActionExecutesMultiBindingPlanThroughNativeResult") &&
+                e2e.contains("executableSql.count { it == '?' }") &&
                 e2e.contains("Regex(\"\"\"#\\d+ property=value\"\"\")") &&
-                e2e.contains("zMyBatis: Query Result") &&
-                e2e.contains("com.intellij.ui.table.JBTable") &&
-                e2e.contains("prepared approval must not literalize the bound value") &&
-                e2e.contains("bound registered execution must use zMyBatis prepared-result presentation"),
+                e2e.contains("com.intellij.database.run.ui.table.TableResultView") &&
+                e2e.contains("SELECT 7::BIGINT AS RESULT_VALUE") &&
+                e2e.contains("retired zMyBatis result modal"),
         )
         assertTrue(
-            "P5 packaged parity must prove built-in parameterType metadata reaches the prepared backend",
-            e2e.contains("registeredActionExecutesBuiltInParameterTypeThroughPreparedRoute") &&
+            "P5 packaged parity must prove built-in parameterType metadata reaches native materialized execution",
+            e2e.contains("registeredActionExecutesBuiltInParameterTypeThroughNativeResult") &&
                 e2e.contains("parameterType=\"long\"") &&
-                e2e.contains("SELECT ?::BIGINT AS RESULT_VALUE") &&
+                e2e.contains("SELECT 41::BIGINT AS RESULT_VALUE") &&
                 e2e.contains("#1 property=value") &&
                 e2e.contains("javaType=java.lang.Long") &&
                 e2e.contains("handler=org.apache.ibatis.type.LongTypeHandler") &&
-                e2e.contains("parameterType parity must not reintroduce literalized bound SQL") &&
-                e2e.contains("parameterType-backed bound execution must remain on the prepared-result route"),
+                e2e.contains("com.intellij.database.run.ui.table.TableResultView") &&
+                e2e.contains("retired zMyBatis result modal"),
         )
         assertFalse(
-            "prepared registered-action proof must not reconstruct the retired BIGINT materialized artifact",
+            "registered-action proof must not resurrect the retired one-off BIGINT materializer helper",
             e2e.contains("stockPostgreSqlBigintArtifact") ||
                 e2e.contains("PostgreSqlBigintExecutionMaterializer") ||
                 e2e.contains("positiveArtifact.executionSql") ||
