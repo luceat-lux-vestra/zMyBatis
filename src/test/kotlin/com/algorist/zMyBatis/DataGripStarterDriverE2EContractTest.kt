@@ -16,7 +16,7 @@ class DataGripStarterDriverE2EContractTest {
         )
 
         assertTrue(e2e.contains("registeredXmlBoundExecutionUsesNativeDatabaseToolsResultOnDataGrip"))
-        assertTrue(e2e.contains("<bind name=\\"value\\" value=\\"41L\\"/>"))
+        assertTrue(e2e.contains("<bind name=\"value\" value=\"41L\"/>"))
         assertTrue(e2e.contains("SELECT #{value,jdbcType=BIGINT}::BIGINT AS RESULT_VALUE"))
         assertTrue(e2e.contains("SELECT 41::BIGINT AS RESULT_VALUE"))
         assertTrue(e2e.contains("com.intellij.database.run.ui.table.TableResultView"))
@@ -28,15 +28,15 @@ class DataGripStarterDriverE2EContractTest {
         )
         assertFalse(
             "static XML bind literal must not open the caller-parameter dialog",
-            e2e.contains("ui.dialog(title = \\"Enter MyBatis Parameters\\")"),
+            e2e.contains("ui.dialog(title = \"Enter MyBatis Parameters\")"),
         )
         assertFalse(
             "static XML bind literal must not submit a synthetic caller object",
-            e2e.contains("dataGripTextArea().text = \\"\\"\\"{\\"value\\":999}\\"\\"\\""),
+            e2e.contains("dataGripTextArea().text = \"\"\"{\"value\":999}\"\"\""),
         )
-        assertTrue(e2e.contains("DataGrip 2026.3 exposes the activated host surface as \\"Database Explorer\\""))
+        assertTrue(e2e.contains("DataGrip 2026.3 exposes the activated host surface as \"Database Explorer\""))
         assertTrue(e2e.contains("//div[@visible_text='PostgreSQL']"))
-        assertTrue(e2e.contains("invokeAction(\\"DatabaseView.Refresh\\", now = false)"))
+        assertTrue(e2e.contains("invokeAction(\"DatabaseView.Refresh\", now = false)"))
         assertFalse(
             "DataGrip host proof must not reuse the IU-only Database Tool Window locator",
             e2e.contains("databaseToolWindow"),
@@ -62,7 +62,7 @@ class DataGripStarterDriverE2EContractTest {
         )
         assertTrue(
             workflow.contains(
-                "docker exec zmybatis-postgres-datagrip-e2e \\",
+                "docker exec zmybatis-postgres-datagrip-e2e \",
             ),
         )
         assertTrue(workflow.contains("dataGripIntegrationTest --stacktrace"))
