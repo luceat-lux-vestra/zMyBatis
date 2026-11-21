@@ -86,8 +86,11 @@ class ZMyBatisDataGripStarterDriverE2ETest {
         private const val DATAGRIP_RELEASE = "2026.3"
         private const val POSTGRES_E2E_DRIVER_NAME = "zMyBatis DataGrip PostgreSQL 42.7.14"
         private const val POSTGRES_E2E_DATA_SOURCE_NAME = POSTGRES_E2E_DRIVER_NAME
-        private val pluginArchive: Path =
-            pathOf(System.getProperty("path.to.build.plugin")).toAbsolutePath()
+        private val pluginArchive: Path = pathOf(
+            System.getenv("ZMYBATIS_E2E_PLUGIN_ARCHIVE")
+                ?.takeIf { it.isNotBlank() }
+                ?: System.getProperty("path.to.build.plugin"),
+        ).toAbsolutePath()
         private val sampleProject: Path =
             pathOf("src/integrationTest/testProject").toAbsolutePath()
 

@@ -90,7 +90,7 @@ Run each host suite separately from the normal fixture suite:
 
 `integrationTest` is the IntelliJ IDEA Ultimate suite. `dataGripIntegrationTest` targets DataGrip 2026.3 and filters to the DataGrip-specific process class.
 
-The IntelliJ Platform Gradle Plugin's `testIdeUi` task supplies `path.to.build.plugin` from the `buildPlugin` archive. The test installs that exact archive with Starter before launching the IDE.
+For local runs, the IntelliJ Platform Gradle Plugin's `testIdeUi` task still supplies `path.to.build.plugin` from `buildPlugin`. In PR CI, however, the canonical `Build` job checks out the exact PR head, builds one uniquely versioned `0.0.0-validation.sha<HEAD>` distribution, uploads that ZIP without unpacking it, and records its SHA-256 in `validation-candidate-manifest.txt`. IDEA and DataGrip download that same artifact, verify the manifest/hash, and set `ZMYBATIS_E2E_PLUGIN_ARCHIVE`; Starter installs that exact ZIP. The artifact from that Build run is therefore also the only valid human-smoke candidate. A standalone `workflow_dispatch` may build its own local validation candidate, but that standalone build is not a P5 human-handoff artifact.
 
 The first local run can download IDE/Starter artifacts. Semantic correctness of the scenarios does not depend on network access after required artifacts are provisioned.
 

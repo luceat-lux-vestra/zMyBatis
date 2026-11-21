@@ -483,11 +483,37 @@ jobs:
            all(fragment in build_source for fragment in (
                "\n  prScope:",
                "\n  starterDriver:",
+               "needs: [ prScope, build ]",
                "uses: $/.github/workflows/e2e.yml",
+               "candidate_artifact_name: ${{ needs.build.outputs.candidate_artifact_name }}",
+               "candidate_sha256: ${{ needs.build.outputs.candidate_sha256 }}",
                "needs: [ prScope, build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview, starterDriver ]",
                "E2E_RESULT: ${{ needs.starterDriver.result }}",
                "E2E_REQUIRED:",
            )), failures)
+    idea_e2e_source = (
+        REPO_ROOT / "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt"
+    ).read_text(encoding="utf-8")
+    datagrip_e2e_source = (
+        REPO_ROOT / "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisDataGripStarterDriverE2ETest.kt"
+    ).read_text(encoding="utf-8")
+    expect("PR validation uses one uniquely versioned exact candidate across Build and both host E2E jobs",
+           all(fragment in build_source for fragment in (
+               'CANDIDATE_VERSION="0.0.0-validation.sha${CANDIDATE_SHA:0:12}"',
+               'artifact_name="zmybatis-validation-candidate-$CANDIDATE_SHA"',
+               "./build/distributions/*.zip",
+               "./build/validation-candidate-manifest.txt",
+               "candidate_sha256: ${{ steps.artifact.outputs.candidate_sha256 }}",
+           ))
+           and all(fragment in e2e_source for fragment in (
+               "EXPECTED_CANDIDATE_SHA256: ${{ inputs.candidate_sha256 }}",
+               'gh run download "$GITHUB_RUN_ID"',
+               'test "$actual_sha256" = "$EXPECTED_CANDIDATE_SHA256"',
+               'echo "ZMYBATIS_E2E_PLUGIN_ARCHIVE=$artifact" >> "$GITHUB_ENV"',
+           ))
+           and "ZMYBATIS_E2E_PLUGIN_ARCHIVE" in idea_e2e_source
+           and "ZMYBATIS_E2E_PLUGIN_ARCHIVE" in datagrip_e2e_source,
+           failures)
     classifier_source = (POLICY_DIR / "classify_qodana_scope.py").read_text(encoding="utf-8")
     expect("Qodana PR scope classifier self-test remains in lint",
            "Verify Qodana PR scope classifier policy" in build_source
@@ -879,7 +905,7 @@ def check_main_e2e_cache_seed(failures: list[str]) -> None:
            all(
                f"      - name: {step}\n        if: ${{{{ github.event_name != 'push' }}}}" in workflow
                for step in (
-                   "Build exact plugin artifact",
+                   "Resolve exact validation candidate",
                    "Install ARM64 EGL runtime for IntelliJ Skiko",
                    "Run Starter / Driver E2E",
                )

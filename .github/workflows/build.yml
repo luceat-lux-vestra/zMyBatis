@@ -26,6 +26,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  actions: read # Called E2E jobs download the exact candidate produced by Build.
   contents: read
   pull-requests: read # Read the exact PR changed-file set for the bounded docs-only fast path.
 
@@ -87,6 +88,11 @@ jobs:
 
   build:
     name: Build
+    outputs:
+      candidate_artifact_name: ${{ steps.artifact.outputs.artifact_name }}
+      candidate_sha: ${{ steps.artifact.outputs.candidate_sha }}
+      candidate_version: ${{ steps.artifact.outputs.candidate_version }}
+      candidate_sha256: ${{ steps.artifact.outputs.candidate_sha256 }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     steps:
@@ -134,10 +140,12 @@ jobs:
         if: ${{ steps.scope.outputs.docs_only == 'true' }}
         run: echo "Documentation-only change; product Build is not applicable."
 
-      - name: Fetch Sources
+      - name: Fetch exact candidate source
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
       - name: Setup Java
@@ -154,27 +162,61 @@ jobs:
           # Main manual Build also runs Qodana; Gradle cache writes belong to E2E seed.
           cache-read-only: true
 
-      - name: Build plugin
-        if: ${{ steps.scope.outputs.docs_only != 'true' }}
-        run: ./gradlew buildPlugin
-
-      - name: Prepare Plugin Artifact
+      - name: Build exact validation candidate
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
         id: artifact
+        env:
+          CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          cd "$GITHUB_WORKSPACE/build/distributions"
-          FILENAME=$(ls -- *.zip)
-          unzip "$FILENAME" -d content
-          echo "filename=${FILENAME%.zip}" >> "$GITHUB_OUTPUT"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          CANDIDATE_VERSION="0.0.0-validation.sha${CANDIDATE_SHA:0:12}"
+          ./gradlew buildPlugin -PpluginVersion="$CANDIDATE_VERSION"
 
-      - name: Upload artifact
+          mapfile -t archives < <(find build/distributions -maxdepth 1 -type f -name '*.zip' -print)
+          if [[ ${#archives[@]} -ne 1 ]]; then
+            echo "::error::Expected exactly one validation plugin ZIP, found ${#archives[@]}"
+            printf '%s\n' "${archives[@]}"
+            exit 1
+          fi
+
+          artifact="${archives[0]}"
+          artifact_basename="$(basename "$artifact")"
+          case "$artifact_basename" in
+            *-"$CANDIDATE_VERSION".zip) ;;
+            *)
+              echo "::error::Validation ZIP does not embed unique candidate version: $artifact_basename"
+              exit 1
+              ;;
+          esac
+
+          artifact_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
+          artifact_name="zmybatis-validation-candidate-$CANDIDATE_SHA"
+          manifest="$GITHUB_WORKSPACE/build/validation-candidate-manifest.txt"
+          {
+            echo "candidate_sha=$CANDIDATE_SHA"
+            echo "candidate_version=$CANDIDATE_VERSION"
+            echo "plugin_artifact=$artifact_basename"
+            echo "plugin_sha256=$artifact_sha256"
+            echo "workflow_run_id=$GITHUB_RUN_ID"
+          } | tee "$manifest"
+
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          echo "candidate_version=$CANDIDATE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha256=$artifact_sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload exact validation candidate
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: ${{ steps.artifact.outputs.filename }}
-          path: ./build/distributions/content/*/*
+          name: ${{ steps.artifact.outputs.artifact_name }}
+          path: |
+            ./build/distributions/*.zip
+            ./build/validation-candidate-manifest.txt
+          if-no-files-found: error
+          retention-days: 90
 
   test:
     name: Test
@@ -737,9 +779,14 @@ jobs:
 
   starterDriver:
     name: Starter / Driver E2E
-    needs: [ prScope ]
+    needs: [ prScope, build ]
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.prScope.outputs.docs_only != 'true' }}
     uses: $/.github/workflows/e2e.yml
+    with:
+      candidate_artifact_name: ${{ needs.build.outputs.candidate_artifact_name }}
+      candidate_sha: ${{ needs.build.outputs.candidate_sha }}
+      candidate_version: ${{ needs.build.outputs.candidate_version }}
+      candidate_sha256: ${{ needs.build.outputs.candidate_sha256 }}
 
   mergeGate:
     name: Merge Gate

@@ -45,29 +45,31 @@ with those contracts.
 
 ## 1. Record the exact candidate
 
-From the zMyBatis repository root, validate the **exact candidate commit** recorded in the P5
-checkpoint. Do not switch to `main` while the candidate PR is still open.
+Use the **canonical candidate artifact produced by the PR `Build` workflow**. Do not locally rebuild
+the plugin for human sign-off: a local rebuild would break byte-for-byte continuity with the ZIP
+already exercised by IDEA/DataGrip Starter E2E.
 
-```bash
-candidate_sha=<exact-P5-candidate-SHA>
-candidate_version=<validation-SemVer>
+The Build job must provide exactly one artifact named:
 
-git fetch origin
-git status --short
-test -z "$(git status --porcelain)" || { echo "working tree must be clean" >&2; exit 1; }
-git switch --detach "$candidate_sha"
-test "$(git rev-parse HEAD)" = "$candidate_sha"
-
-./gradlew clean buildPlugin -PpluginVersion="$candidate_version"
-
-mapfile -t archives < <(find build/distributions -maxdepth 1 -type f -name '*.zip' -print)
-test "${#archives[@]}" -eq 1
-shasum -a 256 "${archives[0]}"
+```text
+zmybatis-validation-candidate-<exact-40-char-PR-HEAD>
 ```
 
-The candidate version is validation-only metadata; use a SemVer that cannot be confused with a
-published release. The SHA is authoritative. If any source change lands after this build, discard the
-ZIP and rebuild from the new exact HEAD.
+That artifact contains:
+
+```text
+zMyBatis-0.0.0-validation.sha<first-12-HEAD>.zip
+validation-candidate-manifest.txt
+```
+
+The manifest records the exact candidate SHA, visible validation version, plugin ZIP filename and
+plugin SHA-256. IDEA and DataGrip E2E must both download this same artifact and verify the same
+SHA-256 before installing it. Extract the inner plugin ZIP from this artifact and install **that exact
+file** for H01-H03. The outer GitHub artifact archive is transport only and is not the plugin ZIP.
+
+If any source change lands after the artifact is built, discard the artifact and require a new Build
+run. A standalone E2E `workflow_dispatch` or locally rebuilt ZIP is diagnostic evidence only and is
+not accepted as the P5 human candidate.
 
 Record:
 
