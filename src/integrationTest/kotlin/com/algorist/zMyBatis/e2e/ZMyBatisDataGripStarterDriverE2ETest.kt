@@ -175,7 +175,7 @@ class ZMyBatisDataGripStarterDriverE2ETest {
     }
 
     @Test
-    fun registeredXmlPreparedExecutionUsesDatabaseToolsSessionOnDataGrip(@TempDir tempDir: Path) {
+    fun registeredXmlBoundExecutionUsesNativeDatabaseToolsResultOnDataGrip(@TempDir tempDir: Path) {
         val projectDir = copySampleProject(tempDir.resolve("datagrip-prepared-postgresql-project"))
         Files.writeString(
             projectDir.resolve("DataGripPreparedQuery.xml"),
@@ -232,28 +232,26 @@ class ZMyBatisDataGripStarterDriverE2ETest {
 
                 ui.dialog(title = "zMyBatis — SQL Preview") {
                     val preview = dataGripTextArea().text.trim()
-                    val preparedSql = preview.substringBefore("\n\nBindings (values hidden):")
+                    val executableSql = preview.substringBefore(
+                        "\n\nBinding metadata (values materialized in SQL above):",
+                    )
                     assertEquals(
-                        "SELECT ?::BIGINT AS RESULT_VALUE",
-                        preparedSql,
-                        "DataGrip XML prepared acceptance must retain the JDBC placeholder",
+                        "SELECT 41::BIGINT AS RESULT_VALUE",
+                        executableSql,
+                        "DataGrip XML bound acceptance must approve the exact native SQL artifact",
                     )
                     assertTrue(preview.contains("#1 property=value"))
                     assertTrue(preview.contains("jdbcType=BIGINT"))
-                    assertFalse(
-                        preview.contains("SELECT 41::BIGINT"),
-                        "DataGrip prepared acceptance must not literalize the bound value",
-                    )
                     button("Execute").click()
                 }
 
                 waitFor(
-                    message = "DataGrip zMyBatis prepared-result table contains bound value",
+                    message = "DataGrip native Database Tools result grid contains bound value",
                     timeout = 2.minutes,
                 ) {
                     try {
                         ui.accessibleTable {
-                            byType("com.intellij.ui.table.JBTable")
+                            byType("com.intellij.database.run.ui.table.TableResultView")
                         }.content().values.any { row ->
                             row.values.any { cell -> cell.trim() == "41" }
                         }
@@ -261,30 +259,17 @@ class ZMyBatisDataGripStarterDriverE2ETest {
                         false
                     }
                 }
-
-                ui.dialog(title = "zMyBatis: Query Result") {
-                    button("Close").click()
-                }
-                ui.waitForNoOpenedDialogs()
-
-                val nativeGridOpened = try {
-                    ui.accessibleTable {
-                        byType("com.intellij.database.run.ui.table.TableResultView")
-                    }.content()
-                    true
-                } catch (_: com.intellij.driver.sdk.WaitForException) {
-                    false
-                }
                 assertFalse(
-                    nativeGridOpened,
-                    "DataGrip bound XML execution must remain on zMyBatis prepared-result presentation",
+                    ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
+                    "DataGrip bound XML execution must not open the retired zMyBatis result modal",
                 )
+                ui.waitForNoOpenedDialogs()
             }
 
         println(
             "ZMYBATIS_HOST_EVIDENCE host=DATAGRIP release=$DATAGRIP_RELEASE " +
-                "scenario=xml-prepared-postgresql result=PASS action_registered=true " +
-                "prepared_route=true clean_shutdown=true duration_ms=${elapsedMs(startedAt)}",
+                "scenario=xml-bound-native-postgresql result=PASS action_registered=true " +
+                "native_result=true clean_shutdown=true duration_ms=${elapsedMs(startedAt)}",
         )
     }
 

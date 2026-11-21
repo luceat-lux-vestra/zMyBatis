@@ -16,8 +16,10 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         )
 
         assertTrue(delivery.contains("consoleAdapter.acquireAndDeliverConsole("))
+        assertTrue(delivery.contains("NativeExecutionPlanMaterializer.materialize(plan)"))
         assertTrue(delivery.contains("nativeBackend.execute("))
-        assertTrue(delivery.contains("preparedBackend.execute("))
+        assertFalse(delivery.contains("preparedBackend.execute("))
+        assertFalse(delivery.contains("preparedResultAdapter.present("))
         assertFalse(delivery.contains("consoleAdapter.executeMaterialized("))
         assertFalse(action.contains("JdbcConsole.newConsole"))
         assertFalse(action.contains(".switchSchema("))

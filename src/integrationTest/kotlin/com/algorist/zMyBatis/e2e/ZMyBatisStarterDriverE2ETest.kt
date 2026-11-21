@@ -262,7 +262,7 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     @Test
-    fun registeredActionExecutesMultiBindingPlanThroughPreparedResultPresentation(@TempDir tempDir: Path) {
+    fun registeredActionExecutesMultiBindingPlanThroughNativeResult(@TempDir tempDir: Path) {
         val projectDir = copySampleProject(tempDir.resolve("action-postgresql-prepared-project"))
         val mapper = """
             <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
@@ -314,68 +314,49 @@ class ZMyBatisStarterDriverE2ETest {
 
                 ui.dialog(title = "zMyBatis — SQL Preview") {
                     val preview = textArea().text.trim()
-                    val preparedSql = preview.substringBefore("\n\nBindings (values hidden):")
-                    assertEquals(
-                        2,
-                        preparedSql.count { it == '?' },
-                        "registered multi-binding execution must preview two JDBC placeholders",
+                    val executableSql = preview.substringBefore(
+                        "\n\nBinding metadata (values materialized in SQL above):",
                     )
-                    assertTrue(preparedSql.contains("RESULT_VALUE"))
-                    assertTrue(preparedSql.contains("SECOND_VALUE"))
+                    assertEquals(
+                        0,
+                        executableSql.count { it == '?' },
+                        "registered multi-binding execution must approve the exact native SQL artifact",
+                    )
+                    assertTrue(executableSql.contains("SELECT 7::BIGINT AS RESULT_VALUE"))
+                    assertTrue(executableSql.contains("7::BIGINT + 1 AS SECOND_VALUE"))
                     assertEquals(
                         2,
                         Regex("""#\d+ property=value""").findAll(preview).count(),
-                        "prepared preview must expose both ordered bindings without their values",
+                        "materialized preview must retain both ordered binding metadata entries",
                     )
                     assertTrue(preview.contains("jdbcType=BIGINT"))
                     assertTrue(preview.contains("handler=org.apache.ibatis.type.LongTypeHandler"))
-                    assertFalse(
-                        preview.contains("SELECT 7::BIGINT"),
-                        "prepared approval must not literalize the bound value",
-                    )
                     button("Execute").click()
                 }
 
                 waitFor(
-                    message = "zMyBatis prepared-result table contains both multi-binding values",
+                    message = "Database Tools native result grid contains both materialized multi-binding values",
                     timeout = 2.minutes,
                 ) {
                     try {
-                        if (!ui.isDialogOpened("//div[@title='zMyBatis: Query Result']")) {
-                            false
-                        } else {
-                            val values = ui.accessibleTable {
-                                byType("com.intellij.ui.table.JBTable")
-                            }.content().values.flatMap { row -> row.values }.map { it.trim() }.toSet()
-                            setOf("7", "8").all { it in values }
-                        }
+                        val values = ui.accessibleTable {
+                            byType("com.intellij.database.run.ui.table.TableResultView")
+                        }.content().values.flatMap { row -> row.values }.map { it.trim() }.toSet()
+                        setOf("7", "8").all { it in values }
                     } catch (_: com.intellij.driver.sdk.WaitForException) {
                         false
                     }
                 }
-
-                ui.dialog(title = "zMyBatis: Query Result") {
-                    button("Close").click()
-                }
-                ui.waitForNoOpenedDialogs()
-
-                val nativeGridOpened = try {
-                    ui.accessibleTable {
-                        byType("com.intellij.database.run.ui.table.TableResultView")
-                    }.content()
-                    true
-                } catch (_: com.intellij.driver.sdk.WaitForException) {
-                    false
-                }
                 assertFalse(
-                    nativeGridOpened,
-                    "bound registered execution must use zMyBatis prepared-result presentation, not native SQL-text result delivery",
+                    ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
+                    "bound registered execution must not open the retired zMyBatis result modal",
                 )
+                ui.waitForNoOpenedDialogs()
             }
     }
 
     @Test
-    fun registeredActionExecutesBuiltInParameterTypeThroughPreparedRoute(@TempDir tempDir: Path) {
+    fun registeredActionExecutesBuiltInParameterTypeThroughNativeResult(@TempDir tempDir: Path) {
         val projectDir = copySampleProject(tempDir.resolve("action-postgresql-parameter-type-project"))
         val mapper = """
             <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
@@ -427,30 +408,28 @@ class ZMyBatisStarterDriverE2ETest {
 
                 ui.dialog(title = "zMyBatis — SQL Preview") {
                     val preview = textArea().text.trim()
-                    val preparedSql = preview.substringBefore("\n\nBindings (values hidden):")
+                    val executableSql = preview.substringBefore(
+                        "\n\nBinding metadata (values materialized in SQL above):",
+                    )
                     assertEquals(
-                        "SELECT ?::BIGINT AS RESULT_VALUE",
-                        preparedSql,
-                        "built-in parameterType metadata must not change the prepared SQL identity",
+                        "SELECT 41::BIGINT AS RESULT_VALUE",
+                        executableSql,
+                        "built-in parameterType metadata must materialize the exact native SQL artifact",
                     )
                     assertTrue(preview.contains("#1 property=value"))
                     assertTrue(preview.contains("javaType=java.lang.Long"))
                     assertTrue(preview.contains("jdbcType=BIGINT"))
                     assertTrue(preview.contains("handler=org.apache.ibatis.type.LongTypeHandler"))
-                    assertFalse(
-                        preview.contains("SELECT 41::BIGINT"),
-                        "parameterType parity must not reintroduce literalized bound SQL",
-                    )
                     button("Execute").click()
                 }
 
                 waitFor(
-                    message = "zMyBatis prepared-result table contains parameterType-backed value",
+                    message = "Database Tools native result grid contains parameterType-backed value",
                     timeout = 2.minutes,
                 ) {
                     try {
                         ui.accessibleTable {
-                            byType("com.intellij.ui.table.JBTable")
+                            byType("com.intellij.database.run.ui.table.TableResultView")
                         }.content().values.any { row ->
                             row.values.any { cell -> cell.trim() == "41" }
                         }
@@ -458,24 +437,11 @@ class ZMyBatisStarterDriverE2ETest {
                         false
                     }
                 }
-
-                ui.dialog(title = "zMyBatis: Query Result") {
-                    button("Close").click()
-                }
-                ui.waitForNoOpenedDialogs()
-
-                val nativeGridOpened = try {
-                    ui.accessibleTable {
-                        byType("com.intellij.database.run.ui.table.TableResultView")
-                    }.content()
-                    true
-                } catch (_: com.intellij.driver.sdk.WaitForException) {
-                    false
-                }
                 assertFalse(
-                    nativeGridOpened,
-                    "parameterType-backed bound execution must remain on the prepared-result route",
+                    ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
+                    "parameterType-backed bound execution must not open the retired zMyBatis result modal",
                 )
+                ui.waitForNoOpenedDialogs()
             }
     }
 
