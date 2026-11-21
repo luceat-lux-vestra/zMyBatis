@@ -22,9 +22,12 @@ class DataGripStarterDriverE2EContractTest {
         assertTrue(e2e.contains("com.intellij.database.run.ui.table.TableResultView"))
         assertTrue(e2e.contains("scenario=xml-bound-native-postgresql result=PASS action_registered=true "))
         assertTrue(e2e.contains("native_result=true clean_shutdown=true"))
-        assertFalse(
-            "bound XML acceptance must not fall back to zMyBatis-owned result modal",
-            e2e.contains("zMyBatis: Query Result"),
+        assertTrue(
+            "bound XML acceptance must explicitly prove the retired zMyBatis result modal stays absent",
+            e2e.contains("ui.isDialogOpened(\"//div[@title='zMyBatis: Query Result']\")") &&
+                e2e.contains(
+                    "DataGrip bound XML execution must not open the retired zMyBatis result modal",
+                ),
         )
         assertFalse(
             "static XML bind literal must not open the caller-parameter dialog",
