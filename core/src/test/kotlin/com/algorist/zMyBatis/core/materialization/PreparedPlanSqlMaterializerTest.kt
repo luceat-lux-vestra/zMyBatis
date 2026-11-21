@@ -25,7 +25,11 @@ import com.algorist.zMyBatis.core.source.SourceFileId
 import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.core.source.StatementKind
 import com.algorist.zMyBatis.core.source.XmlStatementId
+import java.math.BigDecimal
 import java.math.BigInteger
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -74,6 +78,147 @@ class PreparedPlanSqlMaterializerTest {
         val artifact = ready(NativeExecutionPlanMaterializer.materialize(plan(sql = sql)))
 
         assertEquals(sql, artifact.executionSql)
+    }
+
+    @Test
+    fun materializesRequiredCommonScalarEnvelopeInExactOrder() {
+        val plan = plan(
+            sql = """
+                SELECT
+                  ?::smallint,
+                  ?::smallint,
+                  ?::integer,
+                  ?::bigint,
+                  ?::real,
+                  ?::double precision,
+                  ?::numeric,
+                  ?::boolean,
+                  ?::varchar,
+                  encode(?::bytea, 'hex'),
+                  ?::date,
+                  ?::time,
+                  ?::timestamp,
+                  CASE WHEN ?::varchar IS NULL THEN 'NULL' ELSE 'NON_NULL' END
+            """.trimIndent(),
+            bindings = listOf(
+                binding(0, InputValue.IntegerValue(BigInteger.valueOf(7)), "java.lang.Byte", "TINYINT", "org.apache.ibatis.type.ByteTypeHandler"),
+                binding(1, InputValue.IntegerValue(BigInteger.valueOf(8)), "java.lang.Short", "SMALLINT", "org.apache.ibatis.type.ShortTypeHandler"),
+                binding(2, InputValue.IntegerValue(BigInteger.valueOf(9)), "java.lang.Integer", "INTEGER", "org.apache.ibatis.type.IntegerTypeHandler"),
+                bigint(3, 42),
+                binding(4, InputValue.DecimalValue(BigDecimal("11.25")), "java.lang.Float", "REAL", "org.apache.ibatis.type.FloatTypeHandler"),
+                binding(5, InputValue.DecimalValue(BigDecimal("12.5")), "java.lang.Double", "DOUBLE", "org.apache.ibatis.type.DoubleTypeHandler"),
+                binding(6, InputValue.DecimalValue(BigDecimal("13.75")), "java.math.BigDecimal", "DECIMAL", "org.apache.ibatis.type.BigDecimalTypeHandler"),
+                binding(7, InputValue.BooleanValue(true), "java.lang.Boolean", "BOOLEAN", "org.apache.ibatis.type.BooleanTypeHandler"),
+                varchar(8, "captured-proof"),
+                binding(
+                    9,
+                    InputValue.ArrayValue(
+                        listOf(
+                            InputValue.IntegerValue(BigInteger.ONE),
+                            InputValue.IntegerValue(BigInteger.valueOf(2)),
+                            InputValue.IntegerValue(BigInteger.valueOf(3)),
+                        ),
+                    ),
+                    "byte[]",
+                    "VARBINARY",
+                    "org.apache.ibatis.type.ByteArrayTypeHandler",
+                ),
+                binding(10, InputValue.DateValue(LocalDate.of(2026, 11, 18)), "java.time.LocalDate", "DATE", "org.apache.ibatis.type.LocalDateTypeHandler"),
+                binding(11, InputValue.TimeValue(LocalTime.of(12, 34, 56)), "java.time.LocalTime", "TIME", "org.apache.ibatis.type.LocalTimeTypeHandler"),
+                binding(
+                    12,
+                    InputValue.DateTimeValue(LocalDateTime.of(2026, 11, 18, 12, 34, 56)),
+                    "java.time.LocalDateTime",
+                    "TIMESTAMP",
+                    "org.apache.ibatis.type.LocalDateTimeTypeHandler",
+                ),
+                typedNull(13, "VARCHAR"),
+            ),
+        )
+
+        val artifact = ready(NativeExecutionPlanMaterializer.materialize(plan))
+
+        assertEquals(
+            """
+                SELECT
+                  7::smallint,
+                  8::smallint,
+                  9::integer,
+                  42::bigint,
+                  11.25::real,
+                  12.5::double precision,
+                  13.75::numeric,
+                  TRUE::boolean,
+                  E'captured-proof'::varchar,
+                  encode(decode('010203', 'hex')::bytea, 'hex'),
+                  DATE '2026-11-18'::date,
+                  TIME '12:34:56'::time,
+                  TIMESTAMP '2026-11-18 12:34:56'::timestamp,
+                  CASE WHEN NULL::varchar IS NULL THEN 'NULL' ELSE 'NON_NULL' END
+            """.trimIndent(),
+            artifact.executionSql,
+        )
+    }
+
+    @Test
+    fun rejectsUnsupportedInstantUntilTimestampTimezoneSemanticsAreProven() {
+        val result = NativeExecutionPlanMaterializer.materialize(
+            plan(
+                sql = "SELECT ?::timestamp",
+                bindings = listOf(
+                    binding(
+                        0,
+                        InputValue.InstantValue(java.time.Instant.parse("2026-11-18T03:00:17Z")),
+                        "java.time.Instant",
+                        "TIMESTAMP",
+                        "org.apache.ibatis.type.InstantTypeHandler",
+                    ),
+                ),
+            ),
+        )
+
+        assertFailure(
+            result,
+            PreparedPlanSqlMaterializationFailureKind.BINDING_METADATA_UNSUPPORTED,
+            "prepared-plan-sql-binding-metadata-unsupported",
+        )
+    }
+
+    @Test
+    fun rejectsInvalidUtf16AndBinaryValuesOutsideSignedByteRange() {
+        val invalidText = NativeExecutionPlanMaterializer.materialize(
+            plan(
+                sql = "SELECT ?::varchar",
+                bindings = listOf(varchar(0, "\uD800")),
+            ),
+        )
+        assertFailure(
+            invalidText,
+            PreparedPlanSqlMaterializationFailureKind.BINDING_VALUE_UNSUPPORTED,
+            "prepared-plan-sql-binding-value-unsupported",
+        )
+
+        val invalidBinary = NativeExecutionPlanMaterializer.materialize(
+            plan(
+                sql = "SELECT ?::bytea",
+                bindings = listOf(
+                    binding(
+                        0,
+                        InputValue.ArrayValue(
+                            listOf(InputValue.IntegerValue(BigInteger.valueOf(128))),
+                        ),
+                        "byte[]",
+                        "VARBINARY",
+                        "org.apache.ibatis.type.ByteArrayTypeHandler",
+                    ),
+                ),
+            ),
+        )
+        assertFailure(
+            invalidBinary,
+            PreparedPlanSqlMaterializationFailureKind.BINDING_VALUE_UNSUPPORTED,
+            "prepared-plan-sql-binding-value-unsupported",
+        )
     }
 
     @Test

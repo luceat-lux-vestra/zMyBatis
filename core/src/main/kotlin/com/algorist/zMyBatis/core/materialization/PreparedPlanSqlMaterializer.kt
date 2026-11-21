@@ -143,51 +143,144 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
         val jdbcType = metadata.effectiveJdbcTypeIdentity ?: metadata.jdbcTypeIdentity
             ?: return BindingRenderResult.MetadataUnsupported
 
+        if (binding.value == InputValue.NullValue) {
+            return if (supportsTypedNull(metadata.mappingJavaTypeIdentity, metadata.typeHandlerIdentity, jdbcType)) {
+                BindingRenderResult.Ready("NULL")
+            } else {
+                BindingRenderResult.MetadataUnsupported
+            }
+        }
+
         return when (val value = binding.value) {
-            InputValue.NullValue -> {
-                if (jdbcType !in SUPPORTED_NULL_JDBC_TYPES || metadata.typeHandlerIdentity !in SUPPORTED_NULL_HANDLERS) {
-                    BindingRenderResult.MetadataUnsupported
+            is InputValue.IntegerValue -> renderInteger(binding, jdbcType, value.value)
+            is InputValue.DecimalValue -> renderDecimal(binding, jdbcType, value.value.toPlainString())
+            is InputValue.BooleanValue ->
+                if (matchesStockBinding(binding, BOOLEAN_SPEC, jdbcType)) {
+                    BindingRenderResult.Ready(if (value.value) "TRUE" else "FALSE")
                 } else {
-                    BindingRenderResult.Ready("NULL")
+                    BindingRenderResult.MetadataUnsupported
                 }
-            }
-            is InputValue.IntegerValue -> {
-                if (
-                    jdbcType != "BIGINT" ||
-                    metadata.typeHandlerIdentity !in BIGINT_HANDLERS ||
-                    metadata.mappingJavaTypeIdentity !in BIGINT_MAPPING_TYPES
-                ) {
-                    BindingRenderResult.MetadataUnsupported
-                } else if (value.value !in LONG_MIN..LONG_MAX) {
-                    BindingRenderResult.ValueUnsupported
-                } else {
-                    BindingRenderResult.Ready(value.value.toString())
-                }
-            }
-            is InputValue.Text -> {
-                if (
-                    jdbcType != "VARCHAR" ||
-                    metadata.typeHandlerIdentity !in VARCHAR_HANDLERS ||
-                    metadata.mappingJavaTypeIdentity !in VARCHAR_MAPPING_TYPES
-                ) {
-                    BindingRenderResult.MetadataUnsupported
-                } else {
+            is InputValue.Text ->
+                if (matchesStockBinding(binding, VARCHAR_SPEC, jdbcType)) {
                     postgreSqlTextLiteral(value.value)
                         ?.let(BindingRenderResult::Ready)
                         ?: BindingRenderResult.ValueUnsupported
+                } else {
+                    BindingRenderResult.MetadataUnsupported
                 }
-            }
+            is InputValue.ArrayValue -> renderBinary(binding, jdbcType, value)
+            is InputValue.DateValue ->
+                if (matchesStockBinding(binding, DATE_SPEC, jdbcType)) {
+                    BindingRenderResult.Ready("DATE '${value.value}'")
+                } else {
+                    BindingRenderResult.MetadataUnsupported
+                }
+            is InputValue.TimeValue ->
+                if (matchesStockBinding(binding, TIME_SPEC, jdbcType)) {
+                    BindingRenderResult.Ready("TIME '${value.value}'")
+                } else {
+                    BindingRenderResult.MetadataUnsupported
+                }
+            is InputValue.DateTimeValue ->
+                if (matchesStockBinding(binding, TIMESTAMP_SPEC, jdbcType)) {
+                    BindingRenderResult.Ready(
+                        "TIMESTAMP '${value.value.toString().replace('T', ' ')}'",
+                    )
+                } else {
+                    BindingRenderResult.MetadataUnsupported
+                }
             else -> BindingRenderResult.MetadataUnsupported
         }
+    }
+
+    private fun renderInteger(
+        binding: PreparedBinding,
+        jdbcType: String,
+        value: BigInteger,
+    ): BindingRenderResult {
+        val spec = INTEGER_SPECS[jdbcType] ?: return BindingRenderResult.MetadataUnsupported
+        if (!matchesStockBinding(binding, spec, jdbcType)) {
+            return BindingRenderResult.MetadataUnsupported
+        }
+        return if (value in spec.minInteger!!..spec.maxInteger!!) {
+            BindingRenderResult.Ready(value.toString())
+        } else {
+            BindingRenderResult.ValueUnsupported
+        }
+    }
+
+    private fun renderDecimal(
+        binding: PreparedBinding,
+        jdbcType: String,
+        literal: String,
+    ): BindingRenderResult {
+        val spec = DECIMAL_SPECS[jdbcType] ?: return BindingRenderResult.MetadataUnsupported
+        return if (matchesStockBinding(binding, spec, jdbcType)) {
+            BindingRenderResult.Ready(literal)
+        } else {
+            BindingRenderResult.MetadataUnsupported
+        }
+    }
+
+    private fun renderBinary(
+        binding: PreparedBinding,
+        jdbcType: String,
+        value: InputValue.ArrayValue,
+    ): BindingRenderResult {
+        if (!matchesStockBinding(binding, BINARY_SPEC, jdbcType)) {
+            return BindingRenderResult.MetadataUnsupported
+        }
+
+        val hex = StringBuilder(value.elements.size * 2)
+        for (element in value.elements) {
+            val integer = (element as? InputValue.IntegerValue)?.value
+                ?: return BindingRenderResult.ValueUnsupported
+            if (integer !in BYTE_MIN..BYTE_MAX) {
+                return BindingRenderResult.ValueUnsupported
+            }
+            val byte = integer.toInt() and 0xff
+            hex.append(HEX_DIGITS[byte ushr 4])
+            hex.append(HEX_DIGITS[byte and 0x0f])
+        }
+        return BindingRenderResult.Ready("decode('${hex}', 'hex')")
+    }
+
+    private fun matchesStockBinding(
+        binding: PreparedBinding,
+        spec: BindingSpec,
+        jdbcType: String,
+    ): Boolean {
+        if (jdbcType !in spec.jdbcTypes) return false
+        val metadata = binding.metadata
+        val mappingType = metadata.mappingJavaTypeIdentity
+        val handler = metadata.typeHandlerIdentity
+        if (mappingType in spec.javaTypes && handler in spec.handlers) {
+            return true
+        }
+
+        return mappingType == OBJECT_TYPE &&
+            handler == UNKNOWN_HANDLER &&
+            metadata.declaredJavaTypeIdentity?.value in spec.javaTypes
+    }
+
+    private fun supportsTypedNull(
+        mappingType: String?,
+        handler: String?,
+        jdbcType: String,
+    ): Boolean {
+        val spec = NULL_SPECS[jdbcType] ?: return false
+        return (mappingType in spec.javaTypes && handler in spec.handlers) ||
+            (mappingType == OBJECT_TYPE && handler == UNKNOWN_HANDLER)
     }
 
     /**
      * E-strings make backslash semantics independent of the session's standard_conforming_strings
      * setting. Every input backslash is doubled and every quote is SQL-escaped. PostgreSQL text
-     * cannot contain NUL, so that value fails closed.
+     * cannot contain NUL. Invalid/unpaired UTF-16 surrogates are also rejected before the IDE/JDBC
+     * encoding boundary.
      */
     private fun postgreSqlTextLiteral(value: String): String? {
-        if ('\u0000' in value) return null
+        if ('\u0000' in value || !isWellFormedUtf16(value)) return null
         return buildString(value.length + 3) {
             append("E'")
             value.forEach { c ->
@@ -201,30 +294,153 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
         }
     }
 
+    private fun isWellFormedUtf16(value: String): Boolean {
+        var index = 0
+        while (index < value.length) {
+            val current = value[index]
+            when {
+                current.isHighSurrogate() -> {
+                    if (index + 1 >= value.length || !value[index + 1].isLowSurrogate()) return false
+                    index += 2
+                }
+                current.isLowSurrogate() -> return false
+                else -> index += 1
+            }
+        }
+        return true
+    }
+
+    private data class BindingSpec(
+        val jdbcTypes: Set<String>,
+        val javaTypes: Set<String>,
+        val handlers: Set<String>,
+        val minInteger: BigInteger? = null,
+        val maxInteger: BigInteger? = null,
+    )
+
     private sealed interface BindingRenderResult {
         data class Ready(val literal: String) : BindingRenderResult
         data object MetadataUnsupported : BindingRenderResult
         data object ValueUnsupported : BindingRenderResult
     }
 
+    private val BYTE_MIN = BigInteger.valueOf(Byte.MIN_VALUE.toLong())
+    private val BYTE_MAX = BigInteger.valueOf(Byte.MAX_VALUE.toLong())
+    private val SHORT_MIN = BigInteger.valueOf(Short.MIN_VALUE.toLong())
+    private val SHORT_MAX = BigInteger.valueOf(Short.MAX_VALUE.toLong())
+    private val INT_MIN = BigInteger.valueOf(Int.MIN_VALUE.toLong())
+    private val INT_MAX = BigInteger.valueOf(Int.MAX_VALUE.toLong())
     private val LONG_MIN: BigInteger = BigInteger.valueOf(Long.MIN_VALUE)
     private val LONG_MAX: BigInteger = BigInteger.valueOf(Long.MAX_VALUE)
-    private val BIGINT_MAPPING_TYPES = setOf("long", "java.lang.Long", "java.lang.Object")
-    private val VARCHAR_MAPPING_TYPES = setOf("java.lang.String", "java.lang.Object")
-    private val BIGINT_HANDLERS = setOf(
-        "org.apache.ibatis.type.LongTypeHandler",
-        "org.apache.ibatis.type.UnknownTypeHandler",
-    )
-    private val VARCHAR_HANDLERS = setOf(
-        "org.apache.ibatis.type.StringTypeHandler",
-        "org.apache.ibatis.type.UnknownTypeHandler",
-    )
-    private val SUPPORTED_NULL_HANDLERS = BIGINT_HANDLERS + VARCHAR_HANDLERS
-    private val SUPPORTED_NULL_JDBC_TYPES = setOf("BIGINT", "VARCHAR")
 
+    private val TINYINT_SPEC = BindingSpec(
+        jdbcTypes = setOf("TINYINT"),
+        javaTypes = setOf("byte", "java.lang.Byte"),
+        handlers = setOf("org.apache.ibatis.type.ByteTypeHandler"),
+        minInteger = BYTE_MIN,
+        maxInteger = BYTE_MAX,
+    )
+    private val SMALLINT_SPEC = BindingSpec(
+        jdbcTypes = setOf("SMALLINT"),
+        javaTypes = setOf("short", "java.lang.Short"),
+        handlers = setOf("org.apache.ibatis.type.ShortTypeHandler"),
+        minInteger = SHORT_MIN,
+        maxInteger = SHORT_MAX,
+    )
+    private val INTEGER_SPEC = BindingSpec(
+        jdbcTypes = setOf("INTEGER"),
+        javaTypes = setOf("int", "java.lang.Integer"),
+        handlers = setOf("org.apache.ibatis.type.IntegerTypeHandler"),
+        minInteger = INT_MIN,
+        maxInteger = INT_MAX,
+    )
+    private val BIGINT_SPEC = BindingSpec(
+        jdbcTypes = setOf("BIGINT"),
+        javaTypes = setOf("long", "java.lang.Long"),
+        handlers = setOf("org.apache.ibatis.type.LongTypeHandler"),
+        minInteger = LONG_MIN,
+        maxInteger = LONG_MAX,
+    )
+    private val REAL_SPEC = BindingSpec(
+        jdbcTypes = setOf("REAL"),
+        javaTypes = setOf("float", "java.lang.Float"),
+        handlers = setOf("org.apache.ibatis.type.FloatTypeHandler"),
+    )
+    private val DOUBLE_SPEC = BindingSpec(
+        jdbcTypes = setOf("DOUBLE"),
+        javaTypes = setOf("double", "java.lang.Double"),
+        handlers = setOf("org.apache.ibatis.type.DoubleTypeHandler"),
+    )
+    private val DECIMAL_SPEC = BindingSpec(
+        jdbcTypes = setOf("DECIMAL"),
+        javaTypes = setOf("java.math.BigDecimal"),
+        handlers = setOf("org.apache.ibatis.type.BigDecimalTypeHandler"),
+    )
+    private val BOOLEAN_SPEC = BindingSpec(
+        jdbcTypes = setOf("BOOLEAN"),
+        javaTypes = setOf("boolean", "java.lang.Boolean"),
+        handlers = setOf("org.apache.ibatis.type.BooleanTypeHandler"),
+    )
+    private val VARCHAR_SPEC = BindingSpec(
+        jdbcTypes = setOf("VARCHAR"),
+        javaTypes = setOf("java.lang.String"),
+        handlers = setOf("org.apache.ibatis.type.StringTypeHandler"),
+    )
+    private val BINARY_SPEC = BindingSpec(
+        jdbcTypes = setOf("VARBINARY"),
+        javaTypes = setOf("[B", "byte[]"),
+        handlers = setOf("org.apache.ibatis.type.ByteArrayTypeHandler"),
+    )
+    private val DATE_SPEC = BindingSpec(
+        jdbcTypes = setOf("DATE"),
+        javaTypes = setOf("java.time.LocalDate"),
+        handlers = setOf("org.apache.ibatis.type.LocalDateTypeHandler"),
+    )
+    private val TIME_SPEC = BindingSpec(
+        jdbcTypes = setOf("TIME"),
+        javaTypes = setOf("java.time.LocalTime"),
+        handlers = setOf("org.apache.ibatis.type.LocalTimeTypeHandler"),
+    )
+    private val TIMESTAMP_SPEC = BindingSpec(
+        jdbcTypes = setOf("TIMESTAMP"),
+        javaTypes = setOf("java.time.LocalDateTime"),
+        handlers = setOf("org.apache.ibatis.type.LocalDateTimeTypeHandler"),
+    )
+
+    private val INTEGER_SPECS = mapOf(
+        "TINYINT" to TINYINT_SPEC,
+        "SMALLINT" to SMALLINT_SPEC,
+        "INTEGER" to INTEGER_SPEC,
+        "BIGINT" to BIGINT_SPEC,
+    )
+    private val DECIMAL_SPECS = mapOf(
+        "REAL" to REAL_SPEC,
+        "DOUBLE" to DOUBLE_SPEC,
+        "DECIMAL" to DECIMAL_SPEC,
+    )
+    private val NULL_SPECS = buildMap {
+        put("TINYINT", TINYINT_SPEC)
+        put("SMALLINT", SMALLINT_SPEC)
+        put("INTEGER", INTEGER_SPEC)
+        put("BIGINT", BIGINT_SPEC)
+        put("REAL", REAL_SPEC)
+        put("DOUBLE", DOUBLE_SPEC)
+        put("DECIMAL", DECIMAL_SPEC)
+        put("BOOLEAN", BOOLEAN_SPEC)
+        put("VARCHAR", VARCHAR_SPEC)
+        put("VARBINARY", BINARY_SPEC)
+        put("DATE", DATE_SPEC)
+        put("TIME", TIME_SPEC)
+        put("TIMESTAMP", TIMESTAMP_SPEC)
+    }
+
+    private const val OBJECT_TYPE = "java.lang.Object"
+    private const val UNKNOWN_HANDLER = "org.apache.ibatis.type.UnknownTypeHandler"
+    private const val HEX_DIGITS = "0123456789abcdef"
     private const val BINDING_METADATA_UNSUPPORTED = "prepared-plan-sql-binding-metadata-unsupported"
     private const val BINDING_VALUE_UNSUPPORTED = "prepared-plan-sql-binding-value-unsupported"
     private const val PLACEHOLDER_TOPOLOGY_UNSUPPORTED = "prepared-plan-sql-placeholder-topology-unsupported"
+
 }
 
 /**

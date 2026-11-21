@@ -15,6 +15,8 @@ import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.input.ProvidedInput
+import com.algorist.zMyBatis.core.materialization.NativeExecutionPlanMaterializer
+import com.algorist.zMyBatis.core.materialization.PreparedPlanSqlMaterializationResult
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationResult
@@ -401,6 +403,127 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             } finally {
                 Disposer.dispose(console)
             }
+        } finally {
+            fixture.dispose()
+        }
+    }
+
+    fun testNativeMaterializedCommonScalarEnvelopeThroughDatabaseToolsOwnedSession() {
+        val fixture = registerPostgreSqlDataSource()
+        try {
+            val instant = Instant.parse("2026-11-18T03:00:17Z")
+            val captured = prepareCapturedBindingExecution(
+                byteValue = 7.toByte(),
+                shortValue = 8.toShort(),
+                intValue = 9,
+                longValue = 42L,
+                floatValue = 11.25f,
+                doubleValue = 12.5,
+                decimalValue = BigDecimal("13.75"),
+                flag = true,
+                text = "captured-proof",
+                binary = byteArrayOf(1, 2, 3),
+                date = LocalDate.of(2026, 11, 18),
+                time = LocalTime.of(12, 34, 56),
+                dateTime = LocalDateTime.of(2026, 11, 18, 12, 34, 56),
+                instant = instant,
+                items = listOf("left", "right"),
+                effectiveDatabaseId = MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
+            )
+
+            // Instant/TIMESTAMP remains outside the first materialization envelope because JDBC
+            // timestamp timezone conversion needs a separate parity proof. Remove only that one
+            // captured mapping while preserving every other common scalar and foreach binding.
+            val bindings = captured.orderedBindings
+                .filterNot { it.property == "instant" }
+                .mapIndexed { index, binding -> binding.copy(index = index) }
+            check(bindings.size == 16) {
+                "native materialized scalar proof must retain sixteen non-Instant bindings"
+            }
+
+            val sql = """
+                SELECT
+                  (?::smallint)::text,
+                  (?::smallint)::text,
+                  (?::integer)::text,
+                  (?::bigint)::text,
+                  (?::real)::text,
+                  (?::double precision)::text,
+                  (?::numeric)::text,
+                  (?::boolean)::text,
+                  ?::varchar,
+                  encode(?::bytea, 'hex'),
+                  (?::date)::text,
+                  (?::time)::text,
+                  (?::timestamp)::text,
+                  CASE WHEN ?::varchar IS NULL THEN 'NULL' ELSE 'NON_NULL' END,
+                  array_to_string(ARRAY[?, ?]::text[], '|')
+            """.trimIndent()
+            val execution = PreparedExecution(
+                statementId = captured.statementId,
+                statementKind = captured.statementKind,
+                sourceRevisions = captured.sourceRevisions,
+                sqlWithPlaceholders = sql,
+                orderedBindings = bindings,
+                rawInterpolations = captured.rawInterpolations,
+                preparationMetadata = captured.preparationMetadata,
+            )
+            val dbDataSource = p4DbDataSource(fixture.dataSource)
+            val target = p4PreparedTarget(dbDataSource)
+            val plan = when (val frozen = PreparedExecutionPlanner.freeze(execution, target)) {
+                is PreparedExecutionPlanResult.Ready -> frozen.plan
+                is PreparedExecutionPlanResult.Failed ->
+                    error("P5 native materialized plan creation failed: ${frozen.failure.code}")
+            }
+            val artifact = when (val materialized = NativeExecutionPlanMaterializer.materialize(plan)) {
+                is PreparedPlanSqlMaterializationResult.Ready -> materialized.artifact
+                is PreparedPlanSqlMaterializationResult.Failed ->
+                    error(
+                        "P5 native materialization failed: " +
+                            "${materialized.failure.kind} / ${materialized.failure.code}",
+                    )
+            }
+
+            val actual = executeRaw(
+                fixture.dataSource,
+                "native-materialized-common-scalars",
+            ) { connection ->
+                withPrepared(connection, artifact.executionSql) { statement ->
+                    statement.execute()
+                    withResultSet(statement) { resultSet ->
+                        check(resultSet.next())
+                        (1..15).map { column -> resultSet.getString(column) }
+                    }
+                }
+            }
+            val expected = listOf(
+                "7",
+                "8",
+                "9",
+                "42",
+                "11.25",
+                "12.5",
+                "13.75",
+                "true",
+                "captured-proof",
+                "010203",
+                "2026-11-18",
+                "12:34:56",
+                "2026-11-18 12:34:56",
+                "NULL",
+                "left|right",
+            )
+            check(actual == expected) {
+                "P5 native materialized PostgreSQL scalar round-trip mismatch: $actual"
+            }
+
+            println(
+                "ZMYBATIS_P5_NATIVE_MATERIALIZED " +
+                    "bindingCount=${plan.orderedBindings.size} " +
+                    "resultColumns=${actual.size} " +
+                    "integer=true decimal=true boolean=true varchar=true binary=true " +
+                    "date=true time=true timestamp=true typedNull=true foreach=true",
+            )
         } finally {
             fixture.dispose()
         }
