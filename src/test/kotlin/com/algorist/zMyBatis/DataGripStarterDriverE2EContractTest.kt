@@ -62,7 +62,7 @@ class DataGripStarterDriverE2EContractTest {
         )
         assertTrue(
             workflow.contains(
-                "docker exec zmybatis-postgres-datagrip-e2e \",
+                "docker exec zmybatis-postgres-datagrip-e2e \\",
             ),
         )
         assertTrue(workflow.contains("dataGripIntegrationTest --stacktrace"))
