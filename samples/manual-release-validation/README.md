@@ -6,26 +6,25 @@ maintainer to replay every case by hand. Human release validation is deliberatel
 small visual/UX smoke in section 11. The fixture remains intentionally small: no Spring Boot
 application and no application runtime is started.
 
-The current shipping execution authority is:
+The P5 target execution authority is:
 
 ```text
 PreparedExecution
   -> immutable PreparedExecutionPlan
-  -> exact-plan approval + source/target/lifecycle revalidation
-
-ordered bindings > 0
-  -> DatabaseSessionPreparedBackend
-  -> zMyBatis prepared-result presentation
-
-ordered bindings == 0
+  -> NativeExecutionPlanMaterializer
+       - zero binding: exact SQL text
+       - supported PostgreSQL bindings: ordered/type-aware executable SQL
+  -> exact execution-SQL approval when preview/mandatory confirmation applies
+  -> source/target/lifecycle revalidation
   -> NativeConsoleSqlTextBackend
   -> Database Tools native result/history
 ```
 
-There is no PostgreSQL-BIGINT literalization fallback in the registered path. Standard dynamic SQL is
-evaluated by stock MyBatis; ordinary result metadata must not block SQL preparation; common stock
-TypeHandlers own prepared binding. Application-runtime-dependent constructs remain explicit typed
-boundaries.
+This restores the pre-Leap native Database Tools result workflow without restoring the deleted legacy
+evaluator. Stock MyBatis still owns dynamic SQL shape and ordered binding metadata; supported
+bindings are materialized only after preparation, with explicit escaping/type rules. Unsupported
+value/type/dialect/custom-TypeHandler shapes fail closed and do not fall back to a zMyBatis result
+modal.
 
 This fixture is **not** a replacement for automated tests. Detailed MyBatis semantics, routing,
 approval, target identity, cancellation/lifecycle, and packaged host behavior stay in the lowest
@@ -121,9 +120,10 @@ docker compose up -d
 Put the caret inside the target XML CRUD statement or a supported direct Java MyBatis annotation and
 invoke **Execute (zMyBatis)**. It is correct for the action to be hidden outside supported contexts.
 
-For prepared execution, preview identity is SQL with placeholders plus ordered typed binding metadata.
-Do not expect a literalized final SQL string. Bound values must not appear in normal diagnostics or
-the binding metadata preview.
+For bound execution, stock-MyBatis placeholder SQL plus ordered binding metadata remains the semantic
+source, but the execution preview shows the exact materialized SQL text that will be sent to Database
+Tools. Binding metadata remains visible below it. Bound values must not appear in normal diagnostics
+or logs.
 
 ## 4. Core XML acceptance inventory
 
@@ -137,20 +137,20 @@ Use `src/main/resources/mappers/XmlReleaseValidationMapper.xml` unless another m
 | --- | --- | --- | --- | --- |
 | M01 | XML zero binding | `zeroBinding` | optional preview is `SELECT 7 AS result_value`; Database Tools native result contains `7` | packaged zero-binding E2E |
 | M02 | qualified include | `ProductMapper.findAllProducts` | native result contains products `1..3`; qualified fragment resolves | source graph + projection parity |
-| M03 | BIGINT prepared binding | `bigintEcho`, `42` | preview keeps `?` + BIGINT metadata; zMyBatis prepared result contains `42` | P4 prepared backend + packaged prepared E2E |
-| M04 | BIGINT + `<if>` | `bigintWithIf`: `7`, then `-7` | stock MyBatis selects the branch; remaining BIGINT binding executes prepared; positive result includes marker `1` | P2 registered parity + prepared E2E envelope |
-| M05 | `<where><if>` | `enabled=true,id=1`, then `enabled=false,id=1` | true branch keeps one prepared binding and returns `1`; false branch emits no binding and may route native, returning `1,2,3` | P2 registered parity + explicit backend routing |
-| M06 | `<foreach>` additional bindings | `foreachIds`: `[1]`, then `[1,2]` | both execute prepared; ordered additional-parameter bindings return `1`, then `1,2` | P2 foreach parity + P3/P4 multi-binding backend |
+| M03 | BIGINT bound execution | `bigintEcho`, `42` | preview shows exact materialized `42::BIGINT` + BIGINT metadata; native Database Tools result contains `42` | P5 native materialization + packaged native-result E2E |
+| M04 | BIGINT + `<if>` | `bigintWithIf`: `7`, then `-7` | stock MyBatis selects the branch; remaining BIGINT binding materializes in order; native positive result includes marker `1` | P2 registered parity + native materialization envelope |
+| M05 | `<where><if>` | `enabled=true,id=1`, then `enabled=false,id=1` | stock MyBatis selects each SQL shape; surviving bindings materialize when present; both cases use native Database Tools results | P2 registered parity + native delivery |
+| M06 | `<foreach>` additional bindings | `foreachIds`: `[1]`, then `[1,2]` | ordered MyBatis additional-parameter bindings materialize in exact order; native results return `1`, then `1,2` | P2 foreach parity + P5 multi-binding materialization |
 | M07 | XML raw `${}` | `rawEcho`, cancel `45001`, then approve `45002` with SQL Preview OFF | raw acknowledgement + forced final preview; cancelled value does not execute/retain; approved exact text returns `45002` through native route | packaged XML-raw E2E |
 | M08 | target-derived `databaseId` | `databaseIdEcho` | PostgreSQL variant returns `2620`, not default `2600` | databaseId oracle/source/preparation + packaged databaseId E2E |
-| M09 | VARCHAR prepared binding | `unsupportedVarchar`, `abc` | despite historical method name, this is now supported: placeholder + String/VARCHAR metadata; prepared result contains `abc` | stock TypeHandler bridge |
-| M10 | two BIGINT bindings | `unsupportedTwoBigints`, `1`, `2` | despite historical method name, two ordered bindings execute prepared; result is `3` | packaged multi-binding E2E envelope |
+| M09 | VARCHAR bound execution | `unsupportedVarchar`, `abc` | despite historical method name, String/VARCHAR is materialized with PostgreSQL-safe escaping; native result contains `abc` | P5 String/VARCHAR materialization |
+| M10 | two BIGINT bindings | `unsupportedTwoBigints`, `1`, `2` | despite historical method name, two ordered bindings materialize in exact order; native result is `3` | packaged multi-binding native-result envelope |
 | M11 | XML INSERT approval | `insertNoop`, SQL Preview OFF | mutation approval mandatory; cancel does not execute; approved zero-binding statement changes 0 rows | mutation policy + packaged mutation-approval envelope |
 | M12 | XML UPDATE approval | `updateNoop`, SQL Preview OFF | mutation approval mandatory; approved statement changes 0 rows | mutation policy + packaged mutation-approval E2E |
 | M13 | XML DELETE approval | `deleteNoop`, SQL Preview OFF | mutation approval mandatory; approved statement changes 0 rows | mutation policy + packaged mutation-approval envelope |
-| M14 | realistic bound Product lookup | `ProductMapper.findProductById`, `2` | prepared result row contains `2 / pro / true` | projection/include + prepared backend |
-| M15 | `<set>` + `<trim>` safe UPDATE | `setTrimNoop`, `name=ignored`, `id=1` | stock MyBatis emits SET/WHERE from dynamic tags; two prepared bindings are shown; mutation approval is mandatory; `AND FALSE` keeps update count at 0 | P2 set/trim registered parity + P4 prepared mutation route |
-| M16 | nested Map property | `nestedMapEcho`, JSON Map `{"tenantId":2}` | input uses JSON Map editor; `filter.tenantId` resolves to one BIGINT prepared binding; result is `2` | P2 caller-authority nested Map parity + prepared backend |
+| M14 | realistic bound Product lookup | `ProductMapper.findProductById`, `2` | BIGINT input materializes after stock-MyBatis preparation; native result row contains `2 / pro / true` | projection/include + native materialization |
+| M15 | `<set>` + `<trim>` safe UPDATE | `setTrimNoop`, `name=ignored`, `id=1` | stock MyBatis emits SET/WHERE; VARCHAR+BIGINT bindings materialize in order; mutation approval is mandatory; `AND FALSE` keeps update count at 0 | P2 set/trim parity + P5 native materialization |
+| M16 | nested Map property | `nestedMapEcho`, JSON Map `{"tenantId":2}` | input uses JSON Map editor; `filter.tenantId` resolves to one BIGINT binding which materializes after preparation; native result is `2` | P2 caller-authority nested Map parity + native materialization |
 | M17 | same-namespace include | `ProductMapper.findAllProductsLocalInclude` | local `<sql id="localProductColumns">` resolves through `<include refid="localProductColumns"/>`; zero-binding native result contains products `1..3` | source graph + P1 projection parity |
 | M18 | XML-only Fields + JSON input | open `XmlOnlyInputValidationMapper.findByIdJSON` (no Java mapper method) | input dialog defaults to Fields for `user.id`, `cust.name`, `test`; JSON tab contains the same generated nested object template; either mode submits one XML parameter object and `test=42` returns `42` | XML caller-provenance + dual-input presentation tests |
 
@@ -174,7 +174,7 @@ cases and are named `Parity*Mapper`.
 | R02 | `ParityBindMapper.bindParity`, value `abc` | stock `<bind>` computes `%abc%`; raw acknowledgement + final preview required; native result is `%abc%` | P2 bind parity + raw policy |
 | R03 | `ParityResultMapMapper.findAllWithResultMap` | `resultMap` metadata does not block SQL preparation; rows `1..3` are visible | P1 projection parity |
 | R04 | `ParityResultTypeMapper.findAllWithResultType` | `resultType` metadata does not block SQL preparation; rows `1..3` are visible | P1 projection parity |
-| R05 | `ParityParameterTypeMapper.findByIdWithParameterType`, `2` | built-in `parameterType="long"` remains valid; BIGINT executes prepared and returns product `2` | P1 projection + P3/P4 prepared binding |
+| R05 | `ParityParameterTypeMapper.findByIdWithParameterType`, `2` | built-in `parameterType="long"` remains valid; BIGINT materializes and native result returns product `2` | P1 projection + P5 native materialization |
 
 R03/R04 do not assert MyBatis application result-object mapping. zMyBatis presents database rows; the
 acceptance claim is that SQL-generation-irrelevant result metadata does not block preparation.
@@ -186,7 +186,7 @@ Open `src/main/java/fixture/AnnotationReleaseValidationMapper.java`.
 | ID | Manual case | Expected result | Automated owner |
 | --- | --- | --- | --- |
 | J01 | `@Select` zero binding | native result `7` | Java source + zero-binding E2E envelope |
-| J02 | bound `@Select` BIGINT | input `42` → prepared preview/result `42` | Java caller authority + prepared backend |
+| J02 | bound `@Select` BIGINT | input `42` → exact materialized preview + native result `42` | Java caller authority + native materialization |
 | J03 | raw `@Select` | acknowledgement + forced preview; cancelled raw input is not retained; approved exact text executes native | packaged direct-Java raw E2E |
 | J04 | `@Insert` safe no-op | mutation approval mandatory; 0 rows | Java statement kind + approval |
 | J05 | `@Update` safe no-op | mutation approval mandatory; 0 rows | Java statement kind + approval |
@@ -212,7 +212,7 @@ DataGrip acceptance remains XML-focused.
 | U10 | mapper focus | execute M01 from the XML mapper while its console editor is closed | execution must not open or focus another console editor tab; mapper remains the active editor |
 
 Prepared bound-result presentation remains a separate P5 UX gap until maintained Database Tools APIs
-can preserve true prepared binding semantics and native result/history without unsafe literalization.
+cannot expose a maintained true-prepared-to-native-grid bridge. P5 therefore restores the established native result UX through explicit post-stock-MyBatis SQL materialization, with unsupported shapes failing closed.
 
 ## 8. Target / lifecycle inventory
 
@@ -233,14 +233,14 @@ Wrong-datasource or wrong-schema execution is a **release blocker**.
 ### IntelliJ IDEA Ultimate
 
 The exact packaged IDEA Starter/Driver suite is the primary executable host authority. It already
-installs the built plugin archive and covers native/prepared routing, prepared-result presentation,
+installs the built plugin archive and covers bound/unbound native-result routing,
 raw/mutation approval, databaseId/target behavior, Provider refusal and no-datasource failure.
 Lower-level fixtures own detailed lifecycle/cancellation and semantic matrices.
 
 ### DataGrip
 
 The exact packaged DataGrip Starter/Driver suite is the host authority. It covers plugin/service
-loading, XML action refusal, one XML-only prepared PostgreSQL route and clean shutdown.
+loading, XML action refusal, one XML-only bound PostgreSQL native-result route and clean shutdown.
 
 No separate DataGrip maintainer-run checklist is required for P5. Do not infer Java annotation
 support, native Database Tools result/history parity, every DBMS/dialect, or IDEA-only UX from the
@@ -269,7 +269,7 @@ not replayed manually.
 | ID | Human-only check | Expected |
 | --- | --- | --- |
 | H01 | Install the exact ZIP in IDEA Ultimate 2026.3; open zMyBatis settings and a supported XML mapper; open M18 once | plugin is enabled, settings render normally, Execute (zMyBatis) is visible; XML-only input shows source-proven Fields plus the generated JSON tab instead of a generic `{"key":"value"}` object |
-| H02 | Run M01 once and M03 once | native Database Tools result visibly shows `7`; zMyBatis prepared-result UI visibly shows `42`; dialogs/tables are readable and not visibly broken |
+| H02 | Run M01 once and M03 once | both successful queries land in the native Database Tools result surface; values `7` and `42` are readable; no `zMyBatis: Query Result` modal appears |
 | H03 | Restart IDEA/project after H02 and invoke the same source again | persisted exact datasource UUID + `public` target restores/reuses without silently switching target; visible flow remains usable |
 
 These three checks deliberately cover only human-visible installation/presentation/restart UX.
@@ -284,7 +284,7 @@ IDEA version:      ____________________
 Validator/date:    ____________________
 
 H01 install/settings/action: PASS / FAIL   notes: ____________________
-H02 native/prepared visual: PASS / FAIL   notes: ____________________
+H02 native bound/unbound visual: PASS / FAIL   notes: ____________________
 H03 restart/target UX:      PASS / FAIL   notes: ____________________
 
 #509 disposition:  RESOLVED / BLOCKED  notes: ____________________

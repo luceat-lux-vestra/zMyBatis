@@ -31,9 +31,10 @@ class ManualReleaseValidationSampleContractTest {
         )
         assertTrue(readme.contains("This fixture is **not** a replacement for automated tests."))
         assertTrue(readme.contains("PreparedExecutionPlan"))
-        assertTrue(readme.contains("DatabaseSessionPreparedBackend"))
+        assertTrue(readme.contains("NativeExecutionPlanMaterializer"))
         assertTrue(readme.contains("NativeConsoleSqlTextBackend"))
-        assertTrue(readme.contains("no PostgreSQL-BIGINT literalization fallback"))
+        assertTrue(readme.contains("native Database Tools result workflow"))
+        assertFalse(readme.contains("DatabaseSessionPreparedBackend"))
     }
 
     @Test
@@ -108,7 +109,7 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(readme.contains("#510 disposition:  RESOLVED / BLOCKED"))
         assertTrue(readme.contains("They are not a mandatory maintainer-run checklist."))
         assertTrue(readme.contains("H01 install/settings/action: PASS / FAIL"))
-        assertTrue(readme.contains("H02 native/prepared visual: PASS / FAIL"))
+        assertTrue(readme.contains("H02 native bound/unbound visual: PASS / FAIL"))
         assertTrue(readme.contains("H03 restart/target UX:      PASS / FAIL"))
         assertTrue(readme.contains("Human smoke:       GO / NO-GO"))
         assertTrue(readme.contains("DataGrip requires no separate manual smoke"))
@@ -116,7 +117,7 @@ class ManualReleaseValidationSampleContractTest {
     }
 
     @Test
-    fun `manual fixture encodes prepared-native routing rather than retired materializer refusals`() {
+    fun `manual fixture encodes stock MyBatis materialization to native result routing`() {
         val readme = source("README.md")
         val xml = source("src/main/resources/mappers/XmlReleaseValidationMapper.xml")
         val product = source("src/main/resources/mappers/ProductMapper.xml")
@@ -140,11 +141,11 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(product.contains("<include refid=\"localProductColumns\"/>"))
 
         assertTrue(readme.contains("M06 | `<foreach>` additional bindings"))
-        assertTrue(readme.contains("both execute prepared"))
-        assertTrue(readme.contains("M09 | VARCHAR prepared binding"))
-        assertTrue(readme.contains("this is now supported"))
+        assertTrue(readme.contains("materialize in exact order"))
+        assertTrue(readme.contains("M09 | VARCHAR bound execution"))
+        assertTrue(readme.contains("PostgreSQL-safe escaping"))
         assertTrue(readme.contains("M10 | two BIGINT bindings"))
-        assertTrue(readme.contains("two ordered bindings execute prepared"))
+        assertTrue(readme.contains("two ordered bindings materialize in exact order"))
         assertTrue(readme.contains("M15 | `<set>` + `<trim>` safe UPDATE"))
         assertTrue(readme.contains("mutation approval is mandatory"))
         assertTrue(readme.contains("M16 | nested Map property"))
@@ -279,7 +280,7 @@ class ManualReleaseValidationSampleContractTest {
 
         val readme = source("README.md")
         assertTrue(readme.contains("J02 | bound `@Select` BIGINT"))
-        assertTrue(readme.contains("prepared preview/result"))
+        assertTrue(readme.contains("exact materialized preview + native result"))
         assertTrue(readme.contains("J07 | `@SelectProvider`"))
         assertTrue(readme.contains("typed provider-not-supported refusal"))
     }
