@@ -188,7 +188,7 @@ class StarterDatabaseE2EIsolationContractTest {
         assertTrue(
             "IDEA workflow must pass the resolved candidate version into the IDE process identity proof",
             workflow.contains(
-                "echo \"ZMYBATIS_E2E_CANDIDATE_VERSION=$candidate_version\" >> \"$GITHUB_ENV\"",
+                "echo \"ZMYBATIS_E2E_CANDIDATE_VERSION=\$candidate_version\" >> \"\$GITHUB_ENV\"",
             ),
         )
     }
