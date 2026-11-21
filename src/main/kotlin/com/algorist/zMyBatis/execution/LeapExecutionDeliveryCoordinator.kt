@@ -82,7 +82,9 @@ internal class LeapExecutionDeliveryCoordinator(project: Project) {
                     onFailure = onFailure,
                 )
             },
-            onCancelled = onCancelled,
+            onCancelled = {
+                onFailure(LeapExecutionDeliveryFailure.CandidatePreparationCancelled)
+            },
         )
     }
 
@@ -302,6 +304,7 @@ internal fun planMatchesResolvedTarget(
 
 internal sealed interface LeapExecutionDeliveryFailure {
     data object InvocationInvalidated : LeapExecutionDeliveryFailure
+    data object CandidatePreparationCancelled : LeapExecutionDeliveryFailure
 
     data class SourceInvalid(
         val failure: SourceGraphRevalidationFailure,

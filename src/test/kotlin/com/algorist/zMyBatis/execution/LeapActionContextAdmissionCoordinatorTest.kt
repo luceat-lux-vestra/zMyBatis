@@ -307,6 +307,8 @@ class LeapActionContextAdmissionCoordinatorTest {
         assertTrue(projectCapture.split("checkCanceled()").size - 1 >= 5)
         assertTrue(coordinator.contains("LeapPreparationSourceSelectionAdapter"))
         assertTrue(coordinator.contains("sourceSelection.requestSelection"))
+        assertTrue(coordinator.contains("LeapActionContextAdmissionFailure.SourceSelectionCancelled"))
+        assertTrue(coordinator.contains("LeapActionContextAdmissionFailure.ProjectXmlExpansionCancelled"))
         assertTrue(coordinator.contains("continueWithSelectedSource"))
         assertTrue(coordinator.contains("LeapExecutionInvocationCoordinator"))
         assertTrue(coordinator.contains("ExecutionTargetDescriptorStore"))

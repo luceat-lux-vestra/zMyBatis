@@ -170,6 +170,7 @@ class LeapExecutionDeliveryCoordinatorTest {
         assertTrue(coordinator.contains("StatementSourceGraphRevalidator::revalidateSnapshots"))
         assertTrue(coordinator.contains("targetResolver.resolve(targetDescriptor)"))
         assertTrue(coordinator.contains("LeapExecutionCandidateResult.InvocationInvalidated"))
+        assertTrue(coordinator.contains("LeapExecutionDeliveryFailure.CandidatePreparationCancelled"))
         assertTrue(coordinator.contains("planMatchesResolvedTarget(plan, deliveryTarget.resolvedTarget)"))
         assertTrue(coordinator.contains("LeapExecutionDeliveryFailure.MaterializationFailed"))
         assertFalse(coordinator.contains("preparedExecutionTask.execute("))

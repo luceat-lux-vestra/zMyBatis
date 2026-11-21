@@ -46,7 +46,9 @@ class MyBatisActionUpdateBoundaryTest {
         val admission = action.substring(actionStart, actionEnd)
 
         assertTrue(admission.contains("LeapActionContextAdmissionCoordinator(project).execute"))
-        assertTrue(admission.contains("onCancelled = {}"))
+        assertTrue(admission.contains("onCancelled = { LOG.info(\"zMyBatis: execution cancelled by user\") }"))
+        assertFalse(admission.contains("ContextType.NONE -> return"))
+        assertTrue(admission.contains("LeapActionFailurePresenter.presentContextUnavailable(project)"))
         listOf(
             "MyBatisExecuteProxyAction",
             "MyBatisEvaluator",
@@ -62,13 +64,16 @@ class MyBatisActionUpdateBoundaryTest {
     @Test
     fun `invocation refusal diagnostic exposes only typed metadata`() {
         val action = source("src/main/kotlin/com/algorist/zMyBatis/MyBatisExecuteAction.kt")
-        val diagnosticStart = action.indexOf("private fun leapInvocationFailureDiagnosticCode(")
+        val diagnosticStart = action.indexOf("private fun leapActionFailureDiagnosticCode(")
         val presenterStart = action.indexOf("private object LeapActionFailurePresenter", diagnosticStart)
 
         assertTrue(diagnosticStart >= 0 && presenterStart > diagnosticStart)
 
         val diagnostic = action.substring(diagnosticStart, presenterStart)
         listOf(
+            "source-selection-cancelled",
+            "project-xml-expansion-cancelled",
+            "candidate-preparation-cancelled",
             "input-contract-blocked:",
             "missing-persisted-target",
             "persisted-target-changed",
@@ -106,13 +111,11 @@ class MyBatisActionUpdateBoundaryTest {
             )
         }
 
-        assertTrue(
-            action.contains(
-                "LOG.warn(\n" +
-                    "                        \"zMyBatis: Leap invocation refused \"",
-            ),
-        )
+        assertTrue(action.contains("\"zMyBatis: execution refused \""))
+        assertTrue(action.contains("stage=context-unavailable"))
         assertTrue(action.contains("LeapActionFailurePresenter.present(project, failure)"))
+        assertTrue(action.contains("title = \"zMyBatis: Execution Context Unavailable\""))
+        assertTrue(action.contains("title = \"zMyBatis: Mapper Source Resolution Interrupted\""))
         assertTrue(action.contains("title = \"zMyBatis: Execution Refused\""))
         assertTrue(action.contains("title = \"zMyBatis: Database Console Unavailable\""))
         assertTrue(action.contains("title = \"zMyBatis: Database Console Selection Unavailable\""))

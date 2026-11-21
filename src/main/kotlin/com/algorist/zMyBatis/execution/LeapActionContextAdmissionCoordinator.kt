@@ -524,6 +524,9 @@ internal sealed interface LeapActionContextAdmissionFailure {
         val failure: LeapPreparationSourceSelectionFailure,
     ) : LeapActionContextAdmissionFailure
 
+    data object SourceSelectionCancelled : LeapActionContextAdmissionFailure
+    data object ProjectXmlExpansionCancelled : LeapActionContextAdmissionFailure
+
     data class SourceInvalid(
         val failure: SourceGraphRevalidationFailure,
     ) : LeapActionContextAdmissionFailure
@@ -767,7 +770,9 @@ internal class LeapActionContextAdmissionCoordinator(
                         onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
                 }
             },
-            onCancelled = onCancelled,
+            onCancelled = {
+                onFailure(LeapActionContextAdmissionFailure.SourceSelectionCancelled)
+            },
         )
     }
 
@@ -816,7 +821,9 @@ internal class LeapActionContextAdmissionCoordinator(
                         onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
                 }
             },
-            onCancelled = onCancelled,
+            onCancelled = {
+                onFailure(LeapActionContextAdmissionFailure.ProjectXmlExpansionCancelled)
+            },
         )
     }
 
