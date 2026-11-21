@@ -440,6 +440,14 @@ class P3PostgreSqlPreparedBackendRuntimeTest : BasePlatformTestCase() {
             check(bindings.size == 16) {
                 "native materialized scalar proof must retain sixteen non-Instant bindings"
             }
+            val nullBinding = bindings.single { it.property == "nullableText" }
+            check(nullBinding.value == InputValue.NullValue)
+            check(nullBinding.metadata.mappingJavaTypeIdentity == "java.lang.Object")
+            check(
+                nullBinding.metadata.typeHandlerIdentity ==
+                    "org.apache.ibatis.type.ObjectTypeHandler",
+            )
+            check(nullBinding.metadata.effectiveJdbcTypeIdentity == "VARCHAR")
 
             val sql = """
                 SELECT

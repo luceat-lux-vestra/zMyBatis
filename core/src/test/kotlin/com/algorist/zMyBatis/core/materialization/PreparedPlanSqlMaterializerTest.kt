@@ -49,7 +49,7 @@ class PreparedPlanSqlMaterializerTest {
         val artifact = ready(NativeExecutionPlanMaterializer.materialize(plan))
 
         assertEquals(
-            "SELECT 41::BIGINT AS id, E'O''Reilly\\\\path'::VARCHAR AS label, NULL::VARCHAR AS nullable_value",
+            "SELECT 41::BIGINT AS id, E'O''Reilly\\\\path'::VARCHAR AS label, CAST(NULL AS varchar)::VARCHAR AS nullable_value",
             artifact.executionSql,
         )
         assertEquals(plan.executionTargetId, artifact.executionTargetId)
@@ -167,6 +167,31 @@ class PreparedPlanSqlMaterializerTest {
                 plan(
                     sql = "SELECT pg_typeof(?)::text",
                     bindings = listOf(typedNull(0, "VARCHAR")),
+                ),
+            ),
+        )
+
+        assertEquals(
+            "SELECT pg_typeof(CAST(NULL AS varchar))::text",
+            artifact.executionSql,
+        )
+    }
+
+    @Test
+    fun stockObjectTypeHandlerNullUsesEffectiveJdbcTypeAuthority() {
+        val artifact = ready(
+            NativeExecutionPlanMaterializer.materialize(
+                plan(
+                    sql = "SELECT pg_typeof(?)::text",
+                    bindings = listOf(
+                        binding(
+                            index = 0,
+                            value = InputValue.NullValue,
+                            javaType = "java.lang.Object",
+                            jdbcType = "VARCHAR",
+                            handler = "org.apache.ibatis.type.ObjectTypeHandler",
+                        ),
+                    ),
                 ),
             ),
         )

@@ -254,13 +254,12 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
         val metadata = binding.metadata
         val mappingType = metadata.mappingJavaTypeIdentity
         val handler = metadata.typeHandlerIdentity
-        if (mappingType in spec.javaTypes && handler in spec.handlers) {
-            return true
-        }
-
-        return mappingType == OBJECT_TYPE &&
-            handler == UNKNOWN_HANDLER &&
-            metadata.declaredJavaTypeIdentity?.value in spec.javaTypes
+        return (mappingType in spec.javaTypes && handler in spec.handlers) ||
+            (
+                mappingType == OBJECT_TYPE &&
+                    handler == UNKNOWN_HANDLER &&
+                    metadata.declaredJavaTypeIdentity?.value in spec.javaTypes
+                )
     }
 
     private fun renderTypedNull(
@@ -271,7 +270,10 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
         val spec = NULL_SPECS[jdbcType] ?: return BindingRenderResult.MetadataUnsupported
         val supported =
             (mappingType in spec.javaTypes && handler in spec.handlers) ||
-                (mappingType == OBJECT_TYPE && handler == UNKNOWN_HANDLER)
+                (
+                    mappingType == OBJECT_TYPE &&
+                        handler in setOf(UNKNOWN_HANDLER, OBJECT_HANDLER)
+                    )
         return if (supported) {
             BindingRenderResult.Ready("CAST(NULL AS ${spec.postgreSqlType})")
         } else {
@@ -456,6 +458,7 @@ private object PostgreSqlPreparedPlanSqlMaterializer {
 
     private const val OBJECT_TYPE = "java.lang.Object"
     private const val UNKNOWN_HANDLER = "org.apache.ibatis.type.UnknownTypeHandler"
+    private const val OBJECT_HANDLER = "org.apache.ibatis.type.ObjectTypeHandler"
     private const val HEX_DIGITS = "0123456789abcdef"
     private const val BINDING_METADATA_UNSUPPORTED = "prepared-plan-sql-binding-metadata-unsupported"
     private const val BINDING_VALUE_UNSUPPORTED = "prepared-plan-sql-binding-value-unsupported"
