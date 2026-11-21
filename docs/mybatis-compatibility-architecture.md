@@ -6,11 +6,12 @@ Authority: issue #512 and documentation work unit #513.
 
 Baseline recorded from protected `main` `402ee67d48123235828a2ef2bc1642c7000e53a2`.
 
-This document defines the pre-1.0 compatibility architecture. P1-P4 have now implemented its core
-registered execution path: statement-scoped projection, caller-authority invocation, prepared
-Database Tools execution, immutable `PreparedExecutionPlan`, and explicit prepared/native routing.
-P5 is validating packaged/manual acceptance and P6 owns deletion/cleanup of superseded migration
-architecture.
+This document defines the pre-1.0 compatibility architecture. P1-P4 implemented statement-scoped
+projection, caller-authority invocation and immutable `PreparedExecutionPlan`, but P4's bound
+PreparedStatement + zMyBatis-result presentation regressed the pre-Leap native Database Tools result
+workflow. P5 corrects that execution layer: stock MyBatis remains semantic authority, supported bound
+plans materialize to one immutable executable SQL-text artifact, and Database Tools owns native
+console/result/history delivery. P6 owns deletion/cleanup of superseded migration architecture.
 
 Historical documents such as [Leap execution rebaseline](leap-execution-rebaseline.md) and the
 Database Tools parameterized-execution investigation remain evidence about decisions and observed
@@ -50,7 +51,6 @@ Explicitly outside 1.0 unless promoted by separate evidence:
 - application custom TypeHandler or runtime-plugin semantics that require arbitrary application code
   loading/execution;
 - arbitrary application runtime configuration parity;
-- native Database Tools result/history parity for the prepared backend;
 - mapper behavior whose correctness fundamentally requires executing application code that zMyBatis
   cannot safely reconstruct.
 
@@ -113,12 +113,13 @@ IDE action
        safety flags
        fingerprint
   -> Approval + immediate source/target/lifecycle revalidation
-  -> ExecutionBackend
-       bound -> DatabaseSessionPreparedBackend
-       exact text / zero binding -> NativeConsoleSqlTextBackend
+  -> ExecutionMaterialization
+       zero binding -> exact prepared SQL text
+       supported bound plan -> ordered/type-aware executable SQL text
+  -> NativeConsoleSqlTextBackend
+       exact approved artifact -> Database Tools console
   -> ResultPresentation
-       prepared backend -> bounded zMyBatis result adapter
-       native text backend -> Database Tools native result/history
+       Database Tools native result/history
 ```
 
 ## 4. Source authority
@@ -255,71 +256,58 @@ source revisions, target and statement kind.
 
 The UI may show SQL plus a typed parameter table. The exact approved plan is what execution consumes.
 
-## 9. Execution backends
+## 9. Execution and materialization
 
-### DatabaseSessionPreparedBackend
+### NativeConsoleSqlTextBackend — 1.0 shipping result path
 
-This is the target primary backend for statements with JDBC bindings.
+The pre-Leap product and the pre-P4 materialized path both proved the same user-facing delivery model:
 
-Requirements:
+```text
+stock-MyBatis-resolved statement
+  -> executable SQL text
+  -> JdbcConsole / JdbcConsoleProvider.doRunQueryInConsole
+  -> Database Tools native result grid/history
+```
 
-- reuse the configured Database Tools datasource/session; do not duplicate credentials;
-- execute a true prepared statement;
-- preserve ordered bindings and MyBatis additional parameters;
-- preserve exact datasource/schema authority;
-- expose structured rows, update counts and database errors;
-- own cancellation/disposal explicitly;
-- do not require SQL literalization or native Database Tools result/history integration.
+P5 restores that model while retaining the newer source, caller-authority, stock-MyBatis, target,
+approval, stale-source and lifecycle protections.
 
-Binding should prefer stock MyBatis standard ParameterMapping/TypeHandler/JDBC semantics. Do not
-replace the SQL literalizer with a new hand-written `setLong/setString/...` matrix as the default
-architecture.
+For bound statements the approved `PreparedExecutionPlan` is first converted into one immutable
+executable SQL-text artifact. This materialization layer must:
 
-Custom/application TypeHandlers remain outside the positive envelope unless their runtime authority is
-safely available.
+- preserve exact ordered binding/additional-parameter order from stock MyBatis;
+- support the required common scalar/JDBC 1.0 envelope with explicit representation rules;
+- escape strings/binary/date-time and represent booleans/null/numerics correctly for the admitted target;
+- remain dialect-aware where SQL literal syntax differs;
+- keep raw `${}` provenance/approval separate from normal bound-value materialization;
+- fail typed when a value/type/dialect/custom-TypeHandler shape is not proven;
+- never silently fall back to a separate prepared/modal result path.
 
-#### P3 stop gate — passed
+The deleted legacy `MyBatisEvaluator` is not restored as semantic authority. Dynamic SQL and binding
+metadata are already frozen by stock MyBatis before materialization begins.
 
-P3 proved this backend against maintained IntelliJ/Database Tools APIs and promoted it to production.
-The maintained evidence covers session/connection ownership, true prepared execution, stock-style
-binding, cancellation, disposal and exact datasource/schema correctness without an unstable
-reflection fallback.
+### DatabaseSessionPreparedBackend — retained platform evidence, not 1.0 UX authority
 
-Those properties remain regression constraints. If a future platform baseline can no longer satisfy
-them through maintained APIs, fail closed and revisit the execution target rather than silently
-falling back to SQL literalization.
+P3 proved Database Tools-owned session/connection prepared execution, cancellation, disposal and
+target correctness. That evidence remains useful and guarded, but IDEA 263 does not expose a maintained
+prepared-to-native-result bridge. Therefore this backend cannot define the 1.0 user-facing bound-result
+workflow while it requires `zMyBatis: Query Result`.
 
-### NativeConsoleSqlTextBackend
-
-Keep the current Database Tools console path for:
-
-- zero-binding statements;
-- exact raw/text statements with no remaining JDBC bindings.
-
-This is an explicit backend, not a silent fallback.
-
-The former PostgreSQL BIGINT single-binding materializer is not registered execution authority and
-must not be reintroduced as a fallback. Historical tests may remain until P6 where they still
-characterize migration evidence.
+It may remain as bounded experimental/test evidence until cleanup, but it must not be a registered
+fallback for a materialization refusal.
 
 ## 10. Result presentation and UX parity
 
-True prepared binding semantics are a correctness gate, but the 1.0 product UX must also preserve the
-pre-Leap interaction: executing from a mapper should surface database results through the ordinary
-Database Tools workflow without introducing a separate zMyBatis result workflow merely because the
-backend uses prepared execution.
+The pre-Leap interaction is the 1.0 acceptance baseline. Successful bound and unbound executions must
+land in the ordinary IntelliJ/DataGrip Database Tools Services/result surface.
 
 Therefore:
 
-- zero-binding/exact-text execution continues to use native Database Tools result/history;
-- bound prepared execution must prefer a maintained Database Tools result/output bridge when one is
-  available without weakening ordered JDBC/TypeHandler semantics;
-- the current bounded `zMyBatis: Query Result` adapter is migration evidence and a P5 UX gap, not
-  the desired 1.0 presentation contract;
-- generic SQL literalization, undocumented/internal APIs, or a second parameter prompt are not
-  acceptable ways to recover native presentation;
-- if the maintained platform API cannot provide native prepared-result integration, that limitation
-  requires an explicit product decision before 1.0 rather than silently redefining UX parity.
+- zero-binding/exact-text execution uses the native Database Tools result/history surface;
+- supported bound execution materializes the exact approved plan and uses the same native surface;
+- `zMyBatis: Query Result` is a P5 regression blocker, not an accepted alternative;
+- no second parameter prompt or hidden prepared/modal fallback is allowed;
+- materialization safety is proven by type/order/escaping/dialect tests and unsupported shapes fail closed.
 
 zMyBatis must not recreate ORM/application result mapping.
 

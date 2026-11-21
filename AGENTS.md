@@ -14,10 +14,11 @@ For pre-1.0 work:
 - [docs/test-contracts.md](docs/test-contracts.md) separates current evidence from the next parity
   obligations.
 
-#251 and #391 remain historical evidence, but #391's bounded SQL-text/materializer target is
-superseded by the implemented pre-1.0 architecture. The registered action now executes the exact
-approved `PreparedExecutionPlan` through explicit prepared/native backends. Unsupported
-application-runtime semantics and unsafe/ambiguous authority still fail closed.
+#251 and #391 remain historical evidence. The P4 prepared/modal cutover is the current enforced
+implementation, but P5 has established that it regressed the pre-Leap native Database Tools result
+workflow. The 1.0 target therefore keeps stock-MyBatis preparation and immutable plan authority while
+restoring a proven executable-SQL materialization step followed by native Database Tools console/result
+delivery. Unsupported application-runtime semantics and unsafe/ambiguous authority still fail closed.
 
 The deleted legacy action/evaluator/extractor/dialog/history architecture must not be reintroduced as
 fallback, compatibility routing, or test-only semantic authority.
@@ -97,8 +98,8 @@ must add zMyBatis-vs-oracle parity for the slice they replace.
 ## 2. Mapper, parameter, and SQL fidelity
 
 - `#{...}` and `${...}` are distinct semantics. Never silently convert a bound placeholder into raw interpolation or vice versa.
-- Historical materialized SQL text is a compatibility representation, not JDBC/TypeHandler equivalence and not current bound-execution authority.
-- **Current shipping:** stock MyBatis preparation + immutable `PreparedExecutionPlan` + explicit prepared/native backend routing. Unsupported application-runtime semantics and ambiguous source/input/target authority still fail closed.
+- Materialized SQL text is a compatibility representation, not JDBC/TypeHandler byte-for-byte equivalence; for 1.0 it is the proven bridge from stock-MyBatis preparation to the required native Database Tools result UX.
+- **Current P4 implementation:** stock MyBatis preparation + immutable `PreparedExecutionPlan` + prepared/native backend routing. **P5 target:** replace the bound prepared/modal delivery with explicit, tested materialization + native console dispatch. Unsupported application-runtime semantics and ambiguous source/input/target authority still fail closed.
 - Internal MyBatis variables such as `<bind>` names and `foreach` item/index must not be invented as caller inputs.
 - Unsupported or ambiguous source/input/evaluation behavior must not silently become plausible executable SQL. The stronger typed-failure architecture is defined by Leap #60/#64; #67 supplied its final quality/readiness evidence.
 - Preview and execution must not silently diverge. Full Database Tools click-through fidelity remains a platform/integration evidence gap documented in `docs/test-contracts.md`.
@@ -328,4 +329,4 @@ P5 human smoke treats the pre-Leap product workflow as the UX baseline while all
 - executing from a mapper must not open or focus another console editor tab; a transient off-screen editor may be used only as an implementation detail when native dispatch needs an `Editor`, and it is created/released per dispatch rather than retained as a hidden editor pool unless measured evidence later justifies a lifecycle-safe cache;
 - parameter input may improve labels, validation, accessibility, and structured editing without changing caller authority;
 - zero-binding/exact-text execution continues to use native Database Tools result/history surfaces;
-- bound prepared execution must not be moved back to unsafe universal SQL literalization merely for UI parity. If maintained public Database Tools APIs cannot surface prepared results natively, treat result presentation as an explicit UX gap to resolve, not as permission to weaken binding semantics.
+- bound execution must restore the native Database Tools result surface that shipped before P4. Because the maintained 263 prepared-to-grid bridge was disproven, recover that UX with post-stock-MyBatis executable-SQL materialization, not by reviving the legacy evaluator. Materialization must be explicit, ordered, escaped/type-aware for the admitted envelope, and fail closed for unsupported shapes; the prepared/modal backend is not an accepted silent fallback.

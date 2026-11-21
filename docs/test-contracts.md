@@ -26,7 +26,7 @@ evidence. The old IntelliJ template rename test and evaluator debug/reproduction
 | Registered action boundary | `MyBatisActionUpdateProjectFixtureTest`, `MyBatisActionUpdateBoundaryTest`, `LeapActionContextAdmissionCoordinatorTest` | `MyBatisExecuteAction` keeps update bounded and delegates supported execution only to Leap admission; no low-level Database Tools or alternative execution route is present at the action edge |
 | Target persistence, databaseId and console lifecycle | `PersistedExecutionTargetSelectionTest`, `ExecutionTargetDescriptorStoreTest`, `MyBatisActionInterceptorActivityLifecycleTest`, `ConsoleCacheServiceLifecycleTest`, `ConsoleCacheOwnedResourceDisposalContractTest`, `DatabaseToolsTargetResolverTest`, `DatabaseToolsConsoleAdapterBoundaryTest`, `ZMyBatisStarterDriverE2ETest` | current v3 source→target persistence is independent of live consoles; exact target identity gates REUSE; packaged PostgreSQL selection derives the PostgreSQL databaseId variant rather than the default; same-source overlap, shutdown, invalid/disposed resources, and stale targets fail closed |
 | Sensitive production logging | `SensitiveLoggingContractTest`, action/adapter diagnostic contract tests | production logs reject direct interpolation of known sensitive SQL/input/source/target identities and platform exception messages; typed expected failures expose metadata rather than raw payload |
-| Real packaged execution | `ZMyBatisStarterDriverE2ETest` via `E2E / Starter / Driver E2E` | exact packaged plugin must execute the registered zero-binding native route, multi-binding prepared route + prepared-result presentation, XML/direct-Java raw approval behavior, and maintained fail-closed/lifecycle scenarios on IDEA Ultimate 2026.3; P5 adds representative promoted parity acceptance before release sign-off (exact-HEAD evidence required) |
+| Real packaged execution | `ZMyBatisStarterDriverE2ETest` via `E2E / Starter / Driver E2E` | exact packaged plugin must execute zero-binding and representative multi-binding cases through the native Database Tools result surface, plus XML/direct-Java raw approval and maintained fail-closed/lifecycle scenarios on IDEA Ultimate 2026.3; a separate zMyBatis query-result modal is a P5 blocker (exact-HEAD evidence required) |
 
 ## Pre-1.0 parity-recovery evidence
 
@@ -142,13 +142,15 @@ Current shipping preview/approval receives the immutable `PreparedExecutionPlan`
 ordered typed bindings, raw interpolation provenance/result, source revisions, target/databaseId and
 statement kind. Formatting derives presentation text only and cannot mutate the approved plan.
 
-The exact approved plan is immediately revalidated before explicit backend dispatch:
-- bindings > 0 -> `DatabaseSessionPreparedBackend`;
-- bindings == 0 -> `NativeConsoleSqlTextBackend`.
+The exact approved plan is immediately revalidated before delivery. Current P4 code still dispatches
+bindings > 0 to `DatabaseSessionPreparedBackend`, but P5 treats that prepared/modal route as a regression.
+The target evidence is:
+- bindings == 0 -> exact text -> `NativeConsoleSqlTextBackend`;
+- supported bindings > 0 -> proven executable-SQL materialization -> `NativeConsoleSqlTextBackend`.
 
-The maintained Starter/Driver E2E currently supplies representative full click-throughs for:
+The Starter/Driver E2E must supply representative full click-throughs for:
 - zero-binding native execution;
-- multi-binding prepared execution + zMyBatis result presentation;
+- multi-binding materialized execution with the native Database Tools result grid;
 - promoted built-in `parameterType="long"` metadata through the registered prepared route;
 - target-derived PostgreSQL `databaseId` selection over the default variant;
 - mutation-declaration approval with ordinary preview disabled and cancellation before execution;
@@ -171,7 +173,7 @@ The tests prove project-scoped v3 persistence, stable datasource UUID + explicit
 
 #478 adds DataGrip as an explicit, independently visible host proof rather than reusing IDEA Ultimate evidence.
 
-`verifyPlugin` targets DataGrip 2026.3 independently of IDEA Ultimate 2026.3, with the minimum build raised to 263. The process layer uses `ZMyBatisDataGripStarterDriverE2ETest` through the separate `dataGripIntegrationTest` task and `Starter / Driver E2E (DataGrip)` CI job. P5 adds one bounded XML-only prepared PostgreSQL scenario: the DataGrip job provisions a pinned PostgreSQL service and local pgJDBC driver, the registered XML action selects the explicit `public` schema, one stock-MyBatis `<bind>` value remains a JDBC placeholder, and `DatabaseSessionPreparedBackend` returns `41` through the zMyBatis prepared-result dialog. The host suite also retains service loading, typed no-datasource refusal, strict IDE-failure reporting and clean shutdown.
+`verifyPlugin` targets DataGrip 2026.3 independently of IDEA Ultimate 2026.3, with the minimum build raised to 263. The process layer uses `ZMyBatisDataGripStarterDriverE2ETest` through the separate `dataGripIntegrationTest` task and `Starter / Driver E2E (DataGrip)` CI job. P5 must move the bounded XML-only PostgreSQL DataGrip scenario to the same native-result contract: stock MyBatis resolves the bound shape, the admitted value is materialized safely, and Database Tools presents `41` through its normal result surface rather than a zMyBatis prepared-result dialog. The host suite also retains service loading, typed no-datasource refusal, strict IDE-failure reporting and clean shutdown.
 
 DataGrip evidence is deliberately narrower than the IU PostgreSQL golden path. It does not prove Java annotation source behavior, native Database Tools result/history parity, every datasource/schema lifecycle case, every DBMS/dialect, or wider JetBrains host compatibility. A successful IU run cannot satisfy the DataGrip obligation, and a successful DataGrip run cannot widen the Java-source or native-result capability matrix. Those gaps are explicit so a green `Test` context is not misrepresented as broader platform proof. `DataGripStarterDriverE2EContractTest` pins that bounded claim and the pinned PostgreSQL workflow prerequisite.
 
@@ -549,4 +551,4 @@ remain comparative observations, not latency SLAs.
 
 P5 adds an explicit UX regression contract on top of functional parity. `DatabaseToolsConsoleAdapterBoundaryTest` pins existing-session/client discovery, prefers reuse over creation, forbids editor-tab navigation and console focus stealing, and requires any zMyBatis-created fallback console to retain the dynamic `<mapper filename> - zMyBatis` identity. Human smoke verifies the same packaged behavior in IDEA. UI improvements to parameter entry are allowed when they clarify state without changing input authority.
 
-The prepared-result presentation remains a P5 human-smoke blocker until IDEA 263 runtime characterization either proves a maintained typed bridge into the native Database Tools result grid or disproves that bridge strongly enough to justify a separate zMyBatis presentation surface. An opaque `QueryRequest` parameter slot alone is not sufficient evidence of impossibility.
+The 263 runtime characterization disproved the attempted true-prepared `QueryRequest.params` bridge, but that does not waive the pre-Leap native-result product requirement. P5 therefore treats the prepared/modal route as a regression and restores native Database Tools result ownership through proven post-stock-MyBatis executable-SQL materialization. A separate `zMyBatis: Query Result` surface is not an accepted 1.0 fallback.
