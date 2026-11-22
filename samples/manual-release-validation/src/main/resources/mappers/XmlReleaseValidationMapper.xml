@@ -7,12 +7,12 @@
         SELECT 7 AS result_value
     </select>
 
-    <!-- M03: maintained nonzero production slice: exactly one PostgreSQL BIGINT binding. -->
+    <!-- M03: ordinary PostgreSQL BIGINT prepared binding. -->
     <select id="bigintEcho">
         SELECT #{value,jdbcType=BIGINT}::BIGINT AS result_value
     </select>
 
-    <!-- M04: canonical E2E BIGINT + stock-MyBatis Boolean-if path. -->
+    <!-- M04: stock-MyBatis Boolean-if chooses SQL shape; remaining binding stays prepared. -->
     <select id="bigintWithIf">
         SELECT #{value,jdbcType=BIGINT}::BIGINT AS result_value
         <if test="value > 0">
@@ -20,7 +20,7 @@
         </if>
     </select>
 
-    <!-- M05: bounded WHERE + Boolean-if wrapper. -->
+    <!-- M05: stock-MyBatis WHERE + Boolean-if; backend follows the resulting binding cardinality. -->
     <select id="whereIf">
         SELECT id
         FROM products
@@ -32,9 +32,7 @@
         ORDER BY id
     </select>
 
-    <!-- M06: source-proven foreach preparation. Shipping materialization remains fail-closed:
-         generated foreach item bindings are MyBatis additional parameters, which the current
-         PostgreSQL BIGINT materializer deliberately refuses; multiple items also exceed cardinality. -->
+    <!-- M06: foreach additional parameters remain ordered prepared bindings. -->
     <select id="foreachIds">
         SELECT id
         FROM products
@@ -58,12 +56,12 @@
         SELECT 2620 AS result_value
     </select>
 
-    <!-- M09: VARCHAR binding is deliberately outside the maintained PostgreSQL BIGINT slice. -->
+    <!-- M09: common stock String/VARCHAR prepared binding. -->
     <select id="unsupportedVarchar">
         SELECT #{value,jdbcType=VARCHAR} AS result_value
     </select>
 
-    <!-- M10: two BIGINT bindings are deliberately outside the one-binding materializer slice. -->
+    <!-- M10: multiple ordered BIGINT bindings execute through the prepared backend. -->
     <select id="unsupportedTwoBigints">
         SELECT #{left,jdbcType=BIGINT}::BIGINT + #{right,jdbcType=BIGINT}::BIGINT AS result_value
     </select>
@@ -85,5 +83,24 @@
         DELETE FROM products
         WHERE FALSE
     </delete>
+
+    <!-- M15: stock-MyBatis set/trim + multi-@Param mutation; AND FALSE keeps it safe. -->
+    <update id="setTrimNoop">
+        UPDATE products
+        <set>
+            <if test="name != null">
+                name = #{name,jdbcType=VARCHAR},
+            </if>
+        </set>
+        <trim prefix="WHERE" prefixOverrides="AND |OR ">
+            AND id = #{id,jdbcType=BIGINT}
+            AND FALSE
+        </trim>
+    </update>
+
+    <!-- M16: JSON Map caller input with nested property lookup. -->
+    <select id="nestedMapEcho">
+        SELECT #{filter.tenantId,jdbcType=BIGINT}::BIGINT AS result_value
+    </select>
 
 </mapper>

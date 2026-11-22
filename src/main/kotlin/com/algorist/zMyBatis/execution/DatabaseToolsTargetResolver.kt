@@ -1,10 +1,7 @@
 package com.algorist.zMyBatis.execution
 
 import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
-import com.algorist.zMyBatis.core.execution.ExecutionTargetId
-import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
 import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
-import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailure
 import com.algorist.zMyBatis.core.execution.TargetResolutionFailureKind
 import com.algorist.zMyBatis.core.source.ConventionalMyBatisDatabaseIds
@@ -114,22 +111,6 @@ internal fun databaseToolsStableDataSourceId(dataSource: DbDataSource): String? 
     throw ex
 } catch (_: Exception) {
     null
-}
-
-internal fun databaseToolsExecutionTargetId(
-    dataSource: DbDataSource,
-    schema: DasNamespace?,
-): ExecutionTargetId? {
-    val dataSourceId = databaseToolsStableDataSourceId(dataSource) ?: return null
-    val schemaName = schema?.name?.takeIf { it.isNotBlank() } ?: return null
-    return try {
-        ExecutionTargetId(
-            dataSourceId = StableDataSourceId(dataSourceId),
-            schema = ExplicitSchemaIdentity(schemaName),
-        )
-    } catch (_: IllegalArgumentException) {
-        null
-    }
 }
 
 /**

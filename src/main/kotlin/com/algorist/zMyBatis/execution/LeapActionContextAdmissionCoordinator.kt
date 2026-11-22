@@ -245,6 +245,16 @@ private fun XmlMapperMethodCaptureFailure.allowsAbsentMapperMethod(): Boolean =
     this == XmlMapperMethodCaptureFailure.UNRESOLVED_MAPPER_TYPE ||
         this == XmlMapperMethodCaptureFailure.MISSING_METHOD
 
+internal fun shouldExpandProjectXmlAfterRootSelection(
+    selection: LeapPreparationSourceSelectionResult,
+): Boolean {
+    val graphFailure =
+        (selection as? LeapPreparationSourceSelectionResult.Failed)
+            ?.failure as? LeapPreparationSourceSelectionFailure.XmlSourceGraphFailed
+            ?: return false
+    return graphFailure.failure is XmlStatementSourceGraphFailure.MissingFragment
+}
+
 internal fun leapExecutionTargetDescriptor(
     stableDataSourceId: String?,
     dataSourceDisplayName: String,
@@ -514,6 +524,17 @@ internal sealed interface LeapActionContextAdmissionFailure {
         val failure: LeapPreparationSourceSelectionFailure,
     ) : LeapActionContextAdmissionFailure
 
+    data object SourceSelectionCancelled : LeapActionContextAdmissionFailure
+    data object ProjectXmlExpansionCancelled : LeapActionContextAdmissionFailure
+
+    data class SourceSelectionTaskFailed(
+        val exceptionClass: Class<out Exception>,
+    ) : LeapActionContextAdmissionFailure
+
+    data class ProjectXmlExpansionTaskFailed(
+        val exceptionClass: Class<out Exception>,
+    ) : LeapActionContextAdmissionFailure
+
     data class SourceInvalid(
         val failure: SourceGraphRevalidationFailure,
     ) : LeapActionContextAdmissionFailure
@@ -615,50 +636,16 @@ internal class LeapActionContextAdmissionCoordinator(
         onCancelled: () -> Unit,
         onFailure: (LeapActionContextAdmissionFailure) -> Unit,
     ) {
-        if (evidence !is LeapActionSourceEvidence.Xml) {
-            requestTarget(
-                evidence = evidence,
-                dataContext = dataContext,
-                liveInvocation = liveInvocation,
-                onExecuted = onExecuted,
-                onCancelled = onCancelled,
-                onFailure = onFailure,
-            )
-            return
-        }
-
-        projectXmlExpansion.requestExpansion(
-            rootSnapshot = evidence.snapshots.single(),
-            rootDiscovery = evidence.discoveries.single(),
-            isInvocationActive = liveInvocation,
-            onResult = { result ->
-                when (result) {
-                    is LeapProjectXmlMapperExpansionTaskResult.Completed ->
-                        when (val expanded = result.expansion) {
-                            is XmlProjectMapperSourceCaptureResult.Captured ->
-                                requestTarget(
-                                    evidence = evidence.copy(
-                                        snapshots = expanded.capture.snapshots,
-                                        discoveries = expanded.capture.discoveries,
-                                    ),
-                                    dataContext = dataContext,
-                                    liveInvocation = liveInvocation,
-                                    onExecuted = onExecuted,
-                                    onCancelled = onCancelled,
-                                    onFailure = onFailure,
-                                )
-                            XmlProjectMapperSourceCaptureResult.IndexUnavailable ->
-                                onFailure(
-                                    LeapActionContextAdmissionFailure.SourceCaptureFailed(
-                                        LeapActionSourceEvidenceFailure.XmlProjectIndexUnavailable,
-                                    ),
-                                )
-                        }
-                    LeapProjectXmlMapperExpansionTaskResult.InvocationInvalidated ->
-                        onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
-                }
-            },
+        // Do not scan every project XML file before the user sees any execution UI.
+        // The root mapper is sufficient for the common case. Cross-document include resolution
+        // requests project expansion lazily after target-aware root selection proves it is needed.
+        requestTarget(
+            evidence = evidence,
+            dataContext = dataContext,
+            liveInvocation = liveInvocation,
+            onExecuted = onExecuted,
             onCancelled = onCancelled,
+            onFailure = onFailure,
         )
     }
 
@@ -680,6 +667,7 @@ internal class LeapActionContextAdmissionCoordinator(
                         continueWithTarget(
                             evidence = evidence,
                             target = target,
+                            dataContext = dataContext,
                             liveInvocation = liveInvocation,
                             onExecuted = onExecuted,
                             onCancelled = onCancelled,
@@ -702,6 +690,7 @@ internal class LeapActionContextAdmissionCoordinator(
     private fun continueWithTarget(
         evidence: LeapActionSourceEvidence,
         target: LeapExecutionTargetAdmissionResult.Ready,
+        dataContext: DataContext,
         liveInvocation: () -> Boolean,
         onExecuted: () -> Unit,
         onCancelled: () -> Unit,
@@ -713,26 +702,15 @@ internal class LeapActionContextAdmissionCoordinator(
         }
 
         if (evidence is LeapActionSourceEvidence.Xml) {
-            sourceSelection.requestSelection(
+            requestXmlSourceSelection(
                 evidence = evidence,
-                effectiveDatabaseId = target.effectiveDatabaseId,
-                isInvocationActive = liveInvocation,
-                onResult = { result ->
-                    when (result) {
-                        is LeapPreparationSourceSelectionTaskResult.Completed ->
-                            continueWithSelectedSource(
-                                selection = result.selection,
-                                target = target,
-                                liveInvocation = liveInvocation,
-                                onExecuted = onExecuted,
-                                onCancelled = onCancelled,
-                                onFailure = onFailure,
-                            )
-                        LeapPreparationSourceSelectionTaskResult.InvocationInvalidated ->
-                            onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
-                    }
-                },
+                target = target,
+                dataContext = dataContext,
+                liveInvocation = liveInvocation,
+                allowProjectExpansion = true,
+                onExecuted = onExecuted,
                 onCancelled = onCancelled,
+                onFailure = onFailure,
             )
             return
         }
@@ -745,6 +723,7 @@ internal class LeapActionContextAdmissionCoordinator(
         continueWithSelectedSource(
             selection = selection,
             target = target,
+            dataContext = dataContext,
             liveInvocation = liveInvocation,
             onExecuted = onExecuted,
             onCancelled = onCancelled,
@@ -752,9 +731,126 @@ internal class LeapActionContextAdmissionCoordinator(
         )
     }
 
+    private fun requestXmlSourceSelection(
+        evidence: LeapActionSourceEvidence.Xml,
+        target: LeapExecutionTargetAdmissionResult.Ready,
+        dataContext: DataContext,
+        liveInvocation: () -> Boolean,
+        allowProjectExpansion: Boolean,
+        onExecuted: () -> Unit,
+        onCancelled: () -> Unit,
+        onFailure: (LeapActionContextAdmissionFailure) -> Unit,
+    ) {
+        sourceSelection.requestSelection(
+            evidence = evidence,
+            effectiveDatabaseId = target.effectiveDatabaseId,
+            isInvocationActive = liveInvocation,
+            onResult = { result ->
+                when (result) {
+                    is LeapPreparationSourceSelectionTaskResult.Completed -> {
+                        val selection = result.selection
+                        if (
+                            allowProjectExpansion &&
+                            shouldExpandProjectXmlAfterRootSelection(selection)
+                        ) {
+                            expandProjectXmlAndRetrySelection(
+                                evidence = evidence,
+                                target = target,
+                                dataContext = dataContext,
+                                liveInvocation = liveInvocation,
+                                onExecuted = onExecuted,
+                                onCancelled = onCancelled,
+                                onFailure = onFailure,
+                            )
+                        } else {
+                            continueWithSelectedSource(
+                                selection = selection,
+                                target = target,
+                                dataContext = dataContext,
+                                liveInvocation = liveInvocation,
+                                onExecuted = onExecuted,
+                                onCancelled = onCancelled,
+                                onFailure = onFailure,
+                            )
+                        }
+                    }
+                    is LeapPreparationSourceSelectionTaskResult.Failed ->
+                        onFailure(
+                            LeapActionContextAdmissionFailure.SourceSelectionTaskFailed(
+                                result.exceptionClass,
+                            ),
+                        )
+                    LeapPreparationSourceSelectionTaskResult.InvocationInvalidated ->
+                        onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
+                }
+            },
+            onCancelled = {
+                onFailure(LeapActionContextAdmissionFailure.SourceSelectionCancelled)
+            },
+        )
+    }
+
+    private fun expandProjectXmlAndRetrySelection(
+        evidence: LeapActionSourceEvidence.Xml,
+        target: LeapExecutionTargetAdmissionResult.Ready,
+        dataContext: DataContext,
+        liveInvocation: () -> Boolean,
+        onExecuted: () -> Unit,
+        onCancelled: () -> Unit,
+        onFailure: (LeapActionContextAdmissionFailure) -> Unit,
+    ) {
+        val rootSnapshot = evidence.snapshots.single()
+        val rootDiscovery = evidence.discoveries.single()
+
+        projectXmlExpansion.requestExpansion(
+            rootSnapshot = rootSnapshot,
+            rootDiscovery = rootDiscovery,
+            isInvocationActive = liveInvocation,
+            onResult = { result ->
+                when (result) {
+                    is LeapProjectXmlMapperExpansionTaskResult.Completed ->
+                        when (val expanded = result.expansion) {
+                            is XmlProjectMapperSourceCaptureResult.Captured ->
+                                requestXmlSourceSelection(
+                                    evidence = evidence.copy(
+                                        snapshots = expanded.capture.snapshots,
+                                        discoveries = expanded.capture.discoveries,
+                                    ),
+                                    target = target,
+                                    dataContext = dataContext,
+                                    liveInvocation = liveInvocation,
+                                    allowProjectExpansion = false,
+                                    onExecuted = onExecuted,
+                                    onCancelled = onCancelled,
+                                    onFailure = onFailure,
+                                )
+                            XmlProjectMapperSourceCaptureResult.IndexUnavailable ->
+                                onFailure(
+                                    LeapActionContextAdmissionFailure.SourceCaptureFailed(
+                                        LeapActionSourceEvidenceFailure.XmlProjectIndexUnavailable,
+                                    ),
+                                )
+                        }
+                    is LeapProjectXmlMapperExpansionTaskResult.Failed ->
+                        onFailure(
+                            LeapActionContextAdmissionFailure.ProjectXmlExpansionTaskFailed(
+                                result.exceptionClass,
+                            ),
+                        )
+                    LeapProjectXmlMapperExpansionTaskResult.InvocationInvalidated ->
+                        onFailure(LeapActionContextAdmissionFailure.InvocationInvalidated)
+                }
+            },
+            onCancelled = {
+                onFailure(LeapActionContextAdmissionFailure.ProjectXmlExpansionCancelled)
+            },
+        )
+    }
+
     private fun continueWithSelectedSource(
         selection: LeapPreparationSourceSelectionResult,
         target: LeapExecutionTargetAdmissionResult.Ready,
+        dataContext: DataContext,
         liveInvocation: () -> Boolean,
         onExecuted: () -> Unit,
         onCancelled: () -> Unit,
@@ -805,6 +901,7 @@ internal class LeapActionContextAdmissionCoordinator(
 
         invocationCoordinator.execute(
             source = source,
+            dataContext = dataContext,
             isInvocationActive = liveInvocation,
             onExecuted = onExecuted,
             onCancelled = onCancelled,

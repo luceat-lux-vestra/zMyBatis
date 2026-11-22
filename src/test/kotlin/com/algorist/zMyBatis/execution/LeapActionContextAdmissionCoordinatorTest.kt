@@ -197,6 +197,76 @@ class LeapActionContextAdmissionCoordinatorTest {
     }
 
     @Test
+    fun projectXmlExpansionIsLazyAndOnlyRetriesMissingFragments() {
+        val simpleContent = """
+            <mapper namespace="fixture.Mapper">
+              <select id="find">select 1</select>
+            </mapper>
+        """.trimIndent()
+        val simpleSnapshot = SourceSnapshot(
+            fileId = SourceFileId("vfs:/fixture/SimpleMapper.xml"),
+            revision = SourceRevision("document:445-simple"),
+            content = simpleContent,
+        )
+        val simpleDiscovery =
+            (XmlMapperSourceDiscovery.discover(simpleSnapshot) as XmlMapperDiscoveryResult.Discovered).mapper
+        val simpleSelection = selectLeapPreparationSource(
+            evidence = LeapActionSourceEvidence.Xml(
+                statementId = XmlStatementId(simpleSnapshot.fileId, "fixture.Mapper", "find"),
+                snapshots = listOf(simpleSnapshot),
+                discoveries = listOf(simpleDiscovery),
+            ),
+            effectiveDatabaseId = null,
+            captureXmlMapperMethod = {
+                XmlMapperMethodCaptureResult.Failed(
+                    XmlMapperMethodCaptureFailure.UNRESOLVED_MAPPER_TYPE,
+                )
+            },
+        )
+
+        assertTrue(simpleSelection is LeapPreparationSourceSelectionResult.Ready)
+        assertFalse(shouldExpandProjectXmlAfterRootSelection(simpleSelection))
+
+        val includeContent = """
+            <mapper namespace="fixture.Mapper">
+              <select id="find">
+                select 1
+                <include refid="shared.Fragments.whereClause"/>
+              </select>
+            </mapper>
+        """.trimIndent()
+        val includeSnapshot = SourceSnapshot(
+            fileId = SourceFileId("vfs:/fixture/IncludeMapper.xml"),
+            revision = SourceRevision("document:445-include"),
+            content = includeContent,
+        )
+        val includeDiscovery =
+            (XmlMapperSourceDiscovery.discover(includeSnapshot) as XmlMapperDiscoveryResult.Discovered).mapper
+        val includeSelection = selectLeapPreparationSource(
+            evidence = LeapActionSourceEvidence.Xml(
+                statementId = XmlStatementId(includeSnapshot.fileId, "fixture.Mapper", "find"),
+                snapshots = listOf(includeSnapshot),
+                discoveries = listOf(includeDiscovery),
+            ),
+            effectiveDatabaseId = null,
+            captureXmlMapperMethod = {
+                XmlMapperMethodCaptureResult.Failed(
+                    XmlMapperMethodCaptureFailure.UNRESOLVED_MAPPER_TYPE,
+                )
+            },
+        )
+
+        assertTrue(includeSelection is LeapPreparationSourceSelectionResult.Failed)
+        val failure = (includeSelection as LeapPreparationSourceSelectionResult.Failed).failure
+        assertTrue(failure is LeapPreparationSourceSelectionFailure.XmlSourceGraphFailed)
+        assertTrue(
+            (failure as LeapPreparationSourceSelectionFailure.XmlSourceGraphFailed).failure
+                is com.algorist.zMyBatis.source.XmlStatementSourceGraphFailure.MissingFragment,
+        )
+        assertTrue(shouldExpandProjectXmlAfterRootSelection(includeSelection))
+    }
+
+    @Test
     fun registeredActionUsesLeapAdmissionAsSingleShippingAuthority() {
         val coordinator = sourceText(
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapActionContextAdmissionCoordinator.kt",
@@ -220,6 +290,11 @@ class LeapActionContextAdmissionCoordinatorTest {
         assertTrue(coordinator.contains("XmlActionSourceCaptureAdapter.capture"))
         assertTrue(coordinator.contains("LeapProjectXmlMapperExpansionAdapter"))
         assertTrue(coordinator.contains("projectXmlExpansion.requestExpansion"))
+        assertTrue(coordinator.contains("shouldExpandProjectXmlAfterRootSelection"))
+        assertTrue(
+            coordinator.indexOf("targetAdmission.requestTarget") <
+                coordinator.indexOf("projectXmlExpansion.requestExpansion"),
+        )
         assertFalse(coordinator.contains("executeOnPooledThread"))
         assertTrue(projectExpansion.contains("Task.Backgroundable"))
         assertTrue(projectExpansion.contains("indicator::checkCanceled"))
@@ -232,6 +307,8 @@ class LeapActionContextAdmissionCoordinatorTest {
         assertTrue(projectCapture.split("checkCanceled()").size - 1 >= 5)
         assertTrue(coordinator.contains("LeapPreparationSourceSelectionAdapter"))
         assertTrue(coordinator.contains("sourceSelection.requestSelection"))
+        assertTrue(coordinator.contains("LeapActionContextAdmissionFailure.SourceSelectionCancelled"))
+        assertTrue(coordinator.contains("LeapActionContextAdmissionFailure.ProjectXmlExpansionCancelled"))
         assertTrue(coordinator.contains("continueWithSelectedSource"))
         assertTrue(coordinator.contains("LeapExecutionInvocationCoordinator"))
         assertTrue(coordinator.contains("ExecutionTargetDescriptorStore"))

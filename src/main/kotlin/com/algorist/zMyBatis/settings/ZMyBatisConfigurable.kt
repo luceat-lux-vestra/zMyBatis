@@ -2,7 +2,6 @@ package com.algorist.zMyBatis.settings
 
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.ui.DialogPanel
-import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.panel
 
@@ -36,21 +35,6 @@ class ZMyBatisConfigurable : BoundConfigurable("zMyBatis") {
                     )
                 contextHelp(
                     "Formats presentation text only; formatting never changes the immutable SQL artifact sent to Database Tools.",
-                )
-            }
-            row {
-                label("Console session:")
-            }
-            row {
-                comboBox(ConsoleSessionPolicy.entries)
-                    .bindItem(
-                        getter = { settings.consoleSessionPolicy },
-                        setter = { settings.consoleSessionPolicy = it ?: ConsoleSessionPolicy.REUSE },
-                    )
-                contextHelp(
-                    "REUSE     — reuse a matching live console resource.\n" +
-                        "NEW_EACH  — acquire a fresh console for every execution.\n" +
-                        "Persisted datasource/schema identity is independent of this resource policy.",
                 )
             }
         }

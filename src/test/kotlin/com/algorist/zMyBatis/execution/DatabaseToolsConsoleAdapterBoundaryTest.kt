@@ -16,8 +16,10 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         )
 
         assertTrue(delivery.contains("consoleAdapter.acquireAndDeliverConsole("))
+        assertTrue(delivery.contains("NativeExecutionPlanMaterializer.materialize(plan)"))
         assertTrue(delivery.contains("nativeBackend.execute("))
-        assertTrue(delivery.contains("preparedBackend.execute("))
+        assertFalse(delivery.contains("preparedBackend.execute("))
+        assertFalse(delivery.contains("preparedResultAdapter.present("))
         assertFalse(delivery.contains("consoleAdapter.executeMaterialized("))
         assertFalse(action.contains("JdbcConsole.newConsole"))
         assertFalse(action.contains(".switchSchema("))
@@ -30,25 +32,37 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
     }
 
     @Test
-    fun `adapter owns console mechanics but no target persistence`() {
+    fun `adapter reuses chooses or creates a console without opening a console tab`() {
         val adapter = source(
             "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"
         )
 
-        assertTrue(adapter.contains("JdbcConsole.newConsole"))
+        assertTrue(adapter.contains("DatabaseSessionManager.getSessions(project, sessionDataSource)"))
+        assertTrue(adapter.contains("session.clients"))
+        assertTrue(adapter.contains(".filterIsInstance<JdbcConsole>()"))
+        assertTrue(adapter.contains("cache.rememberedConsole(resourceKey, it)"))
+        assertTrue(adapter.contains("cache.rememberConsole(resourceKey, targetId, console)"))
+        assertTrue(adapter.contains("console.file.virtualFile?.name == mapperName"))
+        assertTrue(adapter.contains("JBPopupFactory.getInstance().createActionGroupPopup("))
+        assertTrue(adapter.contains("\"Choose Database Console\""))
+        assertTrue(adapter.contains("\"Create New Console\""))
+        assertTrue(adapter.contains("DatabaseSessionManager.getSession(project, dataSource)"))
+        assertTrue(adapter.contains("JdbcConsole.newConsole(project)"))
+        assertTrue(adapter.contains(".useSession(requestedSession)"))
+        assertFalse(adapter.contains("session.attach(console)"))
+        assertTrue(adapter.contains("nextConsoleName("))
+        assertTrue(adapter.contains("return \"\$mapperName - zMyBatis\""))
+        assertTrue(adapter.contains("cache.putEphemeral(ownershipKey, console, targetId)"))
         assertTrue(adapter.contains(".switchSchema("))
         assertTrue(adapter.contains("JdbcConsoleProvider.findScriptModelNoInject"))
         assertTrue(adapter.contains("JdbcConsoleProvider.doRunQueryInConsole"))
-        assertTrue(adapter.contains("WriteCommandAction.runWriteCommandAction"))
-        // IDEA 263: use the stable, public navigation entry point, not either
-        // the internal editor options API or the experimental file-open request.
-        // The EDT continuation must recheck the immutable execution authority
-        // and the actual SQL editor before any native query is issued.
-        assertTrue(adapter.contains("OpenFileDescriptor(project, vFile).navigate(true)"))
-        assertTrue(adapter.contains("ApplicationManager.getApplication().invokeLater({"))
-        assertTrue(adapter.contains("if (!preExecutionCheck())"))
-        assertTrue(adapter.contains("if (!console.isValid)"))
-        assertTrue(adapter.contains("onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)"))
+        assertTrue(adapter.contains("editorFactory.createEditor(consoleDoc, project)"))
+        assertTrue(adapter.contains("editorFactory.releaseEditor(transientEditor)"))
+
+        assertFalse(adapter.contains("CustomerMapper.xml"))
+        assertFalse(adapter.contains("OpenFileDescriptor"))
+        assertFalse(adapter.contains(".navigate("))
+        assertFalse(adapter.contains("requestFocusInWindow"))
         assertFalse(adapter.contains("FileEditorManagerEx"))
         assertFalse(adapter.contains("FileEditorOpenOptions"))
         assertFalse(adapter.contains("FileEditorOpenRequest"))
@@ -63,7 +77,7 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
     }
 
     @Test
-    fun `model-changing continuations use write-safe modality`() {
+    fun `adapter chooser scheduling never becomes editor-tab navigation`() {
         val adapter = source(
             "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"
         )
@@ -71,9 +85,11 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionApprovalAdapter.kt"
         )
 
-        assertFalse(adapter.contains("ModalityState.any()"))
+        assertTrue(adapter.contains("ApplicationManager.getApplication().invokeLater"))
+        assertTrue(adapter.contains("ModalityState.any()"))
+        assertFalse(adapter.contains("OpenFileDescriptor"))
+        assertFalse(adapter.contains(".navigate("))
         assertFalse(approval.contains("ModalityState.any()"))
-        assertTrue(adapter.contains("ModalityState.defaultModalityState()"))
         assertTrue(approval.contains("ModalityState.defaultModalityState()"))
     }
 

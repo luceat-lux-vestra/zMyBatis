@@ -2,6 +2,7 @@ package com.algorist.zMyBatis.services
 
 import java.nio.file.Files
 import java.nio.file.Path
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -44,7 +45,7 @@ class ConsoleCacheOwnedResourceDisposalContractTest {
     }
 
     @Test
-    fun `REUSE checks matching cache under a keyed lease before constructing a replacement`() {
+    fun `shipping acquisition reuses first and owns only consoles it creates`() {
         val adapter = Files.readString(
             repositoryRoot().resolve(
                 "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt",
@@ -55,17 +56,29 @@ class ConsoleCacheOwnedResourceDisposalContractTest {
             .substringBefore("private fun switchSchemaOnConsole")
 
         val lease = acquisition.indexOf("cache.beginReuseLease(resourceKey)")
-        val cached = acquisition.indexOf("cache.get(resourceKey, targetId)")
-        val schemaRecheck = acquisition.indexOf("switchSchemaOnConsole(cached, schema)")
-        val reuse = acquisition.indexOf("onConsoleReady(cached, releaseReuseLease)")
-        val construct = acquisition.indexOf("JdbcConsole.newConsole(project)")
+        val sessions = acquisition.indexOf("DatabaseSessionManager.getSessions(project, sessionDataSource)")
+        val remembered = acquisition.indexOf("cache.rememberedConsole(resourceKey, it)")
+        val mapperMatch = acquisition.indexOf("console.file.virtualFile?.name == mapperName")
+        val chooser = acquisition.indexOf("requestConsoleChoice(")
+        val create = acquisition.indexOf("createAndDeliver(sessionDataSource, consoles)")
 
-        assertTrue("REUSE must acquire same-source ownership before cache access", lease >= 0)
-        assertTrue("matching cache lookup must occur after keyed ownership", cached > lease)
-        assertTrue("cached explicit schema must be re-applied before handoff", schemaRecheck > cached)
-        assertTrue("a matching live console must be handed off directly", reuse > schemaRecheck)
-        assertTrue("cache reuse must be attempted before constructing a replacement", construct > reuse)
+        assertTrue("same-source ownership must precede candidate discovery", lease >= 0)
+        assertTrue("Database Tools sessions must be discovered after keyed ownership", sessions > lease)
+        assertTrue("remembered source+target association must precede filename heuristics", remembered > sessions)
+        assertTrue("dynamic mapper-name matching must remain only a reuse heuristic", mapperMatch > remembered)
+        assertTrue("ambiguous candidates must route to an explicit chooser", chooser > mapperMatch)
+        assertTrue("no-candidate flow must create a console instead of failing", create > mapperMatch)
+
+        assertTrue(adapter.contains("JdbcConsole.newConsole(project)"))
+        assertTrue(adapter.contains("cache.putEphemeral(ownershipKey, console, targetId)"))
+        assertTrue(adapter.contains("cache.rememberConsole(resourceKey, targetId, console)"))
+        assertTrue(adapter.contains("\"Create New Console\""))
         assertTrue(adapter.contains("data object ReuseBusy : DatabaseToolsConsoleAcquisitionFailure"))
+        assertTrue(adapter.contains("data object ConsoleCreationFailed : DatabaseToolsConsoleAcquisitionFailure"))
+        assertTrue(adapter.contains("data object ConsoleSelectionUnavailable : DatabaseToolsConsoleAcquisitionFailure"))
+
+        assertFalse("existing-console reuse must not open a console tab", adapter.contains("OpenFileDescriptor"))
+        assertFalse("existing-console reuse must not request editor focus", adapter.contains("requestFocusInWindow"))
     }
 
     @Test

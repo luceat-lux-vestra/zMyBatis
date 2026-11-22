@@ -206,9 +206,14 @@ object ContractInputPresentationFactory {
             InputScalarType.INSTANT -> "2026-09-14T03:34:56Z"
             else -> null
         }
-        InputShape.OBJECT,
-        InputShape.MAP,
-        -> "{\"key\": \"value\"}"
+        InputShape.OBJECT -> if (XmlParameterObjectInputSupport.isXmlParameterObject(requirement.provenance)) {
+            XmlParameterObjectInputSupport.template(
+                XmlParameterObjectInputSupport.hints(requirement.provenance),
+            ).takeUnless { it == "{}" } ?: "{\"key\": \"value\"}"
+        } else {
+            "{\"key\": \"value\"}"
+        }
+        InputShape.MAP -> "{\"key\": \"value\"}"
         InputShape.LIST,
         InputShape.ARRAY,
         -> "[1, 2, 3]"

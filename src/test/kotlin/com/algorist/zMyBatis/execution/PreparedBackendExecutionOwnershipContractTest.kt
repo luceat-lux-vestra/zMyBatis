@@ -2,6 +2,7 @@ package com.algorist.zMyBatis.execution
 
 import java.nio.file.Files
 import java.nio.file.Path
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -46,18 +47,16 @@ class PreparedBackendExecutionOwnershipContractTest {
     }
 
     @Test
-    fun `shipping prepared route attaches backend handle to cancellation owner`() {
+    fun `shipping route no longer dispatches through prepared modal backend`() {
         val delivery = source(
             "src/main/kotlin/com/algorist/zMyBatis/execution/LeapExecutionDeliveryCoordinator.kt",
         )
 
-        val preparedTask = delivery.indexOf("preparedExecutionTask.execute(")
-        val backend = delivery.indexOf("preparedBackend.execute(", preparedTask)
-        val handle = delivery.indexOf("onHandleReady = onHandleReady", backend)
-
-        assertTrue(preparedTask >= 0)
-        assertTrue(backend > preparedTask)
-        assertTrue(handle > backend)
+        assertTrue(delivery.contains("NativeExecutionPlanMaterializer.materialize(plan)"))
+        assertTrue(delivery.contains("nativeBackend.execute("))
+        assertFalse(delivery.contains("preparedExecutionTask.execute("))
+        assertFalse(delivery.contains("preparedBackend.execute("))
+        assertFalse(delivery.contains("preparedResultAdapter.present("))
     }
 
     private fun source(relativePath: String): String =

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="fixture.XmlOnlyInputValidationMapper">
+
+    <!-- M18: XML-only caller object must offer dotted Fields plus the complete generated JSON form. -->
+    <select id="findByIdJSON">
+        SELECT #{test,jdbcType=BIGINT}::BIGINT AS result_value
+        <if test="user.id == 1">
+            , 1::BIGINT AS user_match
+        </if>
+        <if test="cust.name == 'test'">
+            , 1::BIGINT AS customer_match
+        </if>
+    </select>
+
+</mapper>

@@ -1,6 +1,7 @@
 package fixture;
 
 import java.util.List;
+import java.util.Map;
 import org.apache.ibatis.annotations.Param;
 
 public interface XmlReleaseValidationMapper {
@@ -27,4 +28,8 @@ public interface XmlReleaseValidationMapper {
     int updateNoop();
 
     int deleteNoop();
+
+    int setTrimNoop(@Param("name") String name, @Param("id") Long id);
+
+    Long nestedMapEcho(@Param("filter") Map<String, Object> filter);
 }

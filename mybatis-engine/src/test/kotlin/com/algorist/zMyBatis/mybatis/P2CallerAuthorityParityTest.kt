@@ -208,6 +208,69 @@ class P2CallerAuthorityParityTest {
     }
 
     @Test
+    fun xmlOnlyObjectContractCarriesCallerPathHintsWithoutPromotingMyBatisInternals() {
+        val source = xmlSource(
+            body = """
+                <select id="find">
+                    <bind name="pattern" value="'%' + search + '%'"/>
+                    SELECT
+                    <if test="user.id == 1">id</if>
+                    <if test="cust.name == 'test'">, name</if>
+                    FROM customers
+                    WHERE id = #{test}
+                    AND name LIKE #{pattern}
+                    AND id IN
+                    <foreach collection="ids" item="item" open="(" separator="," close=")">
+                        #{item}
+                    </foreach>
+                </select>
+            """.trimIndent(),
+        )
+
+        val contract = MyBatisInvocationContractFactory.build(source)
+        val requirement = contract.requirements.single()
+        val evidence = requirement.provenance.evidence
+
+        assertTrue(evidence.any {
+            it is InputEvidence.OgnlExpression && it.expression == "user.id == 1"
+        })
+        assertTrue(evidence.any {
+            it is InputEvidence.OgnlExpression && it.expression == "cust.name == 'test'"
+        })
+        assertTrue(evidence.any {
+            it is InputEvidence.OgnlExpression && it.expression == "'%' + search + '%'"
+        })
+        assertTrue(evidence.any {
+            it is InputEvidence.Placeholder &&
+                it.kind == com.algorist.zMyBatis.core.input.InputKind.BOUND &&
+                it.expression == "test"
+        })
+        assertTrue(evidence.any {
+            it is InputEvidence.ForeachCollection && it.expression == "ids"
+        })
+        assertFalse(evidence.any {
+            it is InputEvidence.Placeholder && it.expression in setOf("pattern", "item")
+        })
+    }
+
+    @Test
+    fun xmlOnlyStaticBindLiteralDoesNotManufactureCallerInput() {
+        val source = xmlSource(
+            body = """
+                <select id="find">
+                    <bind name="value" value="41L"/>
+                    SELECT #{value,jdbcType=BIGINT}
+                </select>
+            """.trimIndent(),
+        )
+
+        val contract = MyBatisInvocationContractFactory.build(source)
+
+        assertFalse(contract.isPreparationBlocked)
+        assertTrue(contract.requirements.isEmpty())
+    }
+
+    @Test
     fun javaDynamicScriptKeepsOneTypedCallerForBoundAndRawUse() {
         val fixture = javaFixture(
             sql = """

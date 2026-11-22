@@ -36,11 +36,11 @@ On an explicit zMyBatis execution action:
 - otherwise the v3 descriptor resolves to exactly one live datasource and one named schema through `DatabaseToolsTargetResolver`;
 - missing/ambiguous datasource or schema invalidates the stored selection and requires explicit re-selection;
 - target validity is rechecked after modal/background boundaries and before native query dispatch;
-- only after exact resolution does zMyBatis acquire a console and apply the proven schema;
-- `NEW_EACH` acquires a fresh console but uses the same target authority;
-- explicit named datasource/schema selection updates v3 independently of live-console registration.
+- only after exact resolution does zMyBatis discover an existing Database Tools session/client and re-apply the proven schema before execution;
+- console resource selection is reuse-first: existing/remembered consoles are preferred, but no-candidate execution may create one mapper-derived console and ambiguous candidates are resolved explicitly;
+- explicit named datasource/schema selection updates v3 independently of console/session lifetime.
 
-Live console caching is an ephemeral optimization. A matching live REUSE console has its explicit schema re-applied before handoff and is used before any replacement is constructed; disposed/invalid, schema-switch-failed, or target-mismatched entries are evicted. Cancellation/failure releases the keyed REUSE lease, while shutdown clears acquisition ownership and rejects new leases. Closing/disposal does not delete persisted v3 target identity, and service disposal releases owned console resources without mutating persistence.
+Shipping console acquisition is reuse-first, not borrow-only. zMyBatis first checks an in-memory source+target→console association, then a unique dynamically derived mapper-filename match, then a sole eligible console. Multiple remaining candidates trigger a user chooser with an explicit Create New Console action; no candidate triggers automatic creation. Runtime console association is never persisted as target authority. Borrowed consoles remain Database Tools-owned; consoles created by zMyBatis are lifecycle-owned only as resources. Creation obtains the Database Tools session for the resolved datasource, supplies it through `JdbcConsole.Builder.useSession(...)`, then registers the created console through public `DatabaseSession.attach(...)`. The created console therefore becomes a real client of the selected Database Tools session rather than a zMyBatis-specific parallel session. Source and selected-console leases prevent overlapping invocations from mutating one shared console document. Closing/disposal does not delete persisted v3 target identity.
 
 ## Unsupported historical state
 

@@ -2,6 +2,7 @@ package com.algorist.zMyBatis.e2e
 
 import com.intellij.driver.client.Driver
 import com.intellij.driver.client.Remote
+import com.intellij.driver.model.RemoteMouseButton
 import com.intellij.driver.sdk.arePluginsInitialized
 import com.intellij.driver.sdk.invokeAction
 import com.intellij.driver.sdk.isPluginLoaded
@@ -20,6 +21,7 @@ import com.intellij.driver.sdk.ui.components.elements.dialog
 import com.intellij.driver.sdk.ui.components.elements.isDialogOpened
 import com.intellij.driver.sdk.ui.components.elements.list
 import com.intellij.driver.sdk.ui.components.elements.popup
+import com.intellij.driver.sdk.ui.components.elements.popupMenu
 import com.intellij.driver.sdk.ui.components.elements.popups
 import com.intellij.driver.sdk.ui.components.elements.textField
 import com.intellij.driver.sdk.ui.components.elements.waitForNoOpenedDialogs
@@ -34,11 +36,15 @@ import com.intellij.ide.starter.models.IdeInfo
 import com.intellij.ide.starter.models.TestCase
 import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
+import com.intellij.ide.starter.runner.IDECommandLine
+import com.intellij.ide.starter.runner.IDERunContext
 import com.intellij.ide.starter.runner.Starter
+import com.intellij.ide.starter.runner.openTestCaseProject
 import com.intellij.ide.starter.runner.startIdeWithoutProject
 import com.intellij.ide.starter.ide.IDETestContext
 import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTestKind
 import com.intellij.platform.testFramework.teamCity.TeamCityReporter.TestMetadata
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.tools.ide.starter.product.idea.ultimate.IdeaUltimate
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -86,6 +92,22 @@ interface TrialAvailabilityRemote {
     fun getValue(): Boolean?
 }
 
+@Remote("com.intellij.openapi.extensions.PluginId")
+interface PluginIdRemote {
+    fun getId(idString: String): PluginIdRemote
+}
+
+@Remote("com.intellij.ide.plugins.PluginDetailsService")
+interface PluginDetailsServiceRemote {
+    fun isLoaded(pluginId: PluginIdRemote): Boolean
+    fun findDetails(pluginId: PluginIdRemote): PluginDetailsRemote?
+}
+
+@Remote($$"com.intellij.ide.plugins.PluginDetailsService$PluginDetails")
+interface PluginDetailsRemote {
+    fun getVersion(): String?
+}
+
 private class JTextAreaUi(data: ComponentData) : UiComponent(data) {
     var text: String
         get() = driver.cast(component, JTextComponentRemote::class).getText()
@@ -123,7 +145,22 @@ class ZMyBatisStarterDriverE2ETest {
         private const val IDE_RELEASE = "2026.3"
         private const val POSTGRES_E2E_DRIVER_NAME = "zMyBatis PostgreSQL 42.7.14"
         private const val POSTGRES_E2E_DATA_SOURCE_NAME = POSTGRES_E2E_DRIVER_NAME
-        private val pluginArchive: Path = pathOf(System.getProperty("path.to.build.plugin")).toAbsolutePath()
+        private const val EXECUTE_ACTION_TEXT = "Execute (zMyBatis)"
+        private const val PARAMETER_DIALOG_TITLE = "Enter MyBatis Parameters"
+        private val pluginArchive: Path = pathOf(
+            System.getenv("ZMYBATIS_E2E_PLUGIN_ARCHIVE")
+                ?.takeIf { it.isNotBlank() }
+                ?: System.getProperty("path.to.build.plugin"),
+        ).toAbsolutePath()
+        private val expectedCandidateVersion: String =
+            System.getenv("ZMYBATIS_E2E_CANDIDATE_VERSION")
+                ?.takeIf { it.isNotBlank() }
+                ?: pluginArchive.fileName.toString()
+                    .takeIf { it.startsWith("zMyBatis-") && it.endsWith(".zip") }
+                    ?.removePrefix("zMyBatis-")
+                    ?.removeSuffix(".zip")
+                ?: error("Unable to derive the zMyBatis E2E candidate version")
+        private const val ZMYBATIS_PLUGIN_ID = "com.algorist.zMyBatis"
         private val sampleProject: Path = pathOf("src/integrationTest/testProject").toAbsolutePath()
         private val activationSeedLock = Any()
 
@@ -262,7 +299,429 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     @Test
-    fun registeredActionExecutesMultiBindingPlanThroughPreparedResultPresentation(@TempDir tempDir: Path) {
+    fun registeredActionReusesPersistedTargetAcrossLargeCrossDocumentMapperProject(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-postgresql-large-mapper-project"))
+        val generatedMapperCount = writeLargeCrossDocumentMapperProject(projectDir)
+        assertEquals(
+            258,
+            generatedMapperCount,
+            "large-project regression fixture must keep its bounded mapper scale stable",
+        )
+        println(
+            "ZMYBATIS_E2E_REAL_PROJECT_SCALE generated_mapper_xml_count=$generatedMapperCount " +
+                "noise_mapper_count=256 cross_document_include=true",
+        )
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-postgresql-large-mapper-persisted-target", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("LargeProjectMapper.xml")
+                ui.codeEditorForFile("LargeProjectMapper.xml").clickOnPosition(3, 40)
+                val zeroStartedAt = System.nanoTime()
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("large-project zero-binding datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("large-project explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                waitFor(
+                    message = "large-project zero-binding native result becomes visible",
+                    timeout = 2.minutes,
+                ) {
+                    try {
+                        ui.accessibleTable {
+                            byType("com.intellij.database.run.ui.table.TableResultView")
+                        }.content().values.any { row ->
+                            row.values.any { cell -> cell.trim() == "7007" }
+                        }
+                    } catch (_: com.intellij.driver.sdk.WaitForException) {
+                        false
+                    }
+                }
+                println(
+                    "ZMYBATIS_E2E_REAL_PROJECT_SCALE phase=zero-binding-native-result " +
+                        "elapsed_ms=${(System.nanoTime() - zeroStartedAt) / 1_000_000}",
+                )
+                ui.waitForNoOpenedDialogs()
+
+                // Same source file: the first invocation persisted the exact datasource + public
+                // schema. The second invocation must not ask for the target again. It also carries
+                // a cross-document include, forcing the registered action through the real
+                // project-expansion/source-selection path before the parameter dialog can appear.
+                ui.codeEditorForFile("LargeProjectMapper.xml").clickOnPosition(4, 40)
+                val boundStartedAt = System.nanoTime()
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor(
+                    message = "large-project bound parameter dialog or unexpected target chooser",
+                    timeout = 90.seconds,
+                ) {
+                    ui.isDialogOpened("//div[@title='Enter MyBatis Parameters']") ||
+                        ui.popups().list().isNotEmpty()
+                }
+                assertTrue(
+                    ui.isDialogOpened("//div[@title='Enter MyBatis Parameters']"),
+                    "persisted target plus large mapper expansion must reach the parameter dialog",
+                )
+                assertTrue(
+                    ui.popups().list().isEmpty(),
+                    "persisted target must bypass datasource/schema chooser on the second invocation",
+                )
+                println(
+                    "ZMYBATIS_E2E_REAL_PROJECT_SCALE phase=bound-parameter-dialog " +
+                        "elapsed_ms=${(System.nanoTime() - boundStartedAt) / 1_000_000}",
+                )
+
+                submitSingleParameterDialogValue("41")
+
+                waitFor(
+                    message = "large-project bound native result becomes visible",
+                    timeout = 2.minutes,
+                ) {
+                    try {
+                        ui.accessibleTable {
+                            byType("com.intellij.database.run.ui.table.TableResultView")
+                        }.content().values.any { row ->
+                            row.values.any { cell -> cell.trim() == "42" }
+                        }
+                    } catch (_: com.intellij.driver.sdk.WaitForException) {
+                        false
+                    }
+                }
+                assertFalse(
+                    ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
+                    "large-project bound execution must remain on the native Database Tools result path",
+                )
+                ui.waitForNoOpenedDialogs()
+            }
+    }
+
+    @Test
+    fun editorPopupMenuPreservesMapperContextForZeroAndBoundExecution(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-editor-popup-context-project"))
+        val zeroResult = 7301L
+        val boundInput = 41L
+        val boundDelta = 1L
+        writeEditorPopupContextMapperProject(
+            projectDir = projectDir,
+            zeroResult = zeroResult,
+            boundDelta = boundDelta,
+        )
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-editor-popup-context", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("EditorPopupMapper.xml")
+                invokeZMyBatisFromEditorPopup(
+                    fileName = "EditorPopupMapper.xml",
+                    statementMarker = "zeroBinding",
+                )
+
+                waitFor(
+                    message = "editor-popup zero-binding target chooser or explicit zMyBatis refusal",
+                    timeout = 30.seconds,
+                ) {
+                    openZMyBatisExecutionFailureTitle() != null ||
+                        ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) }
+                }
+                assertNoZMyBatisExecutionFailure("editor-popup zero-binding invocation")
+                assertTrue(
+                    ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) },
+                    "editor popup invocation must reach the datasource/schema chooser",
+                )
+
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("editor-popup explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                waitFor(
+                    message = "editor-popup zero-binding native result or explicit zMyBatis refusal",
+                    timeout = 2.minutes,
+                ) {
+                    nativeResultContains(zeroResult.toString()) ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("editor-popup zero-binding delivery")
+                assertTrue(
+                    nativeResultContains(zeroResult.toString()),
+                    "editor popup zero-binding execution must land in the native Database Tools result",
+                )
+                ui.waitForNoOpenedDialogs()
+
+                invokeZMyBatisFromEditorPopup(
+                    fileName = "EditorPopupMapper.xml",
+                    statementMarker = "boundValue",
+                )
+
+                waitFor(
+                    message = "editor-popup bound parameter dialog, unexpected chooser, or explicit refusal",
+                    timeout = 90.seconds,
+                ) {
+                    ui.isDialogOpened("//div[@title='$PARAMETER_DIALOG_TITLE']") ||
+                        ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) } ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("editor-popup bound invocation")
+                assertTrue(
+                    ui.isDialogOpened("//div[@title='$PARAMETER_DIALOG_TITLE']"),
+                    "real EditorPopupMenu invocation must preserve mapper context through actionPerformed",
+                )
+                assertFalse(
+                    ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) },
+                    "persisted editor-popup target must bypass datasource/schema chooser",
+                )
+
+                submitSingleParameterDialogValue(boundInput.toString())
+
+                val expectedBoundResult = (boundInput + boundDelta).toString()
+                waitFor(
+                    message = "editor-popup bound native result or explicit zMyBatis refusal",
+                    timeout = 2.minutes,
+                ) {
+                    nativeResultContains(expectedBoundResult) ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("editor-popup bound delivery")
+                assertTrue(
+                    nativeResultContains(expectedBoundResult),
+                    "editor popup bound execution must land in the native Database Tools result",
+                )
+                assertFalse(
+                    ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
+                    "editor popup bound execution must remain on the native Database Tools result path",
+                )
+                ui.waitForNoOpenedDialogs()
+            }
+    }
+
+    @Test
+    fun restartedIdeReusesSameStarterConfigAndExactCandidateForPersistedExecution(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-restart-persisted-target-project"))
+        val firstZeroResult = 7401L
+        val reopenedZeroResult = 7402L
+        val boundInput = 41L
+        val boundDelta = 1L
+        writeRestartLifecycleMapperProject(
+            projectDir = projectDir,
+            firstZeroResult = firstZeroResult,
+            reopenedZeroResult = reopenedZeroResult,
+            boundDelta = boundDelta,
+        )
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-restart-persisted-target", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+        val configDir = context.paths.configDir
+
+        context
+            .runIdeWithDriver(commandLine = ::openTestCaseProjectWithPersistentPasswordSafe)
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+                assertLoadedZMyBatisCandidate()
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("RestartLifecycleMapper.xml")
+                invokeZMyBatisFromEditorPopup(
+                    fileName = "RestartLifecycleMapper.xml",
+                    statementMarker = "beforeRestart",
+                )
+
+                waitFor(
+                    message = "restart lifecycle first-launch target chooser or explicit zMyBatis refusal",
+                    timeout = 30.seconds,
+                ) {
+                    openZMyBatisExecutionFailureTitle() != null ||
+                        ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) }
+                }
+                assertNoZMyBatisExecutionFailure("restart lifecycle first-launch invocation")
+                assertTrue(
+                    ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) },
+                    "first launch must select the exact datasource/schema target",
+                )
+
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("restart lifecycle explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                waitFor(
+                    message = "restart lifecycle first-launch native result or explicit zMyBatis refusal",
+                    timeout = 2.minutes,
+                ) {
+                    nativeResultContains(firstZeroResult.toString()) ||
+                        databaseCredentialsPromptOpened() ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("restart lifecycle first-launch delivery")
+                assertFalse(
+                    databaseCredentialsPromptOpened(),
+                    "trust-backed PostgreSQL fixture must not require interactive Database Tools credentials",
+                )
+                assertTrue(
+                    nativeResultContains(firstZeroResult.toString()),
+                    "first launch must complete through the native Database Tools result path",
+                )
+                ui.waitForNoOpenedDialogs()
+            }
+
+        assertTrue(
+            Files.isDirectory(configDir),
+            "Starter config must survive the first clean IDE shutdown for the reopen proof",
+        )
+        assertEquals(
+            configDir,
+            context.paths.configDir,
+            "the second launch must reuse the exact same Starter config directory",
+        )
+        assertRestartCredentialStorePersisted(configDir)
+
+        context
+            .runIdeWithDriver(commandLine = ::openTestCaseProjectWithPersistentPasswordSafe)
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+                assertLoadedZMyBatisCandidate()
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                openFile("RestartLifecycleMapper.xml")
+                invokeZMyBatisFromEditorPopup(
+                    fileName = "RestartLifecycleMapper.xml",
+                    statementMarker = "afterRestart",
+                )
+
+                waitFor(
+                    message = "restart lifecycle reopened zero-binding result, unexpected chooser, or explicit refusal",
+                    timeout = 2.minutes,
+                ) {
+                    nativeResultContains(reopenedZeroResult.toString()) ||
+                        ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) } ||
+                        databaseCredentialsPromptOpened() ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("restart lifecycle reopened zero-binding invocation")
+                assertFalse(
+                    databaseCredentialsPromptOpened(),
+                    "reopened execution must not depend on session-only Database Tools credentials",
+                )
+                assertFalse(
+                    ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) },
+                    "persisted target must survive close/reopen without asking for datasource/schema again",
+                )
+                assertTrue(
+                    nativeResultContains(reopenedZeroResult.toString()),
+                    "reopened zero-binding execution must produce a fresh native result",
+                )
+                ui.waitForNoOpenedDialogs()
+
+                invokeZMyBatisFromEditorPopup(
+                    fileName = "RestartLifecycleMapper.xml",
+                    statementMarker = "boundValue",
+                )
+
+                waitFor(
+                    message = "restart lifecycle reopened bound parameter dialog, unexpected chooser, or explicit refusal",
+                    timeout = 90.seconds,
+                ) {
+                    ui.isDialogOpened("//div[@title='$PARAMETER_DIALOG_TITLE']") ||
+                        ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) } ||
+                        databaseCredentialsPromptOpened() ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("restart lifecycle reopened bound invocation")
+                assertFalse(
+                    databaseCredentialsPromptOpened(),
+                    "reopened bound execution must not require interactive Database Tools credentials",
+                )
+                assertTrue(
+                    ui.isDialogOpened("//div[@title='$PARAMETER_DIALOG_TITLE']"),
+                    "reopened bound execution must reach parameter input on the persisted target",
+                )
+                assertFalse(
+                    ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) },
+                    "reopened bound execution must not silently switch or reselect the persisted target",
+                )
+
+                submitSingleParameterDialogValue(boundInput.toString())
+
+                val expectedBoundResult = (boundInput + boundDelta).toString()
+                waitFor(
+                    message = "restart lifecycle reopened bound native result or explicit zMyBatis refusal",
+                    timeout = 2.minutes,
+                ) {
+                    nativeResultContains(expectedBoundResult) ||
+                        openZMyBatisExecutionFailureTitle() != null
+                }
+                assertNoZMyBatisExecutionFailure("restart lifecycle reopened bound delivery")
+                assertTrue(
+                    nativeResultContains(expectedBoundResult),
+                    "reopened bound execution must land in the native Database Tools result path",
+                )
+                assertFalse(
+                    ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
+                    "reopened bound execution must not regress to a zMyBatis-owned result modal",
+                )
+                ui.waitForNoOpenedDialogs()
+            }
+    }
+
+    @Test
+    fun registeredActionExecutesMultiBindingPlanThroughNativeResult(@TempDir tempDir: Path) {
         val projectDir = copySampleProject(tempDir.resolve("action-postgresql-prepared-project"))
         val mapper = """
             <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
@@ -307,59 +766,266 @@ class ZMyBatisStarterDriverE2ETest {
                 }
                 ui.popups().list().last().waitOneText("public").click()
 
-                ui.dialog(title = "Enter MyBatis Parameters") {
-                    textField().text = "7"
-                    button("OK").click()
-                }
+                submitSingleParameterDialogValue("7")
 
                 ui.dialog(title = "zMyBatis — SQL Preview") {
                     val preview = textArea().text.trim()
-                    val preparedSql = preview.substringBefore("\n\nBindings (values hidden):")
-                    assertEquals(
-                        2,
-                        preparedSql.count { it == '?' },
-                        "registered multi-binding execution must preview two JDBC placeholders",
+                    val executableSql = preview.substringBefore(
+                        "\n\nBinding metadata (values materialized in SQL above):",
                     )
-                    assertTrue(preparedSql.contains("RESULT_VALUE"))
-                    assertTrue(preparedSql.contains("SECOND_VALUE"))
+                    assertEquals(
+                        0,
+                        executableSql.count { it == '?' },
+                        "registered multi-binding execution must approve the exact native SQL artifact",
+                    )
+                    assertTrue(executableSql.contains("SELECT 7::BIGINT AS RESULT_VALUE"))
+                    assertTrue(executableSql.contains("7::BIGINT + 1 AS SECOND_VALUE"))
                     assertEquals(
                         2,
                         Regex("""#\d+ property=value""").findAll(preview).count(),
-                        "prepared preview must expose both ordered bindings without their values",
+                        "materialized preview must retain both ordered binding metadata entries",
                     )
                     assertTrue(preview.contains("jdbcType=BIGINT"))
                     assertTrue(preview.contains("handler=org.apache.ibatis.type.LongTypeHandler"))
-                    assertFalse(
-                        preview.contains("SELECT 7::BIGINT"),
-                        "prepared approval must not literalize the bound value",
-                    )
                     button("Execute").click()
                 }
 
                 waitFor(
-                    message = "zMyBatis prepared-result table contains both multi-binding values",
+                    message = "Database Tools native result grid contains both materialized multi-binding values",
                     timeout = 2.minutes,
                 ) {
                     try {
-                        if (!ui.isDialogOpened("//div[@title='zMyBatis: Query Result']")) {
-                            false
-                        } else {
-                            val values = ui.accessibleTable {
-                                byType("com.intellij.ui.table.JBTable")
-                            }.content().values.flatMap { row -> row.values }.map { it.trim() }.toSet()
-                            setOf("7", "8").all { it in values }
+                        val values = ui.accessibleTable {
+                            byType("com.intellij.database.run.ui.table.TableResultView")
+                        }.content().values.flatMap { row -> row.values }.map { it.trim() }.toSet()
+                        setOf("7", "8").all { it in values }
+                    } catch (_: com.intellij.driver.sdk.WaitForException) {
+                        false
+                    }
+                }
+                assertFalse(
+                    ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
+                    "bound registered execution must not open the retired zMyBatis result modal",
+                )
+                ui.waitForNoOpenedDialogs()
+            }
+    }
+
+    @Test
+    fun registeredActionExecutesBuiltInParameterTypeThroughNativeResult(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-postgresql-parameter-type-project"))
+        val mapper = """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.QueryMapper">
+            <select id="ping" parameterType="long">SELECT #{value,jdbcType=BIGINT}::BIGINT AS RESULT_VALUE</select>
+            </mapper>
+        """.trimIndent()
+        Files.writeString(projectDir.resolve("PostgreSqlParameterTypeQuery.xml"), mapper)
+        writeMapperInterface(projectDir, "long")
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-postgresql-parameter-type", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(true)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("PostgreSqlParameterTypeQuery.xml")
+                ui.codeEditorForFile("PostgreSqlParameterTypeQuery.xml").clickOnPosition(3, 20)
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("PostgreSQL explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                submitSingleParameterDialogValue("41")
+
+                ui.dialog(title = "zMyBatis — SQL Preview") {
+                    val preview = textArea().text.trim()
+                    val executableSql = preview.substringBefore(
+                        "\n\nBinding metadata (values materialized in SQL above):",
+                    )
+                    assertEquals(
+                        "SELECT 41::BIGINT AS RESULT_VALUE",
+                        executableSql,
+                        "built-in parameterType metadata must materialize the exact native SQL artifact",
+                    )
+                    assertTrue(preview.contains("#1 property=value"))
+                    assertTrue(preview.contains("javaType=java.lang.Long"))
+                    assertTrue(preview.contains("jdbcType=BIGINT"))
+                    assertTrue(preview.contains("handler=org.apache.ibatis.type.LongTypeHandler"))
+                    button("Execute").click()
+                }
+
+                waitFor(
+                    message = "Database Tools native result grid contains parameterType-backed value",
+                    timeout = 2.minutes,
+                ) {
+                    try {
+                        ui.accessibleTable {
+                            byType("com.intellij.database.run.ui.table.TableResultView")
+                        }.content().values.any { row ->
+                            row.values.any { cell -> cell.trim() == "41" }
                         }
                     } catch (_: com.intellij.driver.sdk.WaitForException) {
                         false
                     }
                 }
+                assertFalse(
+                    ui.isDialogOpened("//div[@title='zMyBatis: Query Result']"),
+                    "parameterType-backed bound execution must not open the retired zMyBatis result modal",
+                )
+                ui.waitForNoOpenedDialogs()
+            }
+    }
 
-                ui.dialog(title = "zMyBatis: Query Result") {
-                    button("Close").click()
+    @Test
+    fun registeredActionSelectsTargetDatabaseIdVariant(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-postgresql-database-id-project"))
+        val mapper = """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.QueryMapper">
+            <select id="ping" databaseId="PostgreSQL">SELECT 2620 AS RESULT_VALUE</select>
+            <select id="ping">SELECT 2600 AS RESULT_VALUE</select>
+            </mapper>
+        """.trimIndent()
+        Files.writeString(projectDir.resolve("PostgreSqlDatabaseIdQuery.xml"), mapper)
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-postgresql-database-id", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(true)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("PostgreSqlDatabaseIdQuery.xml")
+                ui.codeEditorForFile("PostgreSqlDatabaseIdQuery.xml").clickOnPosition(3, 20)
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("PostgreSQL explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                ui.dialog(title = "zMyBatis — SQL Preview") {
+                    assertEquals(
+                        "SELECT 2620 AS RESULT_VALUE",
+                        textArea().text.trim(),
+                        "target-derived PostgreSQL databaseId variant must win over the default variant",
+                    )
+                    button("Execute").click()
+                }
+
+                waitFor(
+                    message = "PostgreSQL Database Tools result grid contains databaseId-selected value",
+                    timeout = 2.minutes,
+                ) {
+                    try {
+                        val values = ui.accessibleTable {
+                            byType("com.intellij.database.run.ui.table.TableResultView")
+                        }.content().values.flatMap { row -> row.values }.map { it.trim() }.toSet()
+                        "2620" in values && "2600" !in values
+                    } catch (_: com.intellij.driver.sdk.WaitForException) {
+                        false
+                    }
+                }
+                ui.waitForNoOpenedDialogs()
+            }
+    }
+
+    @Test
+    fun registeredMutationDeclarationForcesPreviewWhenSettingDisabled(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-postgresql-mutation-approval-project"))
+        val mapper = """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.QueryMapper">
+            <update id="ping">SELECT 0 AS RESULT_VALUE</update>
+            </mapper>
+        """.trimIndent()
+        Files.writeString(projectDir.resolve("PostgreSqlMutationQuery.xml"), mapper)
+
+        val postgresJar = Path.of(PostgreSqlDriver::class.java.protectionDomain.codeSource.location.toURI())
+        val context = starterContext("action-postgresql-mutation-approval", projectDir)
+        writePostgreSqlDatabaseToolsDriverFixture(context.paths.configDir, postgresJar)
+
+        context
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                service(ZMyBatisSettingsRemote::class).apply {
+                    setAutoFormatSql(false)
+                    setSqlPreview(false)
+                }
+
+                createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
+
+                openFile("PostgreSqlMutationQuery.xml")
+                ui.codeEditorForFile("PostgreSqlMutationQuery.xml").clickOnPosition(3, 20)
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                waitFor("zMyBatis PostgreSQL datasource chooser", timeout = 30.seconds) {
+                    ui.popups().list().isNotEmpty()
+                }
+                val dataSourceList = ui.popup().list()
+                dataSourceList.clickItem(POSTGRES_E2E_DATA_SOURCE_NAME, fullMatch = false)
+                dataSourceList.setFocus()
+                dataSourceList.keyboard { right() }
+                waitFor("PostgreSQL explicit public schema submenu", timeout = 3.minutes) {
+                    ui.popups().list().last().hasText("public")
+                }
+                ui.popups().list().last().waitOneText("public").click()
+
+                ui.dialog(title = "zMyBatis — SQL Preview") {
+                    assertEquals(
+                        "SELECT 0 AS RESULT_VALUE",
+                        textArea().text.trim(),
+                        "mutation declaration must force final-plan approval when sqlPreview=false",
+                    )
+                    button("Cancel").click()
                 }
                 ui.waitForNoOpenedDialogs()
 
-                val nativeGridOpened = try {
+                val resultGridOpened = try {
                     ui.accessibleTable {
                         byType("com.intellij.database.run.ui.table.TableResultView")
                     }.content()
@@ -368,9 +1034,32 @@ class ZMyBatisStarterDriverE2ETest {
                     false
                 }
                 assertFalse(
-                    nativeGridOpened,
-                    "bound registered execution must use zMyBatis prepared-result presentation, not native SQL-text result delivery",
+                    resultGridOpened,
+                    "cancelling mandatory mutation approval must not execute the declared mutation",
                 )
+            }
+    }
+
+    @Test
+    fun registeredProviderAnnotationFailsClosedWithExplicitNotice(@TempDir tempDir: Path) {
+        val projectDir = copySampleProject(tempDir.resolve("action-provider-unsupported-project"))
+        writeDirectJavaProviderMapper(projectDir)
+
+        starterContext("action-provider-unsupported", projectDir)
+            .runIdeWithDriver()
+            .useDriverAndCloseIde {
+                waitForIndicators(5.minutes)
+
+                openFile("JavaProviderMapper.java")
+                ui.codeEditorForFile("JavaProviderMapper.java").clickOnPosition(7, 12)
+                ideFrame {
+                    invokeAction("zMyBatis.Execute", now = false)
+                }
+
+                ui.dialog(title = "zMyBatis: Provider Not Supported") {
+                    button("OK").click()
+                }
+                ui.waitForNoOpenedDialogs()
             }
     }
 
@@ -445,6 +1134,7 @@ class ZMyBatisStarterDriverE2ETest {
                 textField(
                     "//div[contains(@visible_text, 'jdbc:postgresql:')]",
                 ).text = "jdbc:postgresql://127.0.0.1:5432/zmybatis?user=zmybatis"
+
                 textField(
                     "//div[@accessiblename='User:' and @class='JBTextField']",
                 ).text = "zmybatis"
@@ -621,7 +1311,7 @@ class ZMyBatisStarterDriverE2ETest {
                 createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
 
                 openFile("JavaRawQueryMapper.java")
-                ui.codeEditorForFile("JavaRawQueryMapper.java").clickOnPosition(8, 20)
+                ui.codeEditorForFile("JavaRawQueryMapper.java").clickOn("ping")
                 ideFrame {
                     invokeAction("zMyBatis.Execute", now = false)
                 }
@@ -638,12 +1328,7 @@ class ZMyBatisStarterDriverE2ETest {
                 }
                 ui.popups().list().last().waitOneText("public").click()
 
-                ui.dialog(title = "Enter MyBatis Parameters") {
-                    assertTrue(textField().text.isBlank(), "raw Java input must start without retained history")
-                    textField().text = "45001"
-                    rawConfirmation().click()
-                    button("OK").click()
-                }
+                submitRawParameterDialogValue("45001")
 
                 ui.dialog(title = "zMyBatis — SQL Preview") {
                     assertEquals(
@@ -669,26 +1354,19 @@ class ZMyBatisStarterDriverE2ETest {
                 )
 
                 openFile("JavaRawQueryMapper.java")
-                ui.codeEditorForFile("JavaRawQueryMapper.java").clickOnPosition(8, 20)
+                ui.codeEditorForFile("JavaRawQueryMapper.java").clickOn("ping")
                 ideFrame {
                     invokeAction("zMyBatis.Execute", now = false)
                 }
 
-                ui.dialog(title = "Enter MyBatis Parameters") {
-                    assertTrue(
-                        textField().text.isBlank(),
-                        "raw Java input must never be retained across registered-action invocations",
-                    )
-                    textField().text = "45002"
-                    rawConfirmation().click()
-                    button("OK").click()
-                }
+                submitRawParameterDialogValue("45002")
 
                 ui.dialog(title = "zMyBatis — SQL Preview") {
                     assertEquals(
                         executedSql,
                         textArea().text.trim(),
-                        "approved preview must equal the exact SQL submitted to Database Tools",
+                        "raw Java input must never be retained across registered-action invocations; " +
+                            "approved preview must equal the exact SQL submitted to Database Tools",
                     )
                     button("Execute").click()
                 }
@@ -739,6 +1417,45 @@ class ZMyBatisStarterDriverE2ETest {
                     waitForNoOpenedDialogs()
                 }
             }
+    }
+
+    private fun openTestCaseProjectWithPersistentPasswordSafe(
+        runContext: IDERunContext,
+    ): IDECommandLine {
+        if (SystemInfo.isLinux) {
+            // IntelliJ Starter's LocalIDEProcess intentionally rewrites security.xml to
+            // MEMORY_ONLY immediately before every Linux launch. That policy is correct for
+            // isolated one-process tests, but it makes a clean-process restart incapable of
+            // distinguishing zMyBatis target persistence from a deliberately discarded
+            // Database Tools credential. Override it at the later command-line boundary only
+            // for the restart acceptance scenario.
+            val securityFile = runContext.testContext.paths.configDir.resolve("options/security.xml")
+            Files.createDirectories(securityFile.parent)
+            Files.writeString(
+                securityFile,
+                """
+                <application>
+                  <component name="PasswordSafe">
+                    <option name="PROVIDER" value="KEEPASS" />
+                  </component>
+                </application>
+                """.trimIndent(),
+            )
+        }
+        return openTestCaseProject(runContext)
+    }
+
+    private fun assertRestartCredentialStorePersisted(configDir: Path) {
+        if (!SystemInfo.isLinux) return
+
+        assertTrue(
+            Files.isRegularFile(configDir.resolve("c.kdbx")),
+            "restart acceptance must persist Database Tools credentials in the Starter config KeePass store",
+        )
+        assertTrue(
+            Files.isRegularFile(configDir.resolve("c.pwd")),
+            "restart acceptance must persist the KeePass main-key file beside the credential database",
+        )
     }
 
     private fun starterContext(
@@ -837,6 +1554,159 @@ class ZMyBatisStarterDriverE2ETest {
         )
     }
 
+    private fun Driver.assertLoadedZMyBatisCandidate() {
+        val pluginId = utility(PluginIdRemote::class).getId(ZMYBATIS_PLUGIN_ID)
+        val detailsService = service(PluginDetailsServiceRemote::class)
+        assertTrue(
+            detailsService.isLoaded(pluginId),
+            "zMyBatis candidate must be loaded in the current IDE process",
+        )
+        val details = detailsService.findDetails(pluginId)
+        assertTrue(
+            details != null,
+            "PluginDetailsService must resolve the loaded zMyBatis candidate",
+        )
+        assertEquals(
+            expectedCandidateVersion,
+            details?.getVersion(),
+            "the current IDE process must load the exact validation candidate version",
+        )
+    }
+
+    private fun Driver.databaseCredentialsPromptOpened(): Boolean =
+        ui.isDialogOpened(
+            "//div[contains(@title, 'Connecting to') and .//div[@visible_text='Please provide database credentials.']]",
+        )
+
+    private fun Driver.invokeZMyBatisFromEditorPopup(
+        fileName: String,
+        statementMarker: String,
+    ) {
+        val editor = ui.codeEditorForFile(fileName)
+        editor.clickOn(statementMarker)
+        editor.clickOn(statementMarker, RemoteMouseButton.RIGHT)
+
+        val menu = ui.popupMenu()
+        val actionItem = menu.findMenuItemByText(EXECUTE_ACTION_TEXT)
+        assertEquals(
+            EXECUTE_ACTION_TEXT,
+            actionItem.getText(),
+            "real editor context menu must expose the registered zMyBatis action",
+        )
+        actionItem.click()
+
+        waitFor("real editor context menu closes after zMyBatis action click", timeout = 10.seconds) {
+            ui.popups().list().none { it.hasText(EXECUTE_ACTION_TEXT) }
+        }
+    }
+
+    private fun Driver.nativeResultContains(expectedValue: String): Boolean =
+        try {
+            ui.accessibleTable {
+                byType("com.intellij.database.run.ui.table.TableResultView")
+            }.content().values.any { row ->
+                row.values.any { cell -> cell.trim() == expectedValue }
+            }
+        } catch (_: com.intellij.driver.sdk.WaitForException) {
+            false
+        }
+
+    private fun Driver.openZMyBatisExecutionFailureTitle(): String? =
+        listOf(
+            "zMyBatis: Execution Context Unavailable",
+            "zMyBatis: Mapper Source Resolution Interrupted",
+            "zMyBatis: Mapper Source Not Executable",
+            "zMyBatis: Execution Target Unavailable",
+            "zMyBatis: Database Console Unavailable",
+            "zMyBatis: Database Console Selection Unavailable",
+            "zMyBatis: Execution Refused",
+        ).firstOrNull { title ->
+            ui.isDialogOpened("//div[@title='$title']")
+        }
+
+    private fun Driver.assertNoZMyBatisExecutionFailure(stage: String) {
+        val failureTitle = openZMyBatisExecutionFailureTitle()
+        assertTrue(
+            failureTitle == null,
+            "$stage must not stop at an explicit zMyBatis refusal; got: $failureTitle",
+        )
+    }
+
+    /**
+     * Submit the single required parameter through the visible dialog exactly as a user would.
+     *
+     * Do not mutate JTextComponent state through Remote Driver JMX here. Build #2027 proved that
+     * a modal text set/get call can remain blocked until Starter's whole-IDE timeout even while
+     * the dialog itself stays healthy and responsive. Robot keyboard input keeps this acceptance
+     * path on the user-visible UI surface and lets missing/invalid dialogs fail at the normal
+     * component lookup boundary instead of hanging the IDE process.
+     */
+    private fun Driver.submitSingleParameterDialogValue(value: String) {
+        ui.dialog(title = PARAMETER_DIALOG_TITLE) {
+            val field = textField()
+            field.click()
+            field.keyboard {
+                typeText(value)
+            }
+            button("OK").click()
+        }
+    }
+
+    private fun Driver.submitRawParameterDialogValue(value: String) {
+        ui.dialog(title = PARAMETER_DIALOG_TITLE) {
+            val field = textField()
+            field.click()
+            field.keyboard {
+                typeText(value)
+            }
+            rawConfirmation().click()
+            button("OK").click()
+        }
+    }
+
+    private fun writeDirectJavaProviderMapper(projectDir: Path) {
+        val annotationDir = Files.createDirectories(
+            projectDir.resolve("org/apache/ibatis/annotations"),
+        )
+        Files.writeString(
+            annotationDir.resolve("SelectProvider.java"),
+            """
+            package org.apache.ibatis.annotations;
+
+            public @interface SelectProvider {
+                Class<?> type();
+                String method();
+            }
+            """.trimIndent(),
+        )
+
+        Files.writeString(
+            projectDir.resolve("SqlProvider.java"),
+            """
+            package fixture;
+
+            public final class SqlProvider {
+                public static String sql() {
+                    return "SELECT 1";
+                }
+            }
+            """.trimIndent(),
+        )
+        Files.writeString(
+            projectDir.resolve("JavaProviderMapper.java"),
+            """
+            package fixture;
+
+            import org.apache.ibatis.annotations.SelectProvider;
+
+            public interface JavaProviderMapper {
+                @SelectProvider(type = SqlProvider.class, method = "sql")
+                Object ping();
+            }
+            """.trimIndent(),
+        )
+    }
+
     private fun writeDirectJavaRawMapper(projectDir: Path) {
         // The Starter sample is intentionally build-tool-free. Minimal source stubs give Java PSI
         // resolvable MyBatis annotation FQNs; real MyBatis 3.6.0 annotation resolution is already
@@ -885,6 +1755,128 @@ class ZMyBatisStarterDriverE2ETest {
             }
             """.trimIndent(),
         )
+    }
+
+    private fun writeRestartLifecycleMapperProject(
+        projectDir: Path,
+        firstZeroResult: Long,
+        reopenedZeroResult: Long,
+        boundDelta: Long,
+    ) {
+        Files.writeString(
+            projectDir.resolve("RestartLifecycleMapper.xml"),
+            """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.RestartLifecycleMapper">
+            <select id="beforeRestart">SELECT $firstZeroResult AS RESULT_VALUE</select>
+            <select id="afterRestart">SELECT $reopenedZeroResult AS RESULT_VALUE</select>
+            <select id="boundValue">SELECT #{value,jdbcType=BIGINT}::BIGINT + $boundDelta AS RESULT_VALUE</select>
+            </mapper>
+            """.trimIndent(),
+        )
+
+        val packageDir = Files.createDirectories(projectDir.resolve("fixture"))
+        Files.writeString(
+            packageDir.resolve("RestartLifecycleMapper.java"),
+            """
+            package fixture;
+
+            public interface RestartLifecycleMapper {
+                Object beforeRestart();
+                Object afterRestart();
+                Object boundValue(long value);
+            }
+            """.trimIndent(),
+        )
+    }
+
+    private fun writeEditorPopupContextMapperProject(
+        projectDir: Path,
+        zeroResult: Long,
+        boundDelta: Long,
+    ) {
+        Files.writeString(
+            projectDir.resolve("EditorPopupMapper.xml"),
+            """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.EditorPopupMapper">
+            <select id="zeroBinding">SELECT $zeroResult AS RESULT_VALUE</select>
+            <select id="boundValue">SELECT #{value,jdbcType=BIGINT}::BIGINT + $boundDelta AS RESULT_VALUE</select>
+            </mapper>
+            """.trimIndent(),
+        )
+
+        val packageDir = Files.createDirectories(projectDir.resolve("fixture"))
+        Files.writeString(
+            packageDir.resolve("EditorPopupMapper.java"),
+            """
+            package fixture;
+
+            public interface EditorPopupMapper {
+                Object zeroBinding();
+                Object boundValue(long value);
+            }
+            """.trimIndent(),
+        )
+    }
+
+    private fun writeLargeCrossDocumentMapperProject(projectDir: Path): Int {
+        Files.writeString(
+            projectDir.resolve("LargeProjectMapper.xml"),
+            """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.LargeProjectMapper">
+            <select id="zeroBinding">SELECT <include refid="fixture.SharedFragments.zeroValue"/> AS RESULT_VALUE</select>
+            <select id="boundValue">SELECT #{value,jdbcType=BIGINT}::BIGINT + <include refid="fixture.SharedFragments.boundDelta"/> AS RESULT_VALUE</select>
+            </mapper>
+            """.trimIndent(),
+        )
+        Files.writeString(
+            projectDir.resolve("SharedFragments.xml"),
+            """
+            <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+            <mapper namespace="fixture.SharedFragments">
+            <sql id="zeroValue">7007</sql>
+            <sql id="boundDelta">1</sql>
+            </mapper>
+            """.trimIndent(),
+        )
+
+        val packageDir = Files.createDirectories(projectDir.resolve("fixture"))
+        Files.writeString(
+            packageDir.resolve("LargeProjectMapper.java"),
+            """
+            package fixture;
+
+            public interface LargeProjectMapper {
+                Object zeroBinding();
+                Object boundValue(long value);
+            }
+            """.trimIndent(),
+        )
+
+        val inertPayload = "x".repeat(4 * 1024)
+        var mapperCount = 2
+        repeat(8) { moduleIndex ->
+            val mapperDir = Files.createDirectories(
+                projectDir.resolve("module-$moduleIndex/src/main/resources/mappers"),
+            )
+            repeat(32) { mapperIndex ->
+                val mapperName = "NoiseMapper%02d_%02d".format(moduleIndex, mapperIndex)
+                Files.writeString(
+                    mapperDir.resolve("$mapperName.xml"),
+                    """
+                    <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+                    <mapper namespace="fixture.noise.module$moduleIndex.$mapperName">
+                    <!-- $inertPayload -->
+                    <sql id="fragment">$mapperIndex</sql>
+                    </mapper>
+                    """.trimIndent(),
+                )
+                mapperCount += 1
+            }
+        }
+        return mapperCount
     }
 
     private fun writeMapperInterface(

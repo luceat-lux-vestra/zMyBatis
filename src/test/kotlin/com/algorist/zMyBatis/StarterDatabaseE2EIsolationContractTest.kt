@@ -33,6 +33,247 @@ class StarterDatabaseE2EIsolationContractTest {
     }
 
     @Test
+    fun `IDEA process artifact identity must match the maintained 2026 3 host claim`() {
+        val workflow = source(".github/workflows/e2e.yml")
+
+        assertTrue(
+            "IDEA E2E identity must record the maintained 2026.3 host release",
+            workflow.contains("echo \"ide_release=2026.3\""),
+        )
+        assertFalse(
+            "IDEA E2E identity must not regress to the retired 2026.2.3 release label",
+            workflow.contains("echo \"ide_release=2026.2.3\""),
+        )
+        assertTrue(workflow.contains("name: e2e-artifact-identity"))
+    }
+
+    @Test
+    fun `IDEA parameter input stays on the user visible Robot surface`() {
+        val e2e = source(
+            "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
+        )
+        val helperStart = e2e.indexOf(
+            "private fun Driver.submitSingleParameterDialogValue",
+        )
+        val helperEnd = e2e.indexOf("private fun writeDirectJavaProviderMapper", helperStart)
+        assertTrue("Robot parameter submission helper must exist", helperStart >= 0 && helperEnd > helperStart)
+
+        val helper = e2e.substring(helperStart, helperEnd)
+        assertTrue(
+            "parameter input helper must retain explicit Driver receiver authority",
+            helper.contains("private fun Driver.submitSingleParameterDialogValue"),
+        )
+        assertTrue(helper.contains("ui.dialog(title = PARAMETER_DIALOG_TITLE)"))
+        assertTrue(helper.contains("val field = textField()"))
+        assertTrue(helper.contains("field.click()"))
+        assertTrue(helper.contains("field.keyboard"))
+        assertTrue(helper.contains("typeText(value)"))
+        assertTrue(helper.contains("button(\"OK\").click()"))
+        assertFalse(
+            "parameter acceptance must not use unbounded Remote Driver text mutation/read-back",
+            helper.contains("field.text") ||
+                helper.contains("while (true)"),
+        )
+        assertFalse(
+            "the retired JMX/EOF recovery policy must stay absent from IDEA E2E source",
+            e2e.contains("setSingleParameterDialogTextWithTransportRecovery") ||
+                e2e.contains("REMOTE_DRIVER_HIERARCHY_EOF_MAX_ATTEMPTS") ||
+                e2e.contains("ZMYBATIS_E2E_REMOTE_DRIVER_RECOVERY") ||
+                e2e.contains("isRemoteDriverHierarchyEof"),
+        )
+        assertFalse(
+            "parameter helper must never invoke the registered product action",
+            helper.contains("invokeAction("),
+        )
+        assertFalse(
+            "parameter helper must never own SQL or Database Tools execution",
+            helper.contains("doRunQueryInConsole") ||
+                helper.contains("TableResultView") ||
+                helper.contains("SQL Preview"),
+        )
+
+        val scenarioStart = e2e.indexOf(
+            "fun registeredActionExecutesBuiltInParameterTypeThroughNativeResult",
+        )
+        val scenarioEnd = e2e.indexOf("@Test", scenarioStart + 1)
+        assertTrue("parameterType scenario must remain present", scenarioStart >= 0 && scenarioEnd > scenarioStart)
+        val scenario = e2e.substring(scenarioStart, scenarioEnd)
+        assertTrue(scenario.contains("submitSingleParameterDialogValue(\"41\")"))
+    }
+
+    @Test
+    fun `IDEA editor popup reproducer uses the real context menu action surface`() {
+        val e2e = source(
+            "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
+        )
+
+        val scenarioStart = e2e.indexOf(
+            "fun editorPopupMenuPreservesMapperContextForZeroAndBoundExecution",
+        )
+        val scenarioEnd = e2e.indexOf("@Test", scenarioStart + 1)
+        assertTrue("editor-popup reproducer must exist", scenarioStart >= 0 && scenarioEnd > scenarioStart)
+        val scenario = e2e.substring(scenarioStart, scenarioEnd)
+
+        assertTrue(scenario.contains("statementMarker = \"zeroBinding\""))
+        assertTrue(scenario.contains("statementMarker = \"boundValue\""))
+        assertTrue(scenario.contains("real EditorPopupMenu invocation must preserve mapper context through actionPerformed"))
+        assertTrue(scenario.contains("persisted editor-popup target must bypass datasource/schema chooser"))
+        assertTrue(scenario.contains("nativeResultContains(zeroResult.toString())"))
+        assertTrue(scenario.contains("nativeResultContains(expectedBoundResult)"))
+        assertFalse(
+            "editor-popup reproducer must not bypass the UI by invoking the action id directly",
+            scenario.contains("invokeAction(\"zMyBatis.Execute\""),
+        )
+
+        val helperStart = e2e.indexOf("private fun Driver.invokeZMyBatisFromEditorPopup")
+        val helperEnd = e2e.indexOf(
+            "private fun Driver.nativeResultContains",
+            helperStart,
+        )
+        assertTrue("editor-popup invocation helper must exist", helperStart >= 0 && helperEnd > helperStart)
+        val helper = e2e.substring(helperStart, helperEnd)
+
+        assertTrue(helper.contains("editor.clickOn(statementMarker, RemoteMouseButton.RIGHT)"))
+        assertTrue(helper.contains("ui.popupMenu()"))
+        assertTrue(helper.contains("findMenuItemByText(EXECUTE_ACTION_TEXT)"))
+        assertTrue(helper.contains("actionItem.click()"))
+        assertFalse(
+            "real editor-popup helper must never fall back to direct action-id invocation",
+            helper.contains("invokeAction("),
+        )
+    }
+
+    @Test
+    fun `IDEA restart reproducer must reuse one config and verify the loaded candidate before persisted execution`() {
+        val e2e = source(
+            "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
+        )
+        val scenarioStart = e2e.indexOf(
+            "fun restartedIdeReusesSameStarterConfigAndExactCandidateForPersistedExecution",
+        )
+        val scenarioEnd = e2e.indexOf("@Test", scenarioStart + 1)
+        assertTrue("restart lifecycle scenario must remain present", scenarioStart >= 0 && scenarioEnd > scenarioStart)
+        val scenario = e2e.substring(scenarioStart, scenarioEnd)
+
+        assertTrue(
+            "restart proof must create one Starter context and launch that same context twice with persistent credentials",
+            scenario.split("starterContext(").size - 1 == 1 &&
+                scenario.split(
+                    ".runIdeWithDriver(commandLine = ::openTestCaseProjectWithPersistentPasswordSafe)",
+                ).size - 1 == 2,
+        )
+        assertTrue(
+            "restart proof must read back the persistent credential store before reopening",
+            scenario.contains("assertRestartCredentialStorePersisted(configDir)"),
+        )
+        assertTrue(
+            "both IDE processes must assert the exact loaded zMyBatis candidate",
+            scenario.split("assertLoadedZMyBatisCandidate()").size - 1 == 2,
+        )
+        assertTrue(
+            "restart proof must require target reuse instead of silently reselecting it",
+            scenario.contains("persisted target must survive close/reopen without asking for datasource/schema again") &&
+                scenario.contains("reopened bound execution must not silently switch or reselect the persisted target"),
+        )
+        assertTrue(
+            "restart proof must exercise fresh zero-binding and bound results after reopen",
+            scenario.contains("statementMarker = \"afterRestart\"") &&
+                scenario.contains("statementMarker = \"boundValue\"") &&
+                scenario.contains("submitSingleParameterDialogValue"),
+        )
+        assertTrue(
+            "restart proof must classify Database Tools credential drift explicitly instead of timing out as a false product no-op",
+            scenario.contains("databaseCredentialsPromptOpened()") &&
+                scenario.contains("reopened execution must not depend on session-only Database Tools credentials") &&
+                scenario.contains("reopened bound execution must not require interactive Database Tools credentials"),
+        )
+
+        val dataSourceHelperStart = e2e.indexOf(
+            "private fun Driver.createPostgreSqlDataSourceThroughDatabaseTools",
+        )
+        val dataSourceHelperEnd = e2e.indexOf(
+            "private fun readPostgreSqlDataSourceId",
+            dataSourceHelperStart,
+        )
+        assertTrue(
+            "PostgreSQL Database Tools datasource helper must remain present",
+            dataSourceHelperStart >= 0 && dataSourceHelperEnd > dataSourceHelperStart,
+        )
+        val dataSourceHelper = e2e.substring(dataSourceHelperStart, dataSourceHelperEnd)
+        assertTrue(
+            "Database Tools datasource creation must keep the maintained user/password UI path",
+            dataSourceHelper.contains("@accessiblename='User:'") &&
+                dataSourceHelper.contains("@accessiblename='Password:'"),
+        )
+        assertFalse(
+            "datasource creation must not mutate authentication mode just to satisfy restart infrastructure",
+            dataSourceHelper.contains("No auth") ||
+                dataSourceHelper.contains("databaseAuthenticationCombo") ||
+                dataSourceHelper.contains("byAccessibleName(\"User & Password\")") ||
+                dataSourceHelper.contains("@visible_text='Authentication:'"),
+        )
+
+        val credentialPolicyStart = e2e.indexOf(
+            "private fun openTestCaseProjectWithPersistentPasswordSafe",
+        )
+        val credentialPolicyEnd = e2e.indexOf("private fun starterContext", credentialPolicyStart)
+        assertTrue(
+            "restart credential policy helper must remain present",
+            credentialPolicyStart >= 0 && credentialPolicyEnd > credentialPolicyStart,
+        )
+        val credentialPolicy = e2e.substring(credentialPolicyStart, credentialPolicyEnd)
+        assertTrue(
+            "Linux restart proof must override Starter MEMORY_ONLY at the later command-line boundary",
+            credentialPolicy.contains("SystemInfo.isLinux") &&
+                credentialPolicy.contains("options/security.xml") &&
+                credentialPolicy.contains("value=\"KEEPASS\"") &&
+                credentialPolicy.contains("openTestCaseProject(runContext)"),
+        )
+        assertTrue(
+            "restart proof must require durable KeePass artifacts after the first clean shutdown",
+            credentialPolicy.contains("configDir.resolve(\"c.kdbx\")") &&
+                credentialPolicy.contains("configDir.resolve(\"c.pwd\")"),
+        )
+        assertFalse(
+            "the two failed Authentication-combo locator strategies must stay retired",
+            e2e.contains("private fun Finder.databaseAuthenticationCombo") ||
+                e2e.contains("following::div[@class='ComboBoxButton'][1]") ||
+                e2e.contains("contains(byAccessibleName(\"User & Password\"))"),
+        )
+
+        val promptHelperStart = e2e.indexOf("private fun Driver.databaseCredentialsPromptOpened")
+        val promptHelperEnd = e2e.indexOf("private fun Driver.invokeZMyBatisFromEditorPopup", promptHelperStart)
+        assertTrue(
+            "credential prompt classifier must remain explicit and bounded",
+            promptHelperStart >= 0 && promptHelperEnd > promptHelperStart,
+        )
+        val promptHelper = e2e.substring(promptHelperStart, promptHelperEnd)
+        assertTrue(promptHelper.contains("Please provide database credentials."))
+
+        val identityHelperStart = e2e.indexOf("private fun Driver.assertLoadedZMyBatisCandidate")
+        val identityHelperEnd = e2e.indexOf("private fun Driver.invokeZMyBatisFromEditorPopup", identityHelperStart)
+        assertTrue(
+            "runtime candidate identity helper must remain present",
+            identityHelperStart >= 0 && identityHelperEnd > identityHelperStart,
+        )
+        val identityHelper = e2e.substring(identityHelperStart, identityHelperEnd)
+        assertTrue(identityHelper.contains("PluginDetailsServiceRemote"))
+        assertTrue(identityHelper.contains("expectedCandidateVersion"))
+        assertFalse(
+            "runtime identity proof must use the maintained PluginDetailsService instead of internal PluginManagerCore",
+            identityHelper.contains("PluginManagerCore"),
+        )
+
+        val workflow = source(".github/workflows/e2e.yml")
+        assertTrue(
+            "IDEA workflow must pass the resolved candidate version into the IDE process identity proof",
+            workflow.contains(
+                "echo \"ZMYBATIS_E2E_CANDIDATE_VERSION=\$candidate_version\" >> \"\$GITHUB_ENV\"",
+            ),
+        )
+    }
+
+    @Test
     fun `process golden path must reuse one maintained PostgreSQL Database Tools stack`() {
         val e2e = source(
             "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
@@ -49,9 +290,9 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("connectAndPrimeH2DatabaseToolsSchemaMetadata"),
         )
         assertTrue(
-            "zero-binding native and multi-binding prepared proofs must reuse the maintained PostgreSQL datasource creation path",
+            "zero-binding and multi-binding native-result proofs must reuse the maintained PostgreSQL datasource creation path",
             e2e.contains("registeredActionExecutesZeroBindingQueryThroughRealDatabaseTools") &&
-                e2e.contains("registeredActionExecutesMultiBindingPlanThroughPreparedResultPresentation") &&
+                e2e.contains("registeredActionExecutesMultiBindingPlanThroughNativeResult") &&
                 e2e.contains("createPostgreSqlDataSourceThroughDatabaseTools(projectDir)") &&
                 e2e.contains("POSTGRES_E2E_DATA_SOURCE_NAME") &&
                 e2e.contains("waitOneText(\"public\")"),
@@ -91,22 +332,114 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("raw Java input must never be retained across registered-action invocations") &&
                 e2e.contains("assertNativePostgreSqlHistoryContainsAndExcludes"),
         )
+
+        val javaRawScenarioStart = e2e.indexOf(
+            "fun registeredJavaAnnotationRawInterpolationExecutesExactApprovedSql",
+        )
+        val javaRawScenarioEnd = e2e.indexOf("@Test", javaRawScenarioStart + 1)
+        assertTrue(
+            "direct Java raw scenario must remain present",
+            javaRawScenarioStart >= 0 && javaRawScenarioEnd > javaRawScenarioStart,
+        )
+        val javaRawScenario = e2e.substring(javaRawScenarioStart, javaRawScenarioEnd)
+        assertTrue(
+            "Java mapper execution context must be anchored to the method marker instead of a layout-dependent line and column",
+            javaRawScenario.split("clickOn(\"ping\")").size - 1 == 2,
+        )
         assertFalse(
-            "mutation confirmation belongs to lower-level Leap approval evidence rather than a duplicate process datasource scenario",
-            e2e.contains("registeredMutationDeclarationForcesPreviewWhenSettingDisabled"),
+            "Java mapper acceptance must not depend on the old @Param-area line/column coordinate",
+            javaRawScenario.contains("clickOnPosition(8, 20)"),
         )
         assertTrue(
-            "bound PostgreSQL proof must require multiple JDBC bindings and zMyBatis prepared-result presentation",
-            e2e.contains("registeredActionExecutesMultiBindingPlanThroughPreparedResultPresentation") &&
-                e2e.contains("preparedSql.count { it == '?' }") &&
-                e2e.contains("Regex(\"\"\"#\\d+ property=value\"\"\")") &&
-                e2e.contains("zMyBatis: Query Result") &&
-                e2e.contains("com.intellij.ui.table.JBTable") &&
-                e2e.contains("prepared approval must not literalize the bound value") &&
-                e2e.contains("bound registered execution must use zMyBatis prepared-result presentation"),
+            "both direct Java raw invocations must use the Robot-backed raw parameter helper",
+            javaRawScenario.contains("submitRawParameterDialogValue(\"45001\")") &&
+                javaRawScenario.contains("submitRawParameterDialogValue(\"45002\")"),
         )
         assertFalse(
-            "prepared registered-action proof must not reconstruct the retired BIGINT materialized artifact",
+            "direct Java raw acceptance must not mutate modal text through JTextComponentRemote",
+            javaRawScenario.contains("textField().text =") ||
+                javaRawScenario.contains("textField().text.isBlank()"),
+        )
+
+        val rawParameterHelperStart = e2e.indexOf(
+            "private fun Driver.submitRawParameterDialogValue",
+        )
+        val rawParameterHelperEnd = e2e.indexOf(
+            "private fun writeDirectJavaProviderMapper",
+            rawParameterHelperStart,
+        )
+        assertTrue(
+            "Robot raw parameter helper must remain present",
+            rawParameterHelperStart >= 0 && rawParameterHelperEnd > rawParameterHelperStart,
+        )
+        val rawParameterHelper = e2e.substring(rawParameterHelperStart, rawParameterHelperEnd)
+        assertTrue(rawParameterHelper.contains("field.click()"))
+        assertTrue(rawParameterHelper.contains("field.keyboard"))
+        assertTrue(rawParameterHelper.contains("typeText(value)"))
+        assertTrue(rawParameterHelper.contains("rawConfirmation().click()"))
+        assertTrue(rawParameterHelper.contains("button(\"OK\").click()"))
+        assertFalse(
+            "raw parameter helper must stay off low-level text mutation",
+            rawParameterHelper.contains("field.text"),
+        )
+        assertTrue(
+            "P5 packaged acceptance must prove mutation declaration forces approval even when ordinary preview is disabled",
+            e2e.contains("registeredMutationDeclarationForcesPreviewWhenSettingDisabled") &&
+                e2e.contains("mutation declaration must force final-plan approval when sqlPreview=false") &&
+                e2e.contains("cancelling mandatory mutation approval must not execute the declared mutation"),
+        )
+        assertTrue(
+            "P5 packaged acceptance must prove target-derived databaseId selects the PostgreSQL variant",
+            e2e.contains("registeredActionSelectsTargetDatabaseIdVariant") &&
+                e2e.contains("databaseId=\"PostgreSQL\"") &&
+                e2e.contains("SELECT 2620 AS RESULT_VALUE") &&
+                e2e.contains("SELECT 2600 AS RESULT_VALUE") &&
+                e2e.contains("target-derived PostgreSQL databaseId variant must win over the default variant"),
+        )
+        assertTrue(
+            "P5 packaged acceptance must keep Provider annotations explicitly fail-closed at the action edge",
+            e2e.contains("registeredProviderAnnotationFailsClosedWithExplicitNotice") &&
+                e2e.contains("writeDirectJavaProviderMapper(projectDir)") &&
+                e2e.contains("@SelectProvider(type = SqlProvider.class, method = \"sql\")") &&
+                e2e.contains("zMyBatis: Provider Not Supported"),
+        )
+        assertTrue(
+            "real-project regression must cover large cross-document mapper expansion plus persisted-target bound and zero-binding UX",
+            e2e.contains("registeredActionReusesPersistedTargetAcrossLargeCrossDocumentMapperProject") &&
+                e2e.contains("writeLargeCrossDocumentMapperProject(projectDir)") &&
+                e2e.contains("generated_mapper_xml_count=") &&
+                e2e.contains("noise_mapper_count=256") &&
+                e2e.contains("fixture.SharedFragments.zeroValue") &&
+                e2e.contains("fixture.SharedFragments.boundDelta") &&
+                e2e.contains("setSqlPreview(false)") &&
+                e2e.contains("persisted target must bypass datasource/schema chooser on the second invocation") &&
+                e2e.contains("persisted target plus large mapper expansion must reach the parameter dialog") &&
+                e2e.contains("large-project zero-binding native result becomes visible") &&
+                e2e.contains("large-project bound native result becomes visible"),
+        )
+
+        assertTrue(
+            "bound PostgreSQL proof must materialize multiple bindings and land in the native Database Tools grid",
+            e2e.contains("registeredActionExecutesMultiBindingPlanThroughNativeResult") &&
+                e2e.contains("executableSql.count { it == '?' }") &&
+                e2e.contains("Regex(\"\"\"#\\d+ property=value\"\"\")") &&
+                e2e.contains("com.intellij.database.run.ui.table.TableResultView") &&
+                e2e.contains("SELECT 7::BIGINT AS RESULT_VALUE") &&
+                e2e.contains("retired zMyBatis result modal"),
+        )
+        assertTrue(
+            "P5 packaged parity must prove built-in parameterType metadata reaches native materialized execution",
+            e2e.contains("registeredActionExecutesBuiltInParameterTypeThroughNativeResult") &&
+                e2e.contains("parameterType=\"long\"") &&
+                e2e.contains("SELECT 41::BIGINT AS RESULT_VALUE") &&
+                e2e.contains("#1 property=value") &&
+                e2e.contains("javaType=java.lang.Long") &&
+                e2e.contains("handler=org.apache.ibatis.type.LongTypeHandler") &&
+                e2e.contains("com.intellij.database.run.ui.table.TableResultView") &&
+                e2e.contains("retired zMyBatis result modal"),
+        )
+        assertFalse(
+            "registered-action proof must not resurrect the retired one-off BIGINT materializer helper",
             e2e.contains("stockPostgreSqlBigintArtifact") ||
                 e2e.contains("PostgreSqlBigintExecutionMaterializer") ||
                 e2e.contains("positiveArtifact.executionSql") ||

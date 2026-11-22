@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="fixture.PendingResultTypeMapper">
-    <!-- R04: NOT a release PASS case while #510 is open. -->
+<mapper namespace="fixture.ParityResultTypeMapper">
+    <!-- R04: P5 parity acceptance case — resultType metadata must not block SQL preparation. -->
     <select id="findAllWithResultType" resultType="fixture.Product">
         SELECT id, name, active
         FROM products

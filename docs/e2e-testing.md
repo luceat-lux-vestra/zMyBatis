@@ -23,26 +23,52 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
    - selects the exact datasource plus explicit `public` schema through the shipping chooser;
    - observes the real `SqlPreviewDialog` and requires its SQL to equal the exact DB-neutral zero-binding artifact text;
    - clicks `Execute` and waits for a real Database Tools `TableResultView` cell containing the expected value.
-3. **Registered-action / PostgreSQL BIGINT nonzero golden path**
+3. **Registered-action / multi-binding prepared golden path**
    - reuses the same maintained PostgreSQL datasource creation boundary;
-   - invokes the same registered `zMyBatis.Execute` action for a mapper with one `#{value,jdbcType=BIGINT}` binding and stock-MyBatis dynamic `<if>`;
-   - selects the exact datasource + `public` schema, enters the scalar through `ContractParameterInputDialog`, and requires preview text to equal the independently materialized artifact;
-   - executes positive and negative cases, observes native result-grid values, and verifies both exact SQL texts persist in native Database Tools history.
-4. **Registered XML raw-interpolation confirmation path**
+   - invokes the registered `zMyBatis.Execute` action for a mapper whose one caller input expands to two ordered BIGINT JDBC bindings;
+   - selects the exact datasource + `public` schema and requires approval preview to retain two `?` placeholders plus value-hidden binding metadata;
+   - explicitly rejects literalized bound SQL;
+   - executes through `DatabaseSessionPreparedBackend` and requires the bounded `zMyBatis: Query Result` presentation to contain both result values;
+   - proves the bound path does not surface through the native Database Tools `TableResultView`.
+4. **Promoted ordinary-mapper metadata / built-in parameterType path**
+   - carries the historical #510 R05 claim into the exact packaged registered action;
+   - declares `parameterType="long"` on the XML statement rather than stripping or rejecting it during whole-document preflight;
+   - enters one scalar through the normal contract dialog and requires placeholder SQL plus Long/BIGINT/LongTypeHandler binding metadata;
+   - executes through `DatabaseSessionPreparedBackend`, observes the zMyBatis prepared-result table, and rejects native-grid/literalized-SQL fallback.
+5. **Target-derived databaseId selection path**
+   - declares both PostgreSQL-specific and default variants for one XML statement id;
+   - selects the real PostgreSQL datasource + explicit `public` schema through production UI;
+   - requires preview/result `2620` from the PostgreSQL variant and rejects the default `2600` result.
+6. **Mutation-declaration approval path**
+   - declares an XML `<update>` while ordinary SQL Preview is disabled;
+   - requires the final-plan preview anyway because statement kind is mutation evidence;
+   - cancels approval and proves no Database Tools result grid is created.
+7. **Unsupported Provider annotation path**
+   - opens a real direct Java `@SelectProvider` method in the packaged IDE;
+   - invokes the registered action and requires the explicit `zMyBatis: Provider Not Supported` notice;
+   - no datasource or alternate execution route is involved.
+8. **Registered XML raw-interpolation confirmation path**
    - declares `${}` in the XML mapper while using a real Java mapper method for caller-input authority;
    - reuses the maintained PostgreSQL datasource/explicit-schema path;
    - verifies raw interpolation forces final-SQL preview even when the ordinary preview setting is disabled;
    - cancels at approval and proves no native result grid is created.
-5. **Registered direct-Java-annotation raw-interpolation path**
+9. **Registered direct-Java-annotation raw-interpolation path**
    - opens a real Java mapper method with direct `@Select` plus explicit `@Param` provenance and invokes the registered `zMyBatis.Execute` action from that source;
    - uses the same maintained PostgreSQL datasource/explicit-schema lifecycle and keeps `sqlPreview=false` so raw interpolation itself must force approval;
    - cancels one exact raw artifact and proves it creates neither a native result grid nor native query-history entry;
    - invokes the same method again, proves the prior raw value was not retained, approves a different exact SQL artifact, observes its native result value, and verifies only the executed artifact reaches Database Tools history;
    - the build-tool-free Starter sample supplies minimal source stubs for the MyBatis annotation FQNs so Java PSI can resolve the direct annotation; real MyBatis 3.6.0 annotation resolution remains independently covered by the Java source-adapter project fixture.
-6. **Registered-action fail-closed path**
+10. **Registered-action fail-closed no-datasource path**
    - opens the mapper fixture in a fresh IDE process without any datasource;
    - invokes the real production action from the supported statement context;
    - requires the typed `zMyBatis: Execution Target Unavailable` refusal instead of preparation or execution.
+11. **Large multi-mapper / persisted-target registered-action regression**
+   - generates 256 inert mapper XML documents across eight module-shaped resource trees plus one root mapper and one shared-fragment mapper;
+   - uses qualified cross-document `<include>` references so the shipping action must traverse the real lazy project-expansion/source-selection boundary instead of the root-only fast path;
+   - runs the zero-binding statement with ordinary SQL Preview disabled, selects PostgreSQL + explicit `public`, and requires native result value `7007`;
+   - invokes a bound statement from the **same mapper file** so the exact persisted target must be reused with no datasource/schema chooser;
+   - requires the parameter dialog to become reachable under that real-project mapper load, submits `41`, and requires native Database Tools result value `42`;
+   - emits `ZMYBATIS_E2E_REAL_PROJECT_SCALE` observations for generated mapper count and visible-action phases. The bounded waits are liveness guards, not latency SLAs.
 
 No production method exists solely for this harness. The process database stack uses only pinned pgJDBC on the `integrationTestImplementation` graph; before IDE startup, the test copies that JAR into the isolated Starter config and records it as a local Driver Files library. Driver then creates and persists the datasource through maintained Database Tools UI, refreshes Database Tools, and selects explicit `public` through shipping UI. Connectivity is proven by the downstream packaged zMyBatis execution reaching native Database Tools result/history evidence rather than by the separate asynchronous Test Connection UI lifecycle. No H2-specific cold-datasource/introspection harness participates in #448 evidence.
 
@@ -50,14 +76,15 @@ No production method exists solely for this harness. The process database stack 
 
 `ZMyBatisDataGripStarterDriverE2ETest` is a separate host proof against DataGrip 2026.3. It never treats the IDEA Ultimate suite as DataGrip evidence.
 
-It installs the exact same packaged plugin ZIP and proves two bounded claims:
+It installs the exact same packaged plugin ZIP and proves three bounded claims:
 
 1. **Packaged plugin/service smoke** — DataGrip starts under a strict Starter `CIServer` failure boundary with no IDEA-only exception exemption, the zMyBatis plugin loads, and the shipping `ZMyBatisSettings` service is callable.
 2. **Registered XML action fail-closed path** — a real XML mapper is opened in DataGrip, the registered `zMyBatis.Execute` action is invoked, and with no datasource configured the shipping path reaches the typed `zMyBatis: Execution Target Unavailable` refusal without an IDE fatal error or stale dialog.
+3. **Bounded XML prepared PostgreSQL path** — the DataGrip job starts the same pinned PostgreSQL image, registers a pinned local pgJDBC driver through Database Tools, selects the explicit `public` schema, and executes an XML-only `<bind>`-generated BIGINT binding through `DatabaseSessionPreparedBackend`. The preview must keep `?`, the zMyBatis prepared-result dialog must contain `41`, and the bound path must not surface as native `TableResultView` delivery.
 
 Each scenario closes its DataGrip process through `useDriverAndCloseIde` and emits a `ZMYBATIS_HOST_EVIDENCE host=DATAGRIP` record with release, scenario, result, shutdown state and observed duration. These durations are observations, not latency SLAs.
 
-This host smoke deliberately does **not** claim Java-annotation parity or successful native PostgreSQL execution in DataGrip. Java PSI availability is not inferred from IDEA Ultimate, and the maintained IU PostgreSQL golden path remains separate. DataGrip 2026.3 Plugin Verifier evidence is required alongside this process smoke; the minimum IDE build is 263.
+This host proof deliberately does **not** claim Java-annotation parity, native Database Tools result/history parity, every DBMS/dialect, or IDEA's broader PostgreSQL scenario matrix. The prepared case is XML-only and uses zMyBatis result presentation. Java PSI availability is not inferred from IDEA Ultimate, and the maintained IU PostgreSQL golden path remains the full host authority. DataGrip 2026.3 Plugin Verifier evidence is required alongside this process proof; the minimum IDE build is 263.
 
 ## Local execution
 
@@ -70,7 +97,7 @@ Run each host suite separately from the normal fixture suite:
 
 `integrationTest` is the IntelliJ IDEA Ultimate suite. `dataGripIntegrationTest` targets DataGrip 2026.3 and filters to the DataGrip-specific process class.
 
-The IntelliJ Platform Gradle Plugin's `testIdeUi` task supplies `path.to.build.plugin` from the `buildPlugin` archive. The test installs that exact archive with Starter before launching the IDE.
+For local runs, the IntelliJ Platform Gradle Plugin's `testIdeUi` task still supplies `path.to.build.plugin` from `buildPlugin`. In PR CI, however, the canonical `Build` job checks out the exact PR head, builds one uniquely versioned `0.0.0-validation.sha<HEAD>` distribution, uploads that ZIP without unpacking it, and records its SHA-256 in `validation-candidate-manifest.txt`. IDEA and DataGrip download that same artifact, verify the manifest/hash, and set `ZMYBATIS_E2E_PLUGIN_ARCHIVE`; Starter installs that exact ZIP. The artifact from that Build run is therefore also the only valid human-smoke candidate. A standalone `workflow_dispatch` may build its own local validation candidate, but that standalone build is not a P5 human-handoff artifact.
 
 The first local run can download IDE/Starter artifacts. Semantic correctness of the scenarios does not depend on network access after required artifacts are provisioned.
 
@@ -121,4 +148,14 @@ Pure value objects, deterministic source-graph algorithms, isolated parser seman
 
 Do not move stable semantic matrices into this suite merely to label them E2E. Prefer Driver API/service interaction to Swing traversal. UI interaction is used only when registration or visible product behavior is itself the claim.
 
-The maintained IU registered-action suite uses one PostgreSQL Database Tools stack for complementary production paths through the same Leap authority: the DB-neutral zero-binding artifact executes against an explicit PostgreSQL target, the named BIGINT nonzero slice proves contract input/materialization/native results/history, and the raw-interpolation scenario proves mandatory preview cancellation without native execution. That IU proof does not generalize to DataGrip. The separate DataGrip suite proves packaged-plugin/service loading and the registered XML action's typed no-datasource refusal only; it does not claim Java-source parity, successful native PostgreSQL execution, every DBMS/dialect, or every datasource/schema lifecycle case. Those broader claims require their own evidence.
+The maintained IU registered-action suite uses one PostgreSQL Database Tools stack for complementary
+production paths through the same execution-plan authority: the DB-neutral zero-binding plan executes
+through the explicit native text backend, the multi-binding case proves prepared execution plus
+zMyBatis result presentation, and raw-interpolation scenarios prove mandatory approval/non-retention
+without weakening exact-text safety. P5 adds representative promoted parity acceptance on top of
+those routing proofs.
+
+That IU proof does not automatically generalize to DataGrip. The separate DataGrip suite currently
+owns packaged-plugin/service loading and its explicitly maintained XML action boundary. P5 decides
+whether one prepared XML case can be kept reliable on the maintained DataGrip host; Java-source
+parity, every DBMS/dialect, and IDEA-only UX are not inferred from that host.

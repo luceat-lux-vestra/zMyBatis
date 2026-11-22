@@ -138,6 +138,34 @@ class LeapPreparationSourceSelectionAdapterProjectFixtureTest : BasePlatformTest
             )
         }
 
+    fun testSelectorExceptionCompletesWithTypedFailureWithoutCancellation() =
+        withProductionStyleBackgroundTasks {
+            val evidence = xmlEvidence()
+            val observed = CompletableFuture<LeapPreparationSourceSelectionTaskResult>()
+            val cancelled = AtomicBoolean(false)
+            val selector: LeapPreparationSourceSelector = { _, _, _ ->
+                throw IllegalStateException("fixture detail must not escape the worker boundary")
+            }
+
+            requestSelection(
+                adapter = LeapPreparationSourceSelectionAdapter(project, selector),
+                evidence = evidence,
+                onResult = observed::complete,
+                onCancelled = { cancelled.set(true) },
+            )
+
+            val completed = PlatformTestUtil.waitForFuture(observed, FIXTURE_TIMEOUT_MILLIS)
+            assertTrue(completed is LeapPreparationSourceSelectionTaskResult.Failed)
+            assertSame(
+                IllegalStateException::class.java,
+                (completed as LeapPreparationSourceSelectionTaskResult.Failed).exceptionClass,
+            )
+            assertFalse(
+                "ordinary selector exception must not be classified as user cancellation",
+                cancelled.get(),
+            )
+        }
+
     fun testInvocationInvalidationRejectsDelayedSelectionCompletion() =
         withProductionStyleBackgroundTasks {
             val evidence = xmlEvidence()

@@ -19,6 +19,10 @@ internal sealed interface LeapProjectXmlMapperExpansionTaskResult {
         val expansion: XmlProjectMapperSourceCaptureResult,
     ) : LeapProjectXmlMapperExpansionTaskResult
 
+    data class Failed(
+        val exceptionClass: Class<out Exception>,
+    ) : LeapProjectXmlMapperExpansionTaskResult
+
     data object InvocationInvalidated : LeapProjectXmlMapperExpansionTaskResult
 }
 
@@ -83,6 +87,20 @@ internal class LeapProjectXmlMapperExpansionAdapter(
                 } else {
                     onResult(LeapProjectXmlMapperExpansionTaskResult.InvocationInvalidated)
                 }
+            }
+
+            override fun onThrowable(error: Throwable) {
+                if (error !is Exception) {
+                    super.onThrowable(error)
+                    return
+                }
+                onResult(
+                    if (liveInvocation()) {
+                        LeapProjectXmlMapperExpansionTaskResult.Failed(error.javaClass)
+                    } else {
+                        LeapProjectXmlMapperExpansionTaskResult.InvocationInvalidated
+                    },
+                )
             }
         }.queue()
     }

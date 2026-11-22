@@ -87,6 +87,49 @@ DataRequest.newRequest(OwnerEx, String, int, int, int, int, int)
 
 `DataRequest.QueryRequest` has protected constructors whose final parameter is an opaque `Object`, but the maintained public surface exposes no typed value-supply contract for it. Treating that opaque slot as a binding API would require undocumented semantic inference and therefore fails the repository's proof obligation.
 
+#### 2026.3 runtime revalidation — opaque `QueryRequest.params`
+
+PR #552 revalidated that opaque constructor slot against the maintained 2026.3 Database Tools runtime instead of inferring semantics from its type.
+
+The probe built a real `ParameterizedStatementData` with two `ColumnQueryData` values and submitted:
+
+```sql
+SELECT ?::BIGINT AS ID_VALUE, ?::VARCHAR AS LABEL_VALUE
+```
+
+through a subclassed `DataRequest.QueryRequest(owner, sql, constraints, parameterizedData)`. The request was accepted by the native engine and reached the Database Tools request lifecycle, but PostgreSQL received no valid JDBC binding:
+
+```text
+requestFinished=true
+fetchStarted=false
+SQLSTATE=42601
+ERROR: syntax error at or near "::"
+Position: 9
+```
+
+The P3 negative-control test now pins this behavior explicitly. Therefore `QueryRequest.params` is not a maintained bridge from `StatementParameters.asData(sql)` / `ParameterizedStatementData` into native-console JDBC parameter binding on the 2026.3 baseline either. The opaque slot remains rejected as execution authority.
+
+The same 2026.3 runtime inventory checked the adjacent request types before closing the probe:
+
+```text
+ConsoleDataRequest
+  superclass: DataRequest.QueryRequest
+  constructor: private(JdbcConsoleBase, String, Shared, int, boolean, Set)
+  public factory: newConsoleRequest(JdbcConsoleBase, Editor, ScriptModel, boolean)
+
+DataRequest.RawQueryRequest
+  superclass: DataRequest.IsolatedQueryRequest
+  constructor: protected(Owner, String, Constraints)
+
+DataRequest.IsolatedQueryRequest
+  superclass: DataRequest.QueryRequest
+  constructor: protected(Owner, String, Constraints, Object)
+```
+
+No public `ConsoleDataRequest` factory accepts ordered values or `ParameterizedStatementData`; `RawQueryRequest` exposes no parameter payload; and `IsolatedQueryRequest` only repeats the same undocumented opaque `Object` slot already disproven on the native query path. No new maintained 2026.3 request surface therefore closes the gap between true JDBC binding and native console result/history presentation.
+
+
+
 ### Candidate A result
 
 **Rejected for execution authority.**

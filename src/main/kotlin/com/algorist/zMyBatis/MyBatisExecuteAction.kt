@@ -2,6 +2,7 @@
 
 package com.algorist.zMyBatis
 
+import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAcquisitionFailure
 import com.algorist.zMyBatis.execution.LeapActionContextAdmissionCoordinator
 import com.algorist.zMyBatis.execution.LeapActionContextAdmissionFailure
 import com.algorist.zMyBatis.execution.LeapExecutionDeliveryFailure
@@ -36,7 +37,11 @@ class MyBatisExecuteAction : AnAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         when (MyBatisContextAnalyzer.analyze(e)) {
-            MyBatisContextAnalyzer.ContextType.NONE -> return
+            MyBatisContextAnalyzer.ContextType.NONE -> {
+                LOG.warn("zMyBatis: execution refused (stage=context-unavailable)")
+                LeapActionFailurePresenter.presentContextUnavailable(project)
+                return
+            }
             MyBatisContextAnalyzer.ContextType.PROVIDER -> {
                 LeapActionFailurePresenter.presentUnsupportedProvider(project)
                 return
@@ -47,19 +52,51 @@ class MyBatisExecuteAction : AnAction() {
         LeapActionContextAdmissionCoordinator(project).execute(
             event = e,
             onExecuted = {},
-            onCancelled = {},
+            onCancelled = { LOG.info("zMyBatis: execution cancelled by user") },
             onFailure = { failure ->
-                if (failure is LeapActionContextAdmissionFailure.InvocationFailed) {
-                    LOG.warn(
-                        "zMyBatis: Leap invocation refused " +
-                            "(stage=${leapInvocationFailureDiagnosticCode(failure.failure)})",
-                    )
-                }
+                LOG.warn(
+                    "zMyBatis: execution refused " +
+                        "(stage=${leapActionFailureDiagnosticCode(failure)})",
+                )
                 LeapActionFailurePresenter.present(project, failure)
             },
         )
     }
 }
+
+private fun leapActionFailureDiagnosticCode(
+    failure: LeapActionContextAdmissionFailure,
+): String =
+    when (failure) {
+        LeapActionContextAdmissionFailure.ProjectMismatch ->
+            "project-mismatch"
+        LeapActionContextAdmissionFailure.InvocationInvalidated ->
+            "invocation-invalidated"
+        LeapActionContextAdmissionFailure.MissingEditor ->
+            "missing-editor"
+        LeapActionContextAdmissionFailure.MissingPsiFile ->
+            "missing-psi-file"
+        is LeapActionContextAdmissionFailure.SourceCaptureFailed ->
+            "source-capture-failed:" + failure.failure.javaClass.simpleName
+        is LeapActionContextAdmissionFailure.SourceSelectionFailed ->
+            "source-selection-failed:" + failure.failure.javaClass.simpleName
+        LeapActionContextAdmissionFailure.SourceSelectionCancelled ->
+            "source-selection-cancelled"
+        LeapActionContextAdmissionFailure.ProjectXmlExpansionCancelled ->
+            "project-xml-expansion-cancelled"
+        is LeapActionContextAdmissionFailure.SourceSelectionTaskFailed ->
+            "source-selection-task-failed:" + failure.exceptionClass.name
+        is LeapActionContextAdmissionFailure.ProjectXmlExpansionTaskFailed ->
+            "project-xml-expansion-task-failed:" + failure.exceptionClass.name
+        is LeapActionContextAdmissionFailure.SourceInvalid ->
+            "source-invalid:" + failure.failure.javaClass.simpleName
+        is LeapActionContextAdmissionFailure.TargetAdmissionFailed ->
+            "target-admission-failed:" + failure.failure.javaClass.simpleName
+        LeapActionContextAdmissionFailure.TargetChanged ->
+            "target-changed"
+        is LeapActionContextAdmissionFailure.InvocationFailed ->
+            "invocation-failed:" + leapInvocationFailureDiagnosticCode(failure.failure)
+    }
 
 private fun leapInvocationFailureDiagnosticCode(
     failure: LeapExecutionInvocationFailure,
@@ -83,6 +120,8 @@ private fun leapDeliveryFailureDiagnosticCode(
     when (failure) {
         LeapExecutionDeliveryFailure.InvocationInvalidated ->
             "invocation-invalidated"
+        LeapExecutionDeliveryFailure.CandidatePreparationCancelled ->
+            "candidate-preparation-cancelled"
         is LeapExecutionDeliveryFailure.SourceInvalid ->
             "source-invalid:" + failure.failure.javaClass.simpleName
         is LeapExecutionDeliveryFailure.TargetResolutionFailed ->
@@ -101,6 +140,11 @@ private fun leapDeliveryFailureDiagnosticCode(
             "plan-source-authority-mismatch"
         LeapExecutionDeliveryFailure.TargetSemanticDrift ->
             "target-semantic-drift"
+        is LeapExecutionDeliveryFailure.MaterializationFailed ->
+            "materialization-failed:" +
+                failure.failure.kind.name.lowercase().replace('_', '-') +
+                ":" +
+                failure.failure.code
         is LeapExecutionDeliveryFailure.ConsoleAcquisitionFailed ->
             "console-acquisition-failed:" + failure.failure.javaClass.simpleName
         is LeapExecutionDeliveryFailure.NativeExecutionFailed ->
@@ -113,6 +157,18 @@ private fun leapDeliveryFailureDiagnosticCode(
     }
 
 private object LeapActionFailurePresenter {
+    fun presentContextUnavailable(project: Project) {
+        show(
+            project = project,
+            presentation = FailurePresentation(
+                title = "zMyBatis: Execution Context Unavailable",
+                message = "zMyBatis was invoked without a valid mapper statement context. " +
+                    "Place the caret inside the mapper statement and run the action again.",
+            ),
+            error = true,
+        )
+    }
+
     fun presentUnsupportedProvider(project: Project) {
         show(
             project = project,
@@ -149,6 +205,16 @@ private object LeapActionFailurePresenter {
                 message = "The current IDE execution context is no longer valid. Run zMyBatis again from the mapper statement.",
             )
 
+            LeapActionContextAdmissionFailure.SourceSelectionCancelled,
+            LeapActionContextAdmissionFailure.ProjectXmlExpansionCancelled,
+            is LeapActionContextAdmissionFailure.SourceSelectionTaskFailed,
+            is LeapActionContextAdmissionFailure.ProjectXmlExpansionTaskFailed,
+            -> FailurePresentation(
+                title = "zMyBatis: Mapper Source Resolution Interrupted",
+                message = "Mapper source resolution stopped before execution. " +
+                    "No SQL was executed. Run zMyBatis again; if this repeats, inspect the IDE log for the recorded stage.",
+            )
+
             is LeapActionContextAdmissionFailure.SourceCaptureFailed,
             is LeapActionContextAdmissionFailure.SourceSelectionFailed,
             is LeapActionContextAdmissionFailure.SourceInvalid,
@@ -164,11 +230,32 @@ private object LeapActionFailurePresenter {
                 message = "The configured datasource or explicit schema is unavailable or changed. Select the execution target again.",
             )
 
-            is LeapActionContextAdmissionFailure.InvocationFailed ->
-                FailurePresentation(
-                    title = "zMyBatis: Execution Refused",
-                    message = "zMyBatis could not complete this statement through the supported execution path. Review the mapper, inputs, and target, then try again.",
-                )
+            is LeapActionContextAdmissionFailure.InvocationFailed -> {
+                val consoleFailure =
+                    (failure.failure as? LeapExecutionInvocationFailure.DeliveryFailed)
+                        ?.failure
+                        ?.let { it as? LeapExecutionDeliveryFailure.ConsoleAcquisitionFailed }
+                        ?.failure
+                when (consoleFailure) {
+                    DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed ->
+                        FailurePresentation(
+                            title = "zMyBatis: Database Console Unavailable",
+                            message = "zMyBatis could not create a Database Tools console for the selected datasource. " +
+                                "Check the datasource/session state and run the mapper again.",
+                        )
+                    DatabaseToolsConsoleAcquisitionFailure.ConsoleSelectionUnavailable ->
+                        FailurePresentation(
+                            title = "zMyBatis: Database Console Selection Unavailable",
+                            message = "zMyBatis could not present the Database Tools console chooser for this execution. " +
+                                "Run the mapper again from an active editor.",
+                        )
+                    else ->
+                        FailurePresentation(
+                            title = "zMyBatis: Execution Refused",
+                            message = "zMyBatis could not complete this statement through the supported execution path. Review the mapper, inputs, and target, then try again.",
+                        )
+                }
+            }
         }
 
         show(project, presentation, error = true)

@@ -1,5 +1,5 @@
 package fixture;
 
-public interface PendingResultTypeMapper {
+public interface ParityResultTypeMapper {
     Product findAllWithResultType();
 }

@@ -8,6 +8,7 @@ import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.services.ConsoleCacheService
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.console.JdbcConsoleProvider
+import com.intellij.database.console.session.DatabaseSessionManager
 import com.intellij.database.model.DasNamespace
 import com.intellij.database.psi.DbDataSource
 import com.intellij.database.settings.DatabaseSettings
@@ -15,6 +16,11 @@ import com.intellij.database.util.DasUtil
 import com.intellij.database.util.DbImplUtil
 import com.intellij.database.util.ObjectPath
 import com.intellij.database.util.SearchPath
+import com.intellij.openapi.actionSystem.ActionUpdateThread
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DataContext
+import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.command.WriteCommandAction
@@ -23,10 +29,12 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.ex.EditorEx
-import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.ui.popup.JBPopupListener
+import com.intellij.openapi.ui.popup.LightweightWindowEvent
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
@@ -37,6 +45,7 @@ internal sealed interface DatabaseToolsConsoleAcquisitionFailure {
     data object ReuseBusy : DatabaseToolsConsoleAcquisitionFailure
     data object SchemaSwitchFailed : DatabaseToolsConsoleAcquisitionFailure
     data object ConsoleCreationFailed : DatabaseToolsConsoleAcquisitionFailure
+    data object ConsoleSelectionUnavailable : DatabaseToolsConsoleAcquisitionFailure
 }
 
 internal sealed interface DatabaseToolsSqlExecutionFailure {
@@ -50,8 +59,12 @@ internal sealed interface DatabaseToolsSqlExecutionFailure {
 /**
  * Project-scoped boundary for low-level JetBrains Database Tools console mechanics.
  *
- * This adapter owns only ephemeral console/resource operations. Target persistence, target
- * selection, mapper/input semantics, preview/confirmation, and clipboard policy remain outside.
+ * This adapter prefers existing Database Tools console/session clients, remembers runtime
+ * source+target selections, and creates one console only when no suitable client exists or the user
+ * explicitly chooses creation. Existing consoles remain Database Tools-owned; only zMyBatis-created
+ * consoles are lifecycle-owned here.
+ * Target persistence, target selection, mapper/input semantics, preview/confirmation, and clipboard
+ * policy remain outside.
  */
 @Service(Service.Level.PROJECT)
 internal class DatabaseToolsConsoleAdapter(private val project: Project) {
@@ -69,134 +82,322 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
     fun acquireAndDeliverConsole(
         dataSource: DbDataSource,
         schema: DasNamespace?,
+        targetId: ExecutionTargetId? = null,
         resourceKey: String,
-        forceNew: Boolean,
+        dataContext: DataContext? = null,
+        onCancelled: () -> Unit = {},
         onConsoleReady: (JdbcConsole, () -> Unit) -> Unit,
         onFailure: (DatabaseToolsConsoleAcquisitionFailure) -> Unit,
     ) {
         if (isProjectUnavailable()) return
 
         val cache = ConsoleCacheService.getInstance(project)
-        val reuseLeaseHeld = !forceNew && cache.beginReuseLease(resourceKey)
-        if (!forceNew && !reuseLeaseHeld) {
+        if (!cache.beginReuseLease(resourceKey)) {
             if (!isProjectUnavailable()) {
                 onFailure(DatabaseToolsConsoleAcquisitionFailure.ReuseBusy)
             }
             return
         }
 
-        val reuseLeaseReleased = AtomicBoolean(false)
-        val releaseReuseLease = {
-            if (reuseLeaseHeld && reuseLeaseReleased.compareAndSet(false, true)) {
+        val sourceLeaseReleased = AtomicBoolean(false)
+        fun releaseSourceLease() {
+            if (sourceLeaseReleased.compareAndSet(false, true)) {
                 cache.endReuseLease(resourceKey)
             }
         }
 
-        var console: JdbcConsole? = null
-        try {
-            if (isProjectUnavailable()) {
-                releaseReuseLease()
+        fun fail(failure: DatabaseToolsConsoleAcquisitionFailure) {
+            releaseSourceLease()
+            if (!isProjectUnavailable()) {
+                onFailure(failure)
+            }
+        }
+
+        fun cancel() {
+            releaseSourceLease()
+            if (!isProjectUnavailable()) {
+                onCancelled()
+            }
+        }
+
+        fun deliver(
+            console: JdbcConsole,
+            remember: Boolean = true,
+            createdByZMyBatis: Boolean = false,
+        ) {
+            if (isProjectUnavailable() || !console.isValid) {
+                releaseSourceLease()
                 return
             }
 
-            val targetId = databaseToolsExecutionTargetId(dataSource, schema)
-            if (!forceNew) {
-                val cached = cache.get(resourceKey, targetId)
-                if (cached != null) {
-                    if (schema != null && !switchSchemaOnConsole(cached, schema)) {
-                        cache.evict(resourceKey)
-                        releaseReuseLease()
-                        onFailure(DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed)
-                        return
-                    }
-                    onConsoleReady(cached, releaseReuseLease)
-                    LOG.info("zMyBatis: matching live console reused")
-                    return
+            val consoleLeaseKey = consoleLeaseKey(console)
+            if (!cache.beginReuseLease(consoleLeaseKey)) {
+                fail(DatabaseToolsConsoleAcquisitionFailure.ReuseBusy)
+                return
+            }
+            val released = AtomicBoolean(false)
+            val releaseAll = {
+                if (released.compareAndSet(false, true)) {
+                    cache.endReuseLease(consoleLeaseKey)
+                    releaseSourceLease()
                 }
             }
 
-            val sqlFileType = FileTypeManager.getInstance().getFileTypeByExtension("sql")
-            val consoleName = resourceKey.substringAfterLast('/').substringAfterLast('\\') + " - zMyBatis"
-            val lightFile = LightVirtualFile(consoleName, sqlFileType, "")
-
-            val sessionDataSource = DbImplUtil.getMaybeLocalDataSource(dataSource)
-            if (sessionDataSource == null) {
-                releaseReuseLease()
-                onFailure(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
-                return
-            }
-            console = JdbcConsole.newConsole(project)
-                .fromDataSource(sessionDataSource)
-                .forFile(lightFile)
-                .build()
-            // Keep disposal authority with this resource, independently of Disposer diagnostics.
-            val consoleLifetime = Disposer.newCheckedDisposable(console)
-            LOG.info("zMyBatis: console created")
-
             if (schema != null && !switchSchemaOnConsole(console, schema)) {
-                Disposer.dispose(console)
-                console = null
-                releaseReuseLease()
-                onFailure(DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed)
+                releaseAll()
+                if (createdByZMyBatis && console.isValid) {
+                    Disposer.dispose(console)
+                }
+                if (!isProjectUnavailable()) {
+                    onFailure(DatabaseToolsConsoleAcquisitionFailure.SchemaSwitchFailed)
+                }
                 return
             }
 
-            if (!forceNew) {
-                if (!cache.putEphemeral(
-                        mapperKey = resourceKey,
-                        console = console,
-                        targetId = targetId,
-                    )
-                ) {
-                    if (!consoleLifetime.isDisposed) {
+            if (createdByZMyBatis) {
+                val ownershipKey = "created-console:" + consoleLeaseKey(console)
+                if (!cache.putEphemeral(ownershipKey, console, targetId)) {
+                    releaseAll()
+                    if (console.isValid) {
                         Disposer.dispose(console)
                     }
-                    console = null
-                    releaseReuseLease()
                     if (!isProjectUnavailable()) {
                         onFailure(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
                     }
                     return
                 }
-                if (cache.get(resourceKey, targetId) !== console) {
-                    LOG.warn("zMyBatis: console was not live after cache registration — skipping query")
-                    if (!consoleLifetime.isDisposed) {
-                        Disposer.dispose(console)
-                    }
-                    console = null
-                    releaseReuseLease()
-                    return
-                }
             }
 
-            if (isProjectUnavailable()) {
-                Disposer.dispose(console)
-                console = null
-                releaseReuseLease()
+            if (remember && targetId != null) {
+                cache.rememberConsole(resourceKey, targetId, console)
+            }
+            onConsoleReady(console, releaseAll)
+        }
+
+        fun createAndDeliver(
+            sessionDataSource: com.intellij.database.dataSource.LocalDataSource,
+            existing: List<JdbcConsole>,
+        ) {
+            val console = createConsole(
+                dataSource = sessionDataSource,
+                resourceKey = resourceKey,
+                existing = existing,
+            )
+            if (console == null) {
+                fail(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
                 return
             }
 
-            onConsoleReady(console, releaseReuseLease)
-            console = null
-            LOG.info("zMyBatis: session prepared")
+            deliver(
+                console = console,
+                createdByZMyBatis = true,
+            )
+            LOG.info("zMyBatis: Database Tools console created for mapper execution")
+        }
+
+        try {
+            val sessionDataSource = DbImplUtil.getMaybeLocalDataSource(dataSource)
+            if (sessionDataSource == null) {
+                fail(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
+                return
+            }
+
+            val consoles = DatabaseSessionManager.getSessions(project, sessionDataSource)
+                .asSequence()
+                .flatMap { session -> session.clients.asSequence() }
+                .filterIsInstance<JdbcConsole>()
+                .filter { console -> console.isValid }
+                .distinct()
+                .toList()
+
+            targetId
+                ?.let { cache.rememberedConsole(resourceKey, it) }
+                ?.let { remembered ->
+                    deliver(remembered)
+                    LOG.info("zMyBatis: remembered Database Tools console reused")
+                    return
+                }
+
+            val mapperName = mapperDisplayName(resourceKey)
+            val mapperMatches = consoles.filter { console ->
+                console.file.virtualFile?.name == mapperName
+            }
+
+            when {
+                mapperMatches.size == 1 -> {
+                    deliver(mapperMatches.single())
+                    LOG.info("zMyBatis: unique mapper-name console reused")
+                }
+                consoles.size == 1 -> {
+                    deliver(consoles.single())
+                    LOG.info("zMyBatis: sole Database Tools console reused")
+                }
+                consoles.isEmpty() -> createAndDeliver(sessionDataSource, consoles)
+                else -> {
+                    if (dataContext == null) {
+                        fail(DatabaseToolsConsoleAcquisitionFailure.ConsoleSelectionUnavailable)
+                        return
+                    }
+                    requestConsoleChoice(
+                        consoles = consoles,
+                        dataContext = dataContext,
+                        onSelected = { selected -> deliver(selected) },
+                        onCreate = { createAndDeliver(sessionDataSource, consoles) },
+                        onCancelled = ::cancel,
+                        onFailure = {
+                            fail(DatabaseToolsConsoleAcquisitionFailure.ConsoleSelectionUnavailable)
+                        },
+                    )
+                }
+            }
         } catch (ex: ProcessCanceledException) {
-            console?.let { Disposer.dispose(it) }
-            releaseReuseLease()
+            releaseSourceLease()
             throw ex
         } catch (ex: Exception) {
-            console?.let { Disposer.dispose(it) }
-            releaseReuseLease()
-            LOG.warn("zMyBatis: console creation failed (type=${ex.javaClass.name})")
-            if (!isProjectUnavailable()) {
-                onFailure(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
-            }
+            LOG.warn("zMyBatis: console acquisition failed (type=${ex.javaClass.name})")
+            fail(DatabaseToolsConsoleAcquisitionFailure.ConsoleCreationFailed)
         } catch (fatal: Throwable) {
-            console?.let { Disposer.dispose(it) }
-            releaseReuseLease()
-            LOG.error("zMyBatis: fatal console creation failure", fatal)
+            releaseSourceLease()
+            LOG.error("zMyBatis: fatal console acquisition failure", fatal)
             throw fatal
         }
     }
+
+    private fun requestConsoleChoice(
+        consoles: List<JdbcConsole>,
+        dataContext: DataContext,
+        onSelected: (JdbcConsole) -> Unit,
+        onCreate: () -> Unit,
+        onCancelled: () -> Unit,
+        onFailure: () -> Unit,
+    ) {
+        ApplicationManager.getApplication().invokeLater({
+            if (isProjectUnavailable()) {
+                onCancelled()
+                return@invokeLater
+            }
+
+            val completed = AtomicBoolean(false)
+            fun finish(action: () -> Unit) {
+                if (completed.compareAndSet(false, true)) {
+                    action()
+                }
+            }
+
+            try {
+                val group = DefaultActionGroup()
+                consoles.forEachIndexed { index, console ->
+                    group.add(
+                        object : AnAction(consoleChoiceLabel(console, index)) {
+                            override fun getActionUpdateThread(): ActionUpdateThread =
+                                ActionUpdateThread.BGT
+
+                            override fun actionPerformed(event: AnActionEvent) {
+                                if (!console.isValid) {
+                                    finish(onFailure)
+                                } else {
+                                    finish { onSelected(console) }
+                                }
+                            }
+                        },
+                    )
+                }
+                group.addSeparator()
+                group.add(
+                    object : AnAction("Create New Console") {
+                        override fun getActionUpdateThread(): ActionUpdateThread =
+                            ActionUpdateThread.BGT
+
+                        override fun actionPerformed(event: AnActionEvent) {
+                            finish(onCreate)
+                        }
+                    },
+                )
+
+                val popup = JBPopupFactory.getInstance().createActionGroupPopup(
+                    "Choose Database Console",
+                    group,
+                    dataContext,
+                    JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
+                    true,
+                )
+                popup.addListener(
+                    object : JBPopupListener {
+                        override fun onClosed(event: LightweightWindowEvent) {
+                            if (!event.isOk) {
+                                finish(onCancelled)
+                            }
+                        }
+                    },
+                )
+                popup.showInBestPositionFor(dataContext)
+            } catch (ex: ProcessCanceledException) {
+                throw ex
+            } catch (_: Exception) {
+                finish(onFailure)
+            }
+        }, ModalityState.any())
+    }
+
+    private fun createConsole(
+        dataSource: com.intellij.database.dataSource.LocalDataSource,
+        resourceKey: String,
+        existing: List<JdbcConsole>,
+    ): JdbcConsole? =
+        try {
+            val sqlFileType = FileTypeManager.getInstance().getFileTypeByExtension("sql")
+            val consoleName = nextConsoleName(
+                baseName = mapperDisplayName(resourceKey),
+                existing = existing,
+            )
+            val requestedSession = DatabaseSessionManager.getSession(project, dataSource)
+            JdbcConsole.newConsole(project)
+                .fromDataSource(dataSource)
+                .useSession(requestedSession)
+                .forFile(LightVirtualFile(consoleName, sqlFileType, ""))
+                .build()
+        } catch (ex: ProcessCanceledException) {
+            throw ex
+        } catch (ex: Exception) {
+            LOG.warn("zMyBatis: console creation failed (type=${ex.javaClass.name})")
+            null
+        }
+
+    private fun mapperDisplayName(resourceKey: String): String {
+        val mapperName = resourceKey
+            .removePrefix("vfs:")
+            .substringAfterLast('/')
+            .substringAfterLast('\\')
+            .ifBlank { "Mapper.sql" }
+        return "$mapperName - zMyBatis"
+    }
+
+    private fun nextConsoleName(
+        baseName: String,
+        existing: List<JdbcConsole>,
+    ): String {
+        val existingNames = existing.mapNotNull { it.file.virtualFile?.name }.toSet()
+        if (baseName !in existingNames) return baseName
+
+        var ordinal = 2
+        while ("$baseName ($ordinal)" in existingNames) {
+            ordinal += 1
+        }
+        return "$baseName ($ordinal)"
+    }
+
+    private fun consoleChoiceLabel(
+        console: JdbcConsole,
+        index: Int,
+    ): String {
+        val file = console.file.virtualFile
+        val name = file?.name?.takeIf { it.isNotBlank() } ?: "Database Console"
+        return "$name  [${index + 1}]"
+    }
+
+    private fun consoleLeaseKey(console: JdbcConsole): String =
+        console.file.virtualFile?.url?.let { "database-console:$it" }
+            ?: "database-console-identity:${System.identityHashCode(console)}"
 
     private fun switchSchemaOnConsole(console: JdbcConsole, schema: DasNamespace): Boolean =
         try {
@@ -317,69 +518,11 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         }
 
         val consoleDoc = console.document
-        val consolePsiFile = console.file
-        val existingEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
+        val editorFactory = EditorFactory.getInstance()
+        val existingEditor = editorFactory.getEditors(consoleDoc, project)
             .firstOrNull { it is EditorEx && !it.isDisposed } as? EditorEx
 
-        if (existingEditor == null) {
-            LOG.info("zMyBatis: no existing console editor, attempting to open one")
-            val vFile = consolePsiFile.virtualFile
-            if (vFile != null) {
-                // OpenFileDescriptor.navigate uses the platform's public navigatable
-                // path. Under IDEA 263 FileNavigatorImpl opens the file editor before
-                // returning; the EDT continuation checks the actual live SQL editor.
-                // This stable navigation entry point avoids experimental APIs.
-                // Never inject SQL if the editor did not open.
-                try {
-                    OpenFileDescriptor(project, vFile).navigate(true)
-                    ApplicationManager.getApplication().invokeLater({
-                        try {
-                            if (isProjectUnavailable()) return@invokeLater
-                            if (!preExecutionCheck()) {
-                                onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
-                                return@invokeLater
-                            }
-                            if (!console.isValid) {
-                                LOG.warn("zMyBatis: console unavailable after editor-open scheduling")
-                                onFailure(DatabaseToolsSqlExecutionFailure.ConsoleUnavailable)
-                                return@invokeLater
-                            }
-                            val retryEditor = EditorFactory.getInstance().getEditors(consoleDoc, project)
-                                .firstOrNull { it is EditorEx && !it.isDisposed } as? EditorEx
-                            if (retryEditor != null) {
-                                performExecution(
-                                    console,
-                                    sql,
-                                    retryEditor,
-                                    preExecutionCheck,
-                                    onExecuted,
-                                    onFailure,
-                                    finish,
-                                )
-                            } else {
-                                LOG.warn("zMyBatis: console editor still unavailable after opening")
-                                onFailure(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
-                            }
-                        } finally {
-                            finish()
-                        }
-                    }, ModalityState.defaultModalityState())
-                } catch (canceled: ProcessCanceledException) {
-                    finish()
-                    throw canceled
-                } catch (ex: Exception) {
-                    LOG.warn("zMyBatis: could not open console editor (type=${ex.javaClass.name})")
-                    fail(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
-                } catch (fatal: Throwable) {
-                    LOG.error("zMyBatis: fatal console editor-open failure", fatal)
-                    finish()
-                    throw fatal
-                }
-            } else {
-                LOG.warn("zMyBatis: console virtual file is null")
-                finish()
-            }
-        } else {
+        if (existingEditor != null) {
             performExecution(
                 console,
                 sql,
@@ -389,6 +532,37 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
                 onFailure,
                 finish,
             )
+            return
+        }
+
+        // Native Database Tools execution needs an Editor, but it does not need an editor tab.
+        // Use a temporary off-screen editor over the existing console document and release it
+        // immediately after the native request has been dispatched. The mapper remains active.
+        val transientEditor = try {
+            editorFactory.createEditor(consoleDoc, project) as? EditorEx
+        } catch (canceled: ProcessCanceledException) {
+            finish()
+            throw canceled
+        } catch (ex: Exception) {
+            LOG.warn("zMyBatis: could not create transient console editor (type=${ex.javaClass.name})")
+            null
+        }
+        if (transientEditor == null) {
+            fail(DatabaseToolsSqlExecutionFailure.EditorUnavailable)
+            return
+        }
+        try {
+            performExecution(
+                console,
+                sql,
+                transientEditor,
+                preExecutionCheck,
+                onExecuted,
+                onFailure,
+                finish,
+            )
+        } finally {
+            editorFactory.releaseEditor(transientEditor)
         }
     }
 
@@ -438,8 +612,8 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         val originalText = consoleDoc.text
 
         try {
-            consoleEditor.contentComponent.requestFocusInWindow()
-
+            // The console editor is an internal execution surface. Do not request focus here:
+            // the mapper that initiated zMyBatis remains the user's active editing context.
             WriteCommandAction.runWriteCommandAction(project, "zMyBatis: Inject SQL", null, {
                 consoleDoc.setText(sql)
                 consoleEditor.selectionModel.setSelection(0, sql.length)
