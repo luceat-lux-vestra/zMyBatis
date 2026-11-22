@@ -337,8 +337,4 @@ internal sealed interface LeapExecutionDeliveryFailure {
     data class NativeExecutionFailed(
         val failure: NativeConsoleSqlTextFailure,
     ) : LeapExecutionDeliveryFailure
-
-    data class PreparedExecutionFailed(
-        val failure: DatabaseSessionPreparedFailure,
-    ) : LeapExecutionDeliveryFailure
 }

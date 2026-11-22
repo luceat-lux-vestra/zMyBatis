@@ -180,14 +180,14 @@ jobs:
           done
           docker exec zmybatis-postgres-e2e             psql -h 127.0.0.1 -U zmybatis -d zmybatis -Atc 'select version()'
 
-      - name: Run P3 PostgreSQL prepared-backend probe
+      - name: Run PostgreSQL native materialization proof
         if: ${{ github.event_name != 'push' }}
         env:
-          ZMYBATIS_P3_POSTGRES_RUNTIME: "1"
+          ZMYBATIS_POSTGRES_MATERIALIZATION_RUNTIME: "1"
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME p3PostgresPreparedBackendTest --stacktrace 2>&1 | tee p3-postgres-prepared.log
+          ./gradlew -Dorg.gradle.java.installations.fromEnv=JAVA_HOME postgresMaterializationRuntimeTest --stacktrace 2>&1 | tee postgres-materialization.log
 
       - name: Run Starter / Driver E2E
         if: ${{ github.event_name != 'push' }}
@@ -229,11 +229,11 @@ jobs:
           # Starter test tree (which includes downloaded/runtime bulk data).
           path: |
             e2e.log
-            p3-postgres-prepared.log
+            postgres-materialization.log
             build/reports/tests/integrationTest
             build/test-results/integrationTest
-            build/reports/tests/p3PostgresPreparedBackendTest
-            build/test-results/p3PostgresPreparedBackendTest
+            build/reports/tests/postgresMaterializationRuntimeTest
+            build/test-results/postgresMaterializationRuntimeTest
             out/ide-tests/tests/**/log/idea.log
             out/ide-tests/tests/**/screenshots/**
           if-no-files-found: warn

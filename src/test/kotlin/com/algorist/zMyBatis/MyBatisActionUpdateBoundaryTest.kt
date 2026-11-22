@@ -82,7 +82,6 @@ class MyBatisActionUpdateBoundaryTest {
             "plan-failed:",
             "console-acquisition-failed:",
             "native-execution-failed:",
-            "prepared-execution-failed:",
         ).forEach { code ->
             assertTrue("typed diagnostic code must remain observable: $code", diagnostic.contains(code))
         }

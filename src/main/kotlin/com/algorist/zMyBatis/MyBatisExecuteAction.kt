@@ -149,11 +149,6 @@ private fun leapDeliveryFailureDiagnosticCode(
             "console-acquisition-failed:" + failure.failure.javaClass.simpleName
         is LeapExecutionDeliveryFailure.NativeExecutionFailed ->
             "native-execution-failed:" + failure.failure.javaClass.simpleName
-        is LeapExecutionDeliveryFailure.PreparedExecutionFailed ->
-            "prepared-execution-failed:" +
-                failure.failure.kind.name.lowercase().replace('_', '-') +
-                ":" +
-                failure.failure.code
     }
 
 private object LeapActionFailurePresenter {
@@ -186,15 +181,6 @@ private object LeapActionFailurePresenter {
         project: Project,
         failure: LeapActionContextAdmissionFailure,
     ) {
-        val preparedAlreadyPresented =
-            (failure as? LeapActionContextAdmissionFailure.InvocationFailed)
-                ?.failure
-                ?.let { it as? LeapExecutionInvocationFailure.DeliveryFailed }
-                ?.failure is LeapExecutionDeliveryFailure.PreparedExecutionFailed
-        if (preparedAlreadyPresented) {
-            return
-        }
-
         val presentation = when (failure) {
             LeapActionContextAdmissionFailure.ProjectMismatch,
             LeapActionContextAdmissionFailure.InvocationInvalidated,

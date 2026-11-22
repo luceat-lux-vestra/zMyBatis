@@ -38,10 +38,10 @@ val integrationTestRuntimeOnly = configurations.getByName("integrationTestRuntim
     extendsFrom(configurations.testRuntimeOnly.get())
 }
 
-// P3.3 uses an isolated resolvable configuration for the PostgreSQL driver artifact.
+// The native materialization runtime proof uses an isolated resolvable PostgreSQL driver artifact.
 // Do not resolve integrationTestRuntimeClasspath during build configuration: doing so
 // freezes its parent configurations before the IntelliJ Starter task finishes wiring them.
-val p3PostgresDriverClasspath = configurations.create("p3PostgresDriverClasspath") {
+val postgresMaterializationDriverClasspath = configurations.create("postgresMaterializationDriverClasspath") {
     isCanBeConsumed = false
     isCanBeResolved = true
     isVisible = false
@@ -83,7 +83,7 @@ dependencies {
     testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
     testImplementation(platform("tools.jackson:jackson-bom:3.2.4"))
     testImplementation(platform("io.opentelemetry:opentelemetry-bom:1.67.0"))
-    add(p3PostgresDriverClasspath.name, "org.postgresql:postgresql:42.7.14")
+    add(postgresMaterializationDriverClasspath.name, "org.postgresql:postgresql:42.7.14")
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
     intellijPlatform {
@@ -276,7 +276,7 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
     }
 }
 
-// P3.3 real-PostgreSQL prepared-backend stop-gate probe. The task participates in
+// Real-PostgreSQL native materialization proof. The task participates in
 // verification, but is executable only when the E2E workflow explicitly enables the
 // PostgreSQL service.
 //
@@ -284,12 +284,12 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
 // configuration. Do not capture a Gradle Configuration/Provider in the TestIdeTask action:
 // Gradle 9 configuration-cache rejects that task graph, while the transformed IDE test
 // process also does not expose external test artifacts through java.class.path.
-val p3PostgresDriverJarPath: String = p3PostgresDriverClasspath
+val postgresMaterializationDriverJarPath: String = postgresMaterializationDriverClasspath
     .files
     .single { file -> file.name == "postgresql-42.7.14.jar" }
     .absolutePath
 
-val p3PostgresPreparedBackendTest = intellijPlatformTesting.testIde.register("p3PostgresPreparedBackendTest") {
+val postgresMaterializationRuntimeTest = intellijPlatformTesting.testIde.register("postgresMaterializationRuntimeTest") {
     testFramework(TestFrameworkType.Platform)
     testFramework(TestFrameworkType.Plugin.Java)
     plugins {
@@ -299,13 +299,13 @@ val p3PostgresPreparedBackendTest = intellijPlatformTesting.testIde.register("p3
         // IntelliJ Platform testIde registrations participate in the verification lifecycle.
         // The PostgreSQL service exists only in the dedicated E2E job, so ordinary check must
         // see this task as non-applicable rather than trying to connect to localhost:5432.
-        onlyIf("P3 PostgreSQL runtime service is explicitly enabled") {
-            System.getenv("ZMYBATIS_P3_POSTGRES_RUNTIME") == "1"
+        onlyIf("PostgreSQL materialization runtime service is explicitly enabled") {
+            System.getenv("ZMYBATIS_POSTGRES_MATERIALIZATION_RUNTIME") == "1"
         }
-        systemProperty("zmybatis.p3.postgresql.driverJar", p3PostgresDriverJarPath)
+        systemProperty("zmybatis.postgresql.materialization.driverJar", postgresMaterializationDriverJarPath)
         filter {
             includeTestsMatching(
-                "com.algorist.zMyBatis.execution.P3PostgreSqlPreparedBackendRuntimeTest",
+                "com.algorist.zMyBatis.execution.NativePostgreSqlMaterializationRuntimeTest",
             )
         }
         testLogging {
@@ -446,7 +446,7 @@ tasks {
         filter {
             excludeTestsMatching("com.algorist.zMyBatis.JavaActionContextDiskFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.KotlinActionContextBoundaryTest")
-            excludeTestsMatching("com.algorist.zMyBatis.execution.P3PostgreSqlPreparedBackendRuntimeTest")
+            excludeTestsMatching("com.algorist.zMyBatis.execution.NativePostgreSqlMaterializationRuntimeTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.ActiveEditorSourceSnapshotAdapterProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.DependentMapperSourceSnapshotAdapterProjectFixtureTest")
             excludeTestsMatching("com.algorist.zMyBatis.source.JavaAnnotationSourceCaptureAdapterProjectFixtureTest")
@@ -462,8 +462,7 @@ tasks {
                 .filter {
                     it.startsWith("ZMYBATIS_XML_SCALE ") ||
                         it.startsWith("ZMYBATIS_INPUT_SCALE ") ||
-                        it.startsWith("ZMYBATIS_RESOURCE_LIFECYCLE ") ||
-                        it.startsWith("ZMYBATIS_P3_API ")
+                        it.startsWith("ZMYBATIS_RESOURCE_LIFECYCLE ")
                 }
                 .forEach { logger.lifecycle(it) }
         }
