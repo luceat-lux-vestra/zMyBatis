@@ -197,6 +197,17 @@ class StarterDatabaseE2EIsolationContractTest {
             "restart fixture must not depend on a session-only Database Tools password",
             dataSourceHelper.contains("@accessiblename='Password:'"),
         )
+        assertTrue(
+            "Database Tools authentication selector must be anchored to the stable Authentication field label",
+            e2e.contains("private fun Finder.databaseAuthenticationCombo") &&
+                e2e.contains("//div[@visible_text='Authentication:']/following::div[@class='ComboBoxButton'][1]") &&
+                dataSourceHelper.contains("databaseAuthenticationCombo().click()"),
+        )
+        assertFalse(
+            "authentication discovery must not assume the current auth value is a ComboBox accessibility name",
+            dataSourceHelper.contains("byAccessibleName(\"User & Password\")") ||
+                dataSourceHelper.contains("contains(byAccessibleName(\"User & Password\"))"),
+        )
 
         val promptHelperStart = e2e.indexOf("private fun Driver.databaseCredentialsPromptOpened")
         val promptHelperEnd = e2e.indexOf("private fun Driver.invokeZMyBatisFromEditorPopup", promptHelperStart)

@@ -122,6 +122,12 @@ private fun Finder.rawConfirmation(): UiComponent =
         UiComponent::class.java,
     )
 
+private fun Finder.databaseAuthenticationCombo(): UiComponent =
+    x(
+        "//div[@visible_text='Authentication:']/following::div[@class='ComboBoxButton'][1]",
+        UiComponent::class.java,
+    )
+
 class ZMyBatisStarterDriverE2ETest {
 
     private var testStartedAtNanos: Long = 0
@@ -1150,12 +1156,7 @@ class ZMyBatisStarterDriverE2ETest {
                 // The CI PostgreSQL service is created with POSTGRES_HOST_AUTH_METHOD=trust.
                 // Persist that real server contract in Database Tools instead of relying on a
                 // session-only password that disappears across an IDE restart.
-                button {
-                    and(
-                        byClass("ComboBoxButton"),
-                        contains(byAccessibleName("User & Password")),
-                    )
-                }.click()
+                databaseAuthenticationCombo().click()
                 waitFor("PostgreSQL no-auth option", timeout = 30.seconds) {
                     ui.popups().list().lastOrNull()?.hasText("No auth") == true
                 }
