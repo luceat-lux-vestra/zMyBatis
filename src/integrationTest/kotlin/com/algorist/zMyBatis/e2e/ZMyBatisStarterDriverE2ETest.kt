@@ -58,7 +58,6 @@ import org.junit.jupiter.api.io.TempDir
 import org.postgresql.Driver as PostgreSqlDriver
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
-import java.io.EOFException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -148,7 +147,6 @@ class ZMyBatisStarterDriverE2ETest {
         private const val POSTGRES_E2E_DATA_SOURCE_NAME = POSTGRES_E2E_DRIVER_NAME
         private const val EXECUTE_ACTION_TEXT = "Execute (zMyBatis)"
         private const val PARAMETER_DIALOG_TITLE = "Enter MyBatis Parameters"
-        private const val REMOTE_DRIVER_HIERARCHY_EOF_MAX_ATTEMPTS = 2
         private val pluginArchive: Path = pathOf(
             System.getenv("ZMYBATIS_E2E_PLUGIN_ARCHIVE")
                 ?.takeIf { it.isNotBlank() }
@@ -399,10 +397,7 @@ class ZMyBatisStarterDriverE2ETest {
                         "elapsed_ms=${(System.nanoTime() - boundStartedAt) / 1_000_000}",
                 )
 
-                setSingleParameterDialogTextWithTransportRecovery("41")
-                ui.dialog(title = PARAMETER_DIALOG_TITLE) {
-                    button("OK").click()
-                }
+                submitSingleParameterDialogValue("41")
 
                 waitFor(
                     message = "large-project bound native result becomes visible",
@@ -519,10 +514,7 @@ class ZMyBatisStarterDriverE2ETest {
                     "persisted editor-popup target must bypass datasource/schema chooser",
                 )
 
-                setSingleParameterDialogTextWithTransportRecovery(boundInput.toString())
-                ui.dialog(title = PARAMETER_DIALOG_TITLE) {
-                    button("OK").click()
-                }
+                submitSingleParameterDialogValue(boundInput.toString())
 
                 val expectedBoundResult = (boundInput + boundDelta).toString()
                 waitFor(
@@ -705,10 +697,7 @@ class ZMyBatisStarterDriverE2ETest {
                     "reopened bound execution must not silently switch or reselect the persisted target",
                 )
 
-                setSingleParameterDialogTextWithTransportRecovery(boundInput.toString())
-                ui.dialog(title = PARAMETER_DIALOG_TITLE) {
-                    button("OK").click()
-                }
+                submitSingleParameterDialogValue(boundInput.toString())
 
                 val expectedBoundResult = (boundInput + boundDelta).toString()
                 waitFor(
@@ -777,10 +766,7 @@ class ZMyBatisStarterDriverE2ETest {
                 }
                 ui.popups().list().last().waitOneText("public").click()
 
-                setSingleParameterDialogTextWithTransportRecovery("7")
-                ui.dialog(title = PARAMETER_DIALOG_TITLE) {
-                    button("OK").click()
-                }
+                submitSingleParameterDialogValue("7")
 
                 ui.dialog(title = "zMyBatis — SQL Preview") {
                     val preview = textArea().text.trim()
@@ -871,10 +857,7 @@ class ZMyBatisStarterDriverE2ETest {
                 }
                 ui.popups().list().last().waitOneText("public").click()
 
-                setSingleParameterDialogTextWithTransportRecovery("41")
-                ui.dialog(title = PARAMETER_DIALOG_TITLE) {
-                    button("OK").click()
-                }
+                submitSingleParameterDialogValue("41")
 
                 ui.dialog(title = "zMyBatis — SQL Preview") {
                     val preview = textArea().text.trim()
@@ -1662,61 +1645,23 @@ class ZMyBatisStarterDriverE2ETest {
     }
 
     /**
-     * Remote Driver hierarchy transport may occasionally drop its JMX/RMI response while the IDE
-     * and modal dialog remain alive. Only the idempotent text assignment/read-back is retried.
+     * Submit the single required parameter through the visible dialog exactly as a user would.
      *
-     * Action invocation, confirmation clicks, SQL preview approval and database execution are
-     * deliberately outside this recovery boundary so product failures are never converted into
-     * test retries or duplicate execution attempts.
+     * Do not mutate JTextComponent state through Remote Driver JMX here. Build #2027 proved that
+     * a modal text set/get call can remain blocked until Starter's whole-IDE timeout even while
+     * the dialog itself stays healthy and responsive. Robot keyboard input keeps this acceptance
+     * path on the user-visible UI surface and lets missing/invalid dialogs fail at the normal
+     * component lookup boundary instead of hanging the IDE process.
      */
-    private fun Driver.setSingleParameterDialogTextWithTransportRecovery(value: String) {
-        var attempt = 1
-        while (true) {
-            try {
-                ui.dialog(title = PARAMETER_DIALOG_TITLE) {
-                    val field = textField()
-                    field.text = value
-                    assertEquals(
-                        value,
-                        field.text,
-                        "parameter input text must be applied before confirmation",
-                    )
-                }
-                return
-            } catch (failure: Throwable) {
-                if (
-                    !failure.isRemoteDriverHierarchyEof() ||
-                    attempt >= REMOTE_DRIVER_HIERARCHY_EOF_MAX_ATTEMPTS
-                ) {
-                    throw failure
-                }
-                println(
-                    "ZMYBATIS_E2E_REMOTE_DRIVER_RECOVERY " +
-                        "operation=parameter-text attempt=$attempt",
-                )
-                attempt += 1
+    private fun Driver.submitSingleParameterDialogValue(value: String) {
+        ui.dialog(title = PARAMETER_DIALOG_TITLE) {
+            val field = textField()
+            field.click()
+            field.keyboard {
+                typeText(value)
             }
+            button("OK").click()
         }
-    }
-
-    private fun Throwable.isRemoteDriverHierarchyEof(): Boolean {
-        var current: Throwable? = this
-        var driverCall = false
-        var jmxCall = false
-        var eof = false
-
-        while (current != null) {
-            when (current.javaClass.name) {
-                "com.intellij.driver.client.impl.DriverCallException" -> driverCall = true
-                "com.intellij.driver.client.impl.JmxCallException" -> jmxCall = true
-            }
-            if (current is EOFException) {
-                eof = true
-            }
-            current = current.cause
-        }
-
-        return driverCall && jmxCall && eof
     }
 
     private fun writeDirectJavaProviderMapper(projectDir: Path) {

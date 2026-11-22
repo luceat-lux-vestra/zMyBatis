@@ -48,37 +48,45 @@ class StarterDatabaseE2EIsolationContractTest {
     }
 
     @Test
-    fun `IDEA parameter input recovery is transport only and never retries execution`() {
+    fun `IDEA parameter input stays on the user visible Robot surface`() {
         val e2e = source(
             "src/integrationTest/kotlin/com/algorist/zMyBatis/e2e/ZMyBatisStarterDriverE2ETest.kt",
         )
         val helperStart = e2e.indexOf(
-            "private fun Driver.setSingleParameterDialogTextWithTransportRecovery",
+            "private fun Driver.submitSingleParameterDialogValue",
         )
         val helperEnd = e2e.indexOf("private fun writeDirectJavaProviderMapper", helperStart)
-        assertTrue("transport recovery helper must exist", helperStart >= 0 && helperEnd > helperStart)
+        assertTrue("Robot parameter submission helper must exist", helperStart >= 0 && helperEnd > helperStart)
 
         val helper = e2e.substring(helperStart, helperEnd)
         assertTrue(
-            "transport recovery helper must retain explicit Driver receiver authority",
-            helper.contains("private fun Driver.setSingleParameterDialogTextWithTransportRecovery"),
+            "parameter input helper must retain explicit Driver receiver authority",
+            helper.contains("private fun Driver.submitSingleParameterDialogValue"),
         )
-        assertTrue(helper.contains("REMOTE_DRIVER_HIERARCHY_EOF_MAX_ATTEMPTS"))
-        assertTrue(helper.contains("com.intellij.driver.client.impl.DriverCallException"))
-        assertTrue(helper.contains("com.intellij.driver.client.impl.JmxCallException"))
-        assertTrue(helper.contains("current is EOFException"))
-        assertTrue(helper.contains("assertEquals("))
-        assertTrue(helper.contains("field.text = value"))
+        assertTrue(helper.contains("ui.dialog(title = PARAMETER_DIALOG_TITLE)"))
+        assertTrue(helper.contains("val field = textField()"))
+        assertTrue(helper.contains("field.click()"))
+        assertTrue(helper.contains("field.keyboard"))
+        assertTrue(helper.contains("typeText(value)"))
+        assertTrue(helper.contains("button(\"OK\").click()"))
         assertFalse(
-            "transport recovery must never retry the non-idempotent confirmation click",
-            helper.contains("button(\"OK\").click()"),
+            "parameter acceptance must not use unbounded Remote Driver text mutation/read-back",
+            helper.contains("field.text") ||
+                helper.contains("while (true)"),
         )
         assertFalse(
-            "transport recovery must never retry the registered product action",
+            "the retired JMX/EOF recovery policy must stay absent from IDEA E2E source",
+            e2e.contains("setSingleParameterDialogTextWithTransportRecovery") ||
+                e2e.contains("REMOTE_DRIVER_HIERARCHY_EOF_MAX_ATTEMPTS") ||
+                e2e.contains("ZMYBATIS_E2E_REMOTE_DRIVER_RECOVERY") ||
+                e2e.contains("isRemoteDriverHierarchyEof"),
+        )
+        assertFalse(
+            "parameter helper must never invoke the registered product action",
             helper.contains("invokeAction("),
         )
         assertFalse(
-            "transport recovery must never retry SQL or Database Tools execution",
+            "parameter helper must never own SQL or Database Tools execution",
             helper.contains("doRunQueryInConsole") ||
                 helper.contains("TableResultView") ||
                 helper.contains("SQL Preview"),
@@ -90,9 +98,7 @@ class StarterDatabaseE2EIsolationContractTest {
         val scenarioEnd = e2e.indexOf("@Test", scenarioStart + 1)
         assertTrue("parameterType scenario must remain present", scenarioStart >= 0 && scenarioEnd > scenarioStart)
         val scenario = e2e.substring(scenarioStart, scenarioEnd)
-        assertTrue(scenario.contains("setSingleParameterDialogTextWithTransportRecovery(\"41\")"))
-        assertTrue(scenario.contains("ui.dialog(title = PARAMETER_DIALOG_TITLE)"))
-        assertTrue(scenario.contains("button(\"OK\").click()"))
+        assertTrue(scenario.contains("submitSingleParameterDialogValue(\"41\")"))
     }
 
     @Test
@@ -173,7 +179,7 @@ class StarterDatabaseE2EIsolationContractTest {
             "restart proof must exercise fresh zero-binding and bound results after reopen",
             scenario.contains("statementMarker = \"afterRestart\"") &&
                 scenario.contains("statementMarker = \"boundValue\"") &&
-                scenario.contains("setSingleParameterDialogTextWithTransportRecovery"),
+                scenario.contains("submitSingleParameterDialogValue"),
         )
         assertTrue(
             "restart proof must classify Database Tools credential drift explicitly instead of timing out as a false product no-op",
