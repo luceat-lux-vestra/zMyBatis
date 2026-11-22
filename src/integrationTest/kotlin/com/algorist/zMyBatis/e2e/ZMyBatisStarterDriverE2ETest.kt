@@ -36,11 +36,15 @@ import com.intellij.ide.starter.models.IdeInfo
 import com.intellij.ide.starter.models.TestCase
 import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.LocalProjectInfo
+import com.intellij.ide.starter.runner.IDECommandLine
+import com.intellij.ide.starter.runner.IDERunContext
 import com.intellij.ide.starter.runner.Starter
+import com.intellij.ide.starter.runner.openTestCaseProject
 import com.intellij.ide.starter.runner.startIdeWithoutProject
 import com.intellij.ide.starter.ide.IDETestContext
 import com.intellij.platform.testFramework.teamCity.TeamCityReporter.SyntheticTestKind
 import com.intellij.platform.testFramework.teamCity.TeamCityReporter.TestMetadata
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.tools.ide.starter.product.idea.ultimate.IdeaUltimate
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -119,12 +123,6 @@ private fun Finder.textArea(): JTextAreaUi =
 private fun Finder.rawConfirmation(): UiComponent =
     x(
         "//div[@visible_text='I understand this value is inserted as raw SQL text']",
-        UiComponent::class.java,
-    )
-
-private fun Finder.databaseAuthenticationCombo(): UiComponent =
-    x(
-        "//div[@visible_text='Authentication:']/following::div[@class='ComboBoxButton'][1]",
         UiComponent::class.java,
     )
 
@@ -567,7 +565,7 @@ class ZMyBatisStarterDriverE2ETest {
         val configDir = context.paths.configDir
 
         context
-            .runIdeWithDriver()
+            .runIdeWithDriver(commandLine = ::openTestCaseProjectWithPersistentPasswordSafe)
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
                 assertLoadedZMyBatisCandidate()
@@ -636,9 +634,10 @@ class ZMyBatisStarterDriverE2ETest {
             context.paths.configDir,
             "the second launch must reuse the exact same Starter config directory",
         )
+        assertRestartCredentialStorePersisted(configDir)
 
         context
-            .runIdeWithDriver()
+            .runIdeWithDriver(commandLine = ::openTestCaseProjectWithPersistentPasswordSafe)
             .useDriverAndCloseIde {
                 waitForIndicators(5.minutes)
                 assertLoadedZMyBatisCandidate()
@@ -1153,18 +1152,12 @@ class ZMyBatisStarterDriverE2ETest {
                     "//div[contains(@visible_text, 'jdbc:postgresql:')]",
                 ).text = "jdbc:postgresql://127.0.0.1:5432/zmybatis?user=zmybatis"
 
-                // The CI PostgreSQL service is created with POSTGRES_HOST_AUTH_METHOD=trust.
-                // Persist that real server contract in Database Tools instead of relying on a
-                // session-only password that disappears across an IDE restart.
-                databaseAuthenticationCombo().click()
-                waitFor("PostgreSQL no-auth option", timeout = 30.seconds) {
-                    ui.popups().list().lastOrNull()?.hasText("No auth") == true
-                }
-                ui.popups().list().last().waitOneText(
-                    "No auth",
-                    message = "PostgreSQL trust fixture must persist Database Tools No auth",
-                    timeout = 30.seconds,
-                ).click()
+                textField(
+                    "//div[@accessiblename='User:' and @class='JBTextField']",
+                ).text = "zmybatis"
+                textField(
+                    "//div[@accessiblename='Password:' and @class='JBPasswordField']",
+                ).text = "zmybatis"
 
                 // Persist the configured datasource directly. Connectivity is proven by the
                 // downstream packaged zMyBatis execution against native Database Tools results
@@ -1453,6 +1446,45 @@ class ZMyBatisStarterDriverE2ETest {
                     waitForNoOpenedDialogs()
                 }
             }
+    }
+
+    private fun openTestCaseProjectWithPersistentPasswordSafe(
+        runContext: IDERunContext,
+    ): IDECommandLine {
+        if (SystemInfo.isLinux) {
+            // IntelliJ Starter's LocalIDEProcess intentionally rewrites security.xml to
+            // MEMORY_ONLY immediately before every Linux launch. That policy is correct for
+            // isolated one-process tests, but it makes a clean-process restart incapable of
+            // distinguishing zMyBatis target persistence from a deliberately discarded
+            // Database Tools credential. Override it at the later command-line boundary only
+            // for the restart acceptance scenario.
+            val securityFile = runContext.testContext.paths.configDir.resolve("options/security.xml")
+            Files.createDirectories(securityFile.parent)
+            Files.writeString(
+                securityFile,
+                """
+                <application>
+                  <component name="PasswordSafe">
+                    <option name="PROVIDER" value="KEEPASS" />
+                  </component>
+                </application>
+                """.trimIndent(),
+            )
+        }
+        return openTestCaseProject(runContext)
+    }
+
+    private fun assertRestartCredentialStorePersisted(configDir: Path) {
+        if (!SystemInfo.isLinux) return
+
+        assertTrue(
+            Files.isRegularFile(configDir.resolve("c.kdbx")),
+            "restart acceptance must persist Database Tools credentials in the Starter config KeePass store",
+        )
+        assertTrue(
+            Files.isRegularFile(configDir.resolve("c.pwd")),
+            "restart acceptance must persist the KeePass main-key file beside the credential database",
+        )
     }
 
     private fun starterContext(

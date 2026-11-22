@@ -150,9 +150,15 @@ class StarterDatabaseE2EIsolationContractTest {
         val scenario = e2e.substring(scenarioStart, scenarioEnd)
 
         assertTrue(
-            "restart proof must create one Starter context and launch that same context twice",
+            "restart proof must create one Starter context and launch that same context twice with persistent credentials",
             scenario.split("starterContext(").size - 1 == 1 &&
-                scenario.split(".runIdeWithDriver()").size - 1 == 2,
+                scenario.split(
+                    ".runIdeWithDriver(commandLine = ::openTestCaseProjectWithPersistentPasswordSafe)",
+                ).size - 1 == 2,
+        )
+        assertTrue(
+            "restart proof must read back the persistent credential store before reopening",
+            scenario.contains("assertRestartCredentialStorePersisted(configDir)"),
         )
         assertTrue(
             "both IDE processes must assert the exact loaded zMyBatis candidate",
@@ -189,24 +195,44 @@ class StarterDatabaseE2EIsolationContractTest {
         )
         val dataSourceHelper = e2e.substring(dataSourceHelperStart, dataSourceHelperEnd)
         assertTrue(
-            "trust-backed CI PostgreSQL must persist the matching Database Tools authentication mode",
-            dataSourceHelper.contains("POSTGRES_HOST_AUTH_METHOD=trust") &&
-                dataSourceHelper.contains("No auth"),
+            "Database Tools datasource creation must keep the maintained user/password UI path",
+            dataSourceHelper.contains("@accessiblename='User:'") &&
+                dataSourceHelper.contains("@accessiblename='Password:'"),
         )
         assertFalse(
-            "restart fixture must not depend on a session-only Database Tools password",
-            dataSourceHelper.contains("@accessiblename='Password:'"),
+            "datasource creation must not mutate authentication mode just to satisfy restart infrastructure",
+            dataSourceHelper.contains("No auth") ||
+                dataSourceHelper.contains("databaseAuthenticationCombo") ||
+                dataSourceHelper.contains("byAccessibleName(\"User & Password\")") ||
+                dataSourceHelper.contains("@visible_text='Authentication:'"),
+        )
+
+        val credentialPolicyStart = e2e.indexOf(
+            "private fun openTestCaseProjectWithPersistentPasswordSafe",
+        )
+        val credentialPolicyEnd = e2e.indexOf("private fun starterContext", credentialPolicyStart)
+        assertTrue(
+            "restart credential policy helper must remain present",
+            credentialPolicyStart >= 0 && credentialPolicyEnd > credentialPolicyStart,
+        )
+        val credentialPolicy = e2e.substring(credentialPolicyStart, credentialPolicyEnd)
+        assertTrue(
+            "Linux restart proof must override Starter MEMORY_ONLY at the later command-line boundary",
+            credentialPolicy.contains("SystemInfo.isLinux") &&
+                credentialPolicy.contains("options/security.xml") &&
+                credentialPolicy.contains("value=\"KEEPASS\"") &&
+                credentialPolicy.contains("openTestCaseProject(runContext)"),
         )
         assertTrue(
-            "Database Tools authentication selector must be anchored to the stable Authentication field label",
-            e2e.contains("private fun Finder.databaseAuthenticationCombo") &&
-                e2e.contains("//div[@visible_text='Authentication:']/following::div[@class='ComboBoxButton'][1]") &&
-                dataSourceHelper.contains("databaseAuthenticationCombo().click()"),
+            "restart proof must require durable KeePass artifacts after the first clean shutdown",
+            credentialPolicy.contains("configDir.resolve(\"c.kdbx\")") &&
+                credentialPolicy.contains("configDir.resolve(\"c.pwd\")"),
         )
         assertFalse(
-            "authentication discovery must not assume the current auth value is a ComboBox accessibility name",
-            dataSourceHelper.contains("byAccessibleName(\"User & Password\")") ||
-                dataSourceHelper.contains("contains(byAccessibleName(\"User & Password\"))"),
+            "the two failed Authentication-combo locator strategies must stay retired",
+            e2e.contains("private fun Finder.databaseAuthenticationCombo") ||
+                e2e.contains("following::div[@class='ComboBoxButton'][1]") ||
+                e2e.contains("contains(byAccessibleName(\"User & Password\"))"),
         )
 
         val promptHelperStart = e2e.indexOf("private fun Driver.databaseCredentialsPromptOpened")
