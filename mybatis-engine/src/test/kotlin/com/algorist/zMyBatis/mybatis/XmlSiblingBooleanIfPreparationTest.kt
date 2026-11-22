@@ -5,13 +5,9 @@ import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentFailureKind
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputEvidence
-import com.algorist.zMyBatis.core.input.InputProvenance
 import com.algorist.zMyBatis.core.input.InputValue
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.materialization.MaintainedExecutionMaterializer
-import com.algorist.zMyBatis.core.materialization.MaterializationFailureKind
-import com.algorist.zMyBatis.core.materialization.MaterializationResult
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -69,7 +65,6 @@ class XmlSiblingBooleanIfPreparationTest {
                     assertEquals(properties.map { if (it == "third") InputValue.BooleanValue(true) else integer(42) }, execution.orderedBindings.map { it.value })
                     assertEquals(StatementKind.UPDATE, execution.statementKind)
                     assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
-                    assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
                     assertSame(before, Thread.currentThread().contextClassLoader)
                 }
             }
@@ -145,7 +140,6 @@ class XmlSiblingBooleanIfPreparationTest {
                     if (mask == 0 && staticAssignment.isEmpty() && staticPredicate.isEmpty()) assertEquals("UPDATE t RETURNING ?", normalize(execution.sqlWithPlaceholders))
                     assertEquals(StatementKind.UPDATE, execution.statementKind)
                     assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
-                    assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
                     assertSame(before, Thread.currentThread().contextClassLoader)
                 }
             }
@@ -209,7 +203,6 @@ class XmlSiblingBooleanIfPreparationTest {
                 assertFalse(execution.sqlWithPlaceholders.substringBefore("WHERE").trimEnd().endsWith(','))
                 if (mask == 0 && staticAssignment.isEmpty()) assertEquals("UPDATE t WHERE id = ?", normalize(execution.sqlWithPlaceholders))
                 assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
-                assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
                 assertSame(before, Thread.currentThread().contextClassLoader)
             }
         }
@@ -279,7 +272,6 @@ class XmlSiblingBooleanIfPreparationTest {
             assertEquals(properties.map { if (it == "enabled") InputValue.BooleanValue(true) else integer(42) }, execution.orderedBindings.map { it.value })
             assertStockParity(fixture, mask, execution)
             assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
-            assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
         }
     }
 

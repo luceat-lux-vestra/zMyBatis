@@ -13,8 +13,10 @@ import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
 import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.algorist.zMyBatis.core.execution.StableDataSourceId
-import com.algorist.zMyBatis.core.materialization.MaterializationResult
-import com.algorist.zMyBatis.core.materialization.PostgreSqlBigintExecutionMaterializer
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanResult
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanner
+import com.algorist.zMyBatis.core.materialization.NativeExecutionPlanMaterializer
+import com.algorist.zMyBatis.core.materialization.PreparedPlanSqlMaterializationResult
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -41,7 +43,7 @@ import org.junit.Test
 
 class XmlMapperStaticBoundInputPreparationTest {
     @Test
-    fun preparedLongBindingMaterializesAsPostgresqlBigintArtifact() {
+    fun preparedLongBindingMaterializesThroughNativeExecutionPlan() {
         val fixture = fixture(
             "SELECT #{id,jdbcType=BIGINT}::BIGINT AS RESULT_VALUE",
             listOf(parameter(0, "long", "sourceId", "id")),
@@ -63,14 +65,23 @@ class XmlMapperStaticBoundInputPreparationTest {
             MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
         )
 
-        val result = PostgreSqlBigintExecutionMaterializer(target).materialize(prepared)
-        val artifact = (result as MaterializationResult.Success).execution
+        val plan = when (val frozen = PreparedExecutionPlanner.freeze(prepared, target)) {
+            is PreparedExecutionPlanResult.Ready -> frozen.plan
+            is PreparedExecutionPlanResult.Failed ->
+                throw AssertionError("prepared plan freeze failed: ${frozen.failure}")
+        }
+        val artifact = when (val result = NativeExecutionPlanMaterializer.materialize(plan)) {
+            is PreparedPlanSqlMaterializationResult.Ready -> result.artifact
+            is PreparedPlanSqlMaterializationResult.Failed ->
+                throw AssertionError("native materialization failed: ${result.failure}")
+        }
 
         assertEquals("SELECT 42::BIGINT AS RESULT_VALUE", normalize(artifact.executionSql))
         assertEquals(targetId, artifact.executionTargetId)
-        assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, artifact.executionDialectId)
-        assertEquals(prepared.statementId, artifact.statementId)
-        assertEquals(prepared.sourceRevisions, artifact.sourceRevisions)
+        assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, artifact.databaseId)
+        assertEquals(prepared.statementId, plan.statementId)
+        assertEquals(prepared.sourceRevisions, plan.sourceRevisions)
+        assertEquals(plan.fingerprint, artifact.planFingerprint)
     }
 
     @Test

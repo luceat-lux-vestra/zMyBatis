@@ -1,10 +1,6 @@
 package com.algorist.zMyBatis.execution
 
 import com.algorist.zMyBatis.core.execution.ExecutionTargetId
-import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
-import com.algorist.zMyBatis.core.materialization.MaterializedExecution
-import com.algorist.zMyBatis.core.source.SourceFileId
-import com.algorist.zMyBatis.core.source.SourceRevision
 import com.algorist.zMyBatis.services.ConsoleCacheService
 import com.intellij.database.console.JdbcConsole
 import com.intellij.database.console.JdbcConsoleProvider
@@ -416,66 +412,6 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
             throw fatal
         }
 
-    /**
-     * Leap delivery entry point used by the registered execution authority.
-     *
-     * The caller owns invocation/cancellation and source-revision validity and supplies a freshly
-     * resolved exact Database Tools target. Every asynchronous/native dispatch boundary reruns the
-     * same checks against the immutable artifact snapshot before [executeSql] may continue.
-     *
-     * Neither preview text nor formatting output can become the execution payload.
-     */
-    fun executeMaterialized(
-        console: JdbcConsole,
-        artifact: MaterializedExecution,
-        currentTarget: () -> ResolvedExecutionTarget?,
-        isInvocationActive: () -> Boolean,
-        areSourceRevisionsCurrent: (Map<SourceFileId, SourceRevision>) -> Boolean,
-        onExecuted: () -> Unit,
-        onFailure: (DatabaseToolsSqlExecutionFailure) -> Unit,
-        onFinished: () -> Unit = {},
-    ) {
-        val boundTarget = artifact.executionTargetId
-        val sourceRevisions = artifact.sourceRevisions
-        val deliveryValid = try {
-            materializedDeliveryValid(
-                boundTarget = boundTarget,
-                sourceRevisions = sourceRevisions,
-                currentTarget = currentTarget,
-                isInvocationActive = isInvocationActive,
-                areSourceRevisionsCurrent = areSourceRevisionsCurrent,
-            )
-        } catch (failure: Throwable) {
-            onFinished()
-            throw failure
-        }
-        if (!deliveryValid) {
-            try {
-                onFailure(DatabaseToolsSqlExecutionFailure.InvocationInvalidated)
-            } finally {
-                onFinished()
-            }
-            return
-        }
-
-        executeSql(
-            console = console,
-            sql = artifact.executionSql,
-            preExecutionCheck = {
-                materializedDeliveryValid(
-                    boundTarget = boundTarget,
-                    sourceRevisions = sourceRevisions,
-                    currentTarget = currentTarget,
-                    isInvocationActive = isInvocationActive,
-                    areSourceRevisionsCurrent = areSourceRevisionsCurrent,
-                )
-            },
-            onExecuted = onExecuted,
-            onFailure = onFailure,
-            onFinished = onFinished,
-        )
-    }
-
     fun executeSql(
         console: JdbcConsole,
         sql: String,
@@ -707,22 +643,3 @@ internal class DatabaseToolsConsoleAdapter(private val project: Project) {
         }
     }
 }
-
-/**
- * Shared fail-closed admission predicate for immutable artifact delivery.
- *
- * Ordering is deliberate: an unbound artifact, cancelled invocation, or stale source never reaches
- * target lookup. The target supplied by the future #66 caller must be freshly resolved through the
- * maintained Database Tools exact datasource/schema resolver.
- */
-internal fun materializedDeliveryValid(
-    boundTarget: ExecutionTargetId?,
-    sourceRevisions: Map<SourceFileId, SourceRevision>,
-    currentTarget: () -> ResolvedExecutionTarget?,
-    isInvocationActive: () -> Boolean,
-    areSourceRevisionsCurrent: (Map<SourceFileId, SourceRevision>) -> Boolean,
-): Boolean =
-    boundTarget != null &&
-        isInvocationActive() &&
-        areSourceRevisionsCurrent(sourceRevisions) &&
-        currentTarget()?.targetId == boundTarget

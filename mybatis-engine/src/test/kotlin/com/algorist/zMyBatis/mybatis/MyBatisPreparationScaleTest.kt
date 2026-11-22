@@ -4,6 +4,8 @@ import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
 import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
 import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanResult
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanner
 import com.algorist.zMyBatis.core.execution.StableDataSourceId
 import com.algorist.zMyBatis.core.input.ExecutionInputOrigin
 import com.algorist.zMyBatis.core.input.ExpectedInputType
@@ -26,9 +28,8 @@ import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
 import com.algorist.zMyBatis.core.input.SourceEvidence
-import com.algorist.zMyBatis.core.materialization.MaterializationFailureKind
-import com.algorist.zMyBatis.core.materialization.MaterializationResult
-import com.algorist.zMyBatis.core.materialization.PostgreSqlBigintExecutionMaterializer
+import com.algorist.zMyBatis.core.materialization.NativeExecutionPlanMaterializer
+import com.algorist.zMyBatis.core.materialization.PreparedPlanSqlMaterializationResult
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
 import com.algorist.zMyBatis.core.preparation.PreparationResult
@@ -57,7 +58,7 @@ import org.junit.Test
 
 class MyBatisPreparationScaleTest {
     @Test
-    fun foreachPreparationScaleRecordsGrowthAndFailsClosedAtMaterialization() {
+    fun foreachPreparationScaleRecordsGrowthThroughNativeMaterialization() {
         val runtimeArtifact = MyBatisRuntimeArtifact.resolve(Configuration::class.java)
         assertNotNull("scale evidence requires the real local MyBatis runtime artifact", runtimeArtifact)
         assertEquals("file", runtimeArtifact!!.protocol)
@@ -91,19 +92,24 @@ class MyBatisPreparationScaleTest {
             assertEquals(cardinality, prepared.sqlWithPlaceholders.count { it == '?' })
             assertTrue(prepared.rawInterpolations.isEmpty())
 
+            val plan = when (val frozen = PreparedExecutionPlanner.freeze(prepared, fixture.target)) {
+                is PreparedExecutionPlanResult.Ready -> frozen.plan
+                is PreparedExecutionPlanResult.Failed ->
+                    throw AssertionError("scale plan freeze failed for $cardinality: ${frozen.failure}")
+            }
             val materializationStartedNanos = System.nanoTime()
-            val materialization =
-                PostgreSqlBigintExecutionMaterializer(fixture.target).materialize(prepared)
+            val artifact = when (val materialization = NativeExecutionPlanMaterializer.materialize(plan)) {
+                is PreparedPlanSqlMaterializationResult.Ready -> materialization.artifact
+                is PreparedPlanSqlMaterializationResult.Failed ->
+                    throw AssertionError("scale materialization failed for $cardinality: ${materialization.failure}")
+            }
             val materializationElapsedNanos = System.nanoTime() - materializationStartedNanos
             val pipelineElapsedNanos = System.nanoTime() - pipelineStartedNanos
 
-            assertTrue(
-                "multi-binding foreach must remain fail-closed at materialization",
-                materialization is MaterializationResult.Failed,
-            )
-            val failure = (materialization as MaterializationResult.Failed).failure
-            assertEquals(MaterializationFailureKind.BINDING_COUNT_UNSUPPORTED, failure.kind)
-            assertEquals("postgresql-bigint-binding-count-unsupported", failure.code)
+            assertEquals(0, artifact.executionSql.count { it == '?' })
+            assertEquals(fixture.target.targetId, artifact.executionTargetId)
+            assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, artifact.databaseId)
+            assertEquals(plan.fingerprint, artifact.planFingerprint)
 
             println(
                 "ZMYBATIS_PREPARATION_SCALE phase=foreach-growth " +
@@ -116,14 +122,14 @@ class MyBatisPreparationScaleTest {
                     "preparation_elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(preparationElapsedNanos)} " +
                     "materialization_elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(materializationElapsedNanos)} " +
                     "pipeline_elapsed_ms=${TimeUnit.NANOSECONDS.toMillis(pipelineElapsedNanos)} " +
-                    "materialization_failure=${failure.kind.name}",
+                    "materialization_result=READY",
             )
         }
     }
 
     private fun foreachFixture(cardinality: Int): ScaleFixture {
         require(cardinality > 1) {
-            "scale cardinality must exercise unsupported multi-binding materialization"
+            "scale cardinality must exercise multi-binding native materialization"
         }
 
         val fileId = SourceFileId("fixture/PreparationScaleMapper.java")

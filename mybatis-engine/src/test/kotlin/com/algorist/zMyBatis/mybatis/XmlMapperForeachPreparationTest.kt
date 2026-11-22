@@ -6,13 +6,9 @@ import com.algorist.zMyBatis.core.input.InputEnvironment
 import com.algorist.zMyBatis.core.input.InputEnvironmentResult
 import com.algorist.zMyBatis.core.input.InputEvidence
 import com.algorist.zMyBatis.core.input.InputValue
-import com.algorist.zMyBatis.core.input.InternalBinding
 import com.algorist.zMyBatis.core.input.InternalBindingKind
 import com.algorist.zMyBatis.core.input.ParameterContract
 import com.algorist.zMyBatis.core.input.ProvidedInput
-import com.algorist.zMyBatis.core.materialization.MaintainedExecutionMaterializer
-import com.algorist.zMyBatis.core.materialization.MaterializationFailureKind
-import com.algorist.zMyBatis.core.materialization.MaterializationResult
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -78,15 +74,13 @@ class XmlMapperForeachPreparationTest {
                     assertEquals(List(expectedCount) { "id" }, prepared.orderedBindings.map { it.property })
                     assertTrue(prepared.orderedBindings.all { it.origin is PreparedBindingOrigin.CallerInput })
                     assertEquals(proven.sourceRevisions, prepared.sourceRevisions)
-                    assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
-                        (MaintainedExecutionMaterializer.materialize(prepared) as MaterializationResult.Failed).failure.kind)
                 }
             }
         }
     }
 
     @Test
-    fun exactSelectFalseComparisonRetainsStockSqlBindingAndMaterializationPolicy() {
+    fun exactSelectFalseComparisonRetainsStockSqlBindingOrder() {
         val parameters = listOf(parameter(0, "boolean", "enabled"), parameter(1, "long", "id"))
         val placements = listOf(
             "" to "",
@@ -109,8 +103,6 @@ class XmlMapperForeachPreparationTest {
                     prepared.orderedBindings.map { it.property })
                 assertTrue(prepared.orderedBindings.all { it.origin is PreparedBindingOrigin.CallerInput })
                 assertEquals(proven.sourceRevisions, prepared.sourceRevisions)
-                assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
-                    (MaintainedExecutionMaterializer.materialize(prepared) as MaterializationResult.Failed).failure.kind)
             }
         }
     }
@@ -133,8 +125,6 @@ class XmlMapperForeachPreparationTest {
                 assertEquals(List(if (enabled) 1 else 2) { "id" }, prepared.orderedBindings.map { it.property })
                 assertTrue(prepared.orderedBindings.all { it.origin is PreparedBindingOrigin.CallerInput })
                 assertEquals(proven.sourceRevisions, prepared.sourceRevisions)
-                assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
-                    (MaintainedExecutionMaterializer.materialize(prepared) as MaterializationResult.Failed).failure.kind)
             }
         }
     }
@@ -159,10 +149,6 @@ class XmlMapperForeachPreparationTest {
             assertEquals(if (enabled) 1 else 2, prepared.orderedBindings.size)
             assertTrue(prepared.orderedBindings.all { it.origin is PreparedBindingOrigin.CallerInput })
             assertEquals(authentic.sourceRevisions, prepared.sourceRevisions)
-            assertEquals(
-                MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
-                (MaintainedExecutionMaterializer.materialize(prepared) as MaterializationResult.Failed).failure.kind,
-            )
         }
     }
 
@@ -211,10 +197,6 @@ class XmlMapperForeachPreparationTest {
                         },
                     )
                     assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
-                    assertEquals(
-                        MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
-                        (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind,
-                    )
                 }
             }
         }
@@ -262,10 +244,6 @@ class XmlMapperForeachPreparationTest {
                             },
                         )
                         assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
-                        assertEquals(
-                            MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
-                            (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind,
-                        )
                     }
                 }
             }
@@ -305,8 +283,6 @@ class XmlMapperForeachPreparationTest {
                         assertEquals(List(ids.size) { listOf("item", "idx") }.flatten(),
                             additional.map { (it.origin as PreparedBindingOrigin.MyBatisAdditional).internalBinding.name })
                         assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
-                        assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
-                            (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
                     }
                 }
             }
@@ -349,10 +325,6 @@ class XmlMapperForeachPreparationTest {
                             additional.map { (it.origin as PreparedBindingOrigin.MyBatisAdditional).internalBinding.name },
                         )
                         assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
-                        assertEquals(
-                            MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
-                            (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind,
-                        )
                     }
                 }
             }
@@ -392,10 +364,6 @@ class XmlMapperForeachPreparationTest {
                             additional.map { (it.origin as PreparedBindingOrigin.MyBatisAdditional).internalBinding.name },
                         )
                         assertEquals(contract(fixture).sourceRevisions, execution.sourceRevisions)
-                        assertEquals(
-                            MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
-                            (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind,
-                        )
                     }
                 }
             }
@@ -430,8 +398,6 @@ class XmlMapperForeachPreparationTest {
                                 assertEquals(expectedForeachKind(origin), origin.internalBinding.kind)
                                 assertEquals(origin.internalBinding.provenance, binding.provenance)
                             }
-                            assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED,
-                                (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
                             assertSame(before, Thread.currentThread().contextClassLoader)
                         }
                     }
@@ -516,8 +482,6 @@ class XmlMapperForeachPreparationTest {
                     assertEquals(expectedForeachKind(origin), origin.internalBinding.kind)
                     assertEquals(origin.internalBinding.provenance, binding.provenance)
                 }
-                val refusal = MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed
-                assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, refusal.failure.kind)
                 assertSame(before, Thread.currentThread().contextClassLoader)
             }
         }
@@ -611,7 +575,6 @@ class XmlMapperForeachPreparationTest {
                         assertEquals(expectedForeachKind(origin), origin.internalBinding.kind)
                         assertEquals(origin.internalBinding.provenance, binding.provenance)
                     }
-                    assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
                     assertSame(before, Thread.currentThread().contextClassLoader)
                 }
             }
@@ -740,8 +703,6 @@ class XmlMapperForeachPreparationTest {
         assertEquals("BIGINT", execution.orderedBindings[1].metadata.jdbcTypeIdentity)
         assertEquals(request.sourceRevisions, execution.sourceRevisions)
         assertTrue(execution.rawInterpolations.isEmpty())
-        val refusal = MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed
-        assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, refusal.failure.kind)
     }
 
     @Test

@@ -173,15 +173,6 @@ class LeapExecutionDeliveryCoordinatorTest {
         assertTrue(coordinator.contains("LeapExecutionDeliveryFailure.CandidatePreparationCancelled"))
         assertTrue(coordinator.contains("planMatchesResolvedTarget(plan, deliveryTarget.resolvedTarget)"))
         assertTrue(coordinator.contains("LeapExecutionDeliveryFailure.MaterializationFailed"))
-        assertFalse(coordinator.contains("preparedExecutionTask.execute("))
-        assertFalse(coordinator.contains("preparedBackend.execute("))
-        assertFalse(coordinator.contains("preparedResultAdapter.present("))
-        assertFalse(coordinator.contains("DatabaseSessionPreparedBackend"))
-        assertFalse(coordinator.contains("PreparedBackendExecutionTaskAdapter"))
-        assertFalse(coordinator.contains("PreparedResultPresentationAdapter"))
-        assertFalse(coordinator.contains("PreparedExecutionFailed"))
-        assertFalse(coordinator.contains("PostgreSqlBigintExecutionMaterializer"))
-        assertFalse(coordinator.contains("executeMaterialized("))
         assertFalse(coordinator.contains("LeapExecutionCandidateCoordinator.build("))
     }
 

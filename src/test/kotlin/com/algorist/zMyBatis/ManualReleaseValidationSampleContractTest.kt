@@ -34,7 +34,6 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(readme.contains("NativeExecutionPlanMaterializer"))
         assertTrue(readme.contains("NativeConsoleSqlTextBackend"))
         assertTrue(readme.contains("native Database Tools result workflow"))
-        assertFalse(readme.contains("DatabaseSessionPreparedBackend"))
     }
 
     @Test
@@ -158,7 +157,6 @@ class ManualReleaseValidationSampleContractTest {
         assertTrue(readme.contains("array alias/wrapper behavior"))
 
         listOf(
-            "PostgreSqlBigintExecutionMaterializer",
             "one-binding envelope",
             "must **Execution Refused** before native execution",
             "unsupported VARCHAR binding",
