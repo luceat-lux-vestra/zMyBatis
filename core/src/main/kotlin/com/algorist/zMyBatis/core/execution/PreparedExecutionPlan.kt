@@ -314,13 +314,11 @@ private fun MessageDigest.evidence(evidence: InputEvidence) {
             field("placeholder")
             field(evidence.kind.name)
             field(evidence.expression)
-            nullableField(evidence.enclosingOgnlExpression)
             sourceEvidence(evidence.source)
         }
         is InputEvidence.OgnlExpression -> {
             field("ognl-expression")
             field(evidence.expression)
-            nullableField(evidence.boundedWhereRole)
             sourceEvidence(evidence.source)
         }
         is InputEvidence.ForeachCollection -> {
