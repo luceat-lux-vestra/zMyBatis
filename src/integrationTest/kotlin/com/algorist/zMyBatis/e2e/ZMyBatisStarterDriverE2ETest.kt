@@ -100,7 +100,7 @@ interface PluginDetailsServiceRemote {
     fun findDetails(pluginId: PluginIdRemote): PluginDetailsRemote?
 }
 
-@Remote("com.intellij.ide.plugins.PluginDetailsService\$PluginDetails")
+@Remote($$"com.intellij.ide.plugins.PluginDetailsService$PluginDetails")
 interface PluginDetailsRemote {
     fun getVersion(): String?
 }
@@ -606,9 +606,14 @@ class ZMyBatisStarterDriverE2ETest {
                     timeout = 2.minutes,
                 ) {
                     nativeResultContains(firstZeroResult.toString()) ||
+                        databaseCredentialsPromptOpened() ||
                         openZMyBatisExecutionFailureTitle() != null
                 }
                 assertNoZMyBatisExecutionFailure("restart lifecycle first-launch delivery")
+                assertFalse(
+                    databaseCredentialsPromptOpened(),
+                    "trust-backed PostgreSQL fixture must not require interactive Database Tools credentials",
+                )
                 assertTrue(
                     nativeResultContains(firstZeroResult.toString()),
                     "first launch must complete through the native Database Tools result path",
@@ -649,9 +654,14 @@ class ZMyBatisStarterDriverE2ETest {
                 ) {
                     nativeResultContains(reopenedZeroResult.toString()) ||
                         ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) } ||
+                        databaseCredentialsPromptOpened() ||
                         openZMyBatisExecutionFailureTitle() != null
                 }
                 assertNoZMyBatisExecutionFailure("restart lifecycle reopened zero-binding invocation")
+                assertFalse(
+                    databaseCredentialsPromptOpened(),
+                    "reopened execution must not depend on session-only Database Tools credentials",
+                )
                 assertFalse(
                     ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) },
                     "persisted target must survive close/reopen without asking for datasource/schema again",
@@ -673,9 +683,14 @@ class ZMyBatisStarterDriverE2ETest {
                 ) {
                     ui.isDialogOpened("//div[@title='$PARAMETER_DIALOG_TITLE']") ||
                         ui.popups().list().any { it.hasText(POSTGRES_E2E_DATA_SOURCE_NAME) } ||
+                        databaseCredentialsPromptOpened() ||
                         openZMyBatisExecutionFailureTitle() != null
                 }
                 assertNoZMyBatisExecutionFailure("restart lifecycle reopened bound invocation")
+                assertFalse(
+                    databaseCredentialsPromptOpened(),
+                    "reopened bound execution must not require interactive Database Tools credentials",
+                )
                 assertTrue(
                     ui.isDialogOpened("//div[@title='$PARAMETER_DIALOG_TITLE']"),
                     "reopened bound execution must reach parameter input on the persisted target",
@@ -1131,12 +1146,24 @@ class ZMyBatisStarterDriverE2ETest {
                 textField(
                     "//div[contains(@visible_text, 'jdbc:postgresql:')]",
                 ).text = "jdbc:postgresql://127.0.0.1:5432/zmybatis?user=zmybatis"
-                textField(
-                    "//div[@accessiblename='User:' and @class='JBTextField']",
-                ).text = "zmybatis"
-                textField(
-                    "//div[@accessiblename='Password:' and @class='JBPasswordField']",
-                ).text = "zmybatis"
+
+                // The CI PostgreSQL service is created with POSTGRES_HOST_AUTH_METHOD=trust.
+                // Persist that real server contract in Database Tools instead of relying on a
+                // session-only password that disappears across an IDE restart.
+                button {
+                    and(
+                        byClass("ComboBoxButton"),
+                        contains(byAccessibleName("User & Password")),
+                    )
+                }.click()
+                waitFor("PostgreSQL no-auth option", timeout = 30.seconds) {
+                    ui.popups().list().lastOrNull()?.hasText("No auth") == true
+                }
+                ui.popups().list().last().waitOneText(
+                    "No auth",
+                    message = "PostgreSQL trust fixture must persist Database Tools No auth",
+                    timeout = 30.seconds,
+                ).click()
 
                 // Persist the configured datasource directly. Connectivity is proven by the
                 // downstream packaged zMyBatis execution against native Database Tools results
@@ -1541,6 +1568,11 @@ class ZMyBatisStarterDriverE2ETest {
             "the current IDE process must load the exact validation candidate version",
         )
     }
+
+    private fun Driver.databaseCredentialsPromptOpened(): Boolean =
+        ui.isDialogOpened(
+            "//div[contains(@title, 'Connecting to') and .//div[@visible_text='Please provide database credentials.']]",
+        )
 
     private fun Driver.invokeZMyBatisFromEditorPopup(
         fileName: String,

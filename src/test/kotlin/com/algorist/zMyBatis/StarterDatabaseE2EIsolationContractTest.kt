@@ -169,6 +169,43 @@ class StarterDatabaseE2EIsolationContractTest {
                 scenario.contains("statementMarker = \"boundValue\"") &&
                 scenario.contains("setSingleParameterDialogTextWithTransportRecovery"),
         )
+        assertTrue(
+            "restart proof must classify Database Tools credential drift explicitly instead of timing out as a false product no-op",
+            scenario.contains("databaseCredentialsPromptOpened()") &&
+                scenario.contains("reopened execution must not depend on session-only Database Tools credentials") &&
+                scenario.contains("reopened bound execution must not require interactive Database Tools credentials"),
+        )
+
+        val dataSourceHelperStart = e2e.indexOf(
+            "private fun Driver.createPostgreSqlDataSourceThroughDatabaseTools",
+        )
+        val dataSourceHelperEnd = e2e.indexOf(
+            "private fun readPostgreSqlDataSourceId",
+            dataSourceHelperStart,
+        )
+        assertTrue(
+            "PostgreSQL Database Tools datasource helper must remain present",
+            dataSourceHelperStart >= 0 && dataSourceHelperEnd > dataSourceHelperStart,
+        )
+        val dataSourceHelper = e2e.substring(dataSourceHelperStart, dataSourceHelperEnd)
+        assertTrue(
+            "trust-backed CI PostgreSQL must persist the matching Database Tools authentication mode",
+            dataSourceHelper.contains("POSTGRES_HOST_AUTH_METHOD=trust") &&
+                dataSourceHelper.contains("No auth"),
+        )
+        assertFalse(
+            "restart fixture must not depend on a session-only Database Tools password",
+            dataSourceHelper.contains("@accessiblename='Password:'"),
+        )
+
+        val promptHelperStart = e2e.indexOf("private fun Driver.databaseCredentialsPromptOpened")
+        val promptHelperEnd = e2e.indexOf("private fun Driver.invokeZMyBatisFromEditorPopup", promptHelperStart)
+        assertTrue(
+            "credential prompt classifier must remain explicit and bounded",
+            promptHelperStart >= 0 && promptHelperEnd > promptHelperStart,
+        )
+        val promptHelper = e2e.substring(promptHelperStart, promptHelperEnd)
+        assertTrue(promptHelper.contains("Please provide database credentials."))
 
         val identityHelperStart = e2e.indexOf("private fun Driver.assertLoadedZMyBatisCandidate")
         val identityHelperEnd = e2e.indexOf("private fun Driver.invokeZMyBatisFromEditorPopup", identityHelperStart)
