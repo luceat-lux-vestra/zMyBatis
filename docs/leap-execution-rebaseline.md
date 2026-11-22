@@ -1,6 +1,12 @@
 # Leap execution rebaseline — 2026-10-13
 
-> **Historical status note (2026-10-25):** this document records the decision and migration sequence as they stood on 2026-10-13. The single production cutover has since landed, and #454/PR #455 deleted the former action/evaluator/extractor/dialog/history island plus the never-distributed v2 persistence migration path. For current architecture and product claims, use `AGENTS.md`, `docs/product-contract.md`, `docs/leap-architecture.md`, and `docs/test-contracts.md`. The original observations and stop-gate language below are preserved as historical evidence.
+> **Historical status note (updated for P6):** this document preserves the 2026-10-13
+> decision and migration sequence, not current shipping behavior. #454/PR #455 deleted the former
+> action/evaluator/extractor/dialog/history and v2 migration code. P5 restored native result delivery
+> through plan materialization, and P6 removed superseded prepared/modal and syntax-admission code.
+> For current implementation and policy use `AGENTS.md`, `docs/product-contract.md`,
+> `docs/leap-architecture.md`, and `docs/test-contracts.md`. Original observations below remain
+> historical evidence.
 
 Status: **target product/architecture decision for #391**, superseding the strict bound-execution-only *target requirement* of closed #258 after this document is merged. The #251 Database Tools 2026.2 API investigation and #258's original historical decision remain preserved. This decision **does not make any unproven SQL materializer executable**. Runtime code and the shipping action remain unchanged until a separate validated code cutover.
 

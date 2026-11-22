@@ -23,18 +23,18 @@ This layer complements, rather than replaces, core/unit tests and IntelliJ proje
    - selects the exact datasource plus explicit `public` schema through the shipping chooser;
    - observes the real `SqlPreviewDialog` and requires its SQL to equal the exact DB-neutral zero-binding artifact text;
    - clicks `Execute` and waits for a real Database Tools `TableResultView` cell containing the expected value.
-3. **Registered-action / multi-binding prepared golden path**
-   - reuses the same maintained PostgreSQL datasource creation boundary;
-   - invokes the registered `zMyBatis.Execute` action for a mapper whose one caller input expands to two ordered BIGINT JDBC bindings;
-   - selects the exact datasource + `public` schema and requires approval preview to retain two `?` placeholders plus value-hidden binding metadata;
-   - explicitly rejects literalized bound SQL;
-   - executes through `DatabaseSessionPreparedBackend` and requires the bounded `zMyBatis: Query Result` presentation to contain both result values;
-   - proves the bound path does not surface through the native Database Tools `TableResultView`.
+3. **Registered-action / multi-binding materialized-native golden path**
+   - reuses the maintained PostgreSQL datasource creation boundary;
+   - invokes `zMyBatis.Execute` for a mapper whose input expands to two ordered BIGINT bindings;
+   - selects the exact datasource + explicit `public` schema and verifies ordered binding/approved artifact authority;
+   - materializes the supported plan with no unconsumed binding markers;
+   - requires both values in the native Database Tools `TableResultView`;
+   - rejects a separate `zMyBatis: Query Result` modal.
 4. **Promoted ordinary-mapper metadata / built-in parameterType path**
    - carries the historical #510 R05 claim into the exact packaged registered action;
    - declares `parameterType="long"` on the XML statement rather than stripping or rejecting it during whole-document preflight;
    - enters one scalar through the normal contract dialog and requires placeholder SQL plus Long/BIGINT/LongTypeHandler binding metadata;
-   - executes through `DatabaseSessionPreparedBackend`, observes the zMyBatis prepared-result table, and rejects native-grid/literalized-SQL fallback.
+   - materializes the supported bound plan and observes the value in the native Database Tools result grid; a separate prepared-result modal is rejected.
 5. **Target-derived databaseId selection path**
    - declares both PostgreSQL-specific and default variants for one XML statement id;
    - selects the real PostgreSQL datasource + explicit `public` schema through production UI;
@@ -80,11 +80,11 @@ It installs the exact same packaged plugin ZIP and proves three bounded claims:
 
 1. **Packaged plugin/service smoke** — DataGrip starts under a strict Starter `CIServer` failure boundary with no IDEA-only exception exemption, the zMyBatis plugin loads, and the shipping `ZMyBatisSettings` service is callable.
 2. **Registered XML action fail-closed path** — a real XML mapper is opened in DataGrip, the registered `zMyBatis.Execute` action is invoked, and with no datasource configured the shipping path reaches the typed `zMyBatis: Execution Target Unavailable` refusal without an IDE fatal error or stale dialog.
-3. **Bounded XML prepared PostgreSQL path** — the DataGrip job starts the same pinned PostgreSQL image, registers a pinned local pgJDBC driver through Database Tools, selects the explicit `public` schema, and executes an XML-only `<bind>`-generated BIGINT binding through `DatabaseSessionPreparedBackend`. The preview must keep `?`, the zMyBatis prepared-result dialog must contain `41`, and the bound path must not surface as native `TableResultView` delivery.
+3. **Bounded XML materialized-native PostgreSQL path** — the DataGrip job starts the pinned PostgreSQL image, registers its pgJDBC driver through Database Tools, selects `public`, and executes the XML-only `<bind>`-generated BIGINT binding after approved-plan materialization. The native `TableResultView` must contain `41`; a separate zMyBatis result modal must not appear.
 
 Each scenario closes its DataGrip process through `useDriverAndCloseIde` and emits a `ZMYBATIS_HOST_EVIDENCE host=DATAGRIP` record with release, scenario, result, shutdown state and observed duration. These durations are observations, not latency SLAs.
 
-This host proof deliberately does **not** claim Java-annotation parity, native Database Tools result/history parity, every DBMS/dialect, or IDEA's broader PostgreSQL scenario matrix. The prepared case is XML-only and uses zMyBatis result presentation. Java PSI availability is not inferred from IDEA Ultimate, and the maintained IU PostgreSQL golden path remains the full host authority. DataGrip 2026.3 Plugin Verifier evidence is required alongside this process proof; the minimum IDE build is 263.
+This host proof deliberately does **not** claim Java-annotation parity, every DBMS/dialect, or IDEA's broader PostgreSQL matrix. The supported bound case is XML-only and proves native Database Tools result presentation. Java PSI availability is not inferred from IDEA Ultimate, and the IDEA Ultimate PostgreSQL golden path remains the fuller host authority. DataGrip 2026.3 Plugin Verifier evidence is required alongside this process proof; the minimum IDE build is 263.
 
 ## Local execution
 

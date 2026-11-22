@@ -9,8 +9,8 @@ SQL-text materialization for supported bound shapes.
 This document records the **current Leap implementation**, the outer boundaries worth retaining, and
 historical rationale from Epic #60. It is not the pre-1.0 target authority.
 
-Current implementation baseline after #511: protected `main`
-`402ee67d48123235828a2ef2bc1642c7000e53a2`.
+This document describes the P5 native-result shipping path and P6 cleanup boundary. The current
+repository HEAD and exact-head CI are authoritative for implementation state.
 
 The product-policy target is [product-contract.md](product-contract.md). The canonical pre-1.0
 architecture is [mybatis-compatibility-architecture.md](mybatis-compatibility-architecture.md).
@@ -18,7 +18,7 @@ Repository/review discipline remains defined by `AGENTS.md` and `.github/merge-g
 
 ## 1. Architecture drivers
 
-The Leap exists because the current implementation mixes too many correctness domains in a few mutable IDE-facing objects.
+Leap replaced an earlier implementation that mixed too many correctness domains in mutable IDE-facing objects.
 
 The retained architecture is driven by these invariants:
 
@@ -215,9 +215,9 @@ Delivery is explicit:
 - supported ordered bindings > 0 -> `NativeExecutionPlanMaterializer` -> exact executable SQL artifact -> `NativeConsoleSqlTextBackend`;
 - successful execution -> Database Tools native result/history.
 
-The historical one-off PostgreSQL BIGINT materializer is not registered authority; P5 replaces that
-bounded slice with the maintained common-scalar plan materializer. There is no silent fallback to
-`DatabaseSessionPreparedBackend` or the retired zMyBatis result modal when materialization refuses.
+P5 replaced the historical one-off PostgreSQL BIGINT materializer with the maintained common-scalar
+plan materializer; P6.3 removes the retired class. Materialization refusal has no silent
+prepared-backend or separate result-modal fallback.
 
 #251/P3 remain historical evidence about Database Tools session/prepared mechanics. Their inability
 to expose a maintained prepared-to-native-grid bridge does not waive the native-result UX contract.
@@ -329,20 +329,19 @@ It never returns diagnostic comments as SQL.
 
 `BoundSql.sql`, ordered mappings, additional parameters, and relevant binding metadata are captured before leaving the engine. Raw `${}` provenance remains explicit from the source/input contract even though MyBatis substitution affects the resulting SQL text.
 
-## 8. Current execution boundary and pre-1.0 replacement
+## 8. Current execution boundary
 
 Current shipping behavior:
 
 1. stock MyBatis produces `PreparedExecution` with ordered mappings/values;
 2. `PreparedExecutionPlanner` freezes the exact target-bound `PreparedExecutionPlan`;
-3. approval and immediate source/target/lifecycle checks apply to that exact plan;
-4. bound plans execute through `DatabaseSessionPreparedBackend`;
-5. zero-binding/exact-text plans execute through `NativeConsoleSqlTextBackend`;
-6. prepared outcomes use the bounded zMyBatis result adapter while native text retains Database Tools result/history.
+3. supported bound plans materialize through `NativeExecutionPlanMaterializer` into exact SQL; zero-binding plans retain exact plan SQL;
+4. approval and immediate source/target/lifecycle checks bind to the approved plan/artifact;
+5. `NativeConsoleSqlTextBackend` dispatches supported plans to Database Tools;
+6. Database Tools owns native result/history for successful executions.
 
-Native Database Tools result/history parity is not a correctness requirement for the prepared
-backend. Source/target/lifecycle/approval invariants remain unchanged in strength, and no alternate
-backend is used after a selected backend fails.
+Source/target/lifecycle/approval invariants retain their strength. Unsupported materialization
+fails typed with no alternate prepared/modal execution backend.
 
 ## 9. Target/session and Database Tools adapter
 
@@ -525,17 +524,17 @@ D0  record the parity architecture in authoritative docs
 ```
 
 #509 and #510 are historical parity-regression evidence whose semantic replacements landed through
-P1/P2. P5 now reconciles their packaged/manual/product evidence before final disposition.
+P1/P2 and whose packaged/manual/product evidence was reconciled in P5.
 
 ## 15. Evidence ownership during recovery
 
 Current tests remain authoritative evidence for the shipping safety boundaries they actually
 exercise: source identity, caller input, target identity, cancellation/lifecycle, privacy, exact-plan
-approval, explicit backend routing, prepared/native execution, and packaged host behavior.
+approval, materialized/native delivery, and packaged host behavior.
 
 They are **not** automatically evidence that a current refusal is desired 1.0 behavior.
 
-D1 must add a stock-MyBatis parity oracle for ordinary mapper declarations, include graphs, standard
+D1 added a stock-MyBatis parity oracle for ordinary mapper declarations, include graphs, standard
 dynamic tags, realistic input shapes, additional parameters, direct Java annotations, raw
 interpolation, and sanitized historical `mybatisTest` mapper shapes.
 
@@ -555,15 +554,15 @@ Keep:
 - typed failures and privacy/logging rules;
 - raw and mutation approval boundaries.
 
-Replace after parity evidence exists:
+Removed or disconnected after parity evidence:
 
-- dynamic grammar allowlists in `XmlStatementParameterContractFactory`;
-- Boolean-if/foreach/trim admission islands;
-- `DynamicOgnlAdmission` and `ForeachProvenanceAdmission`;
-- whole-document dangerous result/parameter metadata preflight;
-- PostgreSQL BIGINT single-binding materialization as the universal nonzero gate.
+- retired XML input syntax-admission factories and Boolean-if/foreach grammar islands (P6.2);
+- superseded `DynamicOgnlAdmission` and `ForeachProvenanceAdmission` semantic policy;
+- whole-document dangerous result/parameter metadata preflight (P1);
+- retired one-BIGINT materializer and transitional delivery API (P6.3).
 
-Do not retain old and new semantic authorities simultaneously.
+Retain the distinct safety/capability admission boundaries and stock-MyBatis semantics; do not
+restore superseded semantic islands as compatibility fallbacks.
 
 ## 17. Explicitly rejected approaches
 

@@ -286,15 +286,13 @@ executable SQL-text artifact. This materialization layer must:
 The deleted legacy `MyBatisEvaluator` is not restored as semantic authority. Dynamic SQL and binding
 metadata are already frozen by stock MyBatis before materialization begins.
 
-### DatabaseSessionPreparedBackend — retained platform evidence, not 1.0 UX authority
+### Historical P3 prepared-execution platform proof
 
 P3 proved Database Tools-owned session/connection prepared execution, cancellation, disposal and
-target correctness. That evidence remains useful and guarded, but IDEA 263 does not expose a maintained
-prepared-to-native-result bridge. Therefore this backend cannot define the 1.0 user-facing bound-result
-workflow while it requires `zMyBatis: Query Result`.
-
-It may remain as bounded experimental/test evidence until cleanup, but it must not be a registered
-fallback for a materialization refusal.
+target correctness. IDEA 263 did not expose a maintained prepared-to-native-result bridge.
+The experimental production backend and separate `zMyBatis: Query Result` presentation were
+removed in P6.1 after P5 accepted the native-materialized shipping route. No prepared/modal
+fallback remains for materialization refusal.
 
 ## 10. Result presentation and UX parity
 
@@ -393,5 +391,5 @@ regression checklist:
 8. the P3 prepared-backend stop gate remains explicit;
 9. superseded Leap admission/preflight/materializer deletion targets are explicit.
 
-D0-D1 and P1-P4 are complete. P5 now validates packaged parity plus minimal human UX smoke; P6 follows with cleanup of
-superseded migration architecture.
+D0-D1 and P1-P5 are complete; P6.1/P6.2 are merged. P6.3 completes superseded
+code/test/documentation cleanup before exact-head CI and packaged-host revalidation.
