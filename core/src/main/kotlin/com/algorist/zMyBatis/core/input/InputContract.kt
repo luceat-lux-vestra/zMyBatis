@@ -300,7 +300,6 @@ enum class InputAliasKind {
     SOURCE_PARAMETER_NAME,
     GENERIC_PARAM,
     ARGUMENT,
-    PARAMETER_OBJECT,
     COLLECTION,
     LIST,
     ARRAY,
