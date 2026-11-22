@@ -378,10 +378,10 @@ ExecuteMapperStatement
   -> collect explicit input
   -> prepare with MyBatis
   -> resolve target
-  -> build the DB-neutral execution request from PreparedExecution
-  -> revalidate source + target
-  -> apply safety confirmation
-  -> execute through the Database Tools adapter
+  -> freeze PreparedExecutionPlan and materialize supported bound values
+  -> apply safety confirmation for the exact approved plan/artifact
+  -> revalidate source + target + lifecycle
+  -> execute through the native Database Tools adapter
   -> present outcome
 ```
 

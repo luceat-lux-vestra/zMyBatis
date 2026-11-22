@@ -213,19 +213,11 @@ Stock MyBatis owns:
 - property traversal;
 - standard dynamic-SQL composition.
 
-P2 replacement parity is now the registered semantic model. The earlier migration mechanisms are
-not registered authorities:
-
-- dynamic grammar restrictions in `XmlStatementParameterContractFactory`;
-- Boolean-if / foreach admission islands;
-- `DynamicOgnlAdmission`;
-- `ForeachProvenanceAdmission`;
-- fixed lexical UPDATE/WHERE/trim permission tables.
-
-Those owners were deleted or disconnected from the registered path once replacement evidence became
-green. Retained scanners/gates may enforce provenance, resource and security/topology constraints
-only; they must not become a second standard-MyBatis semantic authority. Do not reintroduce two
-semantic authorities.
+P2 replacement parity is the registered semantic model. P6.2 deleted the old XML caller-grammar
+factories; prior Boolean-if/foreach/trim admission islands and lexical permission tables are not
+registered semantic authorities. Retained scanners and gates may enforce provenance, resource,
+capability and security/topology constraints only. Stock MyBatis remains the sole standard dynamic
+SQL semantic authority; do not reintroduce a second grammar.
 
 ## 8. PreparedExecutionPlan
 
@@ -387,7 +379,7 @@ regression checklist:
 4. mapper-method-backed and XML-only input authority are both defined;
 5. statement-scoped preparation projection responsibility is defined;
 6. immutable execution-plan identity is defined;
-7. prepared/native backend responsibilities are defined;
+7. supported materialization and native Database Tools backend responsibilities are defined;
 8. the P3 prepared-backend stop gate remains explicit;
 9. superseded Leap admission/preflight/materializer deletion targets are explicit.
 

@@ -252,13 +252,13 @@ The active publication contract established by #56 is:
 
 JetBrains Marketplace `Source Code` and `License` are Marketplace-admin metadata rather than repository-controlled state. The maintainer has confirmed the canonical source URL and Apache-2.0 metadata; repository automation must not pretend it can mutate those fields.
 
-## 10. Current product gaps versus Leap target
+## 10. Current shipping architecture and remaining 1.0 boundaries
 
-> Governance-stable heading: this section now distinguishes the current Leap implementation from the superseding zMyBatis 1.0 target under #512.
+> #512 defines the pre-1.0 compatibility architecture. Current implementation claims must match the active registered execution route and its exact-head evidence.
 
 Epic #60 remains provenance for the single registered Leap authority, while #512 now defines the
 shipping middle path: registered action → authoritative source/caller input → stock MyBatis
-preparation → immutable `PreparedExecutionPlan` → exact target → explicit prepared/native backend.
+preparation → immutable `PreparedExecutionPlan` → supported bound-value materialization → exact target → native Database Tools delivery.
 The former legacy execution/evaluator/input architecture and undistributed v2 persistence remain
 deleted.
 
