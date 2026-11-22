@@ -203,30 +203,18 @@ sealed interface InputEvidence {
         val kind: InputKind,
         val expression: String,
         val source: SourceEvidence,
-        /** Immediate source-derived XML Boolean-if alias; null denotes unconditional source text. */
-        val enclosingOgnlExpression: String? = null,
     ) : InputEvidence {
         init {
             require(expression.isNotBlank()) { "placeholder expression must not be blank" }
-            require(enclosingOgnlExpression == null || enclosingOgnlExpression.isNotBlank()) {
-                "enclosing OGNL expression must be null or non-blank"
-            }
         }
     }
 
     data class OgnlExpression(
         val expression: String,
         val source: SourceEvidence,
-        /** Source-proven WHERE-role placement for a single bounded SELECT Boolean guard; null means direct. */
-        val boundedWhereRole: String? = null,
     ) : InputEvidence {
         init {
             require(expression.isNotBlank()) { "OGNL expression must not be blank" }
-            require(boundedWhereRole == null ||
-                (boundedWhereRole == "where" &&
-                    XmlBooleanGuardSyntax.parse(expression)?.requiresSingleSelect == true)) {
-                "only a bounded SELECT Boolean guard may carry WHERE-role placement"
-            }
         }
     }
 
