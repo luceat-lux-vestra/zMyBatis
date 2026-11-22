@@ -44,6 +44,8 @@ import com.intellij.database.dataSource.LocalDataSource
 import com.intellij.database.dataSource.LocalDataSourceManager
 import com.intellij.database.dataSource.url.template.UrlTemplate
 import com.intellij.database.datagrid.DataRequest
+import com.intellij.database.remote.jdbc.RemoteConnection
+import com.intellij.database.remote.jdbc.RemotePreparedStatement
 import com.intellij.database.dataSource.DatabaseConnectionCore
 import com.intellij.database.psi.DbDataSource
 import com.intellij.database.psi.DbPsiFacade
