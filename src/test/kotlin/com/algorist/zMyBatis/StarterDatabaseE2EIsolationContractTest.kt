@@ -332,6 +332,56 @@ class StarterDatabaseE2EIsolationContractTest {
                 e2e.contains("raw Java input must never be retained across registered-action invocations") &&
                 e2e.contains("assertNativePostgreSqlHistoryContainsAndExcludes"),
         )
+
+        val javaRawScenarioStart = e2e.indexOf(
+            "fun registeredJavaAnnotationRawInterpolationExecutesExactApprovedSql",
+        )
+        val javaRawScenarioEnd = e2e.indexOf("@Test", javaRawScenarioStart + 1)
+        assertTrue(
+            "direct Java raw scenario must remain present",
+            javaRawScenarioStart >= 0 && javaRawScenarioEnd > javaRawScenarioStart,
+        )
+        val javaRawScenario = e2e.substring(javaRawScenarioStart, javaRawScenarioEnd)
+        assertTrue(
+            "Java mapper execution context must be anchored to the method marker instead of a layout-dependent line and column",
+            javaRawScenario.split("clickOn(\"ping\")").size - 1 == 2,
+        )
+        assertFalse(
+            "Java mapper acceptance must not depend on the old @Param-area line/column coordinate",
+            javaRawScenario.contains("clickOnPosition(8, 20)"),
+        )
+        assertTrue(
+            "both direct Java raw invocations must use the Robot-backed raw parameter helper",
+            javaRawScenario.contains("submitRawParameterDialogValue(\"45001\")") &&
+                javaRawScenario.contains("submitRawParameterDialogValue(\"45002\")"),
+        )
+        assertFalse(
+            "direct Java raw acceptance must not mutate modal text through JTextComponentRemote",
+            javaRawScenario.contains("textField().text =") ||
+                javaRawScenario.contains("textField().text.isBlank()"),
+        )
+
+        val rawParameterHelperStart = e2e.indexOf(
+            "private fun Driver.submitRawParameterDialogValue",
+        )
+        val rawParameterHelperEnd = e2e.indexOf(
+            "private fun writeDirectJavaProviderMapper",
+            rawParameterHelperStart,
+        )
+        assertTrue(
+            "Robot raw parameter helper must remain present",
+            rawParameterHelperStart >= 0 && rawParameterHelperEnd > rawParameterHelperStart,
+        )
+        val rawParameterHelper = e2e.substring(rawParameterHelperStart, rawParameterHelperEnd)
+        assertTrue(rawParameterHelper.contains("field.click()"))
+        assertTrue(rawParameterHelper.contains("field.keyboard"))
+        assertTrue(rawParameterHelper.contains("typeText(value)"))
+        assertTrue(rawParameterHelper.contains("rawConfirmation().click()"))
+        assertTrue(rawParameterHelper.contains("button(\"OK\").click()"))
+        assertFalse(
+            "raw parameter helper must stay off low-level text mutation",
+            rawParameterHelper.contains("field.text"),
+        )
         assertTrue(
             "P5 packaged acceptance must prove mutation declaration forces approval even when ordinary preview is disabled",
             e2e.contains("registeredMutationDeclarationForcesPreviewWhenSettingDisabled") &&

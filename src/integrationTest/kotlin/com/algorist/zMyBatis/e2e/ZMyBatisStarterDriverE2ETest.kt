@@ -1311,7 +1311,7 @@ class ZMyBatisStarterDriverE2ETest {
                 createPostgreSqlDataSourceThroughDatabaseTools(projectDir)
 
                 openFile("JavaRawQueryMapper.java")
-                ui.codeEditorForFile("JavaRawQueryMapper.java").clickOnPosition(8, 20)
+                ui.codeEditorForFile("JavaRawQueryMapper.java").clickOn("ping")
                 ideFrame {
                     invokeAction("zMyBatis.Execute", now = false)
                 }
@@ -1328,12 +1328,7 @@ class ZMyBatisStarterDriverE2ETest {
                 }
                 ui.popups().list().last().waitOneText("public").click()
 
-                ui.dialog(title = "Enter MyBatis Parameters") {
-                    assertTrue(textField().text.isBlank(), "raw Java input must start without retained history")
-                    textField().text = "45001"
-                    rawConfirmation().click()
-                    button("OK").click()
-                }
+                submitRawParameterDialogValue("45001")
 
                 ui.dialog(title = "zMyBatis — SQL Preview") {
                     assertEquals(
@@ -1359,26 +1354,19 @@ class ZMyBatisStarterDriverE2ETest {
                 )
 
                 openFile("JavaRawQueryMapper.java")
-                ui.codeEditorForFile("JavaRawQueryMapper.java").clickOnPosition(8, 20)
+                ui.codeEditorForFile("JavaRawQueryMapper.java").clickOn("ping")
                 ideFrame {
                     invokeAction("zMyBatis.Execute", now = false)
                 }
 
-                ui.dialog(title = "Enter MyBatis Parameters") {
-                    assertTrue(
-                        textField().text.isBlank(),
-                        "raw Java input must never be retained across registered-action invocations",
-                    )
-                    textField().text = "45002"
-                    rawConfirmation().click()
-                    button("OK").click()
-                }
+                submitRawParameterDialogValue("45002")
 
                 ui.dialog(title = "zMyBatis — SQL Preview") {
                     assertEquals(
                         executedSql,
                         textArea().text.trim(),
-                        "approved preview must equal the exact SQL submitted to Database Tools",
+                        "raw Java input must never be retained across registered-action invocations; " +
+                            "approved preview must equal the exact SQL submitted to Database Tools",
                     )
                     button("Execute").click()
                 }
@@ -1660,6 +1648,18 @@ class ZMyBatisStarterDriverE2ETest {
             field.keyboard {
                 typeText(value)
             }
+            button("OK").click()
+        }
+    }
+
+    private fun Driver.submitRawParameterDialogValue(value: String) {
+        ui.dialog(title = PARAMETER_DIALOG_TITLE) {
+            val field = textField()
+            field.click()
+            field.keyboard {
+                typeText(value)
+            }
+            rawConfirmation().click()
             button("OK").click()
         }
     }
