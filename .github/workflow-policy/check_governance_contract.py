@@ -30,7 +30,7 @@ REQUIRED_FRAGMENTS = {
         "vMAJOR.MINOR.PATCH[-PRERELEASE]",
         "0.0.0-dev",
         "refs/tags/v*",
-        "## 10. Current product gaps versus Leap target",
+        "## 10. Current shipping architecture and remaining 1.0 boundaries",
     ),
     "CONTRIBUTING.md": (
         "the old template/debug tests were removed",

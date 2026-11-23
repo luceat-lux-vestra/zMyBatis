@@ -48,14 +48,6 @@ class XmlMapperStaticBoundInputPreparationTest {
             "SELECT #{id,jdbcType=BIGINT}::BIGINT AS RESULT_VALUE",
             listOf(parameter(0, "long", "sourceId", "id")),
         )
-        val prepared = success(
-            prepare(fixture, listOf(InputValue.IntegerValue(BigInteger.valueOf(42)))),
-        )
-        val binding = prepared.orderedBindings.single()
-        assertEquals("java.lang.Long", binding.metadata.mappingJavaTypeIdentity)
-        assertEquals("BIGINT", binding.metadata.jdbcTypeIdentity)
-        assertEquals("org.apache.ibatis.type.LongTypeHandler", binding.metadata.typeHandlerIdentity)
-
         val targetId = ExecutionTargetId(
             StableDataSourceId("postgres-proof"),
             ExplicitSchemaIdentity("public"),
@@ -64,6 +56,17 @@ class XmlMapperStaticBoundInputPreparationTest {
             ExecutionTargetDescriptor(targetId, "PostgreSQL proof"),
             MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
         )
+        val prepared = success(
+            prepare(
+                fixture,
+                listOf(InputValue.IntegerValue(BigInteger.valueOf(42))),
+                effectiveDatabaseId = target.effectiveDatabaseId,
+            ),
+        )
+        val binding = prepared.orderedBindings.single()
+        assertEquals("java.lang.Long", binding.metadata.mappingJavaTypeIdentity)
+        assertEquals("BIGINT", binding.metadata.jdbcTypeIdentity)
+        assertEquals("org.apache.ibatis.type.LongTypeHandler", binding.metadata.typeHandlerIdentity)
 
         val plan = when (val frozen = PreparedExecutionPlanner.freeze(prepared, target)) {
             is PreparedExecutionPlanResult.Ready -> frozen.plan
@@ -298,6 +301,7 @@ class XmlMapperStaticBoundInputPreparationTest {
     private fun prepare(
         fixture: Fixture,
         values: List<InputValue>,
+        effectiveDatabaseId: MyBatisDatabaseId? = null,
     ): PreparationResult {
         val contract = contract(fixture)
         check(!contract.isPreparationBlocked) {
@@ -315,7 +319,12 @@ class XmlMapperStaticBoundInputPreparationTest {
             fixture.graph,
             mapperMethod = fixture.mapper,
         )
-        val request = MyBatisPreparationRequest.create(source, contract, environment)
+        val request = MyBatisPreparationRequest.create(
+            source,
+            contract,
+            environment,
+            effectiveDatabaseId = effectiveDatabaseId,
+        )
         check(request is PreparationRequestResult.Ready) {
             "fixture request unexpectedly rejected: $request"
         }

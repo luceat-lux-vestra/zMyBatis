@@ -100,7 +100,7 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
                     onConsoleReady = { borrowed, release ->
                         assertSame(console, borrowed)
                         val exactSql = "SELECT ${iteration + 1} AS resource_probe"
-                        var invocationChecks = 0
+                        var initialExecutionCheckPassed = false
                         var executed = false
                         var deliveryFailure: DatabaseToolsSqlExecutionFailure? = null
                         var finished = 0
@@ -109,8 +109,12 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
                             console = borrowed,
                             sql = exactSql,
                             preExecutionCheck = {
-                                invocationChecks += 1
-                                invocationChecks < LATE_INVALIDATION_CHECK
+                                if (!initialExecutionCheckPassed) {
+                                    initialExecutionCheckPassed = true
+                                    true
+                                } else {
+                                    false
+                                }
                             },
                             onExecuted = { executed = true },
                             onFailure = { deliveryFailure = it },
@@ -267,6 +271,5 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
     companion object {
         private const val BORROW_ITERATIONS = 48
         private const val MATERIALIZED_DELIVERY_ITERATIONS = 12
-        private const val LATE_INVALIDATION_CHECK = 4
     }
 }

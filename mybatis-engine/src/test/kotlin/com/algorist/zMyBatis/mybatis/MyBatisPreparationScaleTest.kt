@@ -154,7 +154,7 @@ class MyBatisPreparationScaleTest {
                     <script>
                       select * from users where id in
                       <foreach collection="ids" item="item" open="(" separator="," close=")">
-                        #{item}
+                        #{item,jdbcType=BIGINT}
                       </foreach>
                     </script>
                 """.trimIndent(),
