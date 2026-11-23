@@ -42,17 +42,31 @@ def require_supported_codeql_patch(entry: dict) -> None:
     patch = entry.get("patch")
     require(isinstance(patch, str) and patch,
             "CodeQL workflow change has no reviewable patch")
+
     changed = [
-        line[1:].strip()
+        (line[0], line[1:].strip())
         for line in patch.splitlines()
         if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
     ]
-    allowed = re.compile(
-        r"uses:\s*github/codeql-action/(?:init|analyze)@"
-        r"[0-9a-f]{40}(?:\s+#.*)?\Z"
+    require(changed, "CodeQL workflow patch has no changed lines")
+
+    action_pin = re.compile(
+        r"uses:\s*(?P<action>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"
+        r"(?:/[A-Za-z0-9_.-]+)*)@(?P<sha>[0-9a-f]{40})"
+        r"(?:\s+#.*)?\Z"
     )
-    require(changed and all(allowed.fullmatch(line) for line in changed),
-            "CodeQL workflow mutation exceeds the init/analyze runtime adapter")
+    removed = []
+    added = []
+    for sign, line in changed:
+        match = action_pin.fullmatch(line)
+        require(match is not None,
+                "CodeQL workflow mutation exceeds immutable action-pin updates")
+        (removed if sign == "-" else added).append(match.group("action"))
+
+    require(removed and len(removed) == len(added),
+            "CodeQL workflow action-pin update is unbalanced")
+    require(removed == added,
+            "CodeQL workflow action identity changed during pin update")
 
 
 def classify(pull: dict, pages: list, expected_head: str) -> bool:
@@ -234,6 +248,17 @@ def self_test() -> None:
         "patch": pin_patch,
     }]], sha)
 
+    setup_java_patch = (
+        "@@ -1 +1 @@\n"
+        "-        uses: actions/setup-java@" + "b" * 40 + " # v6.2.0\n"
+        "+        uses: actions/setup-java@" + "c" * 40 + " # v6.3.0"
+    )
+    assert classify(pull, [[{
+        "filename": ".github/workflows/codeql.yml",
+        "status": "modified",
+        "patch": setup_java_patch,
+    }]], sha)
+
     for bad_pull, bad_pages, bad_sha in (
         ({"head": {"sha": sha}, "changed_files": 2},
          [[{"filename": "README.md", "status": "modified"}]], sha),
@@ -243,6 +268,15 @@ def self_test() -> None:
             "filename": ".github/workflows/codeql.yml",
             "status": "modified",
             "patch": "@@ -1 +1 @@\n-upload: always\n+upload: never",
+        }]], sha),
+        (pull, [[{
+            "filename": ".github/workflows/codeql.yml",
+            "status": "modified",
+            "patch": (
+                "@@ -1 +1 @@\n"
+                "-        uses: actions/setup-java@" + "b" * 40 + "\n"
+                "+        uses: actions/checkout@" + "c" * 40
+            ),
         }]], sha),
         (pull, [[{"filename": "README.md", "status": "modified"}]], "d" * 40),
     ):
