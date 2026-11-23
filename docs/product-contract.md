@@ -1,9 +1,9 @@
 # zMyBatis 1.0 product capability and safety contract
 
-**2026-11-16 pre-1.0 parity baseline:** [MyBatis-compatibility architecture](mybatis-compatibility-architecture.md)
-is the current target architecture under #512. It supersedes the bounded SQL-text/materializer target
-from #391 wherever the two conflict. #251 remains valid historical API evidence; the current
-registered action remains bounded until the new architecture is implemented and proven.
+**Pre-1.0 parity baseline (#512):** [MyBatis-compatibility architecture](mybatis-compatibility-architecture.md)
+is the architecture authority. It supersedes the earlier bounded #391 target wherever they conflict.
+#251 remains historical API evidence. P5 established native-result delivery for the supported
+envelope; P6 removes superseded migration code without widening that envelope.
 
 This document is the **1.0 product-policy authority**. Architecture is defined by
 [mybatis-compatibility-architecture.md](mybatis-compatibility-architecture.md). The current Leap
@@ -58,7 +58,7 @@ The registered product currently uses one contract-driven Leap execution authori
 action, heuristic SQL/parameter extractors, compatibility evaluator, legacy parameter dialog/history,
 and development-only v2 persistence migration are not production fallbacks.
 
-This section describes **current behavior only** after the P4 unified execution-plan cutover.
+This section describes **current behavior** after the P5 native-result cutover and P6.1/P6.2 cleanup.
 
 Current ownership is:
 
@@ -67,15 +67,13 @@ Current ownership is:
 - caller input authority: typed invocation contracts, codecs, contract UI and canonical-identity retention;
 - preparation: isolated stock MyBatis in `:mybatis-engine`;
 - execution authority: one immutable `PreparedExecutionPlan` approved and revalidated as an exact identity;
-- current P4 bound execution: `DatabaseSessionPreparedBackend` with stock MyBatis TypeHandler/JDBC metadata (**P5 regression; not 1.0 UX target**);
-- zero-binding/exact-text execution: `NativeConsoleSqlTextBackend`;
-- P5 target bound delivery: proven executable-SQL materialization -> `NativeConsoleSqlTextBackend` -> native Database Tools result/history;
+- supported bound execution: `NativeExecutionPlanMaterializer` -> exact executable SQL -> `NativeConsoleSqlTextBackend` -> native Database Tools result/history;
+- zero-binding/exact-text execution: `NativeConsoleSqlTextBackend` -> native Database Tools result/history;
 - target persistence: v3 `ExecutionTargetDescriptorStore`;
 - live Database Tools resources: `ConsoleCacheService` + `DatabaseToolsConsoleAdapter`.
 
-Prepared/native backends are explicit capability routes, not fallbacks. Safety is not configurable
-through compatibility evaluator switches, and unsupported behavior does not degrade to an older
-evaluator/materializer path.
+Both supported bound and zero-binding paths have one native delivery backend. Materialization
+refusal is typed and fail-closed, not an implicit prepared/modal or legacy fallback.
 
 ## 4. Source authority and canonical identity
 
@@ -186,10 +184,9 @@ statements. Bound materialization begins only after stock MyBatis has produced t
 ordered mappings. It must preserve binding order, apply tested literal representation/escaping rules,
 and fail typed for unsupported value/type/dialect/custom-TypeHandler shapes.
 
-The current P4 `DatabaseSessionPreparedBackend` remains useful platform evidence but is not the 1.0
-user-facing result authority because the maintained IDEA 263 API surface cannot attach its true prepared
-execution to the established native Database Tools result grid. A separate zMyBatis result modal is not
-accepted as parity.
+The now-deleted P3 prepared backend remains historical platform evidence: IDEA 263 did not provide
+a maintained prepared-to-native Database Tools result-grid bridge. Production uses the native
+materialized route; a separate zMyBatis result modal is not accepted.
 
 The pre-P4 materialized/native path is therefore evidence for the required interaction model, while the
 deleted legacy evaluator remains retired as a MyBatis semantic engine.
@@ -305,12 +302,12 @@ Existing privacy hardening remains protected during parity recovery; regaining m
 6. let stock MyBatis produce BoundSql, ordered mappings, additional values and relevant binding metadata;
 7. freeze one immutable PreparedExecutionPlan bound to source revisions and exact target identity;
 8. require raw/mutation approval and revalidate source, target, cancellation and lifecycle authority;
-9. route bound statements to the prepared backend through the proven P3 maintained-API boundary;
-10. route zero-binding/exact-text statements to the native-console backend;
-11. present structured result/failure with redacted diagnostics.
+9. materialize supported bound plans into one exact approved executable SQL artifact; refuse unsupported shapes;
+10. dispatch supported bound and zero-binding statements through the native Database Tools console backend;
+11. present native results/history or a typed, redacted failure.
 
-P4 cutover is complete. The registered action executes only the exact approved
-`PreparedExecutionPlan` through its selected explicit backend and fails closed rather than
+The registered action freezes the `PreparedExecutionPlan`, materializes supported bound values
+and dispatches the approved native SQL artifact after revalidation. It fails closed rather than
 switching to an alternate backend or legacy materializer.
 
 ## 17. Current settings disposition
@@ -337,8 +334,8 @@ Active parity ownership:
 - #508/#511 — repository-owned manual release-validation harness;
 - #513 — D0 documentation recording of the target architecture.
 
-D0-D1 and P1-P4 are complete. P5 owns packaged automated acceptance, minimal human UX smoke and #509/#510 evidence
-reconciliation; P6 follows with deletion/cleanup. Do not reopen #61-#67 semantics by incrementally
+D0-D1 and P1-P5 are complete; #509/#510 parity regressions were reconciled. P6.1/P6.2 cleanup
+is merged; P6.3 owns final cleanup and exact-head verification. Do not reopen #61-#67 semantics by incrementally
 restoring their old bounded admission/materializer islands.
 
 ## 19. Non-goals for zMyBatis 1.0
@@ -348,13 +345,13 @@ restoring their old bounded admission/materializer islands.
 - arbitrary custom LanguageDriver behavior;
 - arbitrary application custom TypeHandler/runtime-plugin emulation;
 - generic SQL authorization/classification;
-- ORM/application result mapping in the prepared-backend result adapter;
-- native Database Tools result/history parity for the prepared backend;
+- custom ORM/application result mapping;
+- reviving a separate prepared-result backend as an alternative to native Database Tools UX;
 - preserving superseded Leap admission/materializer class structure merely because it still exists;
 - restoring a deleted legacy execution fallback.
 
-A true prepared backend **is** the registered execution backend for ordinary bound statements; the
-P3 maintained-API stop gate has passed and remains a regression constraint.
+True prepared execution was a P3 platform proof, not the registered 1.0 delivery backend.
+Supported bound statements use proven materialization and native Database Tools results.
 
 
 ## UX parity invariant for 1.0 acceptance

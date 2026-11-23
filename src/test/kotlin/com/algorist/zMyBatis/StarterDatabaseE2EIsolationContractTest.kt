@@ -441,7 +441,6 @@ class StarterDatabaseE2EIsolationContractTest {
         assertFalse(
             "registered-action proof must not resurrect the retired one-off BIGINT materializer helper",
             e2e.contains("stockPostgreSqlBigintArtifact") ||
-                e2e.contains("PostgreSqlBigintExecutionMaterializer") ||
                 e2e.contains("positiveArtifact.executionSql") ||
                 e2e.contains("negativeArtifact.executionSql"),
         )

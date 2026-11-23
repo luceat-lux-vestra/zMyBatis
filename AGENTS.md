@@ -14,11 +14,10 @@ For pre-1.0 work:
 - [docs/test-contracts.md](docs/test-contracts.md) separates current evidence from the next parity
   obligations.
 
-#251 and #391 remain historical evidence. The P4 prepared/modal cutover is the current enforced
-implementation, but P5 has established that it regressed the pre-Leap native Database Tools result
-workflow. The 1.0 target therefore keeps stock-MyBatis preparation and immutable plan authority while
-restoring a proven executable-SQL materialization step followed by native Database Tools console/result
-delivery. Unsupported application-runtime semantics and unsafe/ambiguous authority still fail closed.
+#251 and #391 remain historical evidence. The shipping 1.0 candidate uses stock-MyBatis
+preparation, immutable plan authority, tested supported-value materialization, and native Database
+Tools console/result delivery for zero-binding and supported bound execution. Unsupported
+application-runtime semantics and unsafe/ambiguous authority still fail closed.
 
 The deleted legacy action/evaluator/extractor/dialog/history architecture must not be reintroduced as
 fallback, compatibility routing, or test-only semantic authority.
@@ -37,15 +36,14 @@ The current registered execution path is broadly:
 2. resolve one exact stable datasource UUID + explicit named schema and derive target database-id context;
 3. derive caller-authoritative input requirements and collect a validated `InputEnvironment`;
 4. prepare through isolated stock MyBatis and freeze one immutable `PreparedExecutionPlan`;
-5. approve that exact plan, then immediately revalidate source/target/lifecycle authority;
-6. route explicitly by binding cardinality:
-   - ordered bindings > 0 -> `DatabaseSessionPreparedBackend` -> bounded zMyBatis prepared-result presentation;
-   - ordered bindings == 0 -> `NativeConsoleSqlTextBackend` -> Database Tools native result/history.
+5. materialize supported bound plans through `NativeExecutionPlanMaterializer` into exact
+   executable SQL; use exact plan SQL for zero-binding execution;
+6. approve the exact plan/artifact and immediately revalidate source/target/lifecycle authority;
+7. dispatch through `NativeConsoleSqlTextBackend` to Database Tools native result/history.
 
-The production contract is stock-MyBatis preparation plus explicit prepared/native execution, not a
-SQL literalization envelope. Common stock TypeHandlers own bound execution; zero-binding/exact-text
-execution remains native. Prepared/native backends do not fall back to each other, and the deleted
-legacy evaluator/materializer is not a routing option.
+The production contract is stock-MyBatis preparation followed by an explicit tested dialect/type
+materialization envelope for nonzero bindings. Unsupported shapes fail typed; there is no
+prepared/modal or legacy evaluator fallback.
 
 Key current ownership areas:
 
@@ -53,8 +51,8 @@ Key current ownership areas:
 - source admission: `LeapActionContextAdmissionCoordinator` plus Java/XML #62 adapters and source-graph revalidation;
 - input: caller-authoritative `ParameterContract`, `ContractParameterInputDialog`, typed `InputEnvironment`, and contract-keyed retention;
 - preparation/plan: `:mybatis-engine` `MyBatisPreparationBoundary` plus `PreparedExecutionPlanner`;
-- bound execution: `DatabaseSessionPreparedBackend` + `PreparedResultPresentationAdapter`;
-- zero-binding/exact-text execution: `NativeConsoleSqlTextBackend` + `DatabaseToolsConsoleAdapter`;
+- supported bound materialization: `NativeExecutionPlanMaterializer` + `PreparedPlanSqlMaterializer`;
+- native execution for bound and zero-binding plans: `NativeConsoleSqlTextBackend` + `DatabaseToolsConsoleAdapter`;
 - approval/delivery: `LeapExecutionApprovalAdapter` + `LeapExecutionDeliveryCoordinator`;
 - target persistence/resource lifecycle: `ExecutionTargetDescriptorStore`, exact Database Tools resolution, v3 stale-source pruning, and persistence-neutral `ConsoleCacheService`;
 - settings: `ZMyBatisSettings`, configurable UI.
@@ -63,8 +61,8 @@ The registered action has no retained legacy execution fallback. Removed proxy/e
 
 ## 1.1 Pre-1.0 parity recovery — mandatory order
 
-The P1-P4 compatibility architecture is now the registered shipping implementation. P5 validates
-packaged parity plus minimal human UX smoke against it; P6 owns deletion of superseded migration islands.
+P1-P4 established MyBatis-compatible preparation and plan contracts. P5 restored the native
+Database Tools result workflow. P6.1 and P6.2 are merged; P6.3 owns final cleanup and exact-head gates.
 
 Mandatory work-unit order:
 
@@ -99,7 +97,7 @@ must add zMyBatis-vs-oracle parity for the slice they replace.
 
 - `#{...}` and `${...}` are distinct semantics. Never silently convert a bound placeholder into raw interpolation or vice versa.
 - Materialized SQL text is a compatibility representation, not JDBC/TypeHandler byte-for-byte equivalence; for 1.0 it is the proven bridge from stock-MyBatis preparation to the required native Database Tools result UX.
-- **Current P4 implementation:** stock MyBatis preparation + immutable `PreparedExecutionPlan` + prepared/native backend routing. **P5 target:** replace the bound prepared/modal delivery with explicit, tested materialization + native console dispatch. Unsupported application-runtime semantics and ambiguous source/input/target authority still fail closed.
+- **Current shipping route:** stock MyBatis preparation + immutable `PreparedExecutionPlan` + supported bound-value materialization where required + native Database Tools console/result delivery. Unsupported application-runtime semantics and ambiguous authority still fail closed.
 - Internal MyBatis variables such as `<bind>` names and `foreach` item/index must not be invented as caller inputs.
 - Unsupported or ambiguous source/input/evaluation behavior must not silently become plausible executable SQL. The stronger typed-failure architecture is defined by Leap #60/#64; #67 supplied its final quality/readiness evidence.
 - Preview and execution must not silently diverge. Full Database Tools click-through fidelity remains a platform/integration evidence gap documented in `docs/test-contracts.md`.
@@ -254,13 +252,13 @@ The active publication contract established by #56 is:
 
 JetBrains Marketplace `Source Code` and `License` are Marketplace-admin metadata rather than repository-controlled state. The maintainer has confirmed the canonical source URL and Apache-2.0 metadata; repository automation must not pretend it can mutate those fields.
 
-## 10. Current product gaps versus Leap target
+## 10. Current shipping architecture and remaining 1.0 boundaries
 
-> Governance-stable heading: this section now distinguishes the current Leap implementation from the superseding zMyBatis 1.0 target under #512.
+> #512 defines the pre-1.0 compatibility architecture. Current implementation claims must match the active registered execution route and its exact-head evidence.
 
 Epic #60 remains provenance for the single registered Leap authority, while #512 now defines the
 shipping middle path: registered action → authoritative source/caller input → stock MyBatis
-preparation → immutable `PreparedExecutionPlan` → exact target → explicit prepared/native backend.
+preparation → immutable `PreparedExecutionPlan` → supported bound-value materialization → exact target → native Database Tools delivery.
 The former legacy execution/evaluator/input architecture and undistributed v2 persistence remain
 deleted.
 
@@ -320,7 +318,7 @@ After a material external mutation, verify the resulting GitHub postcondition be
 Checkpoint updates must not move the production PR HEAD. Any actual HEAD movement invalidates prior exact-HEAD evidence under this repository's normal merge gate. Deliberately stale checkpoints are a test technique only; normal work updates the checkpoint after every verified durable boundary.
 
 
-### Legacy UX parity during P5
+### Native Database Tools UX parity
 
 P5 human smoke treats the pre-Leap product workflow as the UX baseline while allowing presentation/UI improvements. Internal architecture may change, but it must not introduce user-visible execution surfaces merely to expose implementation details.
 
@@ -329,4 +327,4 @@ P5 human smoke treats the pre-Leap product workflow as the UX baseline while all
 - executing from a mapper must not open or focus another console editor tab; a transient off-screen editor may be used only as an implementation detail when native dispatch needs an `Editor`, and it is created/released per dispatch rather than retained as a hidden editor pool unless measured evidence later justifies a lifecycle-safe cache;
 - parameter input may improve labels, validation, accessibility, and structured editing without changing caller authority;
 - zero-binding/exact-text execution continues to use native Database Tools result/history surfaces;
-- bound execution must restore the native Database Tools result surface that shipped before P4. Because the maintained 263 prepared-to-grid bridge was disproven, recover that UX with post-stock-MyBatis executable-SQL materialization, not by reviving the legacy evaluator. Materialization must be explicit, ordered, escaped/type-aware for the admitted envelope, and fail closed for unsupported shapes; the prepared/modal backend is not an accepted silent fallback.
+- supported bound execution uses the same native Database Tools result surface. The maintained 263 prepared-to-grid bridge was disproven, so the shipping route materializes a stock-MyBatis-derived plan to exact SQL with ordered, escaped/type-aware rules for the admitted envelope; unsupported shapes fail closed without a prepared/modal fallback.

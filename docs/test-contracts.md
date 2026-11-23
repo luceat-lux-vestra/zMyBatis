@@ -57,9 +57,8 @@ The oracle deliberately does **not** encode historical Leap refusal as target tr
 `XmlMapperPreparationProjectionParityTest` for structural selected-statement/reachable-fragment
 projection. P2 now extends that frozen oracle into the registered invocation/input authority:
 `P2CallerAuthorityParityTest`, `P2RegisteredPathParityTest` and the Java/XML engine suites prove
-mapper-signature / explicit XML-object caller authority and stock dynamic-SQL execution. P3/P4 then
-promoted the maintained prepared Database Tools backend and immutable execution-plan routing into the
-registered path.
+mapper-signature / explicit XML-object caller authority and stock dynamic-SQL execution. P3/P4 then proved the maintained prepared Database Tools boundary and immutable execution-plan
+authority; P5 restored native Database Tools result delivery through supported materialization.
 
 Historical Boolean-if/foreach syntax-admission owners are no longer registered semantic authorities.
 Their retained successor tests exercise stock behavior plus provenance/topology/security invariants,
@@ -69,13 +68,13 @@ not a second dynamic-language permission table.
 
 The repository-owned [manual release validation sample](../samples/manual-release-validation/README.md)
 is the shared acceptance fixture for an exact packaged release candidate. Its M/J/R/U/T matrix maps
-current P1-P4 behavior to explicit automated owners; it is **not** a mandate to replay the full
+current P1-P5 behavior to explicit automated owners; it is **not** a mandate to replay the full
 semantic/routing matrix manually.
 
 Manual acceptance is restricted to three residual IDEA UX checks that automation does not judge
-well: exact-ZIP install/settings/action visibility, one native + one prepared result visual sanity
-check, and restart/persisted-target UX. DataGrip has no separate manual requirement because its exact
-packaged service/refusal/prepared route is already exercised independently by Starter/Driver.
+well: exact-ZIP install/settings/action visibility, one zero-binding + one supported bound native
+result visual sanity check, and restart/persisted-target UX. DataGrip has no separate manual
+requirement because its packaged service/refusal/materialized-native route is covered by Starter/Driver.
 
 Historical #509/#510 reproductions are promoted to normal `Parity*` acceptance fixtures only
 because P1/P2 and packaged evidence own the underlying behavior. Human smoke never substitutes for
@@ -134,7 +133,7 @@ Raw interpolation is represented explicitly in the parameter contract and `Prepa
 Statement kind remains confirmation evidence, not SQL authorization. The immutable approved
 `PreparedExecutionPlan` is the execution authority; cancellation terminates the invocation, and
 packaged Starter/Driver scenarios prove XML/direct-Java raw confirmation behavior without weakening
-the prepared/native routing boundary.
+the approved-plan/native delivery boundary.
 
 ## Preview and execution boundary
 
@@ -142,11 +141,11 @@ Current shipping preview/approval receives the immutable `PreparedExecutionPlan`
 ordered typed bindings, raw interpolation provenance/result, source revisions, target/databaseId and
 statement kind. Formatting derives presentation text only and cannot mutate the approved plan.
 
-The exact approved plan is immediately revalidated before delivery. Current P4 code still dispatches
-bindings > 0 to `DatabaseSessionPreparedBackend`, but P5 treats that prepared/modal route as a regression.
-The target evidence is:
-- bindings == 0 -> exact text -> `NativeConsoleSqlTextBackend`;
-- supported bindings > 0 -> proven executable-SQL materialization -> `NativeConsoleSqlTextBackend`.
+The exact approved plan/materialized artifact is immediately revalidated before delivery.
+The current registered route is:
+- bindings == 0 -> exact plan SQL -> `NativeConsoleSqlTextBackend`;
+- supported bindings > 0 -> `NativeExecutionPlanMaterializer` -> exact SQL -> `NativeConsoleSqlTextBackend`;
+- unsupported materialization -> typed refusal, never a prepared/modal fallback.
 
 The Starter/Driver E2E must supply representative full click-throughs for:
 - zero-binding native execution;
@@ -173,9 +172,9 @@ The tests prove project-scoped v3 persistence, stable datasource UUID + explicit
 
 #478 adds DataGrip as an explicit, independently visible host proof rather than reusing IDEA Ultimate evidence.
 
-`verifyPlugin` targets DataGrip 2026.3 independently of IDEA Ultimate 2026.3, with the minimum build raised to 263. The process layer uses `ZMyBatisDataGripStarterDriverE2ETest` through the separate `dataGripIntegrationTest` task and `Starter / Driver E2E (DataGrip)` CI job. P5 must move the bounded XML-only PostgreSQL DataGrip scenario to the same native-result contract: stock MyBatis resolves the bound shape, the admitted value is materialized safely, and Database Tools presents `41` through its normal result surface rather than a zMyBatis prepared-result dialog. The host suite also retains service loading, typed no-datasource refusal, strict IDE-failure reporting and clean shutdown.
+`verifyPlugin` targets DataGrip 2026.3 independently of IDEA Ultimate 2026.3, with the minimum build raised to 263. The process layer uses `ZMyBatisDataGripStarterDriverE2ETest` through the separate `dataGripIntegrationTest` task and `Starter / Driver E2E (DataGrip)` CI job. P5 moved the bounded XML-only PostgreSQL DataGrip scenario to the native-result contract: stock MyBatis resolves the bound shape, the admitted value is materialized safely, and Database Tools presents `41` through its normal result surface rather than a zMyBatis prepared-result dialog. The host suite also retains service loading, typed no-datasource refusal, strict IDE-failure reporting and clean shutdown.
 
-DataGrip evidence is deliberately narrower than the IU PostgreSQL golden path. It does not prove Java annotation source behavior, native Database Tools result/history parity, every datasource/schema lifecycle case, every DBMS/dialect, or wider JetBrains host compatibility. A successful IU run cannot satisfy the DataGrip obligation, and a successful DataGrip run cannot widen the Java-source or native-result capability matrix. Those gaps are explicit so a green `Test` context is not misrepresented as broader platform proof. `DataGripStarterDriverE2EContractTest` pins that bounded claim and the pinned PostgreSQL workflow prerequisite.
+DataGrip evidence is deliberately narrower than the IU PostgreSQL golden path. It does not prove Java annotation source behavior, IDEA-equivalent breadth of native Database Tools result/history behavior, every datasource/schema lifecycle case, every DBMS/dialect, or wider JetBrains host compatibility. A successful IU run cannot satisfy the DataGrip obligation, and a successful DataGrip run cannot widen Java-source or native-result capability claims beyond its XML-only scenario. Those gaps are explicit so a green `Test` context is not misrepresented as broader platform proof. `DataGripStarterDriverE2EContractTest` pins that bounded claim and the pinned PostgreSQL workflow prerequisite.
 
 ## Other gates
 
@@ -494,20 +493,18 @@ dispatch; no hidden editor pool is retained without measured performance evidenc
 lifecycle contract.
 
 
-## Preparation scale and retired materializer characterization
+## Preparation scale and current materialization evidence
 
-Large-collection preparation remains a relevant stock-MyBatis responsiveness boundary even though
-the former single-BIGINT SQL-text materializer is no longer shipping execution authority.
+Large-collection preparation remains a relevant stock-MyBatis responsiveness boundary. The
+retired single-BIGINT materializer and its obsolete tests have been deleted.
 `MyBatisValueConversion` currently bounds structured conversion at 65,536 input nodes, while #470
 measures source-graph scale and #472/#474 measure many UI requirements/drafts rather than one large
 runtime collection flowing through isolated MyBatis preparation.
 
-#494 measured representative large-collection preparation through the same stock-MyBatis boundary
-used by the registered candidate path and then characterized the **then-shipping** materializer's
-multi-binding refusal. That terminal refusal is retained as historical migration evidence only.
-Current P4 execution instead freezes the resulting mappings into `PreparedExecutionPlan` and routes
-nonzero ordered bindings to `DatabaseSessionPreparedBackend`. Timings remain comparison
-observations, not product SLAs; any future concrete defect must be split into its own bounded fix.
+#494 originally measured preparation and a historical materializer refusal. The maintained fixture
+now freezes the resulting mappings into `PreparedExecutionPlan` and materializes them with
+`NativeExecutionPlanMaterializer`, preserving binding/placeholder correspondence and exact
+target/databaseId/fingerprint evidence. Timings are comparative observations, not product SLAs.
 
 
 `MyBatisPreparationScaleTest` makes that scale obligation executable in
@@ -522,11 +519,9 @@ count, emitted ordered-binding/placeholder cardinality, SQL character count, pre
 materialization elapsed and combined pipeline elapsed under the `ZMYBATIS_PREPARATION_SCALE`
 prefix. Exact linear mapping growth is required.
 
-The historical fixture then passes the prepared artifact to
-`PostgreSqlBigintExecutionMaterializer` and records its former
-`BINDING_COUNT_UNSUPPORTED` behavior. That assertion characterizes the retired compatibility
-boundary; it does **not** describe current registered execution, where those mappings are ordinary
-prepared bindings.
+The maintained fixture freezes an immutable plan, materializes supported bindings, and requires
+that no unconsumed bound marker remains. The previous one-BIGINT refusal assertion was removed;
+observed preparation/materialization/pipeline timings are not latency SLAs.
 
 The root IntelliJ unit harness is deliberately not used as authority for the dynamic-MyBatis scale
 measurement. Its flattened IntelliJ test classloader can load MyBatis without a recoverable local
@@ -551,4 +546,4 @@ remain comparative observations, not latency SLAs.
 
 P5 adds an explicit UX regression contract on top of functional parity. `DatabaseToolsConsoleAdapterBoundaryTest` pins existing-session/client discovery, prefers reuse over creation, forbids editor-tab navigation and console focus stealing, and requires any zMyBatis-created fallback console to retain the dynamic `<mapper filename> - zMyBatis` identity. Human smoke verifies the same packaged behavior in IDEA. UI improvements to parameter entry are allowed when they clarify state without changing input authority.
 
-The 263 runtime characterization disproved the attempted true-prepared `QueryRequest.params` bridge, but that does not waive the pre-Leap native-result product requirement. P5 therefore treats the prepared/modal route as a regression and restores native Database Tools result ownership through proven post-stock-MyBatis executable-SQL materialization. A separate `zMyBatis: Query Result` surface is not an accepted 1.0 fallback.
+The 263 runtime characterization disproved the attempted true-prepared `QueryRequest.params` bridge, but that does not waive the pre-Leap native-result product requirement. P5 rejected the prepared/modal route and restored native Database Tools result ownership through proven post-stock-MyBatis executable-SQL materialization. A separate `zMyBatis: Query Result` surface is not an accepted 1.0 fallback.

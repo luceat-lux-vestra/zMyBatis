@@ -18,9 +18,6 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         assertTrue(delivery.contains("consoleAdapter.acquireAndDeliverConsole("))
         assertTrue(delivery.contains("NativeExecutionPlanMaterializer.materialize(plan)"))
         assertTrue(delivery.contains("nativeBackend.execute("))
-        assertFalse(delivery.contains("preparedBackend.execute("))
-        assertFalse(delivery.contains("preparedResultAdapter.present("))
-        assertFalse(delivery.contains("consoleAdapter.executeMaterialized("))
         assertFalse(action.contains("JdbcConsole.newConsole"))
         assertFalse(action.contains(".switchSchema("))
         assertFalse(action.contains("JdbcConsoleProvider.findScriptModelNoInject"))
@@ -28,7 +25,6 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         assertFalse(action.contains("WriteCommandAction.runWriteCommandAction"))
         assertFalse(action.contains("FileEditorManager.getInstance"))
         assertFalse(action.contains("project.getService(FileEditorManager::class.java)"))
-        assertFalse(action.contains("executeMaterialized("))
     }
 
     @Test
@@ -91,28 +87,6 @@ class DatabaseToolsConsoleAdapterBoundaryTest {
         assertFalse(adapter.contains(".navigate("))
         assertFalse(approval.contains("ModalityState.any()"))
         assertTrue(approval.contains("ModalityState.defaultModalityState()"))
-    }
-
-    @Test
-    fun `Leap artifact delivery preserves immutable SQL and explicit revalidation inputs`() {
-        val adapter = source(
-            "src/main/kotlin/com/algorist/zMyBatis/execution/DatabaseToolsConsoleAdapter.kt"
-        )
-        val method = adapter.substringAfter("fun executeMaterialized(")
-            .substringBefore("\n    fun executeSql(")
-
-        assertTrue(method.contains("val boundTarget = artifact.executionTargetId"))
-        assertTrue(method.contains("val sourceRevisions = artifact.sourceRevisions"))
-        assertTrue(method.contains("currentTarget = currentTarget"))
-        assertTrue(method.contains("areSourceRevisionsCurrent = areSourceRevisionsCurrent"))
-        assertTrue(method.contains("sql = artifact.executionSql"))
-        assertFalse(method.contains("artifact.toString()"))
-        assertFalse(method.contains("SqlFormatter"))
-        assertTrue(
-            adapter.contains(
-                "currentTarget()?.targetId == boundTarget"
-            )
-        )
     }
 
     @Test

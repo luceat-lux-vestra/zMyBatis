@@ -31,9 +31,6 @@ import java.util.concurrent.Callable
 import java.util.concurrent.CancellationException
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Proxy
-import com.algorist.zMyBatis.core.materialization.MaintainedExecutionMaterializer
-import com.algorist.zMyBatis.core.materialization.MaterializationResult
-import com.algorist.zMyBatis.core.materialization.MaterializationFailureKind
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
@@ -102,7 +99,6 @@ class XmlBooleanIfRuntimePreparationTest {
             assertEquals(if (enabled) listOf("id", "id", "enabled", "id", "id", "id") else listOf("id", "id", "id", "id"), execution.orderedBindings.map { it.property })
             assertEquals(if (enabled) listOf(integer(42), integer(42), InputValue.BooleanValue(true), integer(42), integer(42), integer(42)) else List(4) { integer(42) }, execution.orderedBindings.map { it.value })
             assertStockParity(fixture, enabled, execution)
-            assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure.kind)
         }
     }
 
@@ -251,16 +247,6 @@ class XmlBooleanIfRuntimePreparationTest {
         assertEquals("mybatis-prepared-sql-empty", failure.code)
         assertSame(before, thread.contextClassLoader)
         assertTrue(prepare(fixture, true) is PreparationResult.Success)
-    }
-
-    @Test
-    fun boundPreparationsRemainNonExecutableThroughMaintainedMaterialization() {
-        val fixture = fixture("SELECT #{id} <if test=\"enabled\">, #{id}</if>")
-        for (enabled in listOf(true, false)) {
-            val execution = success(prepare(fixture, enabled))
-            val failure = (MaintainedExecutionMaterializer.materialize(execution) as MaterializationResult.Failed).failure
-            assertEquals(MaterializationFailureKind.BOUND_EXECUTION_REQUIRED, failure.kind)
-        }
     }
 
     @Test

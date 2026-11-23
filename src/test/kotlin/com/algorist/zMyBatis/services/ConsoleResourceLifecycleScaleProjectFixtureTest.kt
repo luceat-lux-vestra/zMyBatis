@@ -1,19 +1,8 @@
 package com.algorist.zMyBatis.services
 
-import com.algorist.zMyBatis.core.execution.ExecutionTargetDescriptor
 import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
-import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.algorist.zMyBatis.core.execution.StableDataSourceId
-import com.algorist.zMyBatis.core.materialization.MaterializationResult
-import com.algorist.zMyBatis.core.materialization.MaterializedExecution
-import com.algorist.zMyBatis.core.materialization.TargetBoundZeroBindingExecutionMaterializer
-import com.algorist.zMyBatis.core.preparation.PreparationMetadata
-import com.algorist.zMyBatis.core.preparation.PreparedExecution
-import com.algorist.zMyBatis.core.source.SourceFileId
-import com.algorist.zMyBatis.core.source.SourceRevision
-import com.algorist.zMyBatis.core.source.StatementKind
-import com.algorist.zMyBatis.core.source.XmlStatementId
 import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAcquisitionFailure
 import com.algorist.zMyBatis.execution.DatabaseToolsConsoleAdapter
 import com.algorist.zMyBatis.execution.DatabaseToolsSqlExecutionFailure
@@ -88,48 +77,45 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
         }
     }
 
-    fun testRepeatedMaterializedDeliveryUsesTransientEditorsWithoutOpeningPersistentEditor() {
+    fun testRepeatedNativeSqlDeliveryUsesTransientEditorsWithoutOpeningPersistentEditor() {
         val cache = ConsoleCacheService.getInstance(project)
         val dataSource = registeredDbDataSource(
-            name = "zMyBatis existing-console materialized scale",
-            url = "jdbc:h2:mem:zmybatis_existing_console_materialized",
+            name = "zMyBatis existing-console native scale",
+            url = "jdbc:h2:mem:zmybatis_existing_console_native",
         )
-        val console = newConsole(dataSource, "ResourceMaterializedMapper.xml")
+        val console = newConsole(dataSource, "ResourceNativeMapper.xml")
         val lifetime = Disposer.newCheckedDisposable(console)
         val adapter = DatabaseToolsConsoleAdapter.getInstance(project)
-        val key = "vfs:file:///tmp/zmybatis/ResourceMaterializedMapper.xml"
-        val target = targetId("resource-materialized-existing", "public")
+        val key = "vfs:file:///tmp/zmybatis/ResourceNativeMapper.xml"
         val baselineEditors = EditorFactory.getInstance().getEditors(console.document, project).size
         var terminalFailures = 0
 
         try {
             repeat(MATERIALIZED_DELIVERY_ITERATIONS) { iteration ->
                 var acquisitionFailure: DatabaseToolsConsoleAcquisitionFailure? = null
-
                 adapter.acquireAndDeliverConsole(
                     dataSource = dataSource,
                     schema = null,
                     resourceKey = key,
                     onConsoleReady = { borrowed, release ->
                         assertSame(console, borrowed)
-                        val artifact = materialized(
-                            sql = "SELECT ${iteration + 1} AS resource_probe",
-                            target = target,
-                        )
-                        var invocationChecks = 0
+                        val exactSql = "SELECT ${iteration + 1} AS resource_probe"
+                        var initialExecutionCheckPassed = false
                         var executed = false
                         var deliveryFailure: DatabaseToolsSqlExecutionFailure? = null
                         var finished = 0
 
-                        adapter.executeMaterialized(
+                        adapter.executeSql(
                             console = borrowed,
-                            artifact = artifact,
-                            currentTarget = { resolvedTarget(target) },
-                            isInvocationActive = {
-                                invocationChecks += 1
-                                invocationChecks < LATE_INVALIDATION_CHECK
+                            sql = exactSql,
+                            preExecutionCheck = {
+                                if (!initialExecutionCheckPassed) {
+                                    initialExecutionCheckPassed = true
+                                    true
+                                } else {
+                                    false
+                                }
                             },
-                            areSourceRevisionsCurrent = { it == artifact.sourceRevisions },
                             onExecuted = { executed = true },
                             onFailure = { deliveryFailure = it },
                             onFinished = {
@@ -151,7 +137,6 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
                     },
                     onFailure = { acquisitionFailure = it },
                 )
-
                 assertNull(acquisitionFailure)
                 assertTrue(cache.beginReuseLease(key))
                 cache.endReuseLease(key)
@@ -159,7 +144,7 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
             }
 
             println(
-                "ZMYBATIS_RESOURCE_LIFECYCLE phase=materialized-delivery-terminal " +
+                "ZMYBATIS_RESOURCE_LIFECYCLE phase=native-sql-delivery-terminal " +
                     "policy=BORROW_EXISTING iterations=$MATERIALIZED_DELIVERY_ITERATIONS " +
                     "distinct_consoles=1 persistent_editor_delta=0 " +
                     "terminal_failures=$terminalFailures native_invocations=0 " +
@@ -235,35 +220,6 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
         }
     }
 
-    private fun materialized(
-        sql: String,
-        target: ExecutionTargetId,
-    ): MaterializedExecution {
-        val file = SourceFileId("vfs:/ResourceLifecycle.xml")
-        val prepared = PreparedExecution(
-            statementId = XmlStatementId(file, "fixture.ResourceLifecycleMapper", "probe"),
-            statementKind = StatementKind.SELECT,
-            sourceRevisions = mapOf(file to SourceRevision("resource-lifecycle-r1")),
-            sqlWithPlaceholders = sql,
-            orderedBindings = emptyList(),
-            rawInterpolations = emptyList(),
-            preparationMetadata = PreparationMetadata(
-                engineIdentity = "org.mybatis:mybatis",
-                engineVersion = "3.5.19",
-                languageDriverIdentity = "org.apache.ibatis.scripting.xmltags.XMLLanguageDriver",
-            ),
-        )
-        val result = TargetBoundZeroBindingExecutionMaterializer(resolvedTarget(target))
-            .materialize(prepared)
-        return (result as MaterializationResult.Success).execution
-    }
-
-    private fun resolvedTarget(target: ExecutionTargetId): ResolvedExecutionTarget =
-        ResolvedExecutionTarget(
-            ExecutionTargetDescriptor(target, "fixture"),
-            effectiveDatabaseId = null,
-        )
-
     private fun targetId(
         dataSourceId: String,
         schema: String,
@@ -315,6 +271,5 @@ class ConsoleResourceLifecycleScaleProjectFixtureTest : BasePlatformTestCase() {
     companion object {
         private const val BORROW_ITERATIONS = 48
         private const val MATERIALIZED_DELIVERY_ITERATIONS = 12
-        private const val LATE_INVALIDATION_CHECK = 4
     }
 }

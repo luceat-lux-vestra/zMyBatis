@@ -13,8 +13,10 @@ import com.algorist.zMyBatis.core.execution.ExecutionTargetId
 import com.algorist.zMyBatis.core.execution.ExplicitSchemaIdentity
 import com.algorist.zMyBatis.core.execution.ResolvedExecutionTarget
 import com.algorist.zMyBatis.core.execution.StableDataSourceId
-import com.algorist.zMyBatis.core.materialization.MaterializationResult
-import com.algorist.zMyBatis.core.materialization.PostgreSqlBigintExecutionMaterializer
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanResult
+import com.algorist.zMyBatis.core.execution.PreparedExecutionPlanner
+import com.algorist.zMyBatis.core.materialization.NativeExecutionPlanMaterializer
+import com.algorist.zMyBatis.core.materialization.PreparedPlanSqlMaterializationResult
 import com.algorist.zMyBatis.core.preparation.MyBatisPreparationRequest
 import com.algorist.zMyBatis.core.preparation.PreparationFailureKind
 import com.algorist.zMyBatis.core.preparation.PreparationRequestResult
@@ -41,19 +43,11 @@ import org.junit.Test
 
 class XmlMapperStaticBoundInputPreparationTest {
     @Test
-    fun preparedLongBindingMaterializesAsPostgresqlBigintArtifact() {
+    fun preparedLongBindingMaterializesThroughNativeExecutionPlan() {
         val fixture = fixture(
             "SELECT #{id,jdbcType=BIGINT}::BIGINT AS RESULT_VALUE",
             listOf(parameter(0, "long", "sourceId", "id")),
         )
-        val prepared = success(
-            prepare(fixture, listOf(InputValue.IntegerValue(BigInteger.valueOf(42)))),
-        )
-        val binding = prepared.orderedBindings.single()
-        assertEquals("java.lang.Long", binding.metadata.mappingJavaTypeIdentity)
-        assertEquals("BIGINT", binding.metadata.jdbcTypeIdentity)
-        assertEquals("org.apache.ibatis.type.LongTypeHandler", binding.metadata.typeHandlerIdentity)
-
         val targetId = ExecutionTargetId(
             StableDataSourceId("postgres-proof"),
             ExplicitSchemaIdentity("public"),
@@ -62,15 +56,35 @@ class XmlMapperStaticBoundInputPreparationTest {
             ExecutionTargetDescriptor(targetId, "PostgreSQL proof"),
             MyBatisDatabaseId(ConventionalMyBatisDatabaseIds.POSTGRESQL),
         )
+        val prepared = success(
+            prepare(
+                fixture,
+                listOf(InputValue.IntegerValue(BigInteger.valueOf(42))),
+                effectiveDatabaseId = target.effectiveDatabaseId,
+            ),
+        )
+        val binding = prepared.orderedBindings.single()
+        assertEquals("java.lang.Long", binding.metadata.mappingJavaTypeIdentity)
+        assertEquals("BIGINT", binding.metadata.jdbcTypeIdentity)
+        assertEquals("org.apache.ibatis.type.LongTypeHandler", binding.metadata.typeHandlerIdentity)
 
-        val result = PostgreSqlBigintExecutionMaterializer(target).materialize(prepared)
-        val artifact = (result as MaterializationResult.Success).execution
+        val plan = when (val frozen = PreparedExecutionPlanner.freeze(prepared, target)) {
+            is PreparedExecutionPlanResult.Ready -> frozen.plan
+            is PreparedExecutionPlanResult.Failed ->
+                throw AssertionError("prepared plan freeze failed: ${frozen.failure}")
+        }
+        val artifact = when (val result = NativeExecutionPlanMaterializer.materialize(plan)) {
+            is PreparedPlanSqlMaterializationResult.Ready -> result.artifact
+            is PreparedPlanSqlMaterializationResult.Failed ->
+                throw AssertionError("native materialization failed: ${result.failure}")
+        }
 
         assertEquals("SELECT 42::BIGINT AS RESULT_VALUE", normalize(artifact.executionSql))
         assertEquals(targetId, artifact.executionTargetId)
-        assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, artifact.executionDialectId)
-        assertEquals(prepared.statementId, artifact.statementId)
-        assertEquals(prepared.sourceRevisions, artifact.sourceRevisions)
+        assertEquals(ConventionalMyBatisDatabaseIds.POSTGRESQL, artifact.databaseId)
+        assertEquals(prepared.statementId, plan.statementId)
+        assertEquals(prepared.sourceRevisions, plan.sourceRevisions)
+        assertEquals(plan.fingerprint, artifact.planFingerprint)
     }
 
     @Test
@@ -287,6 +301,7 @@ class XmlMapperStaticBoundInputPreparationTest {
     private fun prepare(
         fixture: Fixture,
         values: List<InputValue>,
+        effectiveDatabaseId: MyBatisDatabaseId? = null,
     ): PreparationResult {
         val contract = contract(fixture)
         check(!contract.isPreparationBlocked) {
@@ -304,7 +319,12 @@ class XmlMapperStaticBoundInputPreparationTest {
             fixture.graph,
             mapperMethod = fixture.mapper,
         )
-        val request = MyBatisPreparationRequest.create(source, contract, environment)
+        val request = MyBatisPreparationRequest.create(
+            source,
+            contract,
+            environment,
+            effectiveDatabaseId = effectiveDatabaseId,
+        )
         check(request is PreparationRequestResult.Ready) {
             "fixture request unexpectedly rejected: $request"
         }
