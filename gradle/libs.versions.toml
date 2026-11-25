@@ -1,6 +1,7 @@
 [versions]
 # libraries
 junit = "4.13.2"
+mybatis = "3.6.0"
 
 # plugins
 changelog = "2.5.0"
@@ -10,6 +11,7 @@ kover = "0.9.11"
 qodana = "2026.2.2"
 
 [libraries]
+mybatis = { group = "org.mybatis", name = "mybatis", version.ref = "mybatis" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]

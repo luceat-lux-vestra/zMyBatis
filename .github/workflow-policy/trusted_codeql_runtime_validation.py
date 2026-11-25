@@ -57,16 +57,28 @@ def require_supported_codeql_patch(entry: dict) -> None:
     )
     removed = []
     added = []
+    old_runners = []
+    new_runners = []
+    java_refresh = 0
     for sign, line in changed:
         match = action_pin.fullmatch(line)
-        require(match is not None,
-                "CodeQL workflow mutation exceeds immutable action-pin updates")
-        (removed if sign == "-" else added).append(match.group("action"))
+        if match is not None:
+            (removed if sign == "-" else added).append(match.group("action"))
+            continue
+        runner = re.fullmatch(r"runs-on: ubuntu-([0-9]{2})\.04-arm", line)
+        if runner:
+            (old_runners if sign == "-" else new_runners).append(int(runner.group(1)))
+            continue
+        if sign == "+" and line == "check-latest: true":
+            java_refresh += 1
+            continue
+        raise ValueError("CodeQL workflow mutation exceeds reviewed pin/ARM64/Java refresh changes")
 
-    require(removed and len(removed) == len(added),
-            "CodeQL workflow action-pin update is unbalanced")
-    require(removed == added,
-            "CodeQL workflow action identity changed during pin update")
+    require(removed == added, "CodeQL workflow action identity changed during pin update")
+    require(len(old_runners) == len(new_runners)
+            and all(new > old for old, new in zip(old_runners, new_runners)),
+            "CodeQL ARM64 migration must be a balanced forward GA label change")
+    require(java_refresh <= 1, "CodeQL Java patch refresh must be scoped to its single setup-java")
 
 
 def classify(pull: dict, pages: list, expected_head: str) -> bool:
@@ -259,7 +271,16 @@ def self_test() -> None:
         "patch": setup_java_patch,
     }]], sha)
 
+    runner_patch = "@@ -1 +1 @@\n-runs-on: ubuntu-24.04-arm\n+runs-on: ubuntu-26.04-arm\n+check-latest: true"
+    assert classify(pull, [[{
+        "filename": ".github/workflows/codeql.yml",
+        "status": "modified",
+        "patch": runner_patch,
+    }]], sha)
     for bad_pull, bad_pages, bad_sha in (
+        (pull, [[{"filename": ".github/workflows/codeql.yml", "status": "modified",
+                  "patch": "@@ -1 +1 @@\n-runs-on: ubuntu-26.04-arm\n+runs-on: ubuntu-24.04-arm"}]], sha),
+
         ({"head": {"sha": sha}, "changed_files": 2},
          [[{"filename": "README.md", "status": "modified"}]], sha),
         (pull, [[{"filename": "../bad", "status": "modified"}]], sha),

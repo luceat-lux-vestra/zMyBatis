@@ -41,14 +41,7 @@ ZIZMOR_LOCAL_ONLY_FIXTURES = {
 
 
 def resolve_actionlint() -> str | None:
-    on_path = shutil.which("actionlint")
-    if on_path:
-        return on_path
-
-    local_binary = REPO_ROOT / "actionlint"
-    if local_binary.is_file():
-        return str(local_binary)
-    return None
+    return shutil.which("actionlint")
 
 
 def run(cmd: list[str]) -> int:
@@ -224,7 +217,7 @@ jobs:
 
     # Immutable pinning applies to remote Actions/workflows. GitHub self-repository
     # references resolve to the exact running commit and do not have an
-    # independent ref to pin; workspace-relative ./ references are rejected.
+    # independent ref to pin; workspace-relative step actions remain rejected.
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         checker = str(POLICY_DIR / "check_pins.py")
@@ -236,7 +229,7 @@ on:
   workflow_dispatch:
 jobs:
   reusable:
-    uses: $/.github/workflows/e2e.yml
+    uses: ./.github/workflows/e2e.yml
   action:
     runs-on: ubuntu-latest
     steps:
@@ -414,7 +407,7 @@ jobs:
                "ref: ${{ env.EXPECTED_SHA }}",
                'git -C .qodana-source rev-parse HEAD',
                "Qodana - Full Code Inspection",
-               "JetBrains/qodana-action@3e8d76ff0e0241618abd808682f426afe84bab3f",
+               "qodana_action_at(",
                "--project-dir .qodana-source --repository-root .qodana-source --fail-threshold 0",
                "cache-default-branch-only: true",
                "pr-mode: false",
@@ -433,9 +426,9 @@ jobs:
            failures)
 
     build_source = (WORKFLOWS_DIR / "build.yml").read_text(encoding="utf-8")
-    actionlint_compat_source = (POLICY_DIR / "actionlint_compat.py").read_text(
-        encoding="utf-8"
-    )
+    qodana_pins = re.findall(r"uses:\s*JetBrains/qodana-action@([0-9a-f]{40})", qodana_full_source)
+    expect("PR and trusted Qodana use the same immutable action",
+           len(qodana_pins) == 1 and qodana_pins == re.findall(r"uses:\s*JetBrains/qodana-action@([0-9a-f]{40})", build_source), failures)
     codeql_runtime_source = (
         POLICY_DIR / "trusted_codeql_runtime_validation.py"
     ).read_text(encoding="utf-8")
@@ -459,16 +452,12 @@ jobs:
         failures,
     )
     expect(
-        "actionlint self-repository shim is version-scoped and retirement-documented",
-        all(fragment in actionlint_compat_source for fragment in (
-            'EXPECTED_ACTIONLINT_VERSION = "1.7.12"',
-            "rhysd/actionlint#711",
-            "rhysd/actionlint#732",
-            "Retire this adapter when a stable actionlint release supports",
-            'SELF_REPOSITORY_WORKFLOW = "$/.github/workflows/e2e.yml"',
-        ))
-        and "actionlint_compat.py --self-test" in build_source
-        and "actionlint_compat.py ./actionlint .github/workflows/*.yml" in build_source,
+        "workflow linters are native-managed without an actionlint version shim",
+        (REPO_ROOT / ".github/tools/actionlint/go.mod").is_file()
+        and (REPO_ROOT / ".github/tools/zizmor/requirements.txt").is_file()
+        and not (POLICY_DIR / "actionlint_compat.py").exists()
+        and "go build -mod=mod" in build_source
+        and "pip install -r .github/tools/zizmor/requirements.txt" in build_source,
         failures,
     )
     e2e_source = (WORKFLOWS_DIR / "e2e.yml").read_text(encoding="utf-8")
@@ -484,7 +473,7 @@ jobs:
                "\n  prScope:",
                "\n  starterDriver:",
                "needs: [ prScope, build ]",
-               "uses: $/.github/workflows/e2e.yml",
+               "uses: ./.github/workflows/e2e.yml",
                "candidate_artifact_name: ${{ needs.build.outputs.candidate_artifact_name }}",
                "candidate_sha256: ${{ needs.build.outputs.candidate_sha256 }}",
                "needs: [ prScope, build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview, starterDriver ]",
@@ -727,28 +716,10 @@ def check_actionlint(failures: list[str]) -> None:
         expect("actionlint is available", False, failures)
         return
 
-    compat = str(POLICY_DIR / "actionlint_compat.py")
-    compat_self_test_rc = run(["python3", compat, "--self-test"])
-    expect(
-        "actionlint self-repository compatibility shim is narrowly scoped",
-        compat_self_test_rc == 0,
-        failures,
-    )
-
-    good_rc = run([
-        "python3",
-        compat,
-        actionlint,
-        *[str(path) for path in GOOD_FIXTURES],
-    ])
+    good_rc = run([actionlint, *[str(path) for path in GOOD_FIXTURES]])
     expect("actionlint accepts the good fixtures", good_rc == 0, failures)
 
-    real_rc = run([
-        "python3",
-        compat,
-        actionlint,
-        *[str(path) for path in REAL_WORKFLOWS],
-    ])
+    real_rc = run([actionlint, *[str(path) for path in REAL_WORKFLOWS]])
     expect("actionlint accepts every real workflow", real_rc == 0, failures)
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -764,13 +735,11 @@ jobs:
             encoding="utf-8",
         )
         unrelated_rc = run([
-            "python3",
-            compat,
             actionlint,
             str(unrelated),
         ])
         expect(
-            "actionlint compatibility shim does not suppress unrelated workflow-call errors",
+            "actionlint rejects unrelated invalid workflow-call syntax",
             unrelated_rc != 0,
             failures,
         )
@@ -868,7 +837,8 @@ def check_main_e2e_cache_seed(failures: list[str]) -> None:
     expect("DataGrip prepared XML evidence owns a pinned PostgreSQL service",
            "Start pinned PostgreSQL E2E service for DataGrip" in workflow
            and "zmybatis-postgres-datagrip-e2e" in workflow
-           and "postgres@sha256:0b2882c46a2b8d8e148431b333394348cf4d7f15aec6df7f17d51dc641e56cfa" in workflow,
+           and len(set(re.findall(r"postgres@sha256:[0-9a-f]{64}", workflow))) == 1
+           and len(re.findall(r"postgres@sha256:[0-9a-f]{64}", workflow)) == 2,
            failures)
     expect("DataGrip artifact manifest reports the maintained 2026.3 host",
            'echo "host=DATAGRIP"' in workflow
@@ -934,6 +904,7 @@ def check_dependency_submission_main_scope(failures: list[str]) -> None:
         "**/gradle.lockfile", "**/gradle/dependency-locks/**",
         "**/*.versions.toml", "gradle/**", "buildSrc/**", "build-logic/**",
         "gradlew", "gradlew.bat", ".github/workflows/dependency-submission.yml",
+        ".github/workflow-policy/trusted_dependency_submission_validation.py",
     }
     actual = (
         set(re.findall(r"(?m)^      - '([^']+)'$", trigger["items"]))

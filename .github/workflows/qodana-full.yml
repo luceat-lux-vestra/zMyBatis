@@ -28,7 +28,7 @@ permissions: {}
 jobs:
   scan-guard:
     name: Qodana schedule guard
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 5
     permissions:
       actions: read
@@ -90,7 +90,7 @@ jobs:
     needs: scan-guard
     if: needs.scan-guard.outputs.should_scan == 'true'
     name: Qodana full scan
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 45
     permissions:
       contents: read
@@ -100,7 +100,7 @@ jobs:
       - name: Checkout trusted main policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -145,13 +145,23 @@ jobs:
         with:
           distribution: zulu
           java-version: 25
+          check-latest: true
+
+      - name: Resolve Qodana cache family from configuration and runner
+        id: qodana-cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          config_hash="$(sha256sum .qodana-source/qodana.yml | cut -d ' ' -f 1)"
+          runner_hash="$(sha256sum /etc/os-release | cut -d ' ' -f 1)"
+          printf 'prefix=qodana-%s-%s-%s-%s-\n' "$RUNNER_OS" "$RUNNER_ARCH" "$config_hash" "$runner_hash" >> "$GITHUB_OUTPUT"
 
       - name: Qodana - Full Code Inspection
         uses: JetBrains/qodana-action@aa698739cd4b8204ad53291bea7e16cd75da3c9f # v2026.3.1
         with:
           args: --project-dir .qodana-source --repository-root .qodana-source --fail-threshold 0
-          primary-cache-key: qodana-jvm-community-2026.2.2-linux-arm64-${{ env.EXPECTED_SHA }}
-          additional-cache-key: qodana-jvm-community-2026.2.2-linux-arm64-
+          primary-cache-key: ${{ steps.qodana-cache.outputs.prefix }}${{ env.EXPECTED_SHA }}
+          additional-cache-key: ${{ steps.qodana-cache.outputs.prefix }}
           cache-default-branch-only: true
           pr-mode: false
           upload-result: true
@@ -185,7 +195,10 @@ jobs:
           import json
           import os
           import subprocess
+          import sys
           from pathlib import Path
+          sys.path.insert(0, str(Path(".github/workflow-policy").resolve()))
+          from check_release_qodana import qodana_action_at
 
           checkout = subprocess.check_output(
               ["git", "-C", ".qodana-source", "rev-parse", "HEAD"], text=True
@@ -202,7 +215,7 @@ jobs:
               "repository": os.environ["GITHUB_REPOSITORY"],
               "run_id": int(os.environ["GITHUB_RUN_ID"]),
               "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
-              "qodana_action": "JetBrains/qodana-action@3e8d76ff0e0241618abd808682f426afe84bab3f",
+              "qodana_action": qodana_action_at(os.environ["GITHUB_SHA"]),
               "profile": "qodana.recommended",
               "fail_threshold": 0,
           }

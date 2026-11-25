@@ -1,0 +1,12 @@
+# Dependency and toolchain lifecycle
+
+Owner: #562; central policy EG-DEP-001 (#28). The machine-readable ownership registry is `.github/dependency-update-policy.json`.
+
+- Use native Dependabot for Gradle, GitHub Actions, the Go actionlint module, the pip zizmor CLI and the Maven manual-release-validation sample. Go uses the official stable selector; Java uses the newest supported LTS major with native patch refresh (`check-latest: true`). The sample's Java 17 compilation floor is not the runner JDK or an LTS update freeze.
+- Explicit ARM64 runner labels and the Qodana stable image release line use ordinary reviewed updates based on provider releases and the existing central audit. No extra updater, scheduler or token. Qodana uses its bundled JDK; the 2026.3 line bundles JBR 25. Both scan paths share a configuration- and runner-derived cache identity. Real ARM64 execution is required before acceptance.
+- Gradle's version catalog owns MyBatis coordinates across consumers; graph submission reads expected coordinates from the same catalog, preserves the established minimum graph coverage and exact source/ref verification. The protected-main publisher alone may submit; PR evidence remains read-only and cannot substitute for production. The Gradle wrapper distribution properties own its version, not a duplicated project property.
+- Trusted Qodana provenance derives the actual immutable action pin from the workflow event commit, rather than an outdated hardcoded value. Previously inconsistent manifests are not accepted as valid evidence. Both scan paths retain the established SARIF and zero-finding gates.
+- Workflow lint uses the real native-managed binaries. The single E2E reusable-workflow job uses GitHub's same-commit local path; the narrowly scoped zizmor self-repository exception is necessary until actionlint supports the newer syntax. Review by 2027-02-22 or upstream support (rhysd/actionlint #711/#732); workspace-relative step actions remain forbidden. No broad suppression.
+- PostgreSQL image digest changes are reviewed across both E2E hosts. No generic shell hash scanner or unverified digest substitution. Existing Merge Gate, release and security authorities remain mandatory, including independent manual release validation #561.
+
+Acceptance: exact-head CI, native update operation, post-merge main graph/cache evidence and refreshed central audit. Source-only review is not runtime evidence.

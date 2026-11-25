@@ -28,7 +28,6 @@ GUARD_JOB = "Qodana schedule guard"
 SCAN_JOB = "Qodana full scan"
 WAIT_SECONDS = 50 * 60
 POLL_SECONDS = 15
-QODANA_ACTION = "JetBrains/qodana-action@3e8d76ff0e0241618abd808682f426afe84bab3f"
 
 
 def require(ok: bool, message: str) -> None:
@@ -189,7 +188,15 @@ def only_file(root: Path, expected_name: str, label: str) -> Path:
     return files[0]
 
 
-def verify_manifest(root: Path, sha: str, run: dict, repo: str) -> None:
+def qodana_action_at(event_sha: str) -> str:
+    require(bool(SHA.fullmatch(event_sha)), "Qodana event SHA is invalid")
+    workflow = git("show", f"{event_sha}:.github/workflows/{WORKFLOW}")
+    pins = re.findall(r"(?m)^\s*uses:\s*(JetBrains/qodana-action@[0-9a-f]{40})(?:\s+#.*)?$", workflow)
+    require(len(pins) == 1, "Qodana event workflow must contain one immutable analysis action")
+    return pins[0]
+
+
+def verify_manifest(root: Path, sha: str, run: dict, repo: str, expected_action: str) -> None:
     path = only_file(root, "qodana-source-manifest.json", "Qodana source manifest")
     document = json.loads(path.read_text(encoding="utf-8"))
     require(isinstance(document, dict), "Qodana source manifest is malformed")
@@ -202,7 +209,7 @@ def verify_manifest(root: Path, sha: str, run: dict, repo: str) -> None:
         "repository": repo,
         "run_id": run["id"],
         "run_attempt": 1,
-        "qodana_action": QODANA_ACTION,
+        "qodana_action": expected_action,
         "profile": "qodana.recommended",
         "fail_threshold": 0,
     }
@@ -242,7 +249,7 @@ def verify_evidence(run: dict, sha: str, workflow_id: int, repo: str,
         sarif_dir.mkdir()
         download(run_id, repo, names["source"], source_dir)
         download(run_id, repo, names["sarif"], sarif_dir)
-        verify_manifest(source_dir, sha, run, repo)
+        verify_manifest(source_dir, sha, run, repo, qodana_action_at(run["head_sha"]))
         sarif_file = only_file(sarif_dir, "qodana.sarif.json", "Qodana SARIF")
         verdict = check_sarif(sarif_file)
 
@@ -492,6 +499,11 @@ def self_test() -> None:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         manifest = root / "qodana-source-manifest.json"
+        fixture_action = "JetBrains/qodana-action@" + "f" * 40
+        with patch(__name__ + ".git", return_value=f"        uses: {fixture_action} # fixture"):
+            assert qodana_action_at(other) == fixture_action
+        with patch(__name__ + ".git", return_value="        uses: JetBrains/qodana-action@latest"):
+            reject(lambda: qodana_action_at(other), "immutable analysis action")
         document = {
             "schema": 1,
             "candidate_sha": sha,
@@ -501,12 +513,12 @@ def self_test() -> None:
             "repository": "owner/repo",
             "run_id": 17,
             "run_attempt": 1,
-            "qodana_action": QODANA_ACTION,
+            "qodana_action": fixture_action,
             "profile": "qodana.recommended",
             "fail_threshold": 0,
         }
         manifest.write_text(json.dumps(document), encoding="utf-8")
-        verify_manifest(root, sha, run, "owner/repo")
+        verify_manifest(root, sha, run, "owner/repo", fixture_action)
         for change in (
             {"candidate_sha": other},
             {"checkout_sha": other},
@@ -523,12 +535,12 @@ def self_test() -> None:
                 encoding="utf-8",
             )
             reject(
-                lambda: verify_manifest(root, sha, run, "owner/repo"),
+                lambda: verify_manifest(root, sha, run, "owner/repo", fixture_action),
                 "identity mismatch",
             )
         manifest.write_text("{broken", encoding="utf-8")
         reject(
-            lambda: verify_manifest(root, sha, run, "owner/repo"),
+            lambda: verify_manifest(root, sha, run, "owner/repo", fixture_action),
             "Expecting property name",
         )
 

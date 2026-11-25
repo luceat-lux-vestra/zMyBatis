@@ -33,7 +33,7 @@ permissions:
 jobs:
   prScope:
     name: PR scope
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 5
     permissions:
       contents: read
@@ -93,7 +93,7 @@ jobs:
       candidate_sha: ${{ steps.artifact.outputs.candidate_sha }}
       candidate_version: ${{ steps.artifact.outputs.candidate_version }}
       candidate_sha256: ${{ steps.artifact.outputs.candidate_sha256 }}
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 45
     steps:
       - name: Detect documentation-only scope
@@ -154,6 +154,7 @@ jobs:
         with:
           distribution: zulu
           java-version: 25
+          check-latest: true
 
       - name: Setup Gradle
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
@@ -161,6 +162,10 @@ jobs:
         with:
           # Main manual Build also runs Qodana; Gradle cache writes belong to E2E seed.
           cache-read-only: true
+
+      - name: Compile maintained Maven acceptance sample
+        if: ${{ steps.scope.outputs.docs_only != 'true' }}
+        run: mvn --batch-mode --no-transfer-progress -f samples/manual-release-validation/pom.xml compile
 
       - name: Build exact validation candidate
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
@@ -222,7 +227,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 45
     steps:
       - name: Detect documentation-only scope
@@ -281,6 +286,7 @@ jobs:
         with:
           distribution: zulu
           java-version: 25
+          check-latest: true
 
       - name: Setup Gradle
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
@@ -329,7 +335,7 @@ jobs:
 
   qodanaScope:
     name: Qodana scope
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 5
     outputs:
       qodana_required: ${{ steps.scope.outputs.qodana_required }}
@@ -395,7 +401,7 @@ jobs:
   inspectCode:
     name: Inspect code
     needs: [ qodanaScope ]
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 45
     steps:
       - name: Require valid Qodana scope decision
@@ -452,6 +458,17 @@ jobs:
         with:
           distribution: zulu
           java-version: 25
+          check-latest: true
+
+      - name: Resolve Qodana cache family from configuration and runner
+        id: qodana-cache
+        if: ${{ needs.qodanaScope.outputs.qodana_required == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          config_hash="$(sha256sum qodana.yml | cut -d ' ' -f 1)"
+          runner_hash="$(sha256sum /etc/os-release | cut -d ' ' -f 1)"
+          printf 'prefix=qodana-%s-%s-%s-%s-\n' "$RUNNER_OS" "$RUNNER_ARCH" "$config_hash" "$runner_hash" >> "$GITHUB_OUTPUT"
 
       - name: Qodana - Code Inspection
         if: ${{ needs.qodanaScope.outputs.qodana_required == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
@@ -460,8 +477,8 @@ jobs:
           args: --fail-threshold 0
           # Both keys must match across main and PR refs so PR analysis can restore
           # a trusted main cache; only the main workflow_dispatch run may write it.
-          primary-cache-key: qodana-jvm-community-2026.2.2-linux-arm64-${{ github.sha }}
-          additional-cache-key: qodana-jvm-community-2026.2.2-linux-arm64-
+          primary-cache-key: ${{ steps.qodana-cache.outputs.prefix }}${{ github.sha }}
+          additional-cache-key: ${{ steps.qodana-cache.outputs.prefix }}
           cache-default-branch-only: true
           pr-mode: false
           upload-result: true
@@ -471,7 +488,7 @@ jobs:
 
   dependencySubmissionValidation:
     name: Dependency submission PR validation
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 30
     permissions:
       contents: read
@@ -522,6 +539,7 @@ jobs:
         with:
           distribution: zulu
           java-version: 25
+          check-latest: true
 
       - name: Generate untrusted PR dependency graph without submission
         if: ${{ steps.dependency-scope.outputs.required == 'true' }}
@@ -541,12 +559,13 @@ jobs:
           python3 .github/workflow-policy/trusted_dependency_submission_validation.py verify \
             --dir dependency-graph-reports-pr \
             --head "$EXPECTED_HEAD" \
-            --event-ref "$EVENT_REF"
+            --event-ref "$EVENT_REF" \
+            --catalog gradle/libs.versions.toml
 
 
   verify:
     name: Verify plugin
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 60
     steps:
       - name: Detect documentation-only scope
@@ -605,6 +624,7 @@ jobs:
         with:
           distribution: zulu
           java-version: 25
+          check-latest: true
 
       - name: Setup Gradle
         if: ${{ steps.scope.outputs.docs_only != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
@@ -624,7 +644,7 @@ jobs:
           path: ${{ github.workspace }}/build/reports/pluginVerifier
   lint:
     name: Lint workflows
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 15
     permissions:
       contents: read
@@ -734,27 +754,29 @@ jobs:
           python3 .github/workflow-policy/test_issue_metadata.py
           node --test .github/workflow-policy/issue-metadata.test.cjs
 
-      - name: Install actionlint
+      - name: Setup stable Go for actionlint
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: stable
+          check-latest: true
+          cache: false
+
+      - name: Build module-managed actionlint
+        working-directory: .github/tools/actionlint
         run: |
           set -euo pipefail
-          test "$(uname -m)" = "aarch64"
-          curl -fLsS -o actionlint_1.7.12_linux_arm64.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_arm64.tar.gz
-          echo "325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6  actionlint_1.7.12_linux_arm64.tar.gz" | sha256sum -c -
-          tar -xzf actionlint_1.7.12_linux_arm64.tar.gz actionlint
-          ./actionlint -version
+          go build -mod=mod -o "$RUNNER_TEMP/actionlint" github.com/rhysd/actionlint/cmd/actionlint
+          go version -m "$RUNNER_TEMP/actionlint"
+          "$RUNNER_TEMP/actionlint" -version
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
-      - name: actionlint
-        run: |
-          # actionlint 1.7.12 predates GitHub's $/ self-repository syntax.
-          # Retire this adapter when rhysd/actionlint#732 lands in a stable release.
-          python3 .github/workflow-policy/actionlint_compat.py --self-test
-          python3 .github/workflow-policy/actionlint_compat.py ./actionlint .github/workflows/*.yml
-
-      - name: zizmor
+      - name: Install manifest-managed zizmor
         run: |
           set -euo pipefail
-          pipx install "zizmor==1.30.0"
-          zizmor --offline --persona regular .github/workflows/*.yml
+          python3 -m venv "$RUNNER_TEMP/zizmor-venv"
+          "$RUNNER_TEMP/zizmor-venv/bin/python" -m pip install -r .github/tools/zizmor/requirements.txt
+          "$RUNNER_TEMP/zizmor-venv/bin/zizmor" --version
+          echo "$RUNNER_TEMP/zizmor-venv/bin" >> "$GITHUB_PATH"
 
       - name: Prove the checks above are actually fail-closed
         run: |
@@ -766,7 +788,7 @@ jobs:
 
   dependencyReview:
     name: Dependency Review
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 10
     steps:
       - name: Review dependency changes
@@ -783,7 +805,7 @@ jobs:
     name: Starter / Driver E2E
     needs: [ prScope, build ]
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.prScope.outputs.docs_only != 'true' }}
-    uses: $/.github/workflows/e2e.yml
+    uses: ./.github/workflows/e2e.yml # zizmor: ignore[self-repository]
     with:
       candidate_artifact_name: ${{ needs.build.outputs.candidate_artifact_name }}
       candidate_sha: ${{ needs.build.outputs.candidate_sha }}
@@ -794,7 +816,7 @@ jobs:
     name: Merge Gate
     needs: [ prScope, build, test, qodanaScope, inspectCode, dependencySubmissionValidation, verify, lint, dependencyReview, starterDriver ]
     if: ${{ always() }}
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 5
     steps:
       - name: Require every merge-gate component to succeed

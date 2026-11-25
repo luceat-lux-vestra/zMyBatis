@@ -274,6 +274,7 @@ jobs:
         with:
           distribution: zulu
           java-version: 25
+          check-latest: true
 
       - name: Setup Gradle
         if: ${{ steps.state.outputs.publish == 'true' }}

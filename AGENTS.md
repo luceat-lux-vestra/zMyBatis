@@ -232,6 +232,8 @@ Workflow trust-boundary rules:
 
 `E2E / Starter / Driver E2E` is maintained process-level evidence from completed issue #130. It remains separately visible rather than an unconditional ruleset context; applicability is decided per change under `docs/e2e-testing.md`, and an applicable scenario must pass on the exact final HEAD. Do not substitute template IDE startup or robot-server smoke for falsifiable production-path evidence.
 
+Dependency update ownership and toolchain lifecycle: [dependency-lifecycle.md](docs/engineering/dependency-lifecycle.md) and `.github/dependency-update-policy.json`. Native Dependabot first; coordinated provider-gap changes use ordinary reviewed PRs.
+
 ## 9. Version and release contract — hardened baseline
 
 The active publication contract established by #56 is:
