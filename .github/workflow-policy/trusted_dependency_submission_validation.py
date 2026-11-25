@@ -6,6 +6,8 @@ import argparse
 import json
 import re
 import sys
+import os
+import tomllib
 from pathlib import Path
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -22,17 +24,30 @@ RELEVANT_PATHS = frozenset({
     "build.gradle.kts",
     "gradle/libs.versions.toml",
 })
-REQUIRED_COORDINATES = frozenset({
-    "org.mybatis:mybatis:3.6.0",
-    "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:2.20.1",
-})
-SUPPORTED_COORDINATE_KEYS = frozenset({
-    "org.mybatis:mybatis",
-    "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin",
-})
-COORDINATE_LINE = re.compile(
-    r'"(?P<coordinate>[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[^"\s]+)",\Z'
-)
+# This evidence floor is based on the maintained 761-node parity snapshot;
+# it is a coverage invariant, not a target dependency version.
+MINIMUM_RESOLVED_NODES = 650
+
+
+def required_coordinates(catalog: Path) -> frozenset[str]:
+    with catalog.open("rb") as source:
+        data = tomllib.load(source)
+    versions = data["versions"]
+    library = data["libraries"]["mybatis"]
+    plugin = data["plugins"]["intelliJPlatform"]
+    require(library.get("group") == "org.mybatis" and library.get("name") == "mybatis",
+            "canonical MyBatis dependency identity changed")
+    require(plugin.get("id") == "org.jetbrains.intellij.platform",
+            "canonical IntelliJ platform plugin identity changed")
+    mybatis = versions[library["version"]["ref"]]
+    intellij = versions[plugin["version"]["ref"]]
+    for version in (mybatis, intellij):
+        require(isinstance(version, str) and re.fullmatch(r"[0-9]+(?:\.[0-9]+)+", version) is not None,
+                "catalog must contain exact dependency versions")
+    return frozenset({
+        f"org.mybatis:mybatis:{mybatis}",
+        f"org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:{intellij}",
+    })
 
 
 def require(condition: bool, message: str) -> None:
@@ -47,44 +62,24 @@ def safe_path(value: object) -> str:
 
 
 def require_supported_publisher_patch(entry: dict) -> None:
+    # Classification selects the read-only adapter, not authorization to
+    # publish. The separate candidate-source contract and strict review
+    # validate production trust, paired pins and the exact shared verifier.
     require(entry.get("status") == "modified",
             "unsupported dependency-submission workflow change type")
     patch = entry.get("patch")
-    require(isinstance(patch, str) and patch,
+    require(isinstance(patch, str) and bool(patch.strip()),
             "dependency-submission change has no reviewable patch")
-    changed = [
-        (line[0], line[1:].strip())
-        for line in patch.splitlines()
-        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
-    ]
-    require(changed, "dependency-submission change has no changed lines")
 
-    allowed_action = re.compile(
-        r"uses:\s*(?:actions/checkout|actions/setup-java|gradle/actions/dependency-submission)"
-        r"@[0-9a-f]{40}(?:\s+#.*)?\Z"
+
+def is_graph_input(path: str) -> bool:
+    return (
+        path in RELEVANT_PATHS
+        or path.endswith((".gradle", ".gradle.kts", ".versions.toml", "gradle.properties", "gradle.lockfile"))
+        or path.startswith(("gradle/", "buildSrc/", "build-logic/"))
+        or "/gradle/dependency-locks/" in path
+        or path in {"gradlew", "gradlew.bat"}
     )
-    if all(allowed_action.fullmatch(line) for _, line in changed):
-        return
-
-    require(len(changed) == 2,
-            "dependency-submission workflow mutation exceeds the supported adapters")
-    removed = [line for sign, line in changed if sign == "-"]
-    added = [line for sign, line in changed if sign == "+"]
-    require(len(removed) == 1 and len(added) == 1,
-            "dependency-submission coordinate adapter requires one replacement pair")
-
-    old_match = COORDINATE_LINE.fullmatch(removed[0])
-    new_match = COORDINATE_LINE.fullmatch(added[0])
-    require(old_match is not None and new_match is not None,
-            "dependency-submission coordinate adapter only accepts coordinate literals")
-    old_coordinate = old_match.group("coordinate")
-    new_coordinate = new_match.group("coordinate")
-    old_key = old_coordinate.rsplit(":", 1)[0]
-    new_key = new_coordinate.rsplit(":", 1)[0]
-    require(old_key == new_key and new_key in SUPPORTED_COORDINATE_KEYS,
-            "dependency-submission coordinate adapter changed an unsupported artifact")
-    require(new_coordinate in REQUIRED_COORDINATES,
-            "dependency-submission publisher coordinate does not match PR validation policy")
 
 
 def classify(pull: dict, pages: list, expected_head: str) -> bool:
@@ -120,7 +115,7 @@ def classify(pull: dict, pages: list, expected_head: str) -> bool:
         if name == ".github/workflows/dependency-submission.yml":
             require_supported_publisher_patch(entry)
 
-    return bool(paths & RELEVANT_PATHS)
+    return any(is_graph_input(path) for path in paths)
 
 
 def extract_job(workflow: str, job_id: str) -> str:
@@ -142,11 +137,40 @@ def action_pin(text: str, action: str) -> str:
 
 
 def check_contract(production: str, pr_workflow: str) -> None:
-    require("  pull_request:" not in production
-            and "  pull_request_target:" not in production,
-            "production dependency publisher must not run on PR events")
-    require("      contents: write" in production,
-            "production publisher lost contents:write authority")
+    top = production.split("\njobs:\n", 1)[0]
+    events = re.search(r"(?m)^on:\n((?:[ \t].*\n|\n)*)", top)
+    require(events is not None and re.findall(r"(?m)^  ([a-z_]+):.*$", events.group(1)) == ["push", "workflow_dispatch"]
+            and "    branches: [main]" in events.group(1),
+            "production dependency publisher must remain main push/manual-only")
+    require(re.search(r"(?m)^permissions: \{\}$", top) is not None,
+            "production workflow must default to no permissions")
+    producer = extract_job(production, "submitGraph")
+    header = producer.split("\n    steps:", 1)[0]
+    require("    permissions:\n      contents: write\n" in producer
+            and re.findall(r"^\s+([a-z-]+):\s*write(?:\s+#.*)?$", header, re.MULTILINE) == ["contents"],
+            "production publisher must retain only contents:write authority")
+    guard = "${{ github.repository == 'luceat-lux-vestra/zMyBatis' && github.ref == 'refs/heads/main' && vars.ZMYBATIS_ADS_CUTOVER_DONE == 'true' }}"
+    require(re.findall(r"(?m)^    if: (.+)$", header) == [guard],
+            "production publisher lost exact main cutover guard")
+    require(re.findall(r"^  ([A-Za-z0-9_-]+):\s*$", production.split("\njobs:\n", 1)[1], re.MULTILINE) == ["submitGraph"],
+            "production publisher has an unexpected job")
+    require(re.findall(r"^      - name: (.+)$", producer, re.MULTILINE) == [
+        "Checkout exact protected main", "Setup supported Java",
+        "Generate and submit exact main dependency graph (no cache writes)",
+        "Verify submitted graph coverage and provenance",
+    ], "production publisher changed its reviewed step topology")
+    require(len(re.findall(r"(?m)^      - ", producer)) == 4
+            and len(re.findall(r"(?m)^        uses:", producer)) == 3
+            and len(re.findall(r"(?m)^        run:", producer)) == 1,
+            "production publisher has extra executable steps")
+    checkout = producer.split("      - name: Setup supported Java", 1)[0]
+    require("ref: ${{ github.sha }}" in checkout and "repository:" not in checkout,
+            "production publisher lost exact checkout authority")
+    require("persist-credentials: false" in producer
+            and "trusted_dependency_submission_validation.py verify-main" in producer
+            and '--head "$GITHUB_SHA"' in producer
+            and "--catalog gradle/libs.versions.toml" in producer,
+            "production publisher lost exact source/shared verifier authority")
     require("dependency-graph: generate-and-submit" in production,
             "production publisher is not in generate-and-submit mode")
     require("cache-read-only: true" in production,
@@ -176,6 +200,9 @@ def check_contract(production: str, pr_workflow: str) -> None:
     )
     require("persist-credentials: false" in job,
             "PR dependency adapter checkout credentials must not persist")
+    require("trusted_dependency_submission_validation.py verify" in job
+            and "--catalog gradle/libs.versions.toml" in job,
+            "PR adapter lost shared catalog verifier")
 
     for action in PIN_ACTIONS:
         require(action_pin(production, action) == action_pin(job, action),
@@ -186,13 +213,15 @@ def production_eligible(graph: dict, source_sha: str) -> bool:
     return graph.get("sha") == source_sha and graph.get("ref") == "refs/heads/main"
 
 
-def verify_graph(directory: Path, expected_head: str, event_ref: str) -> dict:
+def verify_graph(directory: Path, expected_head: str, event_ref: str,
+                 catalog: Path, *, production: bool = False) -> dict:
     require(SHA.fullmatch(expected_head or "") is not None,
             "invalid expected PR HEAD")
-    require(isinstance(event_ref, str) and event_ref.startswith("refs/pull/"),
-            "dependency fixture did not run in pull_request ref context")
-    require(event_ref != "refs/heads/main",
-            "PR dependency fixture cannot use protected-main provenance")
+    if production:
+        require(event_ref == "refs/heads/main", "production graph must be exact main")
+    else:
+        require(isinstance(event_ref, str) and event_ref.startswith("refs/pull/"),
+                "dependency fixture did not run in pull_request ref context")
 
     files = sorted(directory.rglob("*.json"))
     require(len(files) == 1,
@@ -203,8 +232,8 @@ def verify_graph(directory: Path, expected_head: str, event_ref: str) -> dict:
             "dependency graph source SHA is not exact PR HEAD")
     require(data.get("ref") == event_ref,
             "dependency graph ref is not the PR event ref")
-    require(not production_eligible(data, expected_head),
-            "PR dependency graph was admitted as protected-main production evidence")
+    require(production_eligible(data, expected_head) == production,
+            "dependency graph authority does not match the producer context")
 
     manifests = data.get("manifests")
     require(isinstance(manifests, dict) and manifests,
@@ -218,9 +247,9 @@ def verify_graph(directory: Path, expected_head: str, event_ref: str) -> dict:
                 "dependency graph manifest lacks resolved dependencies")
         resolved.update(nodes)
 
-    require(len(resolved) >= 650,
-            f"dependency graph lost required coverage: {len(resolved)} < 650")
-    missing = REQUIRED_COORDINATES - resolved.keys()
+    require(len(resolved) >= MINIMUM_RESOLVED_NODES,
+            f"dependency graph lost required coverage: {len(resolved)} < {MINIMUM_RESOLVED_NODES}")
+    missing = required_coordinates(catalog) - resolved.keys()
     require(not missing,
             f"dependency graph lost required coordinates: {sorted(missing)}")
     direct = sum(
@@ -234,7 +263,7 @@ def verify_graph(directory: Path, expected_head: str, event_ref: str) -> dict:
         "manifests": len(manifests),
         "resolved": len(resolved),
         "direct": direct,
-        "production_evidence": False,
+        "production_evidence": production,
     }
 
 
@@ -272,15 +301,14 @@ def self_test() -> None:
         "patch": allowed_patch,
     }]], sha)
 
-    coordinate_patch = (
-        "@@ -1 +1 @@\n"
-        '-              "org.mybatis:mybatis:3.5.19",\n'
-        '+              "org.mybatis:mybatis:3.6.0",'
-    )
     assert classify(pull, [[{
         "filename": ".github/workflows/dependency-submission.yml",
         "status": "modified",
-        "patch": coordinate_patch,
+        "patch": "@@ -1 +1 @@\n-runs-on: ubuntu-24.04-arm\n+runs-on: ubuntu-26.04-arm",
+    }]], sha)
+    assert classify(pull, [[{
+        "filename": "mybatis-engine/build.gradle.kts",
+        "status": "modified",
     }]], sha)
 
     bad_cases = [
@@ -296,20 +324,7 @@ def self_test() -> None:
             [[{
                 "filename": ".github/workflows/dependency-submission.yml",
                 "status": "modified",
-                "patch": "@@ -1 +1 @@\n-permissions: {}\n+permissions: write-all",
-            }]],
-            sha,
-        ),
-        (
-            pull,
-            [[{
-                "filename": ".github/workflows/dependency-submission.yml",
-                "status": "modified",
-                "patch": (
-                    "@@ -1 +1 @@\n"
-                    '-              "org.mybatis:mybatis:3.5.19",\n'
-                    '+              "org.mybatis:mybatis:3.6.1",'
-                ),
+                "patch": "",
             }]],
             sha,
         ),
@@ -337,14 +352,21 @@ def self_test() -> None:
             raise AssertionError("unsafe changed-file classification was accepted")
 
     prod = (
-        "on:\n  push:\npermissions: {}\njobs:\n  submitGraph:\n"
+        "on:\n  push:\n    branches: [main]\n  workflow_dispatch:\npermissions: {}\njobs:\n  submitGraph:\n"
+        "    if: ${{ github.repository == 'luceat-lux-vestra/zMyBatis' && github.ref == 'refs/heads/main' && vars.ZMYBATIS_ADS_CUTOVER_DONE == 'true' }}\n"
         "    permissions:\n      contents: write\n    steps:\n"
-        "      - uses: actions/checkout@" + "1" * 40 + "\n"
-        "      - uses: actions/setup-java@" + "2" * 40 + "\n"
-        "      - uses: gradle/actions/dependency-submission@" + "3" * 40 + "\n"
+        "      - name: Checkout exact protected main\n"
+        "        uses: actions/checkout@" + "1" * 40 + "\n"
+        "        with:\n          persist-credentials: false\n          ref: ${{ github.sha }}\n"
+        "      - name: Setup supported Java\n"
+        "        uses: actions/setup-java@" + "2" * 40 + "\n"
+        "      - name: Generate and submit exact main dependency graph (no cache writes)\n"
+        "        uses: gradle/actions/dependency-submission@" + "3" * 40 + "\n"
         "        with:\n          cache-read-only: true\n"
         "          dependency-graph: generate-and-submit\n"
         "          dependency-graph-continue-on-failure: false\n"
+        "      - name: Verify submitted graph coverage and provenance\n"
+        "        run: python3 .github/workflow-policy/trusted_dependency_submission_validation.py verify-main --head \"$GITHUB_SHA\" --catalog gradle/libs.versions.toml\n"
     )
     pr = (
         "jobs:\n  dependencySubmissionValidation:\n"
@@ -361,8 +383,24 @@ def self_test() -> None:
         "          dependency-graph: generate-and-upload\n"
         "          dependency-graph-report-dir: dependency-graph-reports-pr\n"
         "          dependency-graph-continue-on-failure: false\n"
+        "      - run: python3 .github/workflow-policy/trusted_dependency_submission_validation.py verify --catalog gradle/libs.versions.toml\n"
     )
     check_contract(prod, pr)
+    for mutated_prod in (
+        prod.replace("  push:", "  pull_request:"),
+        prod.replace("contents: write", "contents: read"),
+        prod.replace("refs/heads/main", "refs/heads/feature"),
+        prod.replace(" == 'true' }}", " == 'true' || true }}"),
+        prod.replace("ref: ${{ github.sha }}", "ref: main"),
+        prod.replace("verify-main", "self-test"),
+        prod.replace("      - name: Verify submitted", "      - name: Extra\n        run: echo unexpected\n      - name: Verify submitted"),
+    ):
+        try:
+            check_contract(mutated_prod, pr)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("unsafe production graph contract was accepted")
     for mutated in (
         pr.replace(
             "dependency-graph: generate-and-upload",
@@ -386,15 +424,17 @@ def self_test() -> None:
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
+        catalog = root / "libs.versions.toml"
+        catalog.write_text("""[versions]\nmybatis = "8.9.1"\nintelliJPlatform = "7.6.5"\n[libraries]\nmybatis = { group = "org.mybatis", name = "mybatis", version.ref = "mybatis" }\n[plugins]\nintelliJPlatform = { id = "org.jetbrains.intellij.platform", version.ref = "intelliJPlatform" }\n""", encoding="utf-8")
         resolved = {
             f"example:dep:{i}": {"relationship": "indirect"}
             for i in range(648)
         }
-        resolved["org.mybatis:mybatis:3.6.0"] = {
+        resolved["org.mybatis:mybatis:8.9.1"] = {
             "relationship": "direct"
         }
         resolved[
-            "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:2.20.1"
+            "org.jetbrains.intellij.platform:intellij-platform-gradle-plugin:7.6.5"
         ] = {"relationship": "direct"}
         graph = {
             "sha": sha,
@@ -405,12 +445,26 @@ def self_test() -> None:
             json.dumps(graph),
             encoding="utf-8",
         )
-        result = verify_graph(root, sha, "refs/pull/7/merge")
+        result = verify_graph(root, sha, "refs/pull/7/merge", catalog)
         assert result["resolved"] == 650
         assert result["production_evidence"] is False
+        # A catalog update must require new graph coordinates without changing this verifier.
+        catalog.write_text(catalog.read_text(encoding="utf-8").replace("8.9.1", "8.9.2"), encoding="utf-8")
+        try:
+            verify_graph(root, sha, "refs/pull/7/merge", catalog)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("stale graph version was accepted after catalog change")
+        catalog.write_text(catalog.read_text(encoding="utf-8").replace("8.9.2", "8.9.1"), encoding="utf-8")
+        graph["ref"] = "refs/heads/main"
+        (root / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
+        assert verify_graph(root, sha, "refs/heads/main", catalog, production=True)["production_evidence"]
+        graph["ref"] = "refs/pull/7/merge"
+        (root / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
 
         try:
-            verify_graph(root, sha, "refs/heads/main")
+            verify_graph(root, sha, "refs/heads/main", catalog)
         except ValueError:
             pass
         else:
@@ -424,7 +478,7 @@ def self_test() -> None:
             encoding="utf-8",
         )
         try:
-            verify_graph(root, sha, "refs/pull/7/merge")
+            verify_graph(root, sha, "refs/pull/7/merge", catalog)
         except ValueError:
             pass
         else:
@@ -450,6 +504,12 @@ def main() -> int:
     verify_p.add_argument("--dir", type=Path, required=True)
     verify_p.add_argument("--head", required=True)
     verify_p.add_argument("--event-ref", required=True)
+    verify_p.add_argument("--catalog", type=Path, required=True)
+
+    main_p = sub.add_parser("verify-main")
+    main_p.add_argument("--dir", type=Path, required=True)
+    main_p.add_argument("--head", required=True)
+    main_p.add_argument("--catalog", type=Path, required=True)
 
     sub.add_parser("self-test")
     args = parser.parse_args()
@@ -469,9 +529,25 @@ def main() -> int:
             )
         elif args.command == "verify":
             print(json.dumps(
-                verify_graph(args.dir, args.head, args.event_ref),
+                verify_graph(args.dir, args.head, args.event_ref, args.catalog),
                 sort_keys=True,
             ))
+        elif args.command == "verify-main":
+            require(os.environ.get("GITHUB_REF") == "refs/heads/main"
+                    and os.environ.get("GITHUB_SHA") == args.head
+                    and os.environ.get("GITHUB_EVENT_NAME") in {"push", "workflow_dispatch"},
+                    "production verification requires protected-main event authority")
+            result = verify_graph(args.dir, args.head, "refs/heads/main", args.catalog, production=True)
+            print(f"GRAPH_SUBMITTED_MAIN_SHA={args.head}")
+            print(f"GRAPH_SUBMITTED_MANIFESTS={result['manifests']}")
+            print(f"GRAPH_SUBMITTED_NODES={result['resolved']}")
+            print(f"GRAPH_SUBMITTED_DIRECT={result['direct']}")
+            with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary:
+                summary.write(
+                    f"Main Gradle dependency submission: {result['manifests']} manifest(s), "
+                    f"{result['resolved']} dependencies, {result['direct']} direct. "
+                    "Gradle Actions cache read-only; no cache entries produced.\n"
+                )
         else:
             self_test()
     except (

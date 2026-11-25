@@ -1,0 +1,148 @@
+{
+  "schema": "zmybatis/dependency-update-policy/v1",
+  "policy": "EG-DEP-001",
+  "owner": "luceat-lux-vestra/zMyBatis#562",
+  "reviewed_at": "2026-11-26",
+  "entries": [
+    {
+      "id": "github-hosted-arm64",
+      "source": ".github/workflows/build.yml",
+      "source_paths": [
+        ".github/workflows/build.yml",
+        ".github/workflows/codeql.yml",
+        ".github/workflows/dependency-submission.yml",
+        ".github/workflows/e2e.yml",
+        ".github/workflows/qodana-full.yml"
+      ],
+      "strategy": "UPDATE_PR",
+      "authority": "https://github.com/actions/runner-images",
+      "mechanism": "Current GA explicit ARM64 label; existing central audit and ordinary reviewed migration, without a custom updater.",
+      "owner": "luceat-lux-vestra/zMyBatis#562",
+      "validation": "Full Merge Gate, both E2E hosts, CodeQL and graph publisher/cache identities.",
+      "provenance": {
+        "label": "ubuntu-26.04-arm"
+      }
+    },
+    {
+      "id": "java-lts",
+      "source": ".github/workflows/build.yml",
+      "source_paths": [
+        ".github/workflows/build.yml",
+        ".github/workflows/codeql.yml",
+        ".github/workflows/dependency-submission.yml",
+        ".github/workflows/e2e.yml",
+        ".github/workflows/qodana-full.yml",
+        ".github/workflows/release.yml"
+      ],
+      "strategy": "UPDATE_PR",
+      "authority": "https://www.oracle.com/java/technologies/java-se-support-roadmap.html",
+      "mechanism": "Newest LTS major by coordinated reviewed PR; native setup-java check-latest tracks patch releases.",
+      "owner": "luceat-lux-vestra/zMyBatis#562",
+      "validation": "Gradle toolchain and IDE host parity, CodeQL, Qodana and release build.",
+      "provenance": {
+        "selector": "25"
+      }
+    },
+    {
+      "id": "go-stable",
+      "source": ".github/workflows/build.yml",
+      "source_paths": [
+        ".github/workflows/build.yml"
+      ],
+      "strategy": "CHANNEL",
+      "authority": "https://go.dev/dl/",
+      "mechanism": "Official setup-go stable channel.",
+      "owner": "luceat-lux-vestra/zMyBatis#562",
+      "validation": "Native actionlint module build.",
+      "provenance": {
+        "selector": "stable"
+      }
+    },
+    {
+      "id": "actionlint-module",
+      "source": ".github/tools/actionlint/go.mod",
+      "source_paths": [
+        ".github/tools/actionlint/go.mod",
+        ".github/workflows/build.yml",
+        ".github/dependabot.yml"
+      ],
+      "strategy": "DEPENDABOT",
+      "authority": "https://proxy.golang.org/",
+      "mechanism": "Native Go module; no version shim.",
+      "owner": "luceat-lux-vestra/zMyBatis#562",
+      "validation": "Real workflows and positive/negative lint fixtures.",
+      "provenance": {
+        "ecosystem": "gomod",
+        "directory": "/.github/tools/actionlint"
+      }
+    },
+    {
+      "id": "zizmor-cli",
+      "source": ".github/tools/zizmor/requirements.txt",
+      "source_paths": [
+        ".github/tools/zizmor/requirements.txt",
+        ".github/workflows/build.yml",
+        ".github/dependabot.yml"
+      ],
+      "strategy": "DEPENDABOT",
+      "authority": "https://pypi.org/project/zizmor/",
+      "mechanism": "Native pip dependency and isolated venv; CLI needed by existing adversarial fixtures.",
+      "owner": "luceat-lux-vestra/zMyBatis#562",
+      "validation": "Workflow and negative fixture lint, no generic exemptions.",
+      "provenance": {
+        "ecosystem": "pip",
+        "directory": "/.github/tools/zizmor"
+      }
+    },
+    {
+      "id": "manual-release-validation-maven",
+      "source": "samples/manual-release-validation/pom.xml",
+      "source_paths": [
+        "samples/manual-release-validation/pom.xml",
+        ".github/workflows/build.yml",
+        ".github/dependabot.yml"
+      ],
+      "strategy": "DEPENDABOT",
+      "authority": "https://repo.maven.apache.org/maven2/",
+      "mechanism": "Native Maven dependency management, compile in CI.",
+      "owner": "luceat-lux-vestra/zMyBatis#562",
+      "validation": "Maven compile with Java 17 source floor; separate human release smoke remains required.",
+      "provenance": {
+        "ecosystem": "maven",
+        "directory": "/samples/manual-release-validation"
+      }
+    },
+    {
+      "id": "qodana-release-line",
+      "source": "qodana.yml",
+      "source_paths": [
+        "qodana.yml",
+        ".github/workflows/build.yml",
+        ".github/workflows/qodana-full.yml"
+      ],
+      "strategy": "UPDATE_PR",
+      "authority": "https://www.jetbrains.com/help/qodana/jvm.html",
+      "mechanism": "Provider stable release line by existing central audit and reviewed coordinated migration, bundled JDK by default.",
+      "owner": "luceat-lux-vestra/zMyBatis#562",
+      "validation": "Full PR and trusted SARIF, zero threshold, matching cache configuration and event-source provenance.",
+      "provenance": {
+        "image": "jetbrains/qodana-jvm-community:2026.3"
+      }
+    },
+    {
+      "id": "postgres-e2e-image",
+      "source": ".github/workflows/e2e.yml",
+      "source_paths": [
+        ".github/workflows/e2e.yml"
+      ],
+      "strategy": "UPDATE_PR",
+      "authority": "https://hub.docker.com/_/postgres",
+      "mechanism": "Reviewed immutable image digest update across both hosts; no custom image updater.",
+      "owner": "luceat-lux-vestra/zMyBatis#562",
+      "validation": "Both host E2E paths and digest equality.",
+      "provenance": {
+        "image": "postgres@sha256:0b2882c46a2b8d8e148431b333394348cf4d7f15aec6df7f17d51dc641e56cfa"
+      }
+    }
+  ]
+}

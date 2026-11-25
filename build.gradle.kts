@@ -104,7 +104,7 @@ dependencies {
         testFramework(TestFrameworkType.Plugin.Java)
         testFramework(TestFrameworkType.Starter, configurationName = "integrationTestImplementation")
 
-        implementation("org.mybatis:mybatis:3.6.0")
+        implementation(libs.mybatis)
     }
 
     // Keep the process-level Starter/JUnit 6 stack isolated from the existing JUnit 4 fixture
@@ -470,10 +470,6 @@ tasks {
 
     check {
         dependsOn(javaParserIndexTest, kotlinBoundaryTest, verifyStarterSecurityGraph)
-    }
-
-    wrapper {
-        gradleVersion = providers.gradleProperty("gradleVersion").get()
     }
 
     patchPluginXml {

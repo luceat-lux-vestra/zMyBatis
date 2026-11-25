@@ -44,3 +44,30 @@ updates:
         update-types:
           - "minor"
           - "patch"
+  # Workflow lint tools have real native manifests, not shell version constants.
+  - package-ecosystem: "gomod"
+    directory: "/.github/tools/actionlint"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github_actions"
+
+  - package-ecosystem: "pip"
+    directory: "/.github/tools/zizmor"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github_actions"
+
+  # Active manual release fixture, independent of the Gradle workspace.
+  - package-ecosystem: "maven"
+    directory: "/samples/manual-release-validation"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"

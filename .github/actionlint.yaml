@@ -1,0 +1,5 @@
+# GA ARM64 label pending upstream actionlint recognition.
+# Remove this entry when the maintained release recognizes the runner.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04-arm

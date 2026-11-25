@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_trust_boundary import split_jobs  # noqa: E402
 
-EXPECTED_LINTER = "jetbrains/qodana-jvm-community:2026.2"
+LINTER_CHANNEL = re.compile(r"jetbrains/qodana-jvm-community:[0-9]{4}\.[1-3]\Z")
 ACTION_PATTERN = re.compile(
     r"^\s*uses:\s*JetBrains/qodana-action@[0-9a-f]{40}(?:\s*#.*)?$",
     re.MULTILINE,
@@ -170,9 +170,9 @@ def check(workflow_path: Path, qodana_path: Path) -> list[str]:
     linter_match = re.search(r"^\s*linter:\s*(\S+)\s*$", qodana_text, re.MULTILINE)
     if linter_match is None:
         fail("qodana.yml must declare an explicit linter", failures)
-    elif linter_match.group(1) != EXPECTED_LINTER:
+    elif not LINTER_CHANNEL.fullmatch(linter_match.group(1)):
         fail(
-            f"qodana.yml linter must be `{EXPECTED_LINTER}`, got `{linter_match.group(1)}`",
+            f"qodana.yml must use a stable JVM Community release line, got `{linter_match.group(1)}`",
             failures,
         )
 

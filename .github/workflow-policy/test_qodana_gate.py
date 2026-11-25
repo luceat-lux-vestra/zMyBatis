@@ -62,8 +62,7 @@ jobs:
 """
 
 GOOD_QODANA = """version: \"1.0\"
-linter: jetbrains/qodana-jvm-community:2026.2
-projectJDK: \"21\"
+linter: jetbrains/qodana-jvm-community:2026.3
 profile:
   name: qodana.recommended
 exclude:
@@ -163,7 +162,7 @@ def main() -> int:
     )
     expect(
         "rejects an incompatible linter line",
-        run_case(GOOD_WORKFLOW, GOOD_QODANA.replace("2026.2", "2024.3")) != 0,
+        run_case(GOOD_WORKFLOW, GOOD_QODANA.replace("2026.3", "latest")) != 0,
         failures,
     )
     expect(

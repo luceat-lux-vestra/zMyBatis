@@ -4,9 +4,9 @@
 Every remote `uses:` reference to a third-party (or first-party) Action must
 be pinned to a full-length 40-character commit SHA, not a floating tag or
 branch. Self-repository references beginning with `$/` resolve to this repository at
-the exact running commit and therefore do not take an `@ref`. Workspace-relative
-`./` references are intentionally rejected because they resolve against mutable
-runner workspace state rather than GitHub's self-repository identity. A tag such
+the exact running commit and therefore do not take an `@ref`. Job-level `./.github/workflows/<name>.yml` reusable-workflow calls resolve
+at the caller's commit and are allowed. Workspace-relative step actions are
+rejected because they resolve against mutable runner workspace state. A tag such
 as `@v7` can be force-moved by the action owner (or anyone who compromises
 that owner's account) to point at different, unreviewed code that this
 repository's workflows would then execute automatically. A trailing `# v7`
@@ -28,6 +28,7 @@ from pathlib import Path
 
 PIN_PATTERN = re.compile(r"^[^#\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
 SELF_PATTERN = re.compile(r"^\$/[^#\s]+(?:\s+#.*)?$")
+LOCAL_WORKFLOW = re.compile(r"^\./\.github/workflows/[A-Za-z0-9_-]+\.ya?ml(?:\s+#.*)?$")
 USES_PATTERN = re.compile(r"^(?:-\s*)?uses:\s*(?P<reference>.+)$")
 
 
@@ -54,6 +55,7 @@ def find_unpinned(path: Path) -> list[str]:
         reference = match.group("reference")
         if not (
             SELF_PATTERN.fullmatch(reference) or PIN_PATTERN.fullmatch(reference)
+            or (line.startswith("    uses:") and LOCAL_WORKFLOW.fullmatch(reference))
         ):
             failures.append(f"{path}:{number}: {stripped}")
     return failures
