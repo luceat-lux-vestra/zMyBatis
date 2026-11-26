@@ -1,5 +1,6 @@
 import org.jetbrains.changelog.Changelog
 
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
@@ -56,7 +57,9 @@ val starterSecurityConstraints = listOf(
     libs.starterLz4.get() to "retain the security fix for GHSA-48mj-8f7c-7qfm",
     libs.starterJsoup.get() to "retain the XmlTreeBuilder resource-consumption security fix (862ba2f)",
 )
+val expectedPostgresDriver = libs.postgresDriver.get()
 val starterSecurityModules = starterSecurityConstraints.map { it.first } + listOf(
+    expectedPostgresDriver,
     libs.jackson2Core.get(),
     libs.jackson2Databind.get(),
     libs.jackson3Core.get(),
@@ -299,9 +302,16 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
 // Gradle 9 configuration-cache rejects that task graph, while the transformed IDE test
 // process also does not expose external test artifacts through java.class.path.
 val postgresMaterializationDriverJarPath: String = postgresMaterializationDriverClasspath
-    .files
-    .single { file -> file.name == "postgresql-42.7.14.jar" }
-    .absolutePath
+    .incoming.artifacts.artifacts
+    .single { artifact ->
+        val component = artifact.id.componentIdentifier
+        component is ModuleComponentIdentifier &&
+            component.group == expectedPostgresDriver.module.group &&
+            component.module == expectedPostgresDriver.module.name &&
+            component.version == expectedPostgresDriver.versionConstraint.requiredVersion &&
+            artifact.file.extension == "jar"
+    }
+    .file.absolutePath
 
 val postgresMaterializationRuntimeTest = intellijPlatformTesting.testIde.register("postgresMaterializationRuntimeTest") {
     testFramework(TestFrameworkType.Platform)
