@@ -7,6 +7,12 @@
 # not copy stale PR #55's Dependabot config verbatim - see the rationale below and issue #70.
 
 version: 2
+# Explicit anonymous public Maven repository; Dependabot's per-job egress allowlist
+# requires a registry declaration even when no credentials are needed.
+registries:
+  jetbrains-teamcity:
+    type: maven-repository
+    url: https://download.jetbrains.com/teamcity-repository/
 updates:
 
   # Gradle: the IntelliJ Platform Gradle Plugin, Kotlin, MyBatis, and the test/coverage stack.
@@ -14,6 +20,8 @@ updates:
   # build.yml) before merging - see AGENTS.md section 4.
   - package-ecosystem: "gradle"
     directory: "/"
+    registries:
+      - jetbrains-teamcity
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

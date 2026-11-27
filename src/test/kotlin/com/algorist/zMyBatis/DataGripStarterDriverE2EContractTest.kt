@@ -58,10 +58,11 @@ class DataGripStarterDriverE2EContractTest {
 
         assertTrue(workflow.contains("Start pinned PostgreSQL E2E service for DataGrip"))
         assertTrue(workflow.contains("--name zmybatis-postgres-datagrip-e2e"))
+        val pinnedImages = Regex("""(?m)^\s+postgres@sha256:[0-9a-f]{64}$""")
+            .findAll(workflow).map { it.value.trim() }.toList()
         assertTrue(
-            workflow.contains(
-                "postgres@sha256:0b2882c46a2b8d8e148431b333394348cf4d7f15aec6df7f17d51dc641e56cfa",
-            ),
+            "both real PostgreSQL jobs must use the same immutable image digest",
+            pinnedImages.size == 2 && pinnedImages.distinct().size == 1,
         )
         assertTrue(
             workflow.contains(

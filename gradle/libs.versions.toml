@@ -3,6 +3,20 @@
 junit = "4.13.2"
 mybatis = "3.6.0"
 
+# Maintained test/Starter dependency families; shared versions also drive the runtime graph gate.
+junitBom = "6.1.3"
+kodein = "7.33.0"
+coroutines = "1.11.0"
+postgresql = "42.7.14"
+netty = "4.2.19.Final"
+jackson2 = "2.22.4"
+jackson3 = "3.2.4"
+otel = "1.67.0"
+bouncycastle = "1.86"
+lz4 = "1.12.1"
+jsoup = "1.23.2"
+teamcity = "2024.12"
+
 # plugins
 changelog = "2.5.0"
 intelliJPlatform = "2.20.1"
@@ -13,6 +27,26 @@ qodana = "2026.2.2"
 [libraries]
 mybatis = { group = "org.mybatis", name = "mybatis", version.ref = "mybatis" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+starterJunitBom = { group = "org.junit", name = "junit-bom", version.ref = "junitBom" }
+starterKodein = { group = "org.kodein.di", name = "kodein-di-jvm", version.ref = "kodein" }
+starterCoroutines = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core-jvm", version.ref = "coroutines" }
+postgresDriver = { group = "org.postgresql", name = "postgresql", version.ref = "postgresql" }
+nettyBom = { group = "io.netty", name = "netty-bom", version.ref = "netty" }
+nettyHandler = { group = "io.netty", name = "netty-handler", version.ref = "netty" }
+nettyCompression = { group = "io.netty", name = "netty-codec-compression", version.ref = "netty" }
+jackson2Bom = { group = "com.fasterxml.jackson", name = "jackson-bom", version.ref = "jackson2" }
+jackson2Core = { group = "com.fasterxml.jackson.core", name = "jackson-core", version.ref = "jackson2" }
+jackson2Databind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jackson2" }
+jackson3Bom = { group = "tools.jackson", name = "jackson-bom", version.ref = "jackson3" }
+jackson3Core = { group = "tools.jackson.core", name = "jackson-core", version.ref = "jackson3" }
+jackson3Databind = { group = "tools.jackson.core", name = "jackson-databind", version.ref = "jackson3" }
+otelBom = { group = "io.opentelemetry", name = "opentelemetry-bom", version.ref = "otel" }
+bcprov = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
+bcpkix = { group = "org.bouncycastle", name = "bcpkix-jdk18on", version.ref = "bouncycastle" }
+bcutil = { group = "org.bouncycastle", name = "bcutil-jdk18on", version.ref = "bouncycastle" }
+starterLz4 = { group = "at.yawk.lz4", name = "lz4-java", version.ref = "lz4" }
+starterJsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+teamcityMessages = { group = "org.jetbrains.teamcity", name = "serviceMessages", version.ref = "teamcity" }
 
 [plugins]
 changelog = { id = "org.jetbrains.changelog", version.ref = "changelog" }

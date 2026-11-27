@@ -426,6 +426,24 @@ jobs:
            failures)
 
     build_source = (WORKFLOWS_DIR / "build.yml").read_text(encoding="utf-8")
+    idea_gradle = (REPO_ROOT / ".idea/gradle.xml").read_text(encoding="utf-8")
+    expect("IDE Gradle JVM follows the environment rather than a machine-specific SDK name",
+           re.findall(r'<option name="gradleJvm" value="([^"]+)"\s*/>', idea_gradle) == ["#JAVA_HOME"], failures)
+    cache_lines = [
+        [line.strip().replace("git -C .qodana-source ", "git -C . ")
+         for line in source.splitlines() if line.strip().startswith('config_hash="$(git -C ')]
+        for source in (build_source, qodana_full_source)
+    ]
+    expect("PR and protected-main Qodana cache family uses the same tracked build inputs",
+           len(cache_lines[0]) == 1 and cache_lines[0] == cache_lines[1]
+           and all(fragment in cache_lines[0][0] for fragment in (
+               "qodana.yml", ".idea", "gradle.properties", "gradle",
+               "**/*.gradle.kts", ".github/workflows/build.yml", ".github/workflows/qodana-full.yml",
+           )), failures)
+    expect("Qodana cache restores remain restricted to trusted main",
+           all("cache-default-branch-only: true" in source
+               and "additional-cache-key: " in source
+               for source in (build_source, qodana_full_source)), failures)
     qodana_pins = re.findall(r"uses:\s*JetBrains/qodana-action@([0-9a-f]{40})", qodana_full_source)
     expect("PR and trusted Qodana use the same immutable action",
            len(qodana_pins) == 1 and qodana_pins == re.findall(r"uses:\s*JetBrains/qodana-action@([0-9a-f]{40})", build_source), failures)

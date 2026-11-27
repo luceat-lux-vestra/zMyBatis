@@ -11,24 +11,50 @@ class StarterDatabaseE2EIsolationContractTest {
     @Test
     fun `PostgreSQL process fixture remains integration-test-only and production artifact stays unchanged`() {
         val build = source("build.gradle.kts")
+        val catalog = source("gradle/libs.versions.toml")
+        val declarations = build.lineSequence().map(String::trim).toList()
+        val moduleBuilds = listOf(source("core/build.gradle.kts"), source("mybatis-engine/build.gradle.kts"))
 
-        assertFalse(
-            "retired H2 process harness must not remain on the integration-test graph",
-            build.lineSequence().any { line ->
-                line.trim().startsWith("integrationTestImplementation(\"com.h2database:h2:")
-            },
+        assertTrue(
+            "pgJDBC must retain its canonical module identity and a catalog-owned version",
+            catalog.lineSequence().count { line ->
+                line.trim() == "postgresDriver = { group = \"org.postgresql\", name = \"postgresql\", version.ref = \"postgresql\" }"
+            } == 1,
         )
         assertTrue(
-            "PostgreSQL proof must declare exactly one pgJDBC driver on the integration-test graph",
-            build.lineSequence().count { line ->
-                line.trim() == "integrationTestImplementation(\"org.postgresql:postgresql:42.7.14\")"
+            "pgJDBC must have a single catalog alias, not a second declaration that can drift",
+            catalog.lineSequence().count { line ->
+                line.contains("group = \"org.postgresql\"") && line.contains("name = \"postgresql\"")
             } == 1,
         )
         assertFalse(
-            "pgJDBC must never become a shipped plugin implementation dependency",
-            build.lineSequence().any { line ->
-                line.trim().startsWith("implementation(\"org.postgresql:postgresql:")
-            },
+            "retired H2 process harness must not remain on the integration-test graph",
+            build.contains("com.h2database:h2") || catalog.contains("com.h2database"),
+        )
+        assertTrue(
+            "pgJDBC may only be declared on the two maintained fixture configurations; its third reference is verification metadata",
+            declarations.filter { it.contains("libs.postgresDriver") }.sorted() == listOf(
+                "add(postgresMaterializationDriverClasspath.name, libs.postgresDriver)",
+                "integrationTestImplementation(libs.postgresDriver)",
+                "val expectedPostgresDriver = libs.postgresDriver.get()",
+            ).sorted(),
+        )
+        assertFalse(
+            "pgJDBC must never be separately declared in the plugin or its production modules",
+            (listOf(build) + moduleBuilds).any { it.contains("org.postgresql:postgresql") } ||
+                moduleBuilds.any { it.contains("libs.postgresDriver") },
+        )
+        assertTrue(
+            "native materialization must select the exact resolved catalog module and version",
+            build.contains("component is ModuleComponentIdentifier") &&
+                build.contains("component.group == expectedPostgresDriver.module.group") &&
+                build.contains("component.module == expectedPostgresDriver.module.name") &&
+                build.contains("component.version == expectedPostgresDriver.versionConstraint.requiredVersion") &&
+                build.contains(".file.absolutePath"),
+        )
+        assertTrue(
+            "the real Starter runtime graph must also verify the catalog driver",
+            build.contains("val starterSecurityModules = starterSecurityConstraints.map { it.first } + listOf(\n    expectedPostgresDriver,"),
         )
     }
 

@@ -1,5 +1,6 @@
 import org.jetbrains.changelog.Changelog
 
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
@@ -47,6 +48,26 @@ val postgresMaterializationDriverClasspath = configurations.create("postgresMate
     isVisible = false
 }
 
+// The exact approved versions live only in the native Gradle catalog.
+// Direct security constraints and the graph gate share the same dependency objects.
+val starterSecurityConstraints = listOf(
+    libs.bcprov.get() to "Starter tooling previously resolved a security-affected Bouncy Castle release",
+    libs.bcpkix.get() to "keep Bouncy Castle Starter tooling modules version-aligned",
+    libs.bcutil.get() to "keep Bouncy Castle Starter tooling modules version-aligned",
+    libs.starterLz4.get() to "retain the security fix for GHSA-48mj-8f7c-7qfm",
+    libs.starterJsoup.get() to "retain the XmlTreeBuilder resource-consumption security fix (862ba2f)",
+)
+val expectedPostgresDriver = libs.postgresDriver.get()
+val starterSecurityModules = starterSecurityConstraints.map { it.first } + listOf(
+    expectedPostgresDriver,
+    libs.jackson2Core.get(),
+    libs.jackson2Databind.get(),
+    libs.jackson3Core.get(),
+    libs.jackson3Databind.get(),
+    libs.nettyHandler.get(),
+    libs.nettyCompression.get(),
+)
+
 // Configure project's dependencies
 repositories {
     gradlePluginPortal()
@@ -80,10 +101,10 @@ dependencies {
     }
 
     testImplementation(libs.junit)
-    testImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
-    testImplementation(platform("tools.jackson:jackson-bom:3.2.4"))
-    testImplementation(platform("io.opentelemetry:opentelemetry-bom:1.67.0"))
-    add(postgresMaterializationDriverClasspath.name, "org.postgresql:postgresql:42.7.14")
+    testImplementation(platform(libs.jackson2Bom))
+    testImplementation(platform(libs.jackson3Bom))
+    testImplementation(platform(libs.otelBom))
+    add(postgresMaterializationDriverClasspath.name, libs.postgresDriver)
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
     intellijPlatform {
@@ -111,17 +132,17 @@ dependencies {
     // suite until the process harness is characterized and promoted.
     // Keep Jupiter and Platform artifacts on one tested release line. A BOM avoids
     // independent Dependabot PRs that can temporarily skew the Starter test stack.
-    integrationTestImplementation(platform("org.junit:junit-bom:6.1.3"))
+    integrationTestImplementation(platform(libs.starterJunitBom))
     integrationTestImplementation("org.junit.jupiter:junit-jupiter")
     integrationTestImplementation(kotlin("stdlib"))
-    integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.33.0")
+    integrationTestImplementation(libs.starterKodein)
     // JetBrains Starter uses CommonScope/EventsBus coroutines internally at test runtime.
     // This dependency is intentional even though project source does not import coroutines:
     // removing it fails Starter E2E with NoClassDefFoundError for kotlinx/coroutines/SupervisorKt.
-    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
+    integrationTestImplementation(libs.starterCoroutines)
     // Process-E2E fixture only. pgJDBC is copied into the isolated Starter config
     // and registered as a local Database Tools driver; it is never part of the shipped plugin artifact.
-    integrationTestImplementation("org.postgresql:postgresql:42.7.14")
+    integrationTestImplementation(libs.postgresDriver)
     // JetBrains Starter's CommonScope loads kotlinx.coroutines.SupervisorKt at runtime, but
     // the Starter test framework does not supply coroutines transitively on this configuration.
     // Keep this explicit runtime prerequisite; removing it fails Starter / Driver E2E.
@@ -129,30 +150,20 @@ dependencies {
     // Security-align only the process-level Starter/E2E tooling graph. These are not plugin
     // runtime dependencies; remove the constraints when JetBrains' Starter graph carries
     // equivalent-or-newer fixed versions natively.
-    integrationTestImplementation(platform("io.netty:netty-bom:4.2.19.Final"))
-    integrationTestImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
-    integrationTestImplementation(platform("tools.jackson:jackson-bom:3.2.4"))
-    integrationTestImplementation(platform("io.opentelemetry:opentelemetry-bom:1.67.0"))
+    integrationTestImplementation(platform(libs.nettyBom))
+    integrationTestImplementation(platform(libs.jackson2Bom))
+    integrationTestImplementation(platform(libs.jackson3Bom))
+    integrationTestImplementation(platform(libs.otelBom))
     constraints {
-        add("integrationTestImplementation", "org.bouncycastle:bcprov-jdk18on:1.86") {
-            because("Starter tooling currently resolves a security-affected 1.84")
-        }
-        add("integrationTestImplementation", "org.bouncycastle:bcpkix-jdk18on:1.86") {
-            because("keep Bouncy Castle Starter tooling modules version-aligned")
-        }
-        add("integrationTestImplementation", "org.bouncycastle:bcutil-jdk18on:1.86") {
-            because("keep Bouncy Castle Starter tooling modules version-aligned")
-        }
-        add("integrationTestImplementation", "at.yawk.lz4:lz4-java:1.12.1") {
-            because("1.12.1 contains the security fix for GHSA-48mj-8f7c-7qfm")
-        }
-        add("integrationTestImplementation", "org.jsoup:jsoup:1.23.2") {
-            because("1.23.2 contains the XmlTreeBuilder resource-consumption fix commit 862ba2f")
+        starterSecurityConstraints.forEach { (dependency, reason) ->
+            add("integrationTestImplementation", dependency) {
+                because(reason)
+            }
         }
     }
 
     integrationTestRuntimeOnly("org.junit.platform:junit-platform-launcher")
-    integrationTestRuntimeOnly("org.jetbrains.teamcity:serviceMessages:2024.12")
+    integrationTestRuntimeOnly(libs.teamcityMessages)
     // The plugin build deliberately opts out of bundling Kotlin stdlib. Integration-test source
     // compiles against the matched stdlib above; reflection is needed only at runtime.
     integrationTestRuntimeOnly(kotlin("reflect"))
@@ -167,35 +178,41 @@ val verifyStarterSecurityGraph = tasks.register("verifyStarterSecurityGraph") {
     val securityResolutionResult = configurations.getByName("integrationTestRuntimeClasspath")
         .incoming.resolutionResult
 
+    val expected = starterSecurityModules.associate { dependency ->
+        "${dependency.module.group}:${dependency.module.name}" to dependency.versionConstraint.requiredVersion
+    }
+    require(expected.size == starterSecurityModules.size && expected.values.all { it.isNotBlank() }) {
+        "Starter security catalog must define distinct modules with explicit versions"
+    }
+
     doLast {
-        val expected = mapOf(
-            "org.jsoup:jsoup" to "1.23.2",
-            "com.fasterxml.jackson.core:jackson-core" to "2.22.4",
-            "com.fasterxml.jackson.core:jackson-databind" to "2.22.4",
-            "tools.jackson.core:jackson-core" to "3.2.4",
-            "tools.jackson.core:jackson-databind" to "3.2.4",
-            "io.netty:netty-handler" to "4.2.19.Final",
-            "io.netty:netty-codec-compression" to "4.2.19.Final",
-            "org.bouncycastle:bcprov-jdk18on" to "1.86",
-            "org.bouncycastle:bcpkix-jdk18on" to "1.86",
-            "org.bouncycastle:bcutil-jdk18on" to "1.86",
-            "at.yawk.lz4:lz4-java" to "1.12.1",
-        )
+        fun verifyGraph(resolved: Map<String, String>) {
+            expected.forEach { (module, version) ->
+                val actual = resolved[module]
+                    ?: throw GradleException("Starter security graph is missing expected module $module")
+                if (actual != version) {
+                    throw GradleException(
+                        "Starter security graph drift for $module: expected $version, resolved $actual",
+                    )
+                }
+            }
+        }
+
         val resolved = securityResolutionResult.allComponents
             .mapNotNull { component ->
                 component.moduleVersion?.let { id -> "${id.group}:${id.name}" to id.version }
             }
             .toMap()
 
-        expected.forEach { (module, version) ->
-            val actual = resolved[module]
-                ?: throw GradleException("Starter security graph is missing expected module $module")
-            if (actual != version) {
-                throw GradleException(
-                    "Starter security graph drift for $module: expected $version, resolved $actual",
-                )
-            }
-        }
+        // Real resolution is mandatory; negative controls cannot replace it.
+        verifyGraph(resolved)
+        val (module, version) = expected.entries.first()
+        val missing = runCatching { verifyGraph(resolved - module) }.exceptionOrNull()
+        check(missing is GradleException && missing.message == "Starter security graph is missing expected module $module")
+        val wrong = "invalid-negative-control-version"
+        val drift = runCatching { verifyGraph(resolved + (module to wrong)) }.exceptionOrNull()
+        check(drift is GradleException &&
+            drift.message == "Starter security graph drift for $module: expected $version, resolved $wrong")
     }
 }
 
@@ -285,9 +302,16 @@ val javaParserIndexTest = intellijPlatformTesting.testIde.register("javaParserIn
 // Gradle 9 configuration-cache rejects that task graph, while the transformed IDE test
 // process also does not expose external test artifacts through java.class.path.
 val postgresMaterializationDriverJarPath: String = postgresMaterializationDriverClasspath
-    .files
-    .single { file -> file.name == "postgresql-42.7.14.jar" }
-    .absolutePath
+    .incoming.artifacts.artifacts
+    .single { artifact ->
+        val component = artifact.id.componentIdentifier
+        component is ModuleComponentIdentifier &&
+            component.group == expectedPostgresDriver.module.group &&
+            component.module == expectedPostgresDriver.module.name &&
+            component.version == expectedPostgresDriver.versionConstraint.requiredVersion &&
+            artifact.file.extension == "jar"
+    }
+    .file.absolutePath
 
 val postgresMaterializationRuntimeTest = intellijPlatformTesting.testIde.register("postgresMaterializationRuntimeTest") {
     testFramework(TestFrameworkType.Platform)

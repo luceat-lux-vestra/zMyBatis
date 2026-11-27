@@ -143,7 +143,7 @@ class ZMyBatisStarterDriverE2ETest {
 
     companion object {
         private const val IDE_RELEASE = "2026.3"
-        private const val POSTGRES_E2E_DRIVER_NAME = "zMyBatis PostgreSQL 42.7.14"
+        private const val POSTGRES_E2E_DRIVER_NAME = "zMyBatis PostgreSQL fixture"
         private const val POSTGRES_E2E_DATA_SOURCE_NAME = POSTGRES_E2E_DRIVER_NAME
         private const val EXECUTE_ACTION_TEXT = "Execute (zMyBatis)"
         private const val PARAMETER_DIALOG_TITLE = "Enter MyBatis Parameters"
@@ -1908,7 +1908,7 @@ class ZMyBatisStarterDriverE2ETest {
             <application>
               <component name="LocalDatabaseDriverManager" version="201">
                 <driver
-                    id="zmybatis-postgresql-42.7.14"
+                    id="zmybatis-postgresql-fixture"
                     name="$POSTGRES_E2E_DRIVER_NAME"
                     dialect="PostgreSQL"
                     driver-class="org.postgresql.Driver"

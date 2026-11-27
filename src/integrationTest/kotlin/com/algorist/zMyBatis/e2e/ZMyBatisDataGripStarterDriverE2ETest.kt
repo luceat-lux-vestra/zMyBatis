@@ -84,7 +84,7 @@ class ZMyBatisDataGripStarterDriverE2ETest {
 
     companion object {
         private const val DATAGRIP_RELEASE = "2026.3"
-        private const val POSTGRES_E2E_DRIVER_NAME = "zMyBatis DataGrip PostgreSQL 42.7.14"
+        private const val POSTGRES_E2E_DRIVER_NAME = "zMyBatis DataGrip PostgreSQL fixture"
         private const val POSTGRES_E2E_DATA_SOURCE_NAME = POSTGRES_E2E_DRIVER_NAME
         private val pluginArchive: Path = pathOf(
             System.getenv("ZMYBATIS_E2E_PLUGIN_ARCHIVE")
@@ -377,7 +377,7 @@ class ZMyBatisDataGripStarterDriverE2ETest {
             <application>
               <component name="LocalDatabaseDriverManager" version="201">
                 <driver
-                    id="zmybatis-datagrip-postgresql-42.7.14"
+                    id="zmybatis-datagrip-postgresql-fixture"
                     name="$POSTGRES_E2E_DRIVER_NAME"
                     dialect="PostgreSQL"
                     driver-class="org.postgresql.Driver"
