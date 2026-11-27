@@ -466,7 +466,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          config_hash="$(sha256sum qodana.yml | cut -d ' ' -f 1)"
+          # Use tracked blob identities, not absolute checkout paths or source SHA.
+          # A dependency/toolchain or scanner change must not restore an old IDE/JDK model.
+          config_hash="$(git -C . ls-files -s -- qodana.yml .idea gradle gradle.properties gradlew gradlew.bat buildSrc build-logic ':(glob)**/*.gradle' ':(glob)**/*.gradle.kts' ':(glob)**/gradle.lockfile' ':(glob)**/gradle/dependency-locks/**' .github/workflows/build.yml .github/workflows/qodana-full.yml | sha256sum | cut -d ' ' -f 1)"
           runner_hash="$(sha256sum /etc/os-release | cut -d ' ' -f 1)"
           printf 'prefix=qodana-%s-%s-%s-%s-\n' "$RUNNER_OS" "$RUNNER_ARCH" "$config_hash" "$runner_hash" >> "$GITHUB_OUTPUT"
 
@@ -475,8 +477,8 @@ jobs:
         uses: JetBrains/qodana-action@aa698739cd4b8204ad53291bea7e16cd75da3c9f # v2026.3.1
         with:
           args: --fail-threshold 0
-          # Both keys must match across main and PR refs so PR analysis can restore
-          # a trusted main cache; only the main workflow_dispatch run may write it.
+          # PRs may restore a trusted main cache only for an identical build-input family.
+          # Only the existing protected-main workflow may write the shared cache.
           primary-cache-key: ${{ steps.qodana-cache.outputs.prefix }}${{ github.sha }}
           additional-cache-key: ${{ steps.qodana-cache.outputs.prefix }}
           cache-default-branch-only: true
